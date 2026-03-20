@@ -14,6 +14,7 @@ $requiredFiles = @(
     "package.json",
     "pyproject.toml",
     "docker-compose.yml",
+    "scripts/create_desktop_launcher.ps1",
     "docs/PRODUCT.md",
     "docs/ARCHITECTURE.md",
     "docs/IMPLEMENTATION_BLUEPRINT.md",

@@ -91,6 +91,20 @@ reposcan-pro/
 4. Run `powershell -ExecutionPolicy Bypass -File .\scripts\check.ps1`
 5. Start implementation only after the design layer is accepted
 
+## Desktop Launcher
+
+To create the desktop launcher and double-click shortcut for this repo, run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\create_desktop_launcher.ps1
+```
+
+That script creates:
+- `RepoScan Pro Dev Home` on your desktop
+- `RepoScan Pro Dev.lnk` on your desktop
+
+Both point back to the repo-owned workspace and launcher files so the setup stays synced with the Git repository.
+
 ## Claude, Codex, And VS Code
 
 - Claude Code integration lives in [CLAUDE.md](CLAUDE.md) and the files under [.claude](.claude)

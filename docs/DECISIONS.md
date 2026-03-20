@@ -57,3 +57,10 @@ This document records early accepted decisions for the fresh build.
 - Status: Accepted
 - Decision: Keep VS Code integration artifacts inside the repository rather than relying on a separate desktop-only workspace.
 - Rationale: Editor setup for RepoScan Pro should be versioned, reviewable, and synced with the project rather than hidden in machine-local launcher folders.
+
+## ADR-009 Reproducible Desktop Launcher
+
+- Date: 2026-03-20
+- Status: Accepted
+- Decision: Generate desktop shortcuts for RepoScan Pro from a repo-owned script rather than hand-maintaining launcher files outside the repository.
+- Rationale: The machine-local shortcut should remain reproducible while the source of truth stays versioned in Git.
