@@ -1,0 +1,40 @@
+.venv/
+node_modules/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+__pycache__/
+*.py[cod]
+.coverage
+coverage/
+dist/
+build/
+tmp/
+temp/
+.cache/
+.DS_Store
+Thumbs.db
+.env
+
+# Local runtime state
+artifacts/
+data/
+media/
+logs/
+runtime/
+
+# Model artifacts and exports
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.engine
+*.trt
+*.weights
+
+# Database and local service state
+*.sqlite
+*.db
+postgres_data/
+redis_data/
+

@@ -1,0 +1,14 @@
+[project]
+name = "reposcan-pro"
+version = "0.1.0"
+description = "Field-grade, edge-first vehicle intelligence system scaffold for long-range and low-light LPR."
+readme = "README.md"
+requires-python = ">=3.11,<3.12"
+dependencies = []
+
+[tool.reposcan]
+python_baseline = "3.11"
+node_baseline = "24"
+runtime_policy = "edge-first"
+storage_policy = "local-first"
+

@@ -1,0 +1,20 @@
+{
+  "name": "reposcan-pro",
+  "version": "0.1.0",
+  "private": true,
+  "description": "RepoScan Pro monorepo scaffold for edge-first vehicle intelligence.",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "services/*"
+  ],
+  "engines": {
+    "node": ">=24 <25",
+    "npm": ">=11 <12"
+  },
+  "scripts": {
+    "bootstrap": "powershell -ExecutionPolicy Bypass -File ./scripts/bootstrap.ps1",
+    "check": "powershell -ExecutionPolicy Bypass -File ./scripts/check.ps1"
+  }
+}
+
