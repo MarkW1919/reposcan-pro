@@ -28,7 +28,7 @@ def test_sync_service_marks_detection_synced(tmp_path):
         queue=JsonSyncQueue(tmp_path / "queue.json"),
     )
 
-    service.enqueue_detection(detection.detection_id)
+    service.enqueue_detection(detection.detection_id, available_at_utc="2026-03-20T18:00:00Z")
     result = service.run_once(now_utc="2026-03-20T18:00:10Z")
 
     updated = storage.get_detection(detection.detection_id)
