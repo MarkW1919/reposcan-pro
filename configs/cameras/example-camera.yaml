@@ -1,0 +1,43 @@
+# Example camera configuration — copy and edit for each deployed camera.
+# Validated by: reposcan_contracts.config.camera.CameraConfig
+
+camera_id: cam_north_gate_01
+display_name: "North Gate Camera 1"
+source_type: rtsp
+stream_url: "rtsp://192.168.1.100/stream1"
+device_index: null
+
+sensor:
+  type: sony_imx335
+  resolution_w: 3840
+  resolution_h: 2160
+  fps: 30
+  bits_per_pixel: 10
+  color_mode: color
+
+optics:
+  focal_length_mm: 50.0
+  aperture_f: 1.4
+  ir_illuminator: true
+  ir_wavelength_nm: 940
+
+exposure:
+  mode: auto
+  target_brightness: 128
+  shutter_speed_us: null
+  gain_db: null
+
+mounting:
+  height_m: 4.5
+  angle_deg: -15.0
+  orientation: fixed
+  gps_latitude: 34.12345
+  gps_longitude: -118.12345
+  gps_accuracy_m: 5.0
+
+capture:
+  target_fps: 30
+  reconnect_delay_s: 5.0
+  max_reconnect_attempts: 0   # 0 = unlimited
+
+enabled: true

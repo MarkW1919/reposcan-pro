@@ -1,0 +1,41 @@
+# Local development deployment profile.
+# Validated by: reposcan_contracts.config.deployment.DeploymentConfig
+#
+# Runs all services on a developer workstation (CPU only).
+# Sync is disabled — no remote delivery during development.
+
+deployment_name: local-dev
+description: "Local workstation development profile — all services on CPU"
+
+target_hardware: cpu
+
+enabled_services:
+  capture: true
+  preprocessing: true
+  inference: true
+  tracking: true
+  storage: true
+  alerting: true
+  api: true
+  ui: true
+  sync: false   # disable remote sync during local dev
+
+infrastructure:
+  postgres_url: "postgresql://reposcan:reposcan@localhost:5432/reposcan"
+  media_root: "./media"
+  api_host: "127.0.0.1"
+  api_port: 8000
+  ui_port: 3000
+  log_level: debug
+
+media_retention:
+  frames_days: 7
+  crops_days: 30
+  snippets_days: 14
+  exports_days: 90
+
+performance:
+  inference_batch_size: 1
+  max_worker_threads: 4
+  frame_queue_depth: 30
+  enable_profiling: true

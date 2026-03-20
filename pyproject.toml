@@ -4,7 +4,20 @@ version = "0.1.0"
 description = "Field-grade, edge-first vehicle intelligence system scaffold for long-range and low-light LPR."
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
-dependencies = []
+dependencies = [
+    "pydantic>=2.0,<3.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["packages/contracts/src"]
 
 [tool.reposcan]
 python_baseline = "3.11"

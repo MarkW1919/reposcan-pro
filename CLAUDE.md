@@ -3,6 +3,20 @@
 ## Project
 RepoScan Pro (Fresh Build)
 
+## Current phase
+As of March 20, 2026, the design layer is accepted and implementation is authorized.
+
+Claude Code should begin the build now, using `docs/IMPLEMENTATION_BLUEPRINT.md` as the execution boundary and `docs/API_CONTRACTS.md` as the initial contract reference.
+
+## Build kickoff order
+Start with the first implementation slice only:
+1. Define shared schemas and typed contracts in `packages/contracts`
+2. Define config formats and validation for cameras, models, pipelines, and deployments under `configs/`
+3. Add tests that lock those contracts and config rules
+4. Only after Phase 1 is stable, begin the local storage and API skeleton described in the implementation blueprint
+
+Do not jump ahead to full inference, OCR, tracking, or UI implementation before the contracts and configuration foundation is in place.
+
 ## Mission
 Design and build a field-grade, edge-first AI system that:
 - detects vehicles at long range
@@ -67,12 +81,20 @@ Design and build a field-grade, edge-first AI system that:
 
 ## Operating rules
 - Design before coding
+- The design phase is complete enough to begin the implementation phases defined in `docs/IMPLEMENTATION_BLUEPRINT.md`
 - Minimal changes over broad rewrites
 - Always justify model choices
 - Always consider imaging physics
 - Always consider edge deployment
+- When implementation reveals a design conflict, pause and resolve the conflict before widening scope
+
+## Delivery expectations
+- Build in small, working slices
+- Add validation and tests with each new contract or config format
+- Prefer foundations that unblock multiple services over isolated feature work
+- Keep shared schemas in `packages/contracts` and service-specific logic inside the owning service
+- Preserve local-first behavior from the start
 
 ## Critical mindset
 If the plate is not readable due to physics (distance, blur, light), no model will fix it.
 Always evaluate signal quality before proposing AI changes.
-
