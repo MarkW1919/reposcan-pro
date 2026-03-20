@@ -10,6 +10,11 @@
     "no_refactor_without_approval": true,
     "no_dataset_commits": true,
     "no_model_weight_commits": true
+  },
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
+    ]
   }
 }
-
