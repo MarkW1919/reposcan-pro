@@ -12,6 +12,7 @@ from .hotlist import HotlistEntry, HotlistMatchResult
 from .inference import AttributePredictions, InferenceCandidate, ModelVersions, PlateDetection, VehicleDetection
 from .review import ReviewAction, ReviewRecord
 from .tracking import ConfidenceSummary, EvidenceRefs, TrackedDetection
+from .types import PlateMatchType, UtcTimestamp
 
 __version__ = "0.1.0"
 
@@ -49,4 +50,7 @@ __all__ = [
     "TrackedDetection",
     "ConfidenceSummary",
     "EvidenceRefs",
+    # shared types
+    "UtcTimestamp",
+    "PlateMatchType",
 ]

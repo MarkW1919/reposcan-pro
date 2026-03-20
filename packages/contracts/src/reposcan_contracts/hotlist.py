@@ -6,6 +6,8 @@ from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+from .types import PlateMatchType, UtcTimestamp
+
 
 class HotlistEntry(BaseModel):
     """A single plate entry in the local hotlist.
@@ -19,8 +21,8 @@ class HotlistEntry(BaseModel):
     label: Optional[str] = Field(None, description="Human-readable label, e.g. 'Stolen – Case 1234'")
     notes: Optional[str] = Field(None, description="Operator notes")
     active: bool = Field(True, description="Whether this entry is currently being matched")
-    created_at_utc: str = Field(..., description="Entry creation timestamp (ISO 8601 UTC)")
-    updated_at_utc: str = Field(..., description="Last update timestamp (ISO 8601 UTC)")
+    created_at_utc: UtcTimestamp = Field(..., description="Entry creation timestamp (ISO 8601 UTC)")
+    updated_at_utc: UtcTimestamp = Field(..., description="Last update timestamp (ISO 8601 UTC)")
 
     @field_validator("plate_text")
     @classmethod
@@ -39,5 +41,5 @@ class HotlistMatchResult(BaseModel):
 
     matched: bool = Field(..., description="Whether any active hotlist entries were matched")
     entry_id: Optional[str] = Field(None, description="Matched entry identifier, or None if no match")
-    match_type: Optional[str] = Field(None, description="'exact' or 'normalized' when matched")
+    match_type: Optional[PlateMatchType] = Field(None, description="'exact' or 'normalized' when matched")
     plate_text: str = Field(..., description="The plate text that was evaluated")

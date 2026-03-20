@@ -8,7 +8,9 @@ from __future__ import annotations
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+from .types import UtcTimestamp
 
 
 class ReviewAction(str, Enum):
@@ -33,8 +35,10 @@ class ReviewRecord(BaseModel):
         None, description="New plate text when action=correct"
     )
     notes: Optional[str] = Field(None, description="Free-form operator notes")
-    reviewed_at_utc: str = Field(..., description="UTC timestamp of the review action (ISO 8601)")
+    reviewed_at_utc: UtcTimestamp = Field(..., description="UTC timestamp of the review action (ISO 8601)")
 
-    def model_post_init(self, __context: object) -> None:
+    @model_validator(mode="after")
+    def validate_correction_requirements(self) -> "ReviewRecord":
         if self.action == ReviewAction.correct and not self.corrected_plate_text:
             raise ValueError("corrected_plate_text is required when action is 'correct'")
+        return self

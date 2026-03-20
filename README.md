@@ -11,7 +11,8 @@ This repository currently contains:
 - a monorepo scaffold for future API, UI, service, and ML code
 - local bootstrap and validation scripts
 
-This first pass intentionally defines architecture and working rules before implementation code is added.
+The design-first scaffold is complete enough to begin implementation as of March 20, 2026.
+The first implementation pass should follow [Build Kickoff](docs/BUILD_KICKOFF.md) and remain inside Phase 1 of the [Implementation Blueprint](docs/IMPLEMENTATION_BLUEPRINT.md).
 
 ## Mission Snapshot
 
@@ -89,7 +90,7 @@ reposcan-pro/
 2. Open [RepoScan Pro.code-workspace](RepoScan Pro.code-workspace) in VS Code or run [Open RepoScan Pro Dev.cmd](Open RepoScan Pro Dev.cmd)
 3. Review [CLAUDE.md](CLAUDE.md) and the documents under [docs](docs)
 4. Run `powershell -ExecutionPolicy Bypass -File .\scripts\check.ps1`
-5. Start implementation only after the design layer is accepted
+5. Begin implementation with [Build Kickoff](docs/BUILD_KICKOFF.md) and Phase 1 of the [Implementation Blueprint](docs/IMPLEMENTATION_BLUEPRINT.md)
 
 ## Desktop Launcher
 
@@ -112,12 +113,21 @@ Both point back to the repo-owned workspace and launcher files so the setup stay
 - VS Code integration lives in [.vscode](.vscode), [RepoScan Pro.code-workspace](RepoScan Pro.code-workspace), and [Open RepoScan Pro Dev.cmd](Open RepoScan Pro Dev.cmd)
 - the older `Seen-It-First Dev Home` desktop launcher is a separate project and is not the entry point for this repo
 
-## Initial Claude Prompt
+## Claude Build Prompt
 
-Use this prompt inside the repository before writing implementation code:
+Use this prompt inside the repository to begin the build:
 
 ```text
-Read CLAUDE.md and docs. Design the full system architecture and propose the initial repo structure without writing implementation code yet.
+Read CLAUDE.md, docs/BUILD_KICKOFF.md, docs/IMPLEMENTATION_BLUEPRINT.md, and docs/API_CONTRACTS.md.
+
+Begin implementation now.
+
+Limit the first pass to Phase 1 foundations:
+- shared contracts in packages/contracts/src
+- config schemas, examples, and loaders under configs/
+- tests that validate contract and config behavior
+
+Do not build inference, OCR, tracking, or UI features yet unless they are strictly needed to support the contract or config foundation.
 ```
 
 ## Version Control And Artifact Policy

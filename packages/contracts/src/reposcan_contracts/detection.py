@@ -11,6 +11,8 @@ from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+from .types import UtcTimestamp
+
 
 class SyncStatus(str, Enum):
     pending = "pending"
@@ -43,7 +45,7 @@ class DetectionRecord(BaseModel):
     """
 
     detection_id: str = Field(..., description="Stable unique identifier for the detection event")
-    timestamp_utc: str = Field(..., description="UTC timestamp in ISO 8601 format")
+    timestamp_utc: UtcTimestamp = Field(..., description="UTC timestamp in ISO 8601 format")
     camera_id: str = Field(..., description="Logical camera identifier")
 
     # GPS — nullable when the camera has no location fix

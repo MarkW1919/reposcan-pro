@@ -8,7 +8,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class SourceType(str, Enum):
@@ -85,3 +85,17 @@ class CameraConfig(BaseModel):
     mounting: MountingConfig = Field(default_factory=MountingConfig)
     capture: CaptureConfig = Field(default_factory=CaptureConfig)
     enabled: bool = True
+
+    @model_validator(mode="after")
+    def validate_source_binding(self) -> "CameraConfig":
+        if self.source_type == SourceType.usb:
+            if self.device_index is None:
+                raise ValueError("device_index is required when source_type='usb'")
+            if self.stream_url is not None:
+                raise ValueError("stream_url must be omitted when source_type='usb'")
+        else:
+            if not self.stream_url:
+                raise ValueError("stream_url is required when source_type is 'rtsp' or 'file'")
+            if self.device_index is not None:
+                raise ValueError("device_index must be omitted when source_type is 'rtsp' or 'file'")
+        return self

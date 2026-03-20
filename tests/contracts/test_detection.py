@@ -91,6 +91,16 @@ class TestDetectionRecord:
         det = DetectionRecord.model_validate(minimal_detection_data)
         assert det.sync_status == SyncStatus.pending
 
+    def test_invalid_timestamp_rejected(self, minimal_detection_data):
+        minimal_detection_data["timestamp_utc"] = "2026-03-19 22:10:00"
+        with pytest.raises(ValidationError):
+            DetectionRecord.model_validate(minimal_detection_data)
+
+    def test_non_utc_timestamp_rejected(self, minimal_detection_data):
+        minimal_detection_data["timestamp_utc"] = "2026-03-19T22:10:00-07:00"
+        with pytest.raises(ValidationError):
+            DetectionRecord.model_validate(minimal_detection_data)
+
     def test_schema_contains_all_api_contract_fields(self):
         fields = DetectionRecord.model_fields.keys()
         required_fields = {

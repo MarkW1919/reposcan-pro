@@ -11,6 +11,8 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
+from .types import UtcTimestamp
+
 
 class HealthState(str, Enum):
     ok = "ok"
@@ -37,7 +39,7 @@ class HealthResponse(BaseModel):
     service: str = Field(..., description="Name of the service reporting health")
     version: str = Field(..., description="Service version string")
     state: HealthState = Field(..., description="Overall health state")
-    timestamp_utc: str = Field(..., description="UTC timestamp of this health snapshot (ISO 8601)")
+    timestamp_utc: UtcTimestamp = Field(..., description="UTC timestamp of this health snapshot (ISO 8601)")
     dependencies: list[DependencyHealth] = Field(
         default_factory=list, description="Per-dependency health breakdown"
     )

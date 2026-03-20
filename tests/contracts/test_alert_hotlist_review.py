@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from reposcan_contracts.alert import AlertRecord, AlertStatus
 from reposcan_contracts.hotlist import HotlistEntry, HotlistMatchResult
 from reposcan_contracts.review import ReviewAction, ReviewRecord
+from reposcan_contracts.types import PlateMatchType
 
 
 # ---------------------------------------------------------------------------
@@ -46,6 +47,14 @@ class TestAlertRecord:
             a = AlertRecord.model_validate(self._valid(status=status))
             assert a.status == status
 
+    def test_invalid_match_type_rejected(self):
+        with pytest.raises(ValidationError):
+            AlertRecord.model_validate(self._valid(match_type="partial"))
+
+    def test_non_utc_timestamp_rejected(self):
+        with pytest.raises(ValidationError):
+            AlertRecord.model_validate(self._valid(timestamp_utc="2026-03-19T22:10:00-07:00"))
+
 
 # ---------------------------------------------------------------------------
 # HotlistEntry
@@ -78,6 +87,10 @@ class TestHotlistEntry:
         with pytest.raises(ValidationError):
             HotlistEntry.model_validate(self._valid(plate_text="   "))
 
+    def test_invalid_timestamp_rejected(self):
+        with pytest.raises(ValidationError):
+            HotlistEntry.model_validate(self._valid(created_at_utc="not-a-timestamp"))
+
 
 class TestHotlistMatchResult:
     def test_no_match(self):
@@ -92,7 +105,11 @@ class TestHotlistMatchResult:
             match_type="exact",
             plate_text="8ABC123",
         )
-        assert result.match_type == "exact"
+        assert result.match_type == PlateMatchType.exact
+
+    def test_invalid_match_type_rejected(self):
+        with pytest.raises(ValidationError):
+            HotlistMatchResult(matched=True, entry_id="hl_001", match_type="partial", plate_text="8ABC123")
 
 
 # ---------------------------------------------------------------------------
@@ -115,7 +132,7 @@ class TestReviewRecord:
         assert r.action == ReviewAction.confirm
 
     def test_correct_action_requires_corrected_text(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValidationError):
             ReviewRecord.model_validate(self._valid(action="correct"))
 
     def test_correct_action_with_text(self):
@@ -131,3 +148,7 @@ class TestReviewRecord:
                 data["corrected_plate_text"] = "8ABC123"
             r = ReviewRecord.model_validate(data)
             assert r.action == action
+
+    def test_invalid_review_timestamp_rejected(self):
+        with pytest.raises(ValidationError):
+            ReviewRecord.model_validate(self._valid(reviewed_at_utc="2026-03-19 22:15:00"))

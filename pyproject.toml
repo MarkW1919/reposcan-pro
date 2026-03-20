@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "reposcan-pro"
 version = "0.1.0"
@@ -5,23 +9,28 @@ description = "Field-grade, edge-first vehicle intelligence system scaffold for 
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
 dependencies = [
+    "fastapi>=0.115,<1.0",
     "pydantic>=2.0,<3.0",
     "pyyaml>=6.0",
+    "uvicorn>=0.35,<1.0",
 ]
 
 [project.optional-dependencies]
 dev = [
+    "httpx>=0.28,<1.0",
     "pytest>=8.0",
     "pytest-cov",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["packages/contracts/src"]
+pythonpath = ["packages/contracts/src", "apps/api/src", "services/storage/src"]
+
+[tool.setuptools]
+py-modules = []
 
 [tool.reposcan]
 python_baseline = "3.11"
 node_baseline = "24"
 runtime_policy = "edge-first"
 storage_policy = "local-first"
-

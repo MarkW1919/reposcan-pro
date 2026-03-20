@@ -11,6 +11,7 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 from .detection import BoundingBox, PlateCandidate
+from .types import UtcTimestamp
 
 
 class VehicleDetection(BaseModel):
@@ -66,7 +67,7 @@ class InferenceCandidate(BaseModel):
 
     frame_id: str = Field(..., description="Frame this inference was run on")
     camera_id: str = Field(..., description="Source camera identifier")
-    timestamp_utc: str = Field(..., description="Frame capture timestamp (ISO 8601 UTC)")
+    timestamp_utc: UtcTimestamp = Field(..., description="Frame capture timestamp (ISO 8601 UTC)")
 
     vehicle_detections: list[VehicleDetection] = Field(default_factory=list)
     plate_detections: list[PlateDetection] = Field(default_factory=list)

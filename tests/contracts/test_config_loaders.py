@@ -88,6 +88,29 @@ class TestCameraConfigSchema:
         })
         assert cam.stream_url == "rtsp://10.0.0.1/stream"
 
+    def test_usb_requires_device_index(self):
+        with pytest.raises(ValidationError):
+            CameraConfig.model_validate({
+                "camera_id": "cam_usb",
+                "source_type": "usb",
+            })
+
+    def test_rtsp_requires_stream_url(self):
+        with pytest.raises(ValidationError):
+            CameraConfig.model_validate({
+                "camera_id": "cam_rtsp",
+                "source_type": "rtsp",
+            })
+
+    def test_usb_rejects_stream_url(self):
+        with pytest.raises(ValidationError):
+            CameraConfig.model_validate({
+                "camera_id": "cam_usb",
+                "source_type": "usb",
+                "device_index": 0,
+                "stream_url": "rtsp://10.0.0.1/stream",
+            })
+
 
 # ---------------------------------------------------------------------------
 # Model stack config

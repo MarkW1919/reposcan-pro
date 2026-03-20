@@ -11,6 +11,8 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
+from .types import UtcTimestamp
+
 
 class SourceType(str, Enum):
     rtsp = "rtsp"
@@ -55,7 +57,7 @@ class FrameEnvelope(BaseModel):
 
     frame_id: str = Field(..., description="Stable unique identifier for this frame")
     camera_id: str = Field(..., description="Logical camera identifier")
-    timestamp_utc: str = Field(..., description="Capture timestamp (ISO 8601 UTC)")
+    timestamp_utc: UtcTimestamp = Field(..., description="Capture timestamp (ISO 8601 UTC)")
     frame_path: str = Field(..., description="Local path to the captured frame image")
     frame_number: int = Field(..., ge=0, description="Monotonic frame counter from this camera")
     source_type: SourceType

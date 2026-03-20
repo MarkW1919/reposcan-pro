@@ -67,6 +67,10 @@ class TestFrameEnvelope:
             env = FrameEnvelope.model_validate(self._valid(source_type=st.value))
             assert env.source_type == st
 
+    def test_invalid_timestamp_rejected(self):
+        with pytest.raises(ValidationError):
+            FrameEnvelope.model_validate(self._valid(timestamp_utc="bad-timestamp"))
+
 
 # ---------------------------------------------------------------------------
 # InferenceCandidate
@@ -120,6 +124,10 @@ class TestInferenceCandidate:
         })
         assert attrs.model_label == "camry"
 
+    def test_invalid_timestamp_rejected(self):
+        with pytest.raises(ValidationError):
+            InferenceCandidate.model_validate(self._valid(timestamp_utc="2026-03-19 22:10:00"))
+
 
 # ---------------------------------------------------------------------------
 # TrackedDetection
@@ -162,3 +170,7 @@ class TestTrackedDetection:
     def test_negative_frame_number_rejected(self):
         with pytest.raises(ValidationError):
             TrackedDetection.model_validate(self._valid(frame_number=-1))
+
+    def test_invalid_timestamp_rejected(self):
+        with pytest.raises(ValidationError):
+            TrackedDetection.model_validate(self._valid(timestamp_utc="2026-03-19 22:10:00"))
