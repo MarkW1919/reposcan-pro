@@ -43,3 +43,10 @@ This document records early accepted decisions for the fresh build.
 - Status: Accepted
 - Decision: Use `docs/ARCHITECTURE.md` and `docs/MODELS.md` as canonical document names.
 - Rationale: These names match the newer starter spec and reduce ambiguity during the fresh build.
+
+## ADR-007 Standard Default Branch
+
+- Date: 2026-03-20
+- Status: Accepted
+- Decision: Publish and set `main` as the default branch for the GitHub repository, while keeping `codex/bootstrap` as the active working branch.
+- Rationale: The repository should present a conventional default branch while preserving a clear implementation branch for ongoing work.

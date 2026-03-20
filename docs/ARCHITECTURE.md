@@ -67,8 +67,8 @@ Hosts operator workflows for live monitoring, review, search, and hotlist respon
 
 ## Related Documents
 
+- [Implementation Blueprint](IMPLEMENTATION_BLUEPRINT.md)
 - [Requirements](REQUIREMENTS.md)
 - [Camera And Imaging](CAMERA_AND_IMAGING.md)
 - [Inference](INFERENCE.md)
 - [API Contracts](API_CONTRACTS.md)
-

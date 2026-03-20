@@ -12,6 +12,7 @@ $requiredFiles = @(
     "docker-compose.yml",
     "docs/PRODUCT.md",
     "docs/ARCHITECTURE.md",
+    "docs/IMPLEMENTATION_BLUEPRINT.md",
     "docs/REQUIREMENTS.md",
     "docs/CAMERA_AND_IMAGING.md",
     "docs/MODELS.md",
@@ -85,4 +86,3 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "RepoScan Pro checks passed."
-

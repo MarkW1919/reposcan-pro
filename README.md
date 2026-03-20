@@ -30,6 +30,7 @@ The canonical mission and rules live in [CLAUDE.md](CLAUDE.md).
 
 - [Product](docs/PRODUCT.md)
 - [Architecture](docs/ARCHITECTURE.md)
+- [Implementation Blueprint](docs/IMPLEMENTATION_BLUEPRINT.md)
 - [Requirements](docs/REQUIREMENTS.md)
 - [Camera And Imaging](docs/CAMERA_AND_IMAGING.md)
 - [Models](docs/MODELS.md)
@@ -102,4 +103,3 @@ Read CLAUDE.md and docs. Design the full system architecture and propose the ini
 - Commit milestone changes locally as you progress.
 - Do not commit datasets, model weights, local media, or generated runtime artifacts.
 - Treat the existing prototype in the parent workspace as separate history and do not modify it from this repo.
-
