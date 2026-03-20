@@ -33,6 +33,7 @@ pythonpath = [
     "services/inference/src",
     "services/tracking/src",
     "services/alerting/src",
+    "services/sync/src",
 ]
 
 [tool.setuptools]

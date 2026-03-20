@@ -231,6 +231,12 @@ class TestDeploymentConfigSchema:
         dep = load_deployment_config(CONFIGS / "deployments" / "local-dev.yaml")
         assert dep.performance.enable_profiling is True
 
+    def test_jetson_orin_profile_parses(self):
+        dep = load_deployment_config(CONFIGS / "deployments" / "jetson-orin-edge.yaml")
+        assert dep.target_hardware == TargetHardware.jetson_orin
+        assert dep.enabled_services.sync is True
+        assert dep.performance.frame_queue_depth == 16
+
     def test_invalid_port_rejected(self):
         with pytest.raises(ValidationError):
             DeploymentConfig.model_validate({

@@ -1,0 +1,40 @@
+# Jetson Orin edge deployment profile.
+# Validated by: reposcan_contracts.config.deployment.DeploymentConfig
+#
+# Enables the optional sync service while keeping the local path authoritative.
+
+deployment_name: jetson-orin-edge
+description: "Jetson Orin edge deployment profile with optional upstream sync"
+
+target_hardware: jetson_orin
+
+enabled_services:
+  capture: true
+  preprocessing: true
+  inference: true
+  tracking: true
+  storage: true
+  alerting: true
+  api: true
+  ui: true
+  sync: true
+
+infrastructure:
+  postgres_url: "postgresql://reposcan:reposcan@localhost:5432/reposcan"
+  media_root: "./media"
+  api_host: "0.0.0.0"
+  api_port: 8000
+  ui_port: 3000
+  log_level: info
+
+media_retention:
+  frames_days: 5
+  crops_days: 21
+  snippets_days: 10
+  exports_days: 45
+
+performance:
+  inference_batch_size: 2
+  max_worker_threads: 6
+  frame_queue_depth: 16
+  enable_profiling: true

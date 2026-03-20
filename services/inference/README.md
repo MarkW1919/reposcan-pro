@@ -9,3 +9,4 @@ Current Phase 3 skeleton:
 - config-driven inference service that loads model and pipeline configs
 - replaceable stub adapter bundle for vehicle, plate, OCR, and attribute stages
 - frame-to-candidate workflow helper for the local capture-to-inference path
+- inference profiling helpers for latency benchmarking and deployment recommendations
