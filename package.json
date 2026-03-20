@@ -14,7 +14,8 @@
   },
   "scripts": {
     "bootstrap": "powershell -ExecutionPolicy Bypass -File ./scripts/bootstrap.ps1",
-    "check": "powershell -ExecutionPolicy Bypass -File ./scripts/check.ps1"
+    "check": "powershell -ExecutionPolicy Bypass -File ./scripts/check.ps1",
+    "ui:dev": "npm --workspace apps/ui run dev",
+    "ui:build": "npm --workspace apps/ui run build"
   }
 }
-

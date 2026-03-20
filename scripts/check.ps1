@@ -52,7 +52,22 @@ foreach ($jsonFile in $jsonFiles) {
     Get-Content -Raw $jsonFile | ConvertFrom-Json | Out-Null
 }
 
-$markdownFiles = Get-ChildItem -Path $RepoRoot -Recurse -File -Filter *.md
+$ignoredMarkdownRoots = @(
+    (Join-Path $RepoRoot "node_modules"),
+    (Join-Path $RepoRoot ".venv"),
+    (Join-Path $RepoRoot "apps/ui/dist")
+)
+
+$markdownFiles = Get-ChildItem -Path $RepoRoot -Recurse -File -Filter *.md | Where-Object {
+    $fullName = $_.FullName
+    foreach ($ignoredRoot in $ignoredMarkdownRoots) {
+        if ($fullName.StartsWith($ignoredRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $false
+        }
+    }
+
+    return $true
+}
 $linkPattern = '\[[^\]]+\]\(([^)]+)\)'
 $brokenLinks = @()
 
