@@ -86,9 +86,17 @@ reposcan-pro/
 ## Local Workflow
 
 1. Run `powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap.ps1`
-2. Review [CLAUDE.md](CLAUDE.md) and the documents under [docs](docs)
-3. Run `powershell -ExecutionPolicy Bypass -File .\scripts\check.ps1`
-4. Start implementation only after the design layer is accepted
+2. Open [RepoScan Pro.code-workspace](RepoScan Pro.code-workspace) in VS Code or run [Open RepoScan Pro Dev.cmd](Open RepoScan Pro Dev.cmd)
+3. Review [CLAUDE.md](CLAUDE.md) and the documents under [docs](docs)
+4. Run `powershell -ExecutionPolicy Bypass -File .\scripts\check.ps1`
+5. Start implementation only after the design layer is accepted
+
+## Claude, Codex, And VS Code
+
+- Claude Code integration lives in [CLAUDE.md](CLAUDE.md) and the files under [.claude](.claude)
+- Codex is working directly against this Git-tracked repo
+- VS Code integration lives in [.vscode](.vscode), [RepoScan Pro.code-workspace](RepoScan Pro.code-workspace), and [Open RepoScan Pro Dev.cmd](Open RepoScan Pro Dev.cmd)
+- the older `Seen-It-First Dev Home` desktop launcher is a separate project and is not the entry point for this repo
 
 ## Initial Claude Prompt
 

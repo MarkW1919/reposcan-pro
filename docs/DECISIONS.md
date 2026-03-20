@@ -50,3 +50,10 @@ This document records early accepted decisions for the fresh build.
 - Status: Accepted
 - Decision: Publish and set `main` as the default branch for the GitHub repository, while keeping `codex/bootstrap` as the active working branch.
 - Rationale: The repository should present a conventional default branch while preserving a clear implementation branch for ongoing work.
+
+## ADR-008 Repo-Owned Editor Integration
+
+- Date: 2026-03-20
+- Status: Accepted
+- Decision: Keep VS Code integration artifacts inside the repository rather than relying on a separate desktop-only workspace.
+- Rationale: Editor setup for RepoScan Pro should be versioned, reviewable, and synced with the project rather than hidden in machine-local launcher folders.

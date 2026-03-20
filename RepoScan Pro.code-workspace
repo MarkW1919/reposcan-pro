@@ -1,0 +1,40 @@
+{
+  "folders": [
+    {
+      "name": "RepoScan Pro",
+      "path": "C:\\Users\\mark\\Documents\\Playground\\reposcan-pro"
+    }
+  ],
+  "settings": {
+    "terminal.integrated.cwd": "C:\\Users\\mark\\Documents\\Playground\\reposcan-pro",
+    "python.defaultInterpreterPath": "C:\\Users\\mark\\Documents\\Playground\\reposcan-pro\\.venv\\Scripts\\python.exe",
+    "files.exclude": {
+      "**/.git": true,
+      "**/.venv": true,
+      "**/__pycache__": true,
+      "**/.pytest_cache": true,
+      "**/.mypy_cache": true,
+      "**/.ruff_cache": true,
+      "**/node_modules": true,
+      "**/artifacts": true,
+      "**/data": true,
+      "**/logs": true,
+      "**/media": true,
+      "**/runtime": true
+    },
+    "search.exclude": {
+      "**/.venv": true,
+      "**/__pycache__": true,
+      "**/.pytest_cache": true,
+      "**/.mypy_cache": true,
+      "**/.ruff_cache": true,
+      "**/node_modules": true,
+      "**/artifacts": true,
+      "**/data": true,
+      "**/logs": true,
+      "**/media": true,
+      "**/runtime": true
+    }
+  }
+}
+

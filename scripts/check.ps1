@@ -5,6 +5,10 @@ $RepoRoot = Split-Path -Parent $PSScriptRoot
 $requiredFiles = @(
     "CLAUDE.md",
     "README.md",
+    ".vscode/settings.json",
+    ".vscode/extensions.json",
+    "RepoScan Pro.code-workspace",
+    "Open RepoScan Pro Dev.cmd",
     ".claude/settings.json",
     ".claude/settings.local.json",
     "package.json",
