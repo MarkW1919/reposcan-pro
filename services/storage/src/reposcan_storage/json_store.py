@@ -83,7 +83,11 @@ class JsonFileStorageRepository:
     def list_reviews(self, detection_id: str) -> list[ReviewRecord]:
         with self._lock:
             reviews = self._read_records(self._reviews_path, ReviewRecord)
-        return [review for review in reviews if review.detection_id == detection_id]
+        return sorted(
+            [review for review in reviews if review.detection_id == detection_id],
+            key=lambda record: record.reviewed_at_utc,
+            reverse=True,
+        )
 
     def list_alerts(
         self,

@@ -98,13 +98,23 @@ def test_list_reviews_returns_review_history(tmp_path):
             "reviewed_at_utc": "2026-03-20T04:16:00Z",
         },
     )
+    client.post(
+        "/reviews/det_20260320_000001",
+        json={
+            "action": "flag",
+            "reviewed_at_utc": "2026-03-20T04:17:00Z",
+            "notes": "Need another look before confirming.",
+        },
+    )
 
     response = client.get("/reviews/det_20260320_000001")
 
     assert response.status_code == 200
     payload = response.json()
-    assert len(payload) == 1
-    assert payload[0]["corrected_plate_text"] == "8XYZ999"
+    assert len(payload) == 2
+    assert payload[0]["action"] == "flag"
+    assert payload[0]["notes"] == "Need another look before confirming."
+    assert payload[1]["corrected_plate_text"] == "8XYZ999"
 
 
 def test_post_review_missing_detection_returns_404(tmp_path):

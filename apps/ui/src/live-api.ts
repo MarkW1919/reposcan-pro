@@ -14,6 +14,26 @@ export interface HealthResponse {
   dependencies: HealthDependency[];
 }
 
+export type ReviewAction = "confirm" | "correct" | "flag" | "dismiss";
+
+export interface ReviewRecord {
+  review_id: string;
+  detection_id: string;
+  action: ReviewAction;
+  operator_id: string | null;
+  corrected_plate_text: string | null;
+  notes: string | null;
+  reviewed_at_utc: string;
+}
+
+export interface ReviewSubmission {
+  action: ReviewAction;
+  operator_id?: string;
+  corrected_plate_text?: string;
+  notes?: string;
+  reviewed_at_utc: string;
+}
+
 export interface DashboardDetection {
   detection_id: string;
   timestamp_utc: string;
@@ -176,6 +196,28 @@ export async function fetchDashboardOverview(signal?: AbortSignal): Promise<Dash
   return (await response.json()) as DashboardOverviewResponse;
 }
 
+export async function fetchReviews(detectionId: string, signal?: AbortSignal): Promise<ReviewRecord[]> {
+  const response = await fetch(`${apiBaseUrl()}/reviews/${encodeURIComponent(detectionId)}`, { signal });
+  if (!response.ok) {
+    throw new Error(`Failed to load reviews (${response.status})`);
+  }
+  return (await response.json()) as ReviewRecord[];
+}
+
+export async function createReview(detectionId: string, submission: ReviewSubmission): Promise<ReviewRecord> {
+  const response = await fetch(`${apiBaseUrl()}/reviews/${encodeURIComponent(detectionId)}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(submission),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to save review (${response.status})`);
+  }
+  return (await response.json()) as ReviewRecord;
+}
+
 export function mapOverviewToAlertItems(
   overview: DashboardOverviewResponse,
   fallbackAlerts: AlertItem[],
@@ -194,6 +236,7 @@ export function mapOverviewToAlertItems(
     const status = alert.status === "active" ? "monitoring" : alert.status === "acknowledged" ? "onsite" : "cleared";
     return {
       id: alert.alert_id,
+      detectionId: alert.detection_id,
       plate: alert.matched_plate_text,
       vehicle: buildVehicleLabel(detection, alert),
       colorYear: buildColorYearLabel(detection),

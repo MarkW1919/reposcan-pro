@@ -53,6 +53,15 @@ Confirm that the seeded local API and the cab-first UI behave like a usable repo
 4. Open `Field Settings`
 5. Confirm layout changes persist in the browser after refresh
 
+## Review Loop
+
+1. Select the primary alert and open the target card
+2. Confirm the card shows live review history when the API is connected
+3. Submit a `Confirm read`, `Flag for follow-up`, or `Correct read` review
+4. If using `Correct read`, enter a corrected plate value before saving
+5. Confirm the success message appears and the new review is inserted at the top of the review history
+6. Refresh the page and confirm the saved review remains visible from the live API
+
 ## Validation Commands
 
 - `.\.venv\Scripts\python.exe -m pytest -q`

@@ -7,6 +7,7 @@ Current preview slice:
 - route HUD, recovery alerts, camera views, field settings, and a customizable dashboard workspace
 - browser-persisted layout presets for map, camera, alert feed, and target-card placement
 - address-based scan mode with arrival-radius activation, operator override, and live API popup activity when available
+- selected-alert review history and local review submission when the live API is available
 - always-on hotlist popup behavior that stays active regardless of navigation or address-scan state
 - live API overview integration with graceful fallback to local demo data when the backend is offline
 - demo-friendly repo workflows while backend and hardware integration continue

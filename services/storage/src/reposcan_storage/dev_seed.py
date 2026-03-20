@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from reposcan_contracts.alert import AlertRecord
 from reposcan_contracts.detection import DetectionRecord
 from reposcan_contracts.hotlist import HotlistEntry
+from reposcan_contracts.review import ReviewRecord
 
 if TYPE_CHECKING:
     from .service import StorageService
@@ -157,6 +158,19 @@ def seed_development_operator_data(service: "StorageService") -> None:
         ),
     ]
 
+    reviews = [
+        ReviewRecord.model_validate(
+            {
+                "review_id": "rev_20260320_000001",
+                "detection_id": "det_20260320_010001",
+                "action": "flag",
+                "operator_id": "cab_demo_01",
+                "notes": "Operator wants a closer pass before hook commitment.",
+                "reviewed_at_utc": "2026-03-20T01:14:58Z",
+            }
+        )
+    ]
+
     for detection in detections:
         service.store_detection(detection)
 
@@ -165,3 +179,6 @@ def seed_development_operator_data(service: "StorageService") -> None:
 
     for alert in alerts:
         service.store_alert(alert)
+
+    for review in reviews:
+        service.create_review(review)

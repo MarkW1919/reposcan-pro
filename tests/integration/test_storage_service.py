@@ -37,6 +37,17 @@ def _review_record() -> ReviewRecord:
     )
 
 
+def _newer_review_record() -> ReviewRecord:
+    return ReviewRecord.model_validate(
+        {
+            "review_id": "rev_002",
+            "detection_id": "det_20260320_000001",
+            "action": "flag",
+            "reviewed_at_utc": "2026-03-20T04:16:00Z",
+        }
+    )
+
+
 def _hotlist_entry() -> HotlistEntry:
     return HotlistEntry.model_validate(
         {
@@ -127,6 +138,19 @@ def test_json_repository_roundtrip(tmp_path):
     assert repository.get_alert(alert.alert_id) == alert
 
 
+def test_review_history_is_returned_newest_first(tmp_path):
+    repository = JsonFileStorageRepository(tmp_path / "metadata")
+    detection = _detection_record()
+
+    repository.upsert_detection(detection)
+    repository.create_review(_review_record())
+    repository.create_review(_newer_review_record())
+
+    reviews = repository.list_reviews(detection.detection_id)
+
+    assert [review.review_id for review in reviews] == ["rev_002", "rev_001"]
+
+
 def test_storage_service_rejects_review_for_missing_detection(tmp_path):
     service = StorageService(
         repository=InMemoryStorageRepository(),
@@ -161,6 +185,7 @@ def test_seed_development_operator_data_populates_fresh_store(tmp_path):
     assert len(service.list_detections(limit=10)) >= 3
     assert len(service.list_alerts(limit=10)) >= 2
     assert len(service.list_hotlists(limit=10)) >= 2
+    assert len(service.list_reviews("det_20260320_010001")) >= 1
 
 
 def test_seed_development_operator_data_is_idempotent(tmp_path):

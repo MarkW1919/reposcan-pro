@@ -33,6 +33,7 @@ export interface FieldSettings {
 
 export interface AlertItem {
   id: string;
+  detectionId?: string;
   plate: string;
   vehicle: string;
   colorYear: string;

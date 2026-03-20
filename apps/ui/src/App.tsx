@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
+import { startTransition, useEffect, useRef, useState, type FormEvent, type ReactElement, type ReactNode } from "react";
 
 import {
   addressScanDetections,
@@ -26,10 +26,14 @@ import {
   type WorkspaceId,
 } from "./demo-data";
 import {
+  createReview,
+  fetchReviews,
   fetchDashboardOverview,
   mapOverviewToAlertItems,
   mapOverviewToPopupHistory,
   type DashboardOverviewResponse,
+  type ReviewAction,
+  type ReviewRecord,
 } from "./live-api";
 
 const layoutStorageKey = "reposcan.ui.dashboard-layout.v1";
@@ -156,6 +160,47 @@ function formatDistance(feet: number): string {
   return `${feet} ft`;
 }
 
+function formatReviewTimestamp(timestampUtc: string): string {
+  const parsed = new Date(timestampUtc);
+  if (Number.isNaN(parsed.valueOf())) {
+    return timestampUtc;
+  }
+
+  return parsed.toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+function reviewActionLabel(action: ReviewAction): string {
+  switch (action) {
+    case "confirm":
+      return "Confirm";
+    case "correct":
+      return "Correct";
+    case "flag":
+      return "Flag";
+    case "dismiss":
+      return "Dismiss";
+  }
+}
+
+function reviewActionBadgeTone(action: ReviewAction): string {
+  switch (action) {
+    case "confirm":
+      return "badge--good";
+    case "correct":
+      return "badge--good";
+    case "flag":
+      return "badge--priority";
+    case "dismiss":
+      return "badge--muted";
+  }
+}
+
 function App() {
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceId>("dashboard");
   const [layoutEditorOpen, setLayoutEditorOpen] = useState(false);
@@ -175,11 +220,21 @@ function App() {
   const [liveOverview, setLiveOverview] = useState<DashboardOverviewResponse | null>(null);
   const [liveDataSource, setLiveDataSource] = useState<"demo" | "live" | "fallback">("demo");
   const [liveError, setLiveError] = useState<string | null>(null);
+  const [reviewHistory, setReviewHistory] = useState<ReviewRecord[]>([]);
+  const [reviewAction, setReviewAction] = useState<ReviewAction>("confirm");
+  const [reviewOperatorId, setReviewOperatorId] = useState("");
+  const [reviewCorrectedPlate, setReviewCorrectedPlate] = useState(alerts[0]?.plate ?? "");
+  const [reviewNotes, setReviewNotes] = useState("");
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [reviewSuccess, setReviewSuccess] = useState<string | null>(null);
   const previousWithinArrivalRef = useRef(false);
   const queuedLivePopupIdsRef = useRef<Set<string>>(new Set());
 
   const operatorAlerts = liveOverview ? mapOverviewToAlertItems(liveOverview, alerts) : alerts;
   const selectedAlert = operatorAlerts.find((alert) => alert.id === selectedAlertId) ?? operatorAlerts[0];
+  const selectedDetectionId = selectedAlert?.detectionId ?? null;
   const selectedCamera = cameraFeeds.find((camera) => camera.id === selectedCameraId) ?? cameraFeeds[0];
   const onlineCameraCount = cameraFeeds.filter((camera) => camera.status === "Online").length;
   const liveHealthState = liveOverview?.health.state ?? "demo";
@@ -195,6 +250,33 @@ function App() {
     : addressDetectionEnabled
       ? "General popups suppressed"
       : "Address popups disabled";
+  const reviewsEnabled = liveDataSource === "live" && selectedDetectionId !== null;
+  const latestReview = reviewHistory[0] ?? null;
+  const canSubmitReview =
+    reviewsEnabled &&
+    !reviewSubmitting &&
+    (reviewAction !== "correct" || reviewCorrectedPlate.trim().length > 0);
+
+  async function refreshOverview(signal?: AbortSignal): Promise<void> {
+    try {
+      const overview = await fetchDashboardOverview(signal);
+      if (signal?.aborted) {
+        return;
+      }
+
+      setLiveOverview(overview);
+      setLiveDataSource("live");
+      setLiveError(null);
+    } catch (error) {
+      if (signal?.aborted) {
+        return;
+      }
+
+      setLiveOverview(null);
+      setLiveDataSource("fallback");
+      setLiveError(error instanceof Error ? error.message : "Live API unavailable");
+    }
+  }
 
   useEffect(() => {
     window.localStorage.setItem(layoutStorageKey, JSON.stringify(layout));
@@ -213,41 +295,66 @@ function App() {
   }, [operatorAlerts, selectedAlertId]);
 
   useEffect(() => {
-    let disposed = false;
     const controller = new AbortController();
-
-    async function refreshOverview(): Promise<void> {
-      try {
-        const overview = await fetchDashboardOverview(controller.signal);
-        if (disposed) {
-          return;
-        }
-
-        setLiveOverview(overview);
-        setLiveDataSource("live");
-        setLiveError(null);
-      } catch (error) {
-        if (controller.signal.aborted || disposed) {
-          return;
-        }
-
-        setLiveOverview(null);
-        setLiveDataSource("fallback");
-        setLiveError(error instanceof Error ? error.message : "Live API unavailable");
-      }
-    }
-
-    refreshOverview().catch(() => undefined);
+    void refreshOverview(controller.signal);
     const interval = window.setInterval(() => {
-      refreshOverview().catch(() => undefined);
+      void refreshOverview();
     }, 15000);
 
     return () => {
-      disposed = true;
       controller.abort();
       window.clearInterval(interval);
     };
   }, []);
+
+  useEffect(() => {
+    setReviewAction("confirm");
+    setReviewCorrectedPlate(selectedAlert.plate);
+    setReviewNotes("");
+    setReviewSuccess(null);
+    setReviewError(null);
+  }, [selectedAlert.id, selectedAlert.plate]);
+
+  useEffect(() => {
+    if (!reviewsEnabled || !selectedDetectionId) {
+      setReviewHistory([]);
+      setReviewLoading(false);
+      setReviewError(null);
+      return;
+    }
+
+    let disposed = false;
+    const controller = new AbortController();
+    setReviewLoading(true);
+
+    fetchReviews(selectedDetectionId, controller.signal)
+      .then((reviews) => {
+        if (disposed) {
+          return;
+        }
+
+        setReviewHistory(reviews);
+        setReviewError(null);
+      })
+      .catch((error) => {
+        if (controller.signal.aborted || disposed) {
+          return;
+        }
+
+        setReviewHistory([]);
+        setReviewError(error instanceof Error ? error.message : "Review history unavailable");
+      })
+      .finally(() => {
+        if (!disposed) {
+          setReviewLoading(false);
+        }
+      });
+
+    return () => {
+      disposed = true;
+      controller.abort();
+    };
+  }, [reviewsEnabled, selectedDetectionId]);
 
   function dismissPopup(instanceId: string): void {
     setPopupStack((current) => current.filter((popup) => popup.instanceId !== instanceId));
@@ -426,6 +533,49 @@ function App() {
         current.profile === dashboardPresets.recovery.profile ? cloneLayout(dashboardPresets.route) : current,
       );
     });
+  }
+
+  async function handleReviewSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    if (!selectedDetectionId) {
+      return;
+    }
+
+    const normalizedCorrection = reviewCorrectedPlate.trim().toUpperCase();
+    if (reviewAction === "correct" && normalizedCorrection.length === 0) {
+      setReviewError("Corrected plate text is required when saving a correction.");
+      return;
+    }
+
+    setReviewSubmitting(true);
+    setReviewError(null);
+    setReviewSuccess(null);
+
+    try {
+      const review = await createReview(selectedDetectionId, {
+        action: reviewAction,
+        operator_id: reviewOperatorId.trim() || undefined,
+        corrected_plate_text: reviewAction === "correct" ? normalizedCorrection : undefined,
+        notes: reviewNotes.trim() || undefined,
+        reviewed_at_utc: new Date().toISOString(),
+      });
+
+      setReviewHistory((current) => [review, ...current.filter((item) => item.review_id !== review.review_id)]);
+      setReviewSuccess(
+        review.action === "correct"
+          ? `Correction saved locally as ${review.corrected_plate_text ?? normalizedCorrection}.`
+          : `${reviewActionLabel(review.action)} review saved locally.`,
+      );
+      setReviewNotes("");
+      if (review.action === "correct" && review.corrected_plate_text) {
+        setReviewCorrectedPlate(review.corrected_plate_text);
+      }
+      void refreshOverview();
+    } catch (error) {
+      setReviewError(error instanceof Error ? error.message : "Failed to save review");
+    } finally {
+      setReviewSubmitting(false);
+    }
   }
 
   function renderPanel(panelId: PanelId): ReactElement {
@@ -714,6 +864,18 @@ function App() {
                 <StatusLine label="Confidence" value={confidenceLabel(selectedAlert.confidence)} />
                 <StatusLine label="GPS" value={selectedAlert.gps} />
                 <StatusLine label="Distance" value={currentDistanceLabel} />
+                <StatusLine
+                  label="Latest review"
+                  value={
+                    reviewLoading
+                      ? "Loading..."
+                      : latestReview
+                        ? reviewActionLabel(latestReview.action)
+                        : reviewsEnabled
+                          ? "No reviews yet"
+                          : "Live API only"
+                  }
+                />
               </div>
               <div className="notes-box">
                 <label className="panel-label">Best approach</label>
@@ -722,6 +884,109 @@ function App() {
               <div className="notes-box">
                 <label className="panel-label">Field notes</label>
                 <p>{selectedAlert.notes}</p>
+              </div>
+              <div className="review-shell">
+                <div className="live-activity__header">
+                  <strong>Operator review</strong>
+                  <span>
+                    {reviewsEnabled
+                      ? "Persisted locally through the live API."
+                      : "Review submission unlocks when the live API is connected."}
+                  </span>
+                </div>
+                {reviewsEnabled ? (
+                  <>
+                    <form className="review-form" onSubmit={handleReviewSubmit}>
+                      <div className="form-grid review-form__grid">
+                        <label className="field-group">
+                          <span>Review action</span>
+                          <select
+                            value={reviewAction}
+                            onChange={(event) => setReviewAction(event.target.value as ReviewAction)}
+                          >
+                            <option value="confirm">Confirm read</option>
+                            <option value="correct">Correct read</option>
+                            <option value="flag">Flag for follow-up</option>
+                            <option value="dismiss">Dismiss hit</option>
+                          </select>
+                        </label>
+                        <label className="field-group">
+                          <span>Operator ID</span>
+                          <input
+                            className="input-control"
+                            placeholder="cab_demo_01"
+                            type="text"
+                            value={reviewOperatorId}
+                            onChange={(event) => setReviewOperatorId(event.target.value)}
+                          />
+                        </label>
+                        <label className="field-group">
+                          <span>Corrected plate</span>
+                          <input
+                            className="input-control"
+                            disabled={reviewAction !== "correct"}
+                            placeholder="Required for corrections"
+                            type="text"
+                            value={reviewCorrectedPlate}
+                            onChange={(event) => setReviewCorrectedPlate(event.target.value.toUpperCase())}
+                          />
+                        </label>
+                      </div>
+                      <label className="field-group">
+                        <span>Review notes</span>
+                        <textarea
+                          className="input-control input-control--multiline"
+                          placeholder="Add field notes, confidence callouts, or next-step guidance."
+                          value={reviewNotes}
+                          onChange={(event) => setReviewNotes(event.target.value)}
+                        />
+                      </label>
+                      {reviewError ? <div className="review-feedback review-feedback--error">{reviewError}</div> : null}
+                      {reviewSuccess ? <div className="review-feedback review-feedback--good">{reviewSuccess}</div> : null}
+                      <div className="panel-actions">
+                        <button className="button button--primary" disabled={!canSubmitReview} type="submit">
+                          {reviewSubmitting ? "Saving review..." : "Save review"}
+                        </button>
+                        <span className="panel-label">
+                          {reviewLoading ? "Loading review history..." : `${reviewHistory.length} review${reviewHistory.length === 1 ? "" : "s"} on file`}
+                        </span>
+                      </div>
+                    </form>
+                    <div className="review-history">
+                      <div className="live-activity__header">
+                        <strong>Recent review history</strong>
+                        <span>
+                          {latestReview
+                            ? `Last update ${formatReviewTimestamp(latestReview.reviewed_at_utc)}`
+                            : "No saved reviews for this detection yet."}
+                        </span>
+                      </div>
+                      {reviewHistory.length === 0 ? (
+                        <div className="review-empty">No operator reviews have been saved for this detection yet.</div>
+                      ) : (
+                        reviewHistory.slice(0, 4).map((review) => (
+                          <div key={review.review_id} className="review-row">
+                            <div className="review-row__header">
+                              <span className={`badge ${reviewActionBadgeTone(review.action)}`}>
+                                {reviewActionLabel(review.action)}
+                              </span>
+                              <span>{formatReviewTimestamp(review.reviewed_at_utc)}</span>
+                            </div>
+                            <strong>{review.corrected_plate_text ?? selectedAlert.plate}</strong>
+                            <p>
+                              {review.operator_id ? `${review.operator_id} · ` : ""}
+                              {review.notes ?? "No operator notes recorded."}
+                            </p>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div className="review-empty">
+                    Connect the live API to load local review history and save operator review actions.
+                  </div>
+                )}
               </div>
             </div>
           </PanelFrame>
