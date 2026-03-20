@@ -31,6 +31,8 @@ pythonpath = [
     "services/capture/src",
     "services/preprocessing/src",
     "services/inference/src",
+    "services/tracking/src",
+    "services/alerting/src",
 ]
 
 [tool.setuptools]

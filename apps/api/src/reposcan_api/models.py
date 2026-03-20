@@ -25,3 +25,10 @@ class ReviewSubmission(BaseModel):
         if self.action == ReviewAction.correct and not self.corrected_plate_text:
             raise ValueError("corrected_plate_text is required when action is 'correct'")
         return self
+
+
+class HotlistSubmission(BaseModel):
+    plate_text: str = Field(..., min_length=1, description="Plate text to watch for")
+    label: Optional[str] = Field(None, description="Human-readable label")
+    notes: Optional[str] = Field(None, description="Operator notes")
+    active: bool = Field(True, description="Whether this entry should be actively matched")

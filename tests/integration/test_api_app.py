@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from reposcan_contracts.alert import AlertRecord
 from reposcan_contracts.detection import DetectionRecord
+from reposcan_contracts.hotlist import HotlistEntry
 from reposcan_api import create_app
 from reposcan_storage.memory import InMemoryStorageRepository
 from reposcan_storage.service import StorageService
@@ -86,6 +88,25 @@ def test_post_review_persists_review(tmp_path):
     assert len(service.list_reviews("det_20260320_000001")) == 1
 
 
+def test_list_reviews_returns_review_history(tmp_path):
+    client, _ = _seeded_client(tmp_path)
+    client.post(
+        "/reviews/det_20260320_000001",
+        json={
+            "action": "correct",
+            "corrected_plate_text": "8XYZ999",
+            "reviewed_at_utc": "2026-03-20T04:16:00Z",
+        },
+    )
+
+    response = client.get("/reviews/det_20260320_000001")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 1
+    assert payload[0]["corrected_plate_text"] == "8XYZ999"
+
+
 def test_post_review_missing_detection_returns_404(tmp_path):
     client, _ = _seeded_client(tmp_path)
 
@@ -98,3 +119,74 @@ def test_post_review_missing_detection_returns_404(tmp_path):
     )
 
     assert response.status_code == 404
+
+
+def test_hotlist_crud_endpoints(tmp_path):
+    client, _ = _seeded_client(tmp_path)
+
+    create_response = client.post(
+        "/hotlists",
+        json={
+            "plate_text": "8abc123",
+            "label": "Case 42",
+            "notes": "Monitor vehicle",
+        },
+    )
+
+    assert create_response.status_code == 201
+    created = create_response.json()
+    assert created["plate_text"] == "8ABC123"
+
+    list_response = client.get("/hotlists")
+    assert list_response.status_code == 200
+    assert len(list_response.json()) == 1
+
+    update_response = client.put(
+        f"/hotlists/{created['entry_id']}",
+        json={
+            "plate_text": "8ABC123",
+            "label": "Case 42 Updated",
+            "notes": "Escalated",
+            "active": False,
+        },
+    )
+    assert update_response.status_code == 200
+    updated = update_response.json()
+    assert updated["label"] == "Case 42 Updated"
+    assert updated["active"] is False
+
+
+def test_alert_endpoints_return_seeded_alerts(tmp_path):
+    client, service = _seeded_client(tmp_path)
+    alert = AlertRecord.model_validate(
+        {
+            "alert_id": "alert_001",
+            "detection_id": "det_20260320_000001",
+            "hotlist_entry_id": "hl_001",
+            "timestamp_utc": "2026-03-20T04:20:00Z",
+            "camera_id": "cam_north_gate_01",
+            "matched_plate_text": "8ABC123",
+            "match_confidence": 0.93,
+            "match_type": "exact",
+            "hotlist_label": "Case 42",
+        }
+    )
+    hotlist = HotlistEntry.model_validate(
+        {
+            "entry_id": "hl_001",
+            "plate_text": "8ABC123",
+            "label": "Case 42",
+            "created_at_utc": "2026-03-20T04:00:00Z",
+            "updated_at_utc": "2026-03-20T04:00:00Z",
+        }
+    )
+    service.create_hotlist(hotlist)
+    service.store_alert(alert)
+
+    list_response = client.get("/alerts")
+    assert list_response.status_code == 200
+    assert list_response.json()[0]["alert_id"] == "alert_001"
+
+    detail_response = client.get("/alerts/alert_001")
+    assert detail_response.status_code == 200
+    assert detail_response.json()["hotlist_entry_id"] == "hl_001"

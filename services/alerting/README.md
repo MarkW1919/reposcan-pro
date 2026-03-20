@@ -2,8 +2,7 @@
 
 Evaluate detections against local hotlists and generate operator-visible alerts.
 
-Planned responsibilities:
-- exact and normalized plate matching
-- event fan-out to UI and local notifications
-- durable alert history
-
+Current Phase 4 skeleton:
+- exact and normalized hotlist matching
+- configurable alert thresholding from the pipeline config
+- alert record creation for downstream storage and UI retrieval

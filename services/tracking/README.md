@@ -2,8 +2,7 @@
 
 Maintain multi-frame association and temporal aggregation for vehicles and plate hypotheses.
 
-Planned responsibilities:
-- tracker identity management
-- OCR candidate fusion across frames
-- duplicate suppression and best-read promotion
-
+Current Phase 4 skeleton:
+- stateful multi-frame track association based on bounding-box proximity
+- OCR candidate fusion and configurable best-read promotion
+- tracked detection emission for downstream storage and alerting
