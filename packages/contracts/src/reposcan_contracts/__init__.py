@@ -10,6 +10,7 @@ from .frame import CameraProfile, FrameEnvelope, GpsSnapshot, SourceType
 from .health import DependencyHealth, HealthResponse, HealthState
 from .hotlist import HotlistEntry, HotlistMatchResult
 from .inference import AttributePredictions, InferenceCandidate, ModelVersions, PlateDetection, VehicleDetection
+from .popup import PopupActivityEvent, PopupEventType
 from .review import ReviewAction, ReviewRecord
 from .tracking import ConfidenceSummary, EvidenceRefs, TrackedDetection
 from .types import PlateMatchType, UtcTimestamp
@@ -50,6 +51,9 @@ __all__ = [
     "TrackedDetection",
     "ConfidenceSummary",
     "EvidenceRefs",
+    # popup activity
+    "PopupActivityEvent",
+    "PopupEventType",
     # shared types
     "UtcTimestamp",
     "PlateMatchType",

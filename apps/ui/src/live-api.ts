@@ -53,6 +53,25 @@ export interface DashboardHotlist {
   updated_at_utc: string;
 }
 
+export interface DashboardPopupActivityEvent {
+  event_id: string;
+  event_type: "address" | "hotlist";
+  source_record_id: string;
+  detection_id: string;
+  timestamp_utc: string;
+  camera_id: string;
+  plate_text: string | null;
+  confidence: number;
+  vehicle_color: string | null;
+  vehicle_make: string | null;
+  vehicle_model: string | null;
+  optional_vehicle_year: string | null;
+  hotlist_label: string | null;
+  gps_latitude: number | null;
+  gps_longitude: number | null;
+  note: string | null;
+}
+
 export interface DashboardOverviewResponse {
   generated_at_utc: string;
   health: HealthResponse;
@@ -64,6 +83,7 @@ export interface DashboardOverviewResponse {
   detections: DashboardDetection[];
   alerts: DashboardAlert[];
   hotlists: DashboardHotlist[];
+  popup_activity: DashboardPopupActivityEvent[];
 }
 
 function apiBaseUrl(): string {
@@ -129,6 +149,25 @@ function buildColorYearLabel(detection: DashboardDetection | undefined): string 
   return `${color} / ${year}`;
 }
 
+function buildPopupVehicleLabel(event: DashboardPopupActivityEvent): string {
+  const parts = [titleCase(event.vehicle_color), titleCase(event.vehicle_make), titleCase(event.vehicle_model)].filter(Boolean);
+  return parts.join(" ") || event.hotlist_label || "Live vehicle";
+}
+
+function buildPopupColorYearLabel(event: DashboardPopupActivityEvent): string {
+  const color = titleCase(event.vehicle_color) || "Unknown";
+  const year = event.optional_vehicle_year ?? "Live";
+  return `${color} / ${year}`;
+}
+
+function buildPopupLocationLabel(event: DashboardPopupActivityEvent): string {
+  return event.hotlist_label ?? cameraLabel(event.camera_id);
+}
+
+function buildPopupImageLabel(event: DashboardPopupActivityEvent): string {
+  return event.event_type === "hotlist" ? "Live hotlist frame" : "Live scan frame";
+}
+
 export async function fetchDashboardOverview(signal?: AbortSignal): Promise<DashboardOverviewResponse> {
   const response = await fetch(`${apiBaseUrl()}/dashboard/overview`, { signal });
   if (!response.ok) {
@@ -172,4 +211,25 @@ export function mapOverviewToAlertItems(
       bestApproach: "Use the nearest safe lane and visually confirm before engagement.",
     };
   });
+}
+
+export function mapOverviewToPopupHistory(overview: DashboardOverviewResponse) {
+  return overview.popup_activity.map((event) => ({
+    id: event.event_id,
+    type: event.event_type,
+    plate: event.plate_text,
+    vehicle: buildPopupVehicleLabel(event),
+    colorYear: buildPopupColorYearLabel(event),
+    timestamp: formatTime(event.timestamp_utc),
+    gps: formatGps(event.gps_latitude, event.gps_longitude),
+    camera: cameraLabel(event.camera_id),
+    location: buildPopupLocationLabel(event),
+    imageLabel: buildPopupImageLabel(event),
+    confidence: event.confidence,
+    note:
+      event.note ??
+      (event.event_type === "hotlist"
+        ? "Hotlist match from the live API."
+        : "General detection available from the live API."),
+  }));
 }

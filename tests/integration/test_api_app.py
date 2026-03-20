@@ -194,6 +194,26 @@ def test_alert_endpoints_return_seeded_alerts(tmp_path):
 
 def test_dashboard_overview_returns_operator_summary(tmp_path):
     client, service = _seeded_client(tmp_path)
+    service.store_detection(
+        DetectionRecord.model_validate(
+            {
+                "detection_id": "det_20260320_000002",
+                "timestamp_utc": "2026-03-20T04:22:00Z",
+                "camera_id": "cam_lot_east_03",
+                "gps_latitude": 37.42061,
+                "gps_longitude": -122.08155,
+                "plate_text": "9XCA441",
+                "plate_confidence": 0.86,
+                "vehicle_bbox": {"x": 404, "y": 218, "w": 314, "h": 186},
+                "image_path": "media/frames/cam_lot_east_03/frame_000644.jpg",
+                "frame_number": 644,
+                "vehicle_color": "gray",
+                "vehicle_make": "honda",
+                "vehicle_model": "accord",
+                "optional_vehicle_year": "2017-2020",
+            }
+        )
+    )
     hotlist = HotlistEntry.model_validate(
         {
             "entry_id": "hl_002",
@@ -223,10 +243,14 @@ def test_dashboard_overview_returns_operator_summary(tmp_path):
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["counts"]["recent_detections"] == 1
+    assert payload["counts"]["recent_detections"] == 2
     assert payload["counts"]["active_alerts"] == 1
     assert payload["counts"]["active_hotlists"] == 1
     assert payload["health"]["service"] == "api"
     assert payload["alerts"][0]["alert_id"] == "alert_002"
-    assert payload["detections"][0]["detection_id"] == "det_20260320_000001"
+    assert payload["detections"][0]["detection_id"] == "det_20260320_000002"
     assert payload["hotlists"][0]["entry_id"] == "hl_002"
+    assert payload["popup_activity"][0]["event_type"] == "address"
+    assert payload["popup_activity"][0]["source_record_id"] == "det_20260320_000002"
+    assert payload["popup_activity"][1]["event_type"] == "hotlist"
+    assert payload["popup_activity"][1]["source_record_id"] == "alert_002"

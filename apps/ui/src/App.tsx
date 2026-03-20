@@ -25,10 +25,16 @@ import {
   type SlotId,
   type WorkspaceId,
 } from "./demo-data";
-import { fetchDashboardOverview, mapOverviewToAlertItems, type DashboardOverviewResponse } from "./live-api";
+import {
+  fetchDashboardOverview,
+  mapOverviewToAlertItems,
+  mapOverviewToPopupHistory,
+  type DashboardOverviewResponse,
+} from "./live-api";
 
 const layoutStorageKey = "reposcan.ui.dashboard-layout.v1";
 const settingsStorageKey = "reposcan.ui.field-settings.v1";
+const defaultPopupHistory: DetectionPopupEvent[] = [hotlistPopupDetections[0], addressScanDetections[0]];
 
 interface PopupNotification extends DetectionPopupEvent {
   instanceId: string;
@@ -163,16 +169,14 @@ function App() {
   const [addressDetectionEnabled, setAddressDetectionEnabled] = useState(true);
   const [currentDistanceFeet, setCurrentDistanceFeet] = useState(1400);
   const [popupStack, setPopupStack] = useState<PopupNotification[]>([]);
-  const [popupHistory, setPopupHistory] = useState<DetectionPopupEvent[]>([
-    hotlistPopupDetections[0],
-    addressScanDetections[0],
-  ]);
+  const [popupHistory, setPopupHistory] = useState<DetectionPopupEvent[]>(defaultPopupHistory);
   const [addressPopupIndex, setAddressPopupIndex] = useState(0);
   const [hotlistPopupIndex, setHotlistPopupIndex] = useState(0);
   const [liveOverview, setLiveOverview] = useState<DashboardOverviewResponse | null>(null);
   const [liveDataSource, setLiveDataSource] = useState<"demo" | "live" | "fallback">("demo");
   const [liveError, setLiveError] = useState<string | null>(null);
   const previousWithinArrivalRef = useRef(false);
+  const queuedLivePopupIdsRef = useRef<Set<string>>(new Set());
 
   const operatorAlerts = liveOverview ? mapOverviewToAlertItems(liveOverview, alerts) : alerts;
   const selectedAlert = operatorAlerts.find((alert) => alert.id === selectedAlertId) ?? operatorAlerts[0];
@@ -249,15 +253,18 @@ function App() {
     setPopupStack((current) => current.filter((popup) => popup.instanceId !== instanceId));
   }
 
-  function queuePopup(event: DetectionPopupEvent): void {
+  function queuePopup(event: DetectionPopupEvent, options?: { updateHistory?: boolean }): void {
     const instanceId = `${event.id}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const popup: PopupNotification = {
       ...event,
       instanceId,
     };
+    const updateHistory = options?.updateHistory ?? true;
 
     setPopupStack((current) => [popup, ...current].slice(0, 4));
-    setPopupHistory((current) => [event, ...current.filter((item) => item.id !== event.id)].slice(0, 6));
+    if (updateHistory) {
+      setPopupHistory((current) => [event, ...current.filter((item) => item.id !== event.id)].slice(0, 6));
+    }
 
     window.setTimeout(() => {
       setPopupStack((current) => current.filter((item) => item.instanceId !== instanceId));
@@ -281,6 +288,38 @@ function App() {
   }, [withinArrivalRadius]);
 
   useEffect(() => {
+    if (!liveOverview) {
+      setPopupHistory(defaultPopupHistory);
+      return;
+    }
+
+    const livePopupActivity = mapOverviewToPopupHistory(liveOverview);
+    const visibleLivePopupActivity = livePopupActivity.filter(
+      (event) => generalPopupsLive || event.type === "hotlist",
+    );
+
+    if (visibleLivePopupActivity.length === 0) {
+      setPopupHistory([]);
+      return;
+    }
+
+    setPopupHistory(visibleLivePopupActivity);
+
+    for (const event of [...visibleLivePopupActivity].reverse()) {
+      if (queuedLivePopupIdsRef.current.has(event.id)) {
+        continue;
+      }
+
+      queuePopup(event, { updateHistory: false });
+      queuedLivePopupIdsRef.current.add(event.id);
+    }
+  }, [generalPopupsLive, liveOverview]);
+
+  useEffect(() => {
+    if (liveOverview) {
+      return;
+    }
+
     const kickoff = window.setTimeout(() => {
       setHotlistPopupIndex((index) => {
         queuePopup(hotlistPopupDetections[index]);
@@ -299,10 +338,10 @@ function App() {
       window.clearTimeout(kickoff);
       window.clearInterval(interval);
     };
-  }, []);
+  }, [liveOverview]);
 
   useEffect(() => {
-    if (!generalPopupsLive) {
+    if (liveOverview || !generalPopupsLive) {
       return;
     }
 
@@ -324,7 +363,7 @@ function App() {
       window.clearTimeout(kickoff);
       window.clearInterval(interval);
     };
-  }, [generalPopupsLive]);
+  }, [generalPopupsLive, liveOverview]);
 
   function selectWorkspace(nextWorkspace: WorkspaceId): void {
     startTransition(() => {
@@ -624,7 +663,17 @@ function App() {
                 <strong>Live popup activity</strong>
                 <span>{generalPopupsLive ? "Address scan and hotlist popups are flowing." : "Only hotlist popups are unsuppressed."}</span>
               </div>
-              {popupHistory.map((event) => (
+              {popupHistory.length === 0 ? (
+                <div className="live-activity__row">
+                  <span className="badge badge--outlined">Idle</span>
+                  <div>
+                    <strong>No active popup events</strong>
+                    <p>Waiting for the next unsuppressed live event.</p>
+                  </div>
+                  <span>Live</span>
+                </div>
+              ) : (
+                popupHistory.map((event) => (
                 <div key={event.id} className="live-activity__row">
                   <span className={`badge ${event.type === "hotlist" ? "badge--critical" : "badge--priority"}`}>
                     {detectionPopupTypeLabels[event.type]}
@@ -637,7 +686,8 @@ function App() {
                   </div>
                   <span>{event.timestamp}</span>
                 </div>
-              ))}
+                ))
+              )}
             </div>
           </PanelFrame>
         );

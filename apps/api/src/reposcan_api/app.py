@@ -12,6 +12,7 @@ from reposcan_contracts.alert import AlertRecord, AlertStatus
 from reposcan_contracts.detection import DetectionRecord
 from reposcan_contracts.health import HealthResponse, HealthState
 from reposcan_contracts.hotlist import HotlistEntry
+from reposcan_contracts.popup import PopupActivityEvent, PopupEventType
 from reposcan_contracts.review import ReviewRecord
 from reposcan_storage.service import (
     DetectionNotFoundError,
@@ -25,6 +26,82 @@ from .models import DashboardCounts, DashboardOverview, HotlistSubmission, Revie
 
 def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _best_detection_confidence(detection: DetectionRecord) -> float:
+    if detection.plate_confidence is not None:
+        return detection.plate_confidence
+    if detection.plate_candidates:
+        return max(candidate.confidence for candidate in detection.plate_candidates)
+    return 0.0
+
+
+def _build_address_popup_note(detection: DetectionRecord) -> str:
+    if detection.plate_text:
+        return "General detection is ready to surface when active scan mode is enabled."
+    return "Vehicle detection is available, but the best plate read is still pending or occluded."
+
+
+def _build_popup_activity(
+    *,
+    detections: list[DetectionRecord],
+    alerts: list[AlertRecord],
+    limit: int,
+) -> list[PopupActivityEvent]:
+    detections_by_id = {record.detection_id: record for record in detections}
+    alert_detection_ids: set[str] = set()
+    events: list[PopupActivityEvent] = []
+
+    for alert in alerts:
+        detection = detections_by_id.get(alert.detection_id)
+        events.append(
+            PopupActivityEvent(
+                event_id=f"popup_{alert.alert_id}",
+                event_type=PopupEventType.hotlist,
+                source_record_id=alert.alert_id,
+                detection_id=alert.detection_id,
+                timestamp_utc=alert.timestamp_utc,
+                camera_id=alert.camera_id,
+                plate_text=alert.matched_plate_text,
+                confidence=alert.match_confidence,
+                vehicle_color=detection.vehicle_color if detection is not None else None,
+                vehicle_make=detection.vehicle_make if detection is not None else None,
+                vehicle_model=detection.vehicle_model if detection is not None else None,
+                optional_vehicle_year=detection.optional_vehicle_year if detection is not None else None,
+                hotlist_label=alert.hotlist_label,
+                gps_latitude=alert.gps_latitude if alert.gps_latitude is not None else detection.gps_latitude if detection is not None else None,
+                gps_longitude=alert.gps_longitude if alert.gps_longitude is not None else detection.gps_longitude if detection is not None else None,
+                note=alert.notes,
+            )
+        )
+        alert_detection_ids.add(alert.detection_id)
+
+    for detection in detections:
+        if detection.detection_id in alert_detection_ids:
+            continue
+
+        events.append(
+            PopupActivityEvent(
+                event_id=f"popup_{detection.detection_id}",
+                event_type=PopupEventType.address,
+                source_record_id=detection.detection_id,
+                detection_id=detection.detection_id,
+                timestamp_utc=detection.timestamp_utc,
+                camera_id=detection.camera_id,
+                plate_text=detection.plate_text,
+                confidence=_best_detection_confidence(detection),
+                vehicle_color=detection.vehicle_color,
+                vehicle_make=detection.vehicle_make,
+                vehicle_model=detection.vehicle_model,
+                optional_vehicle_year=detection.optional_vehicle_year,
+                gps_latitude=detection.gps_latitude,
+                gps_longitude=detection.gps_longitude,
+                note=_build_address_popup_note(detection),
+            )
+        )
+
+    events.sort(key=lambda event: event.timestamp_utc, reverse=True)
+    return events[:limit]
 
 
 def create_app(storage_service: StorageService | None = None) -> FastAPI:
@@ -69,6 +146,7 @@ def create_app(storage_service: StorageService | None = None) -> FastAPI:
         hotlists = service.list_hotlists(limit=limit)
         active_alerts = service.list_alerts(status=AlertStatus.active, limit=500)
         active_hotlists = service.list_hotlists(active_only=True, limit=500)
+        popup_activity = _build_popup_activity(detections=detections, alerts=alerts, limit=limit)
         return DashboardOverview(
             generated_at_utc=_utcnow(),
             health=build_health_response(),
@@ -80,6 +158,7 @@ def create_app(storage_service: StorageService | None = None) -> FastAPI:
             detections=detections,
             alerts=alerts,
             hotlists=hotlists,
+            popup_activity=popup_activity,
         )
 
     @app.get("/detections", response_model=list[DetectionRecord])

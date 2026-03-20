@@ -10,6 +10,7 @@ from reposcan_contracts.alert import AlertRecord
 from reposcan_contracts.detection import DetectionRecord
 from reposcan_contracts.health import HealthResponse
 from reposcan_contracts.hotlist import HotlistEntry
+from reposcan_contracts.popup import PopupActivityEvent
 from reposcan_contracts.review import ReviewAction
 from reposcan_contracts.types import UtcTimestamp
 
@@ -51,3 +52,4 @@ class DashboardOverview(BaseModel):
     detections: list[DetectionRecord]
     alerts: list[AlertRecord]
     hotlists: list[HotlistEntry]
+    popup_activity: list[PopupActivityEvent]

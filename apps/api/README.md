@@ -6,7 +6,7 @@ Current integrated slice:
 - FastAPI app factory in `src/reposcan_api/app.py`
 - ASGI entrypoint in `src/reposcan_api/main.py`
 - health endpoint at `GET /health`
-- dashboard overview endpoint at `GET /dashboard/overview`
+- dashboard overview endpoint at `GET /dashboard/overview` with recent popup activity for the operator UI
 - read-only detection endpoints at `GET /detections` and `GET /detections/{id}`
 - review endpoints at `POST /reviews/{id}` and `GET /reviews/{id}`
 - alert endpoints at `GET /alerts` and `GET /alerts/{id}`
