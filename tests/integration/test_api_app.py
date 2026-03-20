@@ -190,3 +190,43 @@ def test_alert_endpoints_return_seeded_alerts(tmp_path):
     detail_response = client.get("/alerts/alert_001")
     assert detail_response.status_code == 200
     assert detail_response.json()["hotlist_entry_id"] == "hl_001"
+
+
+def test_dashboard_overview_returns_operator_summary(tmp_path):
+    client, service = _seeded_client(tmp_path)
+    hotlist = HotlistEntry.model_validate(
+        {
+            "entry_id": "hl_002",
+            "plate_text": "6BZN220",
+            "label": "Marina tow-ready",
+            "created_at_utc": "2026-03-20T04:00:00Z",
+            "updated_at_utc": "2026-03-20T04:00:00Z",
+        }
+    )
+    alert = AlertRecord.model_validate(
+        {
+            "alert_id": "alert_002",
+            "detection_id": "det_20260320_000001",
+            "hotlist_entry_id": "hl_002",
+            "timestamp_utc": "2026-03-20T04:21:00Z",
+            "camera_id": "cam_north_gate_01",
+            "matched_plate_text": "6BZN220",
+            "match_confidence": 0.95,
+            "match_type": "exact",
+            "hotlist_label": "Marina tow-ready",
+        }
+    )
+    service.create_hotlist(hotlist)
+    service.store_alert(alert)
+
+    response = client.get("/dashboard/overview")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["counts"]["recent_detections"] == 1
+    assert payload["counts"]["active_alerts"] == 1
+    assert payload["counts"]["active_hotlists"] == 1
+    assert payload["health"]["service"] == "api"
+    assert payload["alerts"][0]["alert_id"] == "alert_002"
+    assert payload["detections"][0]["detection_id"] == "det_20260320_000001"
+    assert payload["hotlists"][0]["entry_id"] == "hl_002"

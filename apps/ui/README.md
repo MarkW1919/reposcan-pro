@@ -8,4 +8,9 @@ Current preview slice:
 - browser-persisted layout presets for map, camera, alert feed, and target-card placement
 - address-based scan mode with arrival-radius activation, operator override, and demo popup alerts
 - always-on hotlist popup behavior that stays active regardless of navigation or address-scan state
+- live API overview integration with graceful fallback to local demo data when the backend is offline
 - demo-friendly repo workflows while backend and hardware integration continue
+
+Local development notes:
+- the UI will try `http://127.0.0.1:8000/dashboard/overview` by default
+- set `VITE_API_BASE_URL` if the API is running elsewhere

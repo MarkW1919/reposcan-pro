@@ -5,14 +5,14 @@ RepoScan Pro is a fresh-build repository for a field-grade, edge-first vehicle i
 ## Current Repository Phase
 
 This repository currently contains:
-- the Claude operating contract and project memory
-- specialist agent briefs and reusable skills
-- the core design and requirements documents
-- a monorepo scaffold for future API, UI, service, and ML code
-- local bootstrap and validation scripts
+- shared contracts and config loaders
+- local-first storage, alert, review, sync, and profiling service foundations
+- FastAPI endpoints for health, detections, alerts, reviews, hotlists, and dashboard overview
+- a cab-first React operator UI with live-API fallback to local demo data
+- bootstrap, build, and validation scripts for the current integrated slice
 
-The design-first scaffold is complete enough to begin implementation as of March 20, 2026.
-The first implementation pass should follow [Build Kickoff](docs/BUILD_KICKOFF.md) and remain inside Phase 1 of the [Implementation Blueprint](docs/IMPLEMENTATION_BLUEPRINT.md).
+The design-first scaffold has already been turned into a working implementation foundation.
+The current focus is post-blueprint integration and demo readiness rather than returning to Phase 1 setup work.
 
 ## Mission Snapshot
 
@@ -90,7 +90,9 @@ reposcan-pro/
 2. Open [RepoScan Pro.code-workspace](RepoScan Pro.code-workspace) in VS Code or run [Open RepoScan Pro Dev.cmd](Open RepoScan Pro Dev.cmd)
 3. Review [CLAUDE.md](CLAUDE.md) and the documents under [docs](docs)
 4. Run `powershell -ExecutionPolicy Bypass -File .\scripts\check.ps1`
-5. Begin implementation with [Build Kickoff](docs/BUILD_KICKOFF.md) and Phase 1 of the [Implementation Blueprint](docs/IMPLEMENTATION_BLUEPRINT.md)
+5. Start the API with `npm run api:dev`
+6. Start the UI with `npm run ui:dev`
+7. Use the manual demo checklist in [tests/manual/demo_vertical_slice.md](tests/manual/demo_vertical_slice.md)
 
 ## Desktop Launcher
 
@@ -115,19 +117,14 @@ Both point back to the repo-owned workspace and launcher files so the setup stay
 
 ## Claude Build Prompt
 
-Use this prompt inside the repository to begin the build:
+Use this prompt inside the repository to continue implementation from the current integrated state:
 
 ```text
-Read CLAUDE.md, docs/BUILD_KICKOFF.md, docs/IMPLEMENTATION_BLUEPRINT.md, and docs/API_CONTRACTS.md.
+Read CLAUDE.md, docs/IMPLEMENTATION_BLUEPRINT.md, docs/API_CONTRACTS.md, and the current repo state.
 
-Begin implementation now.
+Continue the next implementation slice now.
 
-Limit the first pass to Phase 1 foundations:
-- shared contracts in packages/contracts/src
-- config schemas, examples, and loaders under configs/
-- tests that validate contract and config behavior
-
-Do not build inference, OCR, tracking, or UI features yet unless they are strictly needed to support the contract or config foundation.
+Do not rebuild completed foundations. Prefer live integration, seeded demo readiness, operator workflow completion, test coverage, and manual field-test documentation.
 ```
 
 ## Version Control And Artifact Policy

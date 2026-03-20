@@ -2,14 +2,16 @@
 
 Host the external control and query surface for RepoScan Pro.
 
-Current Phase 4 skeleton:
+Current integrated slice:
 - FastAPI app factory in `src/reposcan_api/app.py`
 - ASGI entrypoint in `src/reposcan_api/main.py`
 - health endpoint at `GET /health`
+- dashboard overview endpoint at `GET /dashboard/overview`
 - read-only detection endpoints at `GET /detections` and `GET /detections/{id}`
 - review endpoints at `POST /reviews/{id}` and `GET /reviews/{id}`
 - alert endpoints at `GET /alerts` and `GET /alerts/{id}`
 - hotlist endpoints at `GET /hotlists`, `POST /hotlists`, and `PUT /hotlists/{id}`
+- seeded development storage for a live local UI demo path
 
 Design rules:
 - remain decoupled from camera and inference internals

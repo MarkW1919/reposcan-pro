@@ -1,5 +1,6 @@
 """RepoScan Pro storage service primitives."""
 
+from .dev_seed import seed_development_operator_data
 from .json_store import JsonFileStorageRepository
 from .layout import MediaLayout, ensure_media_layout
 from .memory import InMemoryStorageRepository
@@ -21,4 +22,5 @@ __all__ = [
     "StorageService",
     "create_development_storage_service",
     "ensure_media_layout",
+    "seed_development_operator_data",
 ]

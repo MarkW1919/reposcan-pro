@@ -6,6 +6,10 @@ from typing import Optional
 
 from pydantic import BaseModel, Field, model_validator
 
+from reposcan_contracts.alert import AlertRecord
+from reposcan_contracts.detection import DetectionRecord
+from reposcan_contracts.health import HealthResponse
+from reposcan_contracts.hotlist import HotlistEntry
 from reposcan_contracts.review import ReviewAction
 from reposcan_contracts.types import UtcTimestamp
 
@@ -32,3 +36,18 @@ class HotlistSubmission(BaseModel):
     label: Optional[str] = Field(None, description="Human-readable label")
     notes: Optional[str] = Field(None, description="Operator notes")
     active: bool = Field(True, description="Whether this entry should be actively matched")
+
+
+class DashboardCounts(BaseModel):
+    active_alerts: int = Field(..., ge=0)
+    recent_detections: int = Field(..., ge=0)
+    active_hotlists: int = Field(..., ge=0)
+
+
+class DashboardOverview(BaseModel):
+    generated_at_utc: UtcTimestamp = Field(..., description="Overview generation timestamp")
+    health: HealthResponse
+    counts: DashboardCounts
+    detections: list[DetectionRecord]
+    alerts: list[AlertRecord]
+    hotlists: list[HotlistEntry]

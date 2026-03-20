@@ -10,6 +10,7 @@ from reposcan_contracts.tracking import TrackedDetection
 from reposcan_storage.json_store import JsonFileStorageRepository
 from reposcan_storage.memory import InMemoryStorageRepository
 from reposcan_storage.service import DetectionNotFoundError, StorageService
+from reposcan_storage.dev_seed import seed_development_operator_data
 
 
 def _detection_record() -> DetectionRecord:
@@ -147,3 +148,30 @@ def test_storage_service_stores_tracked_detection(tmp_path):
     assert detection.plate_text == "8ABC123"
     assert detection.vehicle_model == "camry"
     assert service.get_detection(detection.detection_id) == detection
+
+
+def test_seed_development_operator_data_populates_fresh_store(tmp_path):
+    service = StorageService(
+        repository=InMemoryStorageRepository(),
+        media_root=tmp_path / "media",
+    )
+
+    seed_development_operator_data(service)
+
+    assert len(service.list_detections(limit=10)) >= 3
+    assert len(service.list_alerts(limit=10)) >= 2
+    assert len(service.list_hotlists(limit=10)) >= 2
+
+
+def test_seed_development_operator_data_is_idempotent(tmp_path):
+    service = StorageService(
+        repository=InMemoryStorageRepository(),
+        media_root=tmp_path / "media",
+    )
+
+    seed_development_operator_data(service)
+    first_detection_ids = [record.detection_id for record in service.list_detections(limit=10)]
+    seed_development_operator_data(service)
+    second_detection_ids = [record.detection_id for record in service.list_detections(limit=10)]
+
+    assert second_detection_ids == first_detection_ids

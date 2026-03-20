@@ -15,6 +15,7 @@ from reposcan_contracts.tracking import TrackedDetection
 from .json_store import JsonFileStorageRepository
 from .layout import MediaLayout, ensure_media_layout
 from .repository import StorageRepository
+from .dev_seed import seed_development_operator_data
 
 
 class DetectionNotFoundError(KeyError):
@@ -142,7 +143,9 @@ def create_development_storage_service(
 ) -> StorageService:
     deployment = load_deployment_config(deployment_config_path)
     repository = JsonFileStorageRepository(metadata_root)
-    return StorageService(
+    service = StorageService(
         repository=repository,
         media_root=deployment.infrastructure.media_root,
     )
+    seed_development_operator_data(service)
+    return service

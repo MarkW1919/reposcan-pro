@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Query, status
+from fastapi.middleware.cors import CORSMiddleware
 
 from reposcan_contracts.alert import AlertRecord, AlertStatus
 from reposcan_contracts.detection import DetectionRecord
@@ -19,7 +20,7 @@ from reposcan_storage.service import (
     create_development_storage_service,
 )
 
-from .models import HotlistSubmission, ReviewSubmission
+from .models import DashboardCounts, DashboardOverview, HotlistSubmission, ReviewSubmission
 
 
 def _utcnow() -> str:
@@ -32,12 +33,21 @@ def create_app(storage_service: StorageService | None = None) -> FastAPI:
     app = FastAPI(
         title="RepoScan Pro API",
         version="0.1.0",
-        description="Phase 4 API skeleton for local health, detections, reviews, alerts, and hotlist management.",
+        description="Edge-first API for health, detections, reviews, alerts, hotlists, and dashboard overview.",
+    )
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[
+            "http://127.0.0.1:4173",
+            "http://localhost:4173",
+        ],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
     app.state.storage_service = service
 
-    @app.get("/health", response_model=HealthResponse)
-    def get_health() -> HealthResponse:
+    def build_health_response() -> HealthResponse:
         dependencies = service.dependency_health()
         state = HealthState.ok if all(dep.state == HealthState.ok for dep in dependencies) else HealthState.degraded
         return HealthResponse(
@@ -46,6 +56,30 @@ def create_app(storage_service: StorageService | None = None) -> FastAPI:
             state=state,
             timestamp_utc=_utcnow(),
             dependencies=dependencies,
+        )
+
+    @app.get("/health", response_model=HealthResponse)
+    def get_health() -> HealthResponse:
+        return build_health_response()
+
+    @app.get("/dashboard/overview", response_model=DashboardOverview)
+    def get_dashboard_overview(limit: int = Query(default=20, ge=1, le=100)) -> DashboardOverview:
+        detections = service.list_detections(limit=limit)
+        alerts = service.list_alerts(limit=limit)
+        hotlists = service.list_hotlists(limit=limit)
+        active_alerts = service.list_alerts(status=AlertStatus.active, limit=500)
+        active_hotlists = service.list_hotlists(active_only=True, limit=500)
+        return DashboardOverview(
+            generated_at_utc=_utcnow(),
+            health=build_health_response(),
+            counts=DashboardCounts(
+                active_alerts=len(active_alerts),
+                recent_detections=len(detections),
+                active_hotlists=len(active_hotlists),
+            ),
+            detections=detections,
+            alerts=alerts,
+            hotlists=hotlists,
         )
 
     @app.get("/detections", response_model=list[DetectionRecord])

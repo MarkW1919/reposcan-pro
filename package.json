@@ -15,6 +15,7 @@
   "scripts": {
     "bootstrap": "powershell -ExecutionPolicy Bypass -File ./scripts/bootstrap.ps1",
     "check": "powershell -ExecutionPolicy Bypass -File ./scripts/check.ps1",
+    "api:dev": "set PYTHONPATH=packages/contracts/src;apps/api/src;services/storage/src && .\\.venv\\Scripts\\python.exe -m uvicorn reposcan_api.main:app --reload",
     "ui:dev": "npm --workspace apps/ui run dev",
     "ui:build": "npm --workspace apps/ui run build"
   }

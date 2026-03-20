@@ -25,6 +25,7 @@ import {
   type SlotId,
   type WorkspaceId,
 } from "./demo-data";
+import { fetchDashboardOverview, mapOverviewToAlertItems, type DashboardOverviewResponse } from "./live-api";
 
 const layoutStorageKey = "reposcan.ui.dashboard-layout.v1";
 const settingsStorageKey = "reposcan.ui.field-settings.v1";
@@ -168,11 +169,18 @@ function App() {
   ]);
   const [addressPopupIndex, setAddressPopupIndex] = useState(0);
   const [hotlistPopupIndex, setHotlistPopupIndex] = useState(0);
+  const [liveOverview, setLiveOverview] = useState<DashboardOverviewResponse | null>(null);
+  const [liveDataSource, setLiveDataSource] = useState<"demo" | "live" | "fallback">("demo");
+  const [liveError, setLiveError] = useState<string | null>(null);
   const previousWithinArrivalRef = useRef(false);
 
-  const selectedAlert = alerts.find((alert) => alert.id === selectedAlertId) ?? alerts[0];
+  const operatorAlerts = liveOverview ? mapOverviewToAlertItems(liveOverview, alerts) : alerts;
+  const selectedAlert = operatorAlerts.find((alert) => alert.id === selectedAlertId) ?? operatorAlerts[0];
   const selectedCamera = cameraFeeds.find((camera) => camera.id === selectedCameraId) ?? cameraFeeds[0];
   const onlineCameraCount = cameraFeeds.filter((camera) => camera.status === "Online").length;
+  const liveHealthState = liveOverview?.health.state ?? "demo";
+  const activeHotlistCount = liveOverview?.counts.active_hotlists ?? 0;
+  const activeAlertCount = liveOverview?.counts.active_alerts ?? operatorAlerts.filter((alert) => alert.severity === "critical").length;
   const withinArrivalRadius = navigationActive && currentDistanceFeet <= fieldSettings.arrivalTriggerDistance;
   const activeScanMode = withinArrivalRadius;
   const generalPopupsLive = navigationActive && addressDetectionEnabled && withinArrivalRadius;
@@ -191,6 +199,51 @@ function App() {
   useEffect(() => {
     window.localStorage.setItem(settingsStorageKey, JSON.stringify(fieldSettings));
   }, [fieldSettings]);
+
+  useEffect(() => {
+    if (operatorAlerts.some((alert) => alert.id === selectedAlertId)) {
+      return;
+    }
+
+    setSelectedAlertId(operatorAlerts[0]?.id ?? "");
+  }, [operatorAlerts, selectedAlertId]);
+
+  useEffect(() => {
+    let disposed = false;
+    const controller = new AbortController();
+
+    async function refreshOverview(): Promise<void> {
+      try {
+        const overview = await fetchDashboardOverview(controller.signal);
+        if (disposed) {
+          return;
+        }
+
+        setLiveOverview(overview);
+        setLiveDataSource("live");
+        setLiveError(null);
+      } catch (error) {
+        if (controller.signal.aborted || disposed) {
+          return;
+        }
+
+        setLiveOverview(null);
+        setLiveDataSource("fallback");
+        setLiveError(error instanceof Error ? error.message : "Live API unavailable");
+      }
+    }
+
+    refreshOverview().catch(() => undefined);
+    const interval = window.setInterval(() => {
+      refreshOverview().catch(() => undefined);
+    }, 15000);
+
+    return () => {
+      disposed = true;
+      controller.abort();
+      window.clearInterval(interval);
+    };
+  }, []);
 
   function dismissPopup(instanceId: string): void {
     setPopupStack((current) => current.filter((popup) => popup.instanceId !== instanceId));
@@ -467,7 +520,7 @@ function App() {
               <div className="map-route map-route--one" />
               <div className="map-route map-route--two" />
               <div className="map-arrival-ring" />
-              {alerts.map((alert, index) => (
+              {operatorAlerts.map((alert, index) => (
                 <button
                   key={alert.id}
                   className={`map-marker map-marker--${severityTone(alert.severity)} ${
@@ -548,7 +601,7 @@ function App() {
                 <span>Location</span>
                 <span>Action</span>
               </div>
-              {alerts.map((alert) => (
+              {operatorAlerts.map((alert) => (
                 <button
                   key={alert.id}
                   className={`alert-row ${alert.id === selectedAlert.id ? "is-selected" : ""}`}
@@ -1004,8 +1057,14 @@ function App() {
       </section>
 
       <section className="mode-banner">
-        <span className="badge badge--outlined">Demo data only</span>
+        <span className={`badge ${liveDataSource === "live" ? "badge--good" : "badge--outlined"}`}>
+          {liveDataSource === "live" ? "Live API connected" : liveDataSource === "fallback" ? "Demo fallback" : "Demo data only"}
+        </span>
         <span>Profile: {layout.profile}</span>
+        <span>API health: {liveHealthState}</span>
+        <span>
+          Active alerts: {activeAlertCount} / Active hotlists: {liveOverview ? activeHotlistCount : "demo"}
+        </span>
         <span>
           {generalPopupsLive
             ? "Inside the destination radius. Address-based detections are surfacing as popup alerts."
@@ -1014,6 +1073,7 @@ function App() {
               : "Outside the destination radius. General detections stay in the background until the operator enters the arrival ring."}
         </span>
         <span>Hotlist matches remain high-priority and never suppressed.</span>
+        {liveError ? <span>{liveError}</span> : null}
       </section>
 
       {popupStack.length > 0 ? (
