@@ -24,7 +24,14 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["packages/contracts/src", "apps/api/src", "services/storage/src"]
+pythonpath = [
+    "packages/contracts/src",
+    "apps/api/src",
+    "services/storage/src",
+    "services/capture/src",
+    "services/preprocessing/src",
+    "services/inference/src",
+]
 
 [tool.setuptools]
 py-modules = []
