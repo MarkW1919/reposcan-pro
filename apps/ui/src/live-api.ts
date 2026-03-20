@@ -73,6 +73,13 @@ export interface DashboardHotlist {
   updated_at_utc: string;
 }
 
+export interface HotlistSubmission {
+  plate_text: string;
+  label?: string;
+  notes?: string;
+  active: boolean;
+}
+
 export interface DashboardPopupActivityEvent {
   event_id: string;
   event_type: "address" | "hotlist";
@@ -194,6 +201,42 @@ export async function fetchDashboardOverview(signal?: AbortSignal): Promise<Dash
     throw new Error(`Failed to load dashboard overview (${response.status})`);
   }
   return (await response.json()) as DashboardOverviewResponse;
+}
+
+export async function fetchHotlists(signal?: AbortSignal): Promise<DashboardHotlist[]> {
+  const response = await fetch(`${apiBaseUrl()}/hotlists?limit=100`, { signal });
+  if (!response.ok) {
+    throw new Error(`Failed to load hotlists (${response.status})`);
+  }
+  return (await response.json()) as DashboardHotlist[];
+}
+
+export async function createHotlist(submission: HotlistSubmission): Promise<DashboardHotlist> {
+  const response = await fetch(`${apiBaseUrl()}/hotlists`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(submission),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to save hotlist (${response.status})`);
+  }
+  return (await response.json()) as DashboardHotlist;
+}
+
+export async function updateHotlist(entryId: string, submission: HotlistSubmission): Promise<DashboardHotlist> {
+  const response = await fetch(`${apiBaseUrl()}/hotlists/${encodeURIComponent(entryId)}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(submission),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to update hotlist (${response.status})`);
+  }
+  return (await response.json()) as DashboardHotlist;
 }
 
 export async function fetchReviews(detectionId: string, signal?: AbortSignal): Promise<ReviewRecord[]> {

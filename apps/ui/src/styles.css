@@ -841,7 +841,8 @@ textarea.input-control {
 }
 
 .review-shell,
-.review-history {
+.review-history,
+.hotlist-manager {
   display: grid;
   gap: 14px;
   padding: 14px 16px;
@@ -853,6 +854,11 @@ textarea.input-control {
 .review-form {
   display: grid;
   gap: 14px;
+}
+
+.hotlist-list {
+  display: grid;
+  gap: 10px;
 }
 
 .review-form__grid {
@@ -897,6 +903,35 @@ textarea.input-control {
 }
 
 .review-row p {
+  color: var(--muted);
+}
+
+.hotlist-row {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(126, 155, 206, 0.14);
+  background: rgba(17, 28, 51, 0.76);
+  color: var(--text);
+  text-align: left;
+}
+
+.hotlist-row.is-selected {
+  border-color: rgba(119, 168, 255, 0.42);
+  background: rgba(30, 48, 86, 0.88);
+}
+
+.hotlist-row__header,
+.hotlist-row__meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.hotlist-row p,
+.hotlist-row__meta {
   color: var(--muted);
 }
 
@@ -1009,7 +1044,9 @@ textarea.input-control {
   }
 
   .live-activity__header,
-  .review-row__header {
+  .review-row__header,
+  .hotlist-row__header,
+  .hotlist-row__meta {
     flex-direction: column;
   }
 

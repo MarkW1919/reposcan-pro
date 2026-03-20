@@ -8,7 +8,7 @@ This repository currently contains:
 - shared contracts and config loaders
 - local-first storage, alert, review, sync, and profiling service foundations
 - FastAPI endpoints for health, detections, alerts, reviews, hotlists, dashboard overview, and popup activity
-- a cab-first React operator UI with live popup activity and local review workflow when the API is available, plus local demo fallback when it is not
+- a cab-first React operator UI with live popup activity, hotlist management, and local review workflow when the API is available, plus local demo fallback when it is not
 - bootstrap, build, and validation scripts for the current integrated slice
 
 The design-first scaffold has already been turned into a working implementation foundation.

@@ -53,6 +53,15 @@ Confirm that the seeded local API and the cab-first UI behave like a usable repo
 4. Open `Field Settings`
 5. Confirm layout changes persist in the browser after refresh
 
+## Hotlist Management
+
+1. Stay in `Field Settings`
+2. Confirm the hotlist manager loads the seeded live API hotlist entries
+3. Select an existing hotlist entry and change its label, notes, or active state
+4. Save the update and confirm the success message appears
+5. Click `New entry` or `Seed from selected alert` and create a new hotlist entry
+6. Refresh the page and confirm the new or updated hotlist entry remains visible from the live API
+
 ## Review Loop
 
 1. Select the primary alert and open the target card

@@ -26,11 +26,15 @@ import {
   type WorkspaceId,
 } from "./demo-data";
 import {
+  createHotlist,
   createReview,
+  fetchHotlists,
   fetchReviews,
   fetchDashboardOverview,
   mapOverviewToAlertItems,
   mapOverviewToPopupHistory,
+  updateHotlist,
+  type DashboardHotlist,
   type DashboardOverviewResponse,
   type ReviewAction,
   type ReviewRecord,
@@ -201,6 +205,21 @@ function reviewActionBadgeTone(action: ReviewAction): string {
   }
 }
 
+function formatHotlistTimestamp(timestampUtc: string): string {
+  const parsed = new Date(timestampUtc);
+  if (Number.isNaN(parsed.valueOf())) {
+    return timestampUtc;
+  }
+
+  return parsed.toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
 function App() {
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceId>("dashboard");
   const [layoutEditorOpen, setLayoutEditorOpen] = useState(false);
@@ -229,12 +248,23 @@ function App() {
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [reviewSuccess, setReviewSuccess] = useState<string | null>(null);
+  const [hotlistEntries, setHotlistEntries] = useState<DashboardHotlist[]>([]);
+  const [selectedHotlistId, setSelectedHotlistId] = useState<string | null>(null);
+  const [hotlistPlateText, setHotlistPlateText] = useState("");
+  const [hotlistLabel, setHotlistLabel] = useState("");
+  const [hotlistNotes, setHotlistNotes] = useState("");
+  const [hotlistActive, setHotlistActive] = useState(true);
+  const [hotlistLoading, setHotlistLoading] = useState(false);
+  const [hotlistSaving, setHotlistSaving] = useState(false);
+  const [hotlistError, setHotlistError] = useState<string | null>(null);
+  const [hotlistSuccess, setHotlistSuccess] = useState<string | null>(null);
   const previousWithinArrivalRef = useRef(false);
   const queuedLivePopupIdsRef = useRef<Set<string>>(new Set());
 
   const operatorAlerts = liveOverview ? mapOverviewToAlertItems(liveOverview, alerts) : alerts;
   const selectedAlert = operatorAlerts.find((alert) => alert.id === selectedAlertId) ?? operatorAlerts[0];
   const selectedDetectionId = selectedAlert?.detectionId ?? null;
+  const selectedHotlist = hotlistEntries.find((entry) => entry.entry_id === selectedHotlistId) ?? null;
   const selectedCamera = cameraFeeds.find((camera) => camera.id === selectedCameraId) ?? cameraFeeds[0];
   const onlineCameraCount = cameraFeeds.filter((camera) => camera.status === "Online").length;
   const liveHealthState = liveOverview?.health.state ?? "demo";
@@ -251,11 +281,13 @@ function App() {
       ? "General popups suppressed"
       : "Address popups disabled";
   const reviewsEnabled = liveDataSource === "live" && selectedDetectionId !== null;
+  const hotlistsEnabled = liveDataSource === "live";
   const latestReview = reviewHistory[0] ?? null;
   const canSubmitReview =
     reviewsEnabled &&
     !reviewSubmitting &&
     (reviewAction !== "correct" || reviewCorrectedPlate.trim().length > 0);
+  const canSubmitHotlist = hotlistsEnabled && !hotlistSaving && hotlistPlateText.trim().length > 0;
 
   async function refreshOverview(signal?: AbortSignal): Promise<void> {
     try {
@@ -276,6 +308,20 @@ function App() {
       setLiveDataSource("fallback");
       setLiveError(error instanceof Error ? error.message : "Live API unavailable");
     }
+  }
+
+  function sortHotlists(entries: DashboardHotlist[]): DashboardHotlist[] {
+    return [...entries].sort((left, right) => right.updated_at_utc.localeCompare(left.updated_at_utc));
+  }
+
+  function loadHotlistForm(entry: DashboardHotlist | null): void {
+    setSelectedHotlistId(entry?.entry_id ?? null);
+    setHotlistPlateText(entry?.plate_text ?? "");
+    setHotlistLabel(entry?.label ?? "");
+    setHotlistNotes(entry?.notes ?? "");
+    setHotlistActive(entry?.active ?? true);
+    setHotlistError(null);
+    setHotlistSuccess(null);
   }
 
   useEffect(() => {
@@ -314,6 +360,54 @@ function App() {
     setReviewSuccess(null);
     setReviewError(null);
   }, [selectedAlert.id, selectedAlert.plate]);
+
+  useEffect(() => {
+    if (!hotlistsEnabled) {
+      setHotlistEntries([]);
+      setHotlistLoading(false);
+      setHotlistError(null);
+      setHotlistSuccess(null);
+      loadHotlistForm(null);
+      return;
+    }
+
+    let disposed = false;
+    const controller = new AbortController();
+    setHotlistLoading(true);
+
+    fetchHotlists(controller.signal)
+      .then((entries) => {
+        if (disposed) {
+          return;
+        }
+
+        setHotlistEntries(entries);
+        setHotlistError(null);
+        if (entries.length > 0) {
+          loadHotlistForm(entries[0]);
+        } else {
+          loadHotlistForm(null);
+        }
+      })
+      .catch((error) => {
+        if (controller.signal.aborted || disposed) {
+          return;
+        }
+
+        setHotlistEntries([]);
+        setHotlistError(error instanceof Error ? error.message : "Hotlist management unavailable");
+      })
+      .finally(() => {
+        if (!disposed) {
+          setHotlistLoading(false);
+        }
+      });
+
+    return () => {
+      disposed = true;
+      controller.abort();
+    };
+  }, [hotlistsEnabled]);
 
   useEffect(() => {
     if (!reviewsEnabled || !selectedDetectionId) {
@@ -575,6 +669,52 @@ function App() {
       setReviewError(error instanceof Error ? error.message : "Failed to save review");
     } finally {
       setReviewSubmitting(false);
+    }
+  }
+
+  async function handleHotlistSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    if (!hotlistsEnabled) {
+      return;
+    }
+
+    const normalizedPlate = hotlistPlateText.trim().toUpperCase();
+    if (normalizedPlate.length === 0) {
+      setHotlistError("Plate text is required before saving a hotlist entry.");
+      return;
+    }
+
+    setHotlistSaving(true);
+    setHotlistError(null);
+    setHotlistSuccess(null);
+
+    try {
+      const submission = {
+        plate_text: normalizedPlate,
+        label: hotlistLabel.trim() || undefined,
+        notes: hotlistNotes.trim() || undefined,
+        active: hotlistActive,
+      };
+
+      const savedEntry = selectedHotlist
+        ? await updateHotlist(selectedHotlist.entry_id, submission)
+        : await createHotlist(submission);
+
+      setHotlistEntries((current) => {
+        const remainingEntries = current.filter((entry) => entry.entry_id !== savedEntry.entry_id);
+        return sortHotlists([savedEntry, ...remainingEntries]);
+      });
+      loadHotlistForm(savedEntry);
+      setHotlistSuccess(
+        selectedHotlist
+          ? `Updated hotlist entry for ${savedEntry.plate_text}.`
+          : `Created hotlist entry for ${savedEntry.plate_text}.`,
+      );
+      void refreshOverview();
+    } catch (error) {
+      setHotlistError(error instanceof Error ? error.message : "Failed to save hotlist entry");
+    } finally {
+      setHotlistSaving(false);
     }
   }
 
@@ -1331,6 +1471,122 @@ function App() {
                     onChange={(event) => updateFieldSetting("lowStorageWarning", event.target.checked)}
                   />
                 </label>
+              </div>
+            </PanelFrame>
+            <PanelFrame panelId="hotlistFeed" titleOverride="Hotlist Manager">
+              <div className="hotlist-manager">
+                <div className="live-activity__header">
+                  <strong>Local hotlist control</strong>
+                  <span>
+                    {hotlistsEnabled
+                      ? `${hotlistEntries.length} hotlist entr${hotlistEntries.length === 1 ? "y" : "ies"} loaded from the live API.`
+                      : "Connect the live API to create and update local hotlist entries."}
+                  </span>
+                </div>
+                {hotlistsEnabled ? (
+                  <>
+                    <div className="hotlist-list">
+                      {hotlistLoading ? (
+                        <div className="review-empty">Loading hotlist entries...</div>
+                      ) : hotlistEntries.length === 0 ? (
+                        <div className="review-empty">No hotlist entries saved yet. Create the first one below.</div>
+                      ) : (
+                        hotlistEntries.map((entry) => (
+                          <button
+                            key={entry.entry_id}
+                            className={`hotlist-row ${entry.entry_id === selectedHotlistId ? "is-selected" : ""}`}
+                            type="button"
+                            onClick={() => loadHotlistForm(entry)}
+                          >
+                            <div className="hotlist-row__header">
+                              <strong>{entry.plate_text}</strong>
+                              <span className={`badge ${entry.active ? "badge--critical" : "badge--muted"}`}>
+                                {entry.active ? "Active" : "Paused"}
+                              </span>
+                            </div>
+                            <p>{entry.label ?? "Unlabeled entry"}</p>
+                            <div className="hotlist-row__meta">
+                              <span>{entry.notes ?? "No operator notes."}</span>
+                              <span>{formatHotlistTimestamp(entry.updated_at_utc)}</span>
+                            </div>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                    <form className="review-form" onSubmit={handleHotlistSubmit}>
+                      <div className="form-grid review-form__grid">
+                        <label className="field-group">
+                          <span>Plate text</span>
+                          <input
+                            className="input-control"
+                            placeholder="8ABC123"
+                            type="text"
+                            value={hotlistPlateText}
+                            onChange={(event) => setHotlistPlateText(event.target.value.toUpperCase())}
+                          />
+                        </label>
+                        <label className="field-group">
+                          <span>Label</span>
+                          <input
+                            className="input-control"
+                            placeholder="Tow-ready / watch / case name"
+                            type="text"
+                            value={hotlistLabel}
+                            onChange={(event) => setHotlistLabel(event.target.value)}
+                          />
+                        </label>
+                        <label className="field-check">
+                          <span>Entry active</span>
+                          <input
+                            checked={hotlistActive}
+                            type="checkbox"
+                            onChange={(event) => setHotlistActive(event.target.checked)}
+                          />
+                        </label>
+                      </div>
+                      <label className="field-group">
+                        <span>Hotlist notes</span>
+                        <textarea
+                          className="input-control input-control--multiline"
+                          placeholder="Describe why this vehicle is being monitored and what the field crew should do next."
+                          value={hotlistNotes}
+                          onChange={(event) => setHotlistNotes(event.target.value)}
+                        />
+                      </label>
+                      {hotlistError ? <div className="review-feedback review-feedback--error">{hotlistError}</div> : null}
+                      {hotlistSuccess ? <div className="review-feedback review-feedback--good">{hotlistSuccess}</div> : null}
+                      <div className="panel-actions">
+                        <button className="button button--primary" disabled={!canSubmitHotlist} type="submit">
+                          {hotlistSaving ? "Saving hotlist..." : selectedHotlist ? "Update hotlist" : "Create hotlist"}
+                        </button>
+                        <button className="button" type="button" onClick={() => loadHotlistForm(null)}>
+                          New entry
+                        </button>
+                        <button
+                          className="button"
+                          type="button"
+                          onClick={() =>
+                            loadHotlistForm({
+                              entry_id: "",
+                              plate_text: selectedAlert.plate,
+                              label: selectedAlert.vehicle,
+                              notes: selectedAlert.notes,
+                              active: true,
+                              created_at_utc: "",
+                              updated_at_utc: "",
+                            })
+                          }
+                        >
+                          Seed from selected alert
+                        </button>
+                      </div>
+                    </form>
+                  </>
+                ) : (
+                  <div className="review-empty">
+                    Connect the live API to load local hotlist entries and manage watchlists from this panel.
+                  </div>
+                )}
               </div>
             </PanelFrame>
           </div>
