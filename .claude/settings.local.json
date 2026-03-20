@@ -1,0 +1,11 @@
+{
+  "local_overrides": {
+    "python_command": "py -3.11",
+    "node_command": "node",
+    "docker_compose_command": "docker compose"
+  },
+  "notes": [
+    "Local overrides only. Do not store secrets in this file.",
+    "Use .env for machine-specific configuration."
+  ]
+}

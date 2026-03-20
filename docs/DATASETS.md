@@ -1,0 +1,56 @@
+# DATASETS.md
+
+RepoScan Pro must be trained and validated with data that reflects real deployment conditions, not only curated daytime benchmarks.
+
+## Data Principles
+
+- do not commit datasets into the repository
+- record provenance, license, region coverage, and collection assumptions
+- favor real night and long-range data over synthetic approximations
+- quarantine questionable or weakly labeled data until reviewed
+
+## Priority Data Domains
+
+- long-range vehicle scenes
+- small and angled license plates
+- low-light and no-light scenes
+- IR-assisted captures
+- glare, halation, and retroreflective bloom
+- motion blur and off-axis targets
+- region-relevant US plate styles for V1
+
+## Expected Local Layout
+
+```text
+data/
+├─ raw/
+├─ staged/
+├─ curated/
+├─ eval/
+└─ manifests/
+```
+
+## Annotation Requirements
+
+- vehicle bounding boxes for detection
+- plate bounding boxes for plate localization
+- OCR text labels with auditability for uncertain characters
+- vehicle attribute labels separated by task where practical
+- metadata for lighting condition, distance band, and scene quality when available
+
+## Split Strategy
+
+- separate training, validation, and holdout data by capture session when possible
+- protect night and long-range holdouts from contamination
+- maintain dedicated field-eval sets for regression checks
+
+## Intake Gate
+
+No dataset enters a training plan until it passes provenance, annotation quality, and imaging realism review.
+
+## Related Documents
+
+- [Training](TRAINING.md)
+- [Requirements](REQUIREMENTS.md)
+- [Dataset Intake Skill](../.claude/skills/dataset-intake/SKILL.md)
+

@@ -1,0 +1,15 @@
+{
+  "project": "RepoScan Pro",
+  "focus": [
+    "long-range detection",
+    "low-light performance",
+    "edge inference",
+    "modular architecture"
+  ],
+  "rules": {
+    "no_refactor_without_approval": true,
+    "no_dataset_commits": true,
+    "no_model_weight_commits": true
+  }
+}
+
