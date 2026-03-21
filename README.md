@@ -42,40 +42,41 @@ The canonical mission and rules live in [CLAUDE.md](CLAUDE.md).
 - [Deployment](docs/DEPLOYMENT.md)
 - [API Contracts](docs/API_CONTRACTS.md)
 - [UI Workflows](docs/UI_WORKFLOWS.md)
+- [Project Status Checklist](docs/PROJECT_STATUS_CHECKLIST.md)
 - [Decisions](docs/DECISIONS.md)
 
 ## Repository Layout
 
 ```text
 reposcan-pro/
-├─ CLAUDE.md
-├─ README.md
-├─ docs/
-├─ .claude/
-│  ├─ settings.json
-│  ├─ settings.local.json
-│  ├─ agents/
-│  └─ skills/
-├─ apps/
-│  ├─ api/
-│  └─ ui/
-├─ packages/
-│  └─ contracts/
-├─ services/
-│  ├─ capture/
-│  ├─ preprocessing/
-│  ├─ inference/
-│  ├─ tracking/
-│  ├─ storage/
-│  ├─ alerting/
-│  └─ sync/
-├─ ml/
-│  ├─ training/
-│  └─ inference/
-├─ configs/
-├─ infra/
-├─ scripts/
-└─ tests/
+|-- CLAUDE.md
+|-- README.md
+|-- docs/
+|-- .claude/
+|   |-- settings.json
+|   |-- settings.local.json
+|   |-- agents/
+|   `-- skills/
+|-- apps/
+|   |-- api/
+|   `-- ui/
+|-- packages/
+|   `-- contracts/
+|-- services/
+|   |-- capture/
+|   |-- preprocessing/
+|   |-- inference/
+|   |-- tracking/
+|   |-- storage/
+|   |-- alerting/
+|   `-- sync/
+|-- ml/
+|   |-- training/
+|   `-- inference/
+|-- configs/
+|-- infra/
+|-- scripts/
+`-- tests/
 ```
 
 ## Environment Baseline
