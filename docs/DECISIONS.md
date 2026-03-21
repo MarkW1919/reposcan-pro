@@ -1,6 +1,11 @@
 # DECISIONS.md
 
-This document records early accepted decisions for the fresh build.
+This document records accepted architectural and operational decisions for the fresh build.
+
+Maintenance rule:
+- add a new ADR whenever an implementation slice changes service boundaries, data flow, persistence strategy, operator workflow ownership, or deployment assumptions
+- update the status and rationale if a later decision supersedes an earlier one
+- prefer small, dated entries over retroactive rewrites so the reasoning trail stays reviewable
 
 ## ADR-001 Fresh Repository Location
 
@@ -64,3 +69,45 @@ This document records early accepted decisions for the fresh build.
 - Status: Accepted
 - Decision: Generate desktop shortcuts for RepoScan Pro from a repo-owned script rather than hand-maintaining launcher files outside the repository.
 - Rationale: The machine-local shortcut should remain reproducible while the source of truth stays versioned in Git.
+
+## ADR-010 Shared Contracts As Service Boundary
+
+- Date: 2026-03-20
+- Status: Accepted
+- Decision: Keep typed schemas, config models, and inter-service contracts in `packages/contracts`, with runtime services depending on those contracts instead of defining parallel local payloads.
+- Rationale: The fresh build needs one canonical schema surface so API, storage, capture, inference, and UI integration do not drift independently.
+
+## ADR-011 JSON-Backed Local Metadata For Early Vertical Slices
+
+- Date: 2026-03-20
+- Status: Accepted
+- Decision: Use local JSON-backed metadata persistence and filesystem media references for the current implementation slices before introducing the planned Postgres/PostGIS backend.
+- Rationale: This preserves local-first behavior, keeps the no-hardware demo path simple, and allows operator workflow integration to progress before database infrastructure hardening.
+
+## ADR-012 Headless File-Sequence Runtime Before Hardware Capture
+
+- Date: 2026-03-20
+- Status: Accepted
+- Decision: Deliver an end-to-end file-sequence ingest runtime that chains capture, preprocessing, inference, tracking, alerting, and storage before camera hardware is attached.
+- Rationale: The team needs a deterministic, Windows-friendly validation harness that exercises the real service boundaries and unblocks UI, alerting, and evidence workflows without waiting for live cameras.
+
+## ADR-013 API-Owned Operator Mutations
+
+- Date: 2026-03-20
+- Status: Accepted
+- Decision: Keep operator reviews, hotlist edits, alert lifecycle changes, and demo runtime control behind API endpoints instead of letting the UI mutate local storage or service internals directly.
+- Rationale: Operator actions need a single audit-ready boundary and should remain compatible with later auth, sync, and multi-client growth.
+
+## ADR-014 Detection-Scoped Media Endpoints
+
+- Date: 2026-03-21
+- Status: Accepted
+- Decision: Expose evidence frames and plate crops through detection-scoped API endpoints rather than serving raw repository-relative file paths directly to the UI.
+- Rationale: This keeps the browser client decoupled from local filesystem layout details and gives the API one place to enforce media existence, path resolution, and future auth controls.
+
+## ADR-015 Dismissed Alerts Suppress Popup Activity
+
+- Date: 2026-03-21
+- Status: Accepted
+- Decision: Once an alert is dismissed, suppress both its hotlist popup entry and the linked detection from the live popup activity stream.
+- Rationale: A stand-down action should behave like a real operator suppression event; leaving the linked detection visible as a general popup would undermine alert lifecycle semantics in the live UI.

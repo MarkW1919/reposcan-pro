@@ -17,8 +17,8 @@ Last reviewed against repo state: `2026-03-21`
 - [x] ~~Config loaders and validation tests exist for the supported config types.~~
 - [x] ~~Example and local development configs exist for camera, model stack, pipeline, and deployment.~~
 - [x] ~~Bootstrap, check, desktop launcher, and headless demo helper scripts exist.~~
-- [ ] Architecture-decision tracking is actively maintained as implementation evolves.
-- [ ] Subsystem logging standards and operational notes are documented end to end.
+- [x] ~~Architecture-decision tracking is actively maintained as implementation evolves.~~
+- [x] ~~Subsystem logging standards and operational notes are documented end to end.~~
 
 ## 2. Camera And Imaging
 

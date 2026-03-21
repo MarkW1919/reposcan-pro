@@ -42,6 +42,7 @@ The canonical mission and rules live in [CLAUDE.md](CLAUDE.md).
 - [Deployment](docs/DEPLOYMENT.md)
 - [API Contracts](docs/API_CONTRACTS.md)
 - [UI Workflows](docs/UI_WORKFLOWS.md)
+- [Operations And Logging](docs/OPERATIONS_AND_LOGGING.md)
 - [Project Status Checklist](docs/PROJECT_STATUS_CHECKLIST.md)
 - [Decisions](docs/DECISIONS.md)
 
