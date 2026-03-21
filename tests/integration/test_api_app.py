@@ -79,6 +79,60 @@ def test_get_detection_by_id(tmp_path):
     assert response.json()["camera_id"] == "cam_north_gate_01"
 
 
+def test_detection_media_endpoints_serve_frame_and_plate_crop(tmp_path):
+    client, service = _seeded_client(tmp_path)
+    frame_path = tmp_path / "media" / "frames" / "cam_north_gate_01" / "frame_000542.jpg"
+    crop_path = tmp_path / "media" / "crops" / "cam_north_gate_01" / "plate_000542.jpg"
+    frame_path.parent.mkdir(parents=True, exist_ok=True)
+    crop_path.parent.mkdir(parents=True, exist_ok=True)
+    _write_demo_image(frame_path, color=(24, 24, 24))
+    _write_demo_image(crop_path, color=(220, 220, 220))
+    service.store_detection(
+        DetectionRecord.model_validate(
+            {
+                "detection_id": "det_media_001",
+                "timestamp_utc": "2026-03-20T04:11:00Z",
+                "camera_id": "cam_north_gate_01",
+                "vehicle_bbox": {"x": 412, "y": 220, "w": 301, "h": 184},
+                "image_path": str(frame_path),
+                "plate_crop_path": str(crop_path),
+                "frame_number": 543,
+            }
+        )
+    )
+
+    frame_response = client.get("/detections/det_media_001/frame")
+    crop_response = client.get("/detections/det_media_001/plate-crop")
+
+    assert frame_response.status_code == 200
+    assert frame_response.headers["content-type"].startswith("image/jpeg")
+    assert crop_response.status_code == 200
+    assert crop_response.headers["content-type"].startswith("image/jpeg")
+
+
+def test_missing_detection_media_returns_404(tmp_path):
+    client, service = _seeded_client(tmp_path)
+    service.store_detection(
+        DetectionRecord.model_validate(
+            {
+                "detection_id": "det_media_missing",
+                "timestamp_utc": "2026-03-20T04:11:00Z",
+                "camera_id": "cam_north_gate_01",
+                "vehicle_bbox": {"x": 412, "y": 220, "w": 301, "h": 184},
+                "image_path": str(tmp_path / "missing" / "frame.jpg"),
+                "plate_crop_path": str(tmp_path / "missing" / "crop.jpg"),
+                "frame_number": 543,
+            }
+        )
+    )
+
+    frame_response = client.get("/detections/det_media_missing/frame")
+    crop_response = client.get("/detections/det_media_missing/plate-crop")
+
+    assert frame_response.status_code == 404
+    assert crop_response.status_code == 404
+
+
 def test_missing_detection_returns_404(tmp_path):
     client, _ = _seeded_client(tmp_path)
 

@@ -7,7 +7,7 @@ Current integrated slice:
 - ASGI entrypoint in `src/reposcan_api/main.py`
 - health endpoint at `GET /health`
 - dashboard overview endpoint at `GET /dashboard/overview` with recent popup activity for the operator UI
-- read-only detection endpoints at `GET /detections` and `GET /detections/{id}`
+- read-only detection endpoints at `GET /detections`, `GET /detections/{id}`, `GET /detections/{id}/frame`, and `GET /detections/{id}/plate-crop`
 - review endpoints at `POST /reviews/{id}` and `GET /reviews/{id}`
 - alert endpoints at `GET /alerts`, `GET /alerts/{id}`, and `PUT /alerts/{id}`
 - hotlist endpoints at `GET /hotlists`, `POST /hotlists`, and `PUT /hotlists/{id}`

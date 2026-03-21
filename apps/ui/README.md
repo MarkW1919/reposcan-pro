@@ -7,6 +7,7 @@ Current preview slice:
 - route HUD, recovery alerts, camera views, field settings, and a customizable dashboard workspace
 - browser-persisted layout presets for map, camera, alert feed, and target-card placement
 - address-based scan mode with arrival-radius activation, operator override, and live API popup activity when available
+- selected-alert evidence preview that shows a live frame and plate crop when local media is available through the API
 - field-settings hotlist manager for creating, editing, pausing, and seeding local hotlist entries from the selected alert
 - quick-actions alert response controls for acknowledge, stand down, and reopen state changes when the live API is available
 - selected-alert review history and local review submission when the live API is available

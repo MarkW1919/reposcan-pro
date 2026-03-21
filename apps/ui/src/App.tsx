@@ -26,6 +26,8 @@ import {
   type WorkspaceId,
 } from "./demo-data";
 import {
+  buildDetectionFrameUrl,
+  buildDetectionPlateCropUrl,
   createHotlist,
   createReview,
   fetchDemoRuntimeStatus,
@@ -304,6 +306,8 @@ function App() {
   const [demoSubmitting, setDemoSubmitting] = useState(false);
   const [demoError, setDemoError] = useState<string | null>(null);
   const [demoSuccess, setDemoSuccess] = useState<string | null>(null);
+  const [framePreviewUnavailable, setFramePreviewUnavailable] = useState(false);
+  const [plateCropPreviewUnavailable, setPlateCropPreviewUnavailable] = useState(false);
   const previousWithinArrivalRef = useRef(false);
   const queuedLivePopupIdsRef = useRef<Set<string>>(new Set());
   const previousAlertActionTargetRef = useRef<string | null>(null);
@@ -321,6 +325,10 @@ function App() {
   const activeHotlistCount = liveOverview?.counts.active_hotlists ?? 0;
   const activeAlertCount = liveOverview?.counts.active_alerts ?? operatorAlerts.filter((alert) => alert.severity === "critical").length;
   const recoveryLogEntries = liveOverview ? mapOverviewToRecoveryLog(liveOverview) : recoveryLog;
+  const selectedFramePreviewUrl =
+    liveDataSource === "live" && selectedDetectionId ? buildDetectionFrameUrl(selectedDetectionId) : null;
+  const selectedPlateCropPreviewUrl =
+    liveDataSource === "live" && selectedDetectionId ? buildDetectionPlateCropUrl(selectedDetectionId) : null;
   const withinArrivalRadius = navigationActive && currentDistanceFeet <= fieldSettings.arrivalTriggerDistance;
   const activeScanMode = withinArrivalRadius;
   const generalPopupsLive = navigationActive && addressDetectionEnabled && withinArrivalRadius;
@@ -462,6 +470,11 @@ function App() {
     }
     setDemoPlateText(selectedAlert.plate);
   }, [demoPlateText, selectedAlert.plate]);
+
+  useEffect(() => {
+    setFramePreviewUnavailable(false);
+    setPlateCropPreviewUnavailable(false);
+  }, [selectedDetectionId, liveDataSource]);
 
   useEffect(() => {
     if (!demoRuntimeEnabled) {
@@ -1266,9 +1279,41 @@ function App() {
           <PanelFrame panelId={panelId}>
             <div className="target-card">
               <div className="target-card__hero">
-                <div className="target-photo">
-                  <span>Target photo</span>
-                  <strong>{selectedAlert.plate}</strong>
+                <div className="target-evidence">
+                  <div className="target-photo">
+                    {selectedFramePreviewUrl && !framePreviewUnavailable ? (
+                      <img
+                        alt={`Evidence frame for ${selectedAlert.plate}`}
+                        className="target-photo__image"
+                        src={selectedFramePreviewUrl}
+                        onError={() => setFramePreviewUnavailable(true)}
+                      />
+                    ) : (
+                      <div className="target-photo__placeholder">
+                        <span>{liveDataSource === "live" ? "Evidence frame unavailable" : "Target photo"}</span>
+                        <strong>{selectedAlert.plate}</strong>
+                      </div>
+                    )}
+                    <div className="target-photo__overlay">
+                      <span>{selectedFramePreviewUrl && !framePreviewUnavailable ? "Live evidence frame" : "Target photo"}</span>
+                      <strong>{selectedAlert.plate}</strong>
+                    </div>
+                  </div>
+                  <div className="target-crop">
+                    {selectedPlateCropPreviewUrl && !plateCropPreviewUnavailable ? (
+                      <img
+                        alt={`Plate crop for ${selectedAlert.plate}`}
+                        className="target-crop__image"
+                        src={selectedPlateCropPreviewUrl}
+                        onError={() => setPlateCropPreviewUnavailable(true)}
+                      />
+                    ) : (
+                      <div className="target-crop__placeholder">
+                        {liveDataSource === "live" ? "Plate crop unavailable for this detection." : "Live plate crop preview"}
+                      </div>
+                    )}
+                    <span className="target-crop__label">Plate crop</span>
+                  </div>
                 </div>
                 <div className="target-keyline">
                   <span className={`badge badge--${severityTone(selectedAlert.severity)}`}>
@@ -1284,6 +1329,16 @@ function App() {
                 <StatusLine label="Confidence" value={confidenceLabel(selectedAlert.confidence)} />
                 <StatusLine label="GPS" value={selectedAlert.gps} />
                 <StatusLine label="Distance" value={currentDistanceLabel} />
+                <StatusLine
+                  label="Evidence"
+                  value={
+                    selectedFramePreviewUrl && !framePreviewUnavailable
+                      ? "Live frame ready"
+                      : liveDataSource === "live"
+                        ? "Waiting on local media"
+                        : "Live API only"
+                  }
+                />
                 <StatusLine
                   label="Latest review"
                   value={

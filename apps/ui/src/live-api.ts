@@ -158,6 +158,10 @@ function apiBaseUrl(): string {
   return (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ?? "http://127.0.0.1:8000";
 }
 
+function mediaUrl(path: string): string {
+  return `${apiBaseUrl()}${path}`;
+}
+
 async function responseErrorMessage(response: Response, fallback: string): Promise<string> {
   try {
     const payload = (await response.json()) as { detail?: string };
@@ -273,6 +277,14 @@ export async function fetchDashboardOverview(signal?: AbortSignal): Promise<Dash
     throw new Error(`Failed to load dashboard overview (${response.status})`);
   }
   return (await response.json()) as DashboardOverviewResponse;
+}
+
+export function buildDetectionFrameUrl(detectionId: string): string {
+  return mediaUrl(`/detections/${encodeURIComponent(detectionId)}/frame`);
+}
+
+export function buildDetectionPlateCropUrl(detectionId: string): string {
+  return mediaUrl(`/detections/${encodeURIComponent(detectionId)}/plate-crop`);
 }
 
 export async function fetchDemoRuntimeStatus(signal?: AbortSignal): Promise<DemoRuntimeStatus> {

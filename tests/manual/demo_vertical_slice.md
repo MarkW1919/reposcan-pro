@@ -61,7 +61,8 @@ Confirm that the seeded local API and the cab-first UI behave like a usable repo
 4. Confirm the status changes to `Running`, then to `Ready`
 5. Confirm preprocessing artifacts appear under `runtime/preprocessed` or the configured preprocessing output folder
 6. Confirm new live detections appear without restarting the API
-7. If an active hotlist entry matches the simulated plate, confirm a new alert appears in `Recovery Alerts`
+7. Select the new alert and confirm the target card shows a live evidence frame and, when available, a plate crop preview
+8. If an active hotlist entry matches the simulated plate, confirm a new alert appears in `Recovery Alerts`
 
 ## Headless Ingest CLI Fallback
 

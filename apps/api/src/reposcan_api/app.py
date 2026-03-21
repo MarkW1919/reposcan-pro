@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 from reposcan_contracts.alert import AlertRecord, AlertStatus
 from reposcan_contracts.detection import DetectionRecord
@@ -57,6 +59,26 @@ def _build_alert_popup_note(alert: AlertRecord) -> str | None:
     parts = [alert.notes, alert.response_notes]
     note = " | ".join(part for part in parts if part)
     return note or None
+
+
+def _resolve_media_path(media_ref: str | None, media_root: Path) -> Path | None:
+    if not media_ref:
+        return None
+
+    candidate = Path(media_ref)
+    if candidate.is_absolute():
+        return candidate if candidate.is_file() else None
+
+    resolved = candidate.resolve(strict=False)
+    if resolved.is_file():
+        return resolved
+
+    rooted_base = media_root.parent if candidate.parts and candidate.parts[0] == media_root.name else media_root
+    rooted = (rooted_base / candidate).resolve(strict=False)
+    if rooted.is_file():
+        return rooted
+
+    return None
 
 
 def _build_popup_activity(
@@ -243,6 +265,30 @@ def create_app(
         if detection is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Detection not found")
         return detection
+
+    @app.get("/detections/{detection_id}/frame")
+    def get_detection_frame(detection_id: str) -> FileResponse:
+        detection = service.get_detection(detection_id)
+        if detection is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Detection not found")
+
+        media_path = _resolve_media_path(detection.image_path, service.media_layout.root)
+        if media_path is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Frame image not found")
+
+        return FileResponse(media_path)
+
+    @app.get("/detections/{detection_id}/plate-crop")
+    def get_detection_plate_crop(detection_id: str) -> FileResponse:
+        detection = service.get_detection(detection_id)
+        if detection is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Detection not found")
+
+        media_path = _resolve_media_path(detection.plate_crop_path, service.media_layout.root)
+        if media_path is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plate crop not found")
+
+        return FileResponse(media_path)
 
     @app.post("/reviews/{detection_id}", response_model=ReviewRecord, status_code=status.HTTP_201_CREATED)
     def create_review(detection_id: str, submission: ReviewSubmission) -> ReviewRecord:

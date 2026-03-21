@@ -8,7 +8,7 @@ This repository currently contains:
 - shared contracts and config loaders
 - local-first storage, alert, review, sync, and profiling service foundations
 - FastAPI endpoints for health, detections, alerts, reviews, hotlists, dashboard overview, and popup activity
-- a cab-first React operator UI with live popup activity, hotlist management, persistent alert response workflow, local review workflow, and app-driven demo ingest control when the API is available, plus local demo fallback when it is not
+- a cab-first React operator UI with live popup activity, evidence preview, hotlist management, persistent alert response workflow, local review workflow, and app-driven demo ingest control when the API is available, plus local demo fallback when it is not
 - a headless file-sequence ingest path that runs capture, low-light-oriented preprocessing, inference, tracking, alerting, and storage without camera hardware
 - bootstrap, build, and validation scripts for the current integrated slice
 
