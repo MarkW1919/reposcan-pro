@@ -16,6 +16,7 @@ from reposcan_contracts.popup import PopupActivityEvent, PopupEventType
 from reposcan_contracts.review import ReviewRecord
 from reposcan_inference import DemoRunInProgressError, DemoRunStatus as RuntimeDemoRunStatus, HeadlessDemoRunManager
 from reposcan_storage.service import (
+    AlertNotFoundError,
     DetectionNotFoundError,
     HotlistNotFoundError,
     StorageService,
@@ -23,6 +24,7 @@ from reposcan_storage.service import (
 )
 
 from .models import (
+    AlertUpdateSubmission,
     DashboardCounts,
     DashboardOverview,
     DemoRunSubmission,
@@ -51,6 +53,12 @@ def _build_address_popup_note(detection: DetectionRecord) -> str:
     return "Vehicle detection is available, but the best plate read is still pending or occluded."
 
 
+def _build_alert_popup_note(alert: AlertRecord) -> str | None:
+    parts = [alert.notes, alert.response_notes]
+    note = " | ".join(part for part in parts if part)
+    return note or None
+
+
 def _build_popup_activity(
     *,
     detections: list[DetectionRecord],
@@ -62,6 +70,9 @@ def _build_popup_activity(
     events: list[PopupActivityEvent] = []
 
     for alert in alerts:
+        alert_detection_ids.add(alert.detection_id)
+        if alert.status == AlertStatus.dismissed:
+            continue
         detection = detections_by_id.get(alert.detection_id)
         events.append(
             PopupActivityEvent(
@@ -80,10 +91,9 @@ def _build_popup_activity(
                 hotlist_label=alert.hotlist_label,
                 gps_latitude=alert.gps_latitude if alert.gps_latitude is not None else detection.gps_latitude if detection is not None else None,
                 gps_longitude=alert.gps_longitude if alert.gps_longitude is not None else detection.gps_longitude if detection is not None else None,
-                note=alert.notes,
+                note=_build_alert_popup_note(alert),
             )
         )
-        alert_detection_ids.add(alert.detection_id)
 
     for detection in detections:
         if detection.detection_id in alert_detection_ids:
@@ -271,6 +281,35 @@ def create_app(
         if alert is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alert not found")
         return alert
+
+    @app.put("/alerts/{alert_id}", response_model=AlertRecord)
+    def update_alert(alert_id: str, submission: AlertUpdateSubmission) -> AlertRecord:
+        existing = service.get_alert(alert_id)
+        if existing is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alert not found")
+
+        alert = AlertRecord(
+            alert_id=existing.alert_id,
+            detection_id=existing.detection_id,
+            hotlist_entry_id=existing.hotlist_entry_id,
+            timestamp_utc=existing.timestamp_utc,
+            camera_id=existing.camera_id,
+            matched_plate_text=existing.matched_plate_text,
+            match_confidence=existing.match_confidence,
+            match_type=existing.match_type,
+            hotlist_label=existing.hotlist_label,
+            notes=existing.notes,
+            response_operator_id=submission.operator_id,
+            response_notes=submission.response_notes,
+            updated_at_utc=_utcnow(),
+            status=submission.status,
+            gps_latitude=existing.gps_latitude,
+            gps_longitude=existing.gps_longitude,
+        )
+        try:
+            return service.update_alert(alert)
+        except AlertNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alert not found") from exc
 
     @app.get("/hotlists", response_model=list[HotlistEntry])
     def list_hotlists(

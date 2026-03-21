@@ -34,8 +34,11 @@ import {
   fetchDashboardOverview,
   mapOverviewToAlertItems,
   mapOverviewToPopupHistory,
+  mapOverviewToRecoveryLog,
   startDemoRun,
+  updateAlert,
   updateHotlist,
+  type DashboardAlert,
   type DemoRuntimeStatus as DemoRuntimeStatusRecord,
   type DashboardHotlist,
   type DashboardOverviewResponse,
@@ -277,6 +280,12 @@ function App() {
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [reviewSuccess, setReviewSuccess] = useState<string | null>(null);
+  const [alertActionOperatorId, setAlertActionOperatorId] = useState("");
+  const [alertActionNotes, setAlertActionNotes] = useState("");
+  const [alertActionSubmitting, setAlertActionSubmitting] = useState(false);
+  const [alertActionPendingStatus, setAlertActionPendingStatus] = useState<DashboardAlert["status"] | null>(null);
+  const [alertActionError, setAlertActionError] = useState<string | null>(null);
+  const [alertActionSuccess, setAlertActionSuccess] = useState<string | null>(null);
   const [hotlistEntries, setHotlistEntries] = useState<DashboardHotlist[]>([]);
   const [selectedHotlistId, setSelectedHotlistId] = useState<string | null>(null);
   const [hotlistPlateText, setHotlistPlateText] = useState("");
@@ -297,11 +306,13 @@ function App() {
   const [demoSuccess, setDemoSuccess] = useState<string | null>(null);
   const previousWithinArrivalRef = useRef(false);
   const queuedLivePopupIdsRef = useRef<Set<string>>(new Set());
+  const previousAlertActionTargetRef = useRef<string | null>(null);
   const previousDemoRunStateRef = useRef<DemoRuntimeStatusRecord["state"]>("idle");
   const previousDemoRunIdRef = useRef<string | null>(null);
 
   const operatorAlerts = liveOverview ? mapOverviewToAlertItems(liveOverview, alerts) : alerts;
   const selectedAlert = operatorAlerts.find((alert) => alert.id === selectedAlertId) ?? operatorAlerts[0];
+  const selectedLiveAlert = liveOverview?.alerts.find((alert) => alert.alert_id === selectedAlertId) ?? null;
   const selectedDetectionId = selectedAlert?.detectionId ?? null;
   const selectedHotlist = hotlistEntries.find((entry) => entry.entry_id === selectedHotlistId) ?? null;
   const selectedCamera = cameraFeeds.find((camera) => camera.id === selectedCameraId) ?? cameraFeeds[0];
@@ -309,6 +320,7 @@ function App() {
   const liveHealthState = liveOverview?.health.state ?? "demo";
   const activeHotlistCount = liveOverview?.counts.active_hotlists ?? 0;
   const activeAlertCount = liveOverview?.counts.active_alerts ?? operatorAlerts.filter((alert) => alert.severity === "critical").length;
+  const recoveryLogEntries = liveOverview ? mapOverviewToRecoveryLog(liveOverview) : recoveryLog;
   const withinArrivalRadius = navigationActive && currentDistanceFeet <= fieldSettings.arrivalTriggerDistance;
   const activeScanMode = withinArrivalRadius;
   const generalPopupsLive = navigationActive && addressDetectionEnabled && withinArrivalRadius;
@@ -319,6 +331,7 @@ function App() {
     : addressDetectionEnabled
       ? "General popups suppressed"
       : "Address popups disabled";
+  const alertActionsEnabled = liveDataSource === "live" && selectedLiveAlert !== null;
   const reviewsEnabled = liveDataSource === "live" && selectedDetectionId !== null;
   const hotlistsEnabled = liveDataSource === "live";
   const demoRuntimeEnabled = liveDataSource === "live";
@@ -428,6 +441,20 @@ function App() {
     setReviewSuccess(null);
     setReviewError(null);
   }, [selectedAlert.id, selectedAlert.plate]);
+
+  useEffect(() => {
+    const nextAlertId = selectedLiveAlert?.alert_id ?? null;
+    if (liveDataSource === "live" && previousAlertActionTargetRef.current === nextAlertId) {
+      return;
+    }
+
+    previousAlertActionTargetRef.current = nextAlertId;
+    setAlertActionOperatorId(selectedLiveAlert?.response_operator_id ?? "");
+    setAlertActionNotes(selectedLiveAlert?.response_notes ?? "");
+    setAlertActionPendingStatus(null);
+    setAlertActionSuccess(null);
+    setAlertActionError(null);
+  }, [liveDataSource, selectedLiveAlert]);
 
   useEffect(() => {
     if (demoPlateText.trim().length > 0) {
@@ -824,6 +851,71 @@ function App() {
       setReviewError(error instanceof Error ? error.message : "Failed to save review");
     } finally {
       setReviewSubmitting(false);
+    }
+  }
+
+  async function handleAlertAction(nextStatus: DashboardAlert["status"]): Promise<void> {
+    if (!selectedLiveAlert) {
+      return;
+    }
+
+    const operatorId = alertActionOperatorId.trim();
+    const responseNotes = alertActionNotes.trim();
+    const popupEventId = `popup_${selectedLiveAlert.alert_id}`;
+
+    setAlertActionSubmitting(true);
+    setAlertActionPendingStatus(nextStatus);
+    setAlertActionError(null);
+    setAlertActionSuccess(null);
+
+    try {
+      const updatedAlert = await updateAlert(selectedLiveAlert.alert_id, {
+        status: nextStatus,
+        operator_id: operatorId || undefined,
+        response_notes: responseNotes || undefined,
+      });
+
+      setLiveOverview((current) => {
+        if (!current) {
+          return current;
+        }
+
+        const nextAlerts = current.alerts.map((alert) => (alert.alert_id === updatedAlert.alert_id ? updatedAlert : alert));
+        return {
+          ...current,
+          counts: {
+            ...current.counts,
+            active_alerts: nextAlerts.filter((alert) => alert.status === "active").length,
+          },
+          alerts: nextAlerts,
+          popup_activity:
+            updatedAlert.status === "dismissed"
+              ? current.popup_activity.filter((event) => event.event_id !== popupEventId)
+              : current.popup_activity,
+        };
+      });
+      setAlertActionOperatorId(updatedAlert.response_operator_id ?? "");
+      setAlertActionNotes(updatedAlert.response_notes ?? "");
+      setAlertActionSuccess(
+        nextStatus === "acknowledged"
+          ? "Alert acknowledged and saved locally."
+          : nextStatus === "dismissed"
+            ? "Alert stood down and removed from live popup activity."
+            : "Alert reopened and returned to active monitoring.",
+      );
+
+      if (nextStatus === "dismissed") {
+        queuedLivePopupIdsRef.current.delete(popupEventId);
+        setPopupHistory((current) => current.filter((event) => event.id !== popupEventId));
+        setPopupStack((current) => current.filter((popup) => popup.id !== popupEventId));
+      }
+
+      void refreshOverview();
+    } catch (error) {
+      setAlertActionError(error instanceof Error ? error.message : "Failed to update alert");
+    } finally {
+      setAlertActionSubmitting(false);
+      setAlertActionPendingStatus(null);
     }
   }
 
@@ -1327,7 +1419,7 @@ function App() {
         return (
           <PanelFrame panelId={panelId}>
             <div className="log-list">
-              {recoveryLog.map((entry) => (
+              {recoveryLogEntries.map((entry) => (
                 <div key={entry.id} className="log-row">
                   <span
                     className={`badge badge--${
@@ -1469,23 +1561,101 @@ function App() {
                 </div>
               )}
               <div className="live-activity__header">
-                <strong>Field actions</strong>
-                <span>Quick shortcuts for the selected target</span>
+                <strong>Alert response</strong>
+                <span>
+                  {alertActionsEnabled
+                    ? "Persisted locally through the live API."
+                    : "Connect the live API to acknowledge, stand down, or reopen alerts."}
+                </span>
               </div>
-              <div className="action-grid">
-                {[
-                  selectedAlert.routeAction,
-                  "Mark sighted",
-                  "Call office",
-                  "Log pass",
-                  "Tow ready",
-                  "Stand down",
-                ].map((action, index) => (
-                  <button key={action} className={`button ${index === 0 ? "button--primary" : ""}`} type="button">
-                    {action}
-                  </button>
-                ))}
-              </div>
+              {alertActionsEnabled && selectedLiveAlert ? (
+                <div className="review-shell">
+                  <div className="runtime-summary">
+                    <div className="runtime-summary__grid">
+                      <StatusLine label="Workflow state" value={statusLabels[selectedAlert.status]} />
+                      <StatusLine label="Recommended action" value={selectedAlert.routeAction} />
+                      <StatusLine label="Operator" value={selectedLiveAlert.response_operator_id ?? "Unassigned"} />
+                      <StatusLine
+                        label="Last update"
+                        value={
+                          selectedLiveAlert.updated_at_utc
+                            ? formatHotlistTimestamp(selectedLiveAlert.updated_at_utc)
+                            : "No field action recorded"
+                        }
+                      />
+                    </div>
+                  </div>
+                  <div className="review-form">
+                    <div className="form-grid review-form__grid">
+                      <label className="field-group">
+                        <span>Operator ID</span>
+                        <input
+                          className="input-control"
+                          placeholder="cab_demo_01"
+                          type="text"
+                          value={alertActionOperatorId}
+                          onChange={(event) => setAlertActionOperatorId(event.target.value)}
+                        />
+                      </label>
+                      <label className="field-group">
+                        <span>Selected target</span>
+                        <input className="input-control" disabled type="text" value={`${selectedAlert.plate} · ${selectedAlert.vehicle}`} />
+                      </label>
+                    </div>
+                    <label className="field-group">
+                      <span>Response notes</span>
+                      <textarea
+                        className="input-control input-control--multiline"
+                        placeholder="Record contact attempts, scene conditions, or stand-down context."
+                        value={alertActionNotes}
+                        onChange={(event) => setAlertActionNotes(event.target.value)}
+                      />
+                    </label>
+                    {alertActionError ? (
+                      <div className="review-feedback review-feedback--error">{alertActionError}</div>
+                    ) : null}
+                    {alertActionSuccess ? (
+                      <div className="review-feedback review-feedback--good">{alertActionSuccess}</div>
+                    ) : null}
+                    <div className="action-grid">
+                      <button
+                        className={`button ${selectedLiveAlert.status === "active" ? "button--primary" : ""}`}
+                        disabled={alertActionSubmitting || selectedLiveAlert.status === "acknowledged"}
+                        type="button"
+                        onClick={() => {
+                          void handleAlertAction("acknowledged");
+                        }}
+                      >
+                        {alertActionPendingStatus === "acknowledged" ? "Saving..." : "Acknowledge"}
+                      </button>
+                      <button
+                        className={`button ${selectedLiveAlert.status === "acknowledged" ? "button--primary" : ""}`}
+                        disabled={alertActionSubmitting || selectedLiveAlert.status === "dismissed"}
+                        type="button"
+                        onClick={() => {
+                          void handleAlertAction("dismissed");
+                        }}
+                      >
+                        {alertActionPendingStatus === "dismissed" ? "Saving..." : "Stand down"}
+                      </button>
+                      <button
+                        className={`button ${selectedLiveAlert.status === "dismissed" ? "button--primary" : ""}`}
+                        disabled={alertActionSubmitting || selectedLiveAlert.status === "active"}
+                        type="button"
+                        onClick={() => {
+                          void handleAlertAction("active");
+                        }}
+                      >
+                        {alertActionPendingStatus === "active" ? "Saving..." : "Re-open"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="review-empty">
+                  Connect the live API to save field actions and keep alert status changes across refreshes.
+                </div>
+              )}
             </div>
           </PanelFrame>
         );

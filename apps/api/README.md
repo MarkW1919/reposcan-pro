@@ -9,7 +9,7 @@ Current integrated slice:
 - dashboard overview endpoint at `GET /dashboard/overview` with recent popup activity for the operator UI
 - read-only detection endpoints at `GET /detections` and `GET /detections/{id}`
 - review endpoints at `POST /reviews/{id}` and `GET /reviews/{id}`
-- alert endpoints at `GET /alerts` and `GET /alerts/{id}`
+- alert endpoints at `GET /alerts`, `GET /alerts/{id}`, and `PUT /alerts/{id}`
 - hotlist endpoints at `GET /hotlists`, `POST /hotlists`, and `PUT /hotlists/{id}`
 - demo runtime endpoints at `GET /demo/runtime` and `POST /demo/runs` for app-driven headless ingest
 - seeded development storage for a live local UI demo path

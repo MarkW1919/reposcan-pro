@@ -9,7 +9,7 @@ from reposcan_contracts.review import ReviewRecord
 from reposcan_contracts.tracking import TrackedDetection
 from reposcan_storage.json_store import JsonFileStorageRepository
 from reposcan_storage.memory import InMemoryStorageRepository
-from reposcan_storage.service import DetectionNotFoundError, StorageService
+from reposcan_storage.service import AlertNotFoundError, DetectionNotFoundError, StorageService
 from reposcan_storage.dev_seed import seed_development_operator_data
 
 
@@ -159,6 +159,41 @@ def test_storage_service_rejects_review_for_missing_detection(tmp_path):
 
     with pytest.raises(DetectionNotFoundError):
         service.create_review(_review_record())
+
+
+def test_storage_service_updates_alert_state(tmp_path):
+    service = StorageService(
+        repository=InMemoryStorageRepository(),
+        media_root=tmp_path / "media",
+    )
+    service.store_alert(_alert_record())
+
+    updated = service.update_alert(
+        _alert_record().model_copy(
+            update={
+                "status": "acknowledged",
+                "response_operator_id": "cab_demo_01",
+                "response_notes": "Operator marked the vehicle as on scene.",
+                "updated_at_utc": "2026-03-20T04:21:00Z",
+            }
+        )
+    )
+
+    assert updated.status == "acknowledged"
+    assert updated.response_operator_id == "cab_demo_01"
+    assert updated.response_notes == "Operator marked the vehicle as on scene."
+    assert updated.updated_at_utc == "2026-03-20T04:21:00Z"
+    assert service.get_alert(updated.alert_id) == updated
+
+
+def test_storage_service_rejects_update_for_missing_alert(tmp_path):
+    service = StorageService(
+        repository=InMemoryStorageRepository(),
+        media_root=tmp_path / "media",
+    )
+
+    with pytest.raises(AlertNotFoundError):
+        service.update_alert(_alert_record())
 
 
 def test_storage_service_stores_tracked_detection(tmp_path):

@@ -220,6 +220,110 @@ def test_alert_endpoints_return_seeded_alerts(tmp_path):
     assert detail_response.json()["hotlist_entry_id"] == "hl_001"
 
 
+def test_put_alert_updates_status_and_popup_note(tmp_path):
+    client, service = _seeded_client(tmp_path)
+    service.create_hotlist(
+        HotlistEntry.model_validate(
+            {
+                "entry_id": "hl_001",
+                "plate_text": "8ABC123",
+                "label": "Case 42",
+                "created_at_utc": "2026-03-20T04:00:00Z",
+                "updated_at_utc": "2026-03-20T04:00:00Z",
+            }
+        )
+    )
+    service.store_alert(
+        AlertRecord.model_validate(
+            {
+                "alert_id": "alert_001",
+                "detection_id": "det_20260320_000001",
+                "hotlist_entry_id": "hl_001",
+                "timestamp_utc": "2026-03-20T04:20:00Z",
+                "camera_id": "cam_north_gate_01",
+                "matched_plate_text": "8ABC123",
+                "match_confidence": 0.93,
+                "match_type": "exact",
+                "hotlist_label": "Case 42",
+            }
+        )
+    )
+
+    response = client.put(
+        "/alerts/alert_001",
+        json={
+            "status": "acknowledged",
+            "operator_id": "cab_demo_01",
+            "response_notes": "Operator confirmed the vehicle and is holding position.",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "acknowledged"
+    assert payload["response_operator_id"] == "cab_demo_01"
+    assert payload["response_notes"] == "Operator confirmed the vehicle and is holding position."
+    assert payload["updated_at_utc"].endswith("Z")
+    assert service.get_alert("alert_001").status == "acknowledged"
+
+    overview = client.get("/dashboard/overview").json()
+    popup_event = next(event for event in overview["popup_activity"] if event["source_record_id"] == "alert_001")
+    assert popup_event["note"] == "Operator confirmed the vehicle and is holding position."
+
+
+def test_dismissed_alert_is_removed_from_popup_activity(tmp_path):
+    client, service = _seeded_client(tmp_path)
+    service.store_detection(
+        DetectionRecord.model_validate(
+            {
+                "detection_id": "det_20260320_000002",
+                "timestamp_utc": "2026-03-20T04:22:00Z",
+                "camera_id": "cam_lot_east_03",
+                "vehicle_bbox": {"x": 404, "y": 218, "w": 314, "h": 186},
+                "image_path": "media/frames/cam_lot_east_03/frame_000644.jpg",
+                "frame_number": 644,
+            }
+        )
+    )
+    service.create_hotlist(
+        HotlistEntry.model_validate(
+            {
+                "entry_id": "hl_002",
+                "plate_text": "8ABC123",
+                "label": "Dismissed target",
+                "created_at_utc": "2026-03-20T04:00:00Z",
+                "updated_at_utc": "2026-03-20T04:00:00Z",
+            }
+        )
+    )
+    service.store_alert(
+        AlertRecord.model_validate(
+            {
+                "alert_id": "alert_002",
+                "detection_id": "det_20260320_000001",
+                "hotlist_entry_id": "hl_002",
+                "timestamp_utc": "2026-03-20T04:21:00Z",
+                "camera_id": "cam_north_gate_01",
+                "matched_plate_text": "8ABC123",
+                "match_confidence": 0.95,
+                "match_type": "exact",
+                "hotlist_label": "Dismissed target",
+                "status": "dismissed",
+                "response_notes": "Stand down recorded after visual mismatch.",
+                "updated_at_utc": "2026-03-20T04:23:00Z",
+            }
+        )
+    )
+
+    response = client.get("/dashboard/overview")
+
+    assert response.status_code == 200
+    popup_source_ids = {event["source_record_id"] for event in response.json()["popup_activity"]}
+    assert "alert_002" not in popup_source_ids
+    assert "det_20260320_000001" not in popup_source_ids
+    assert "det_20260320_000002" in popup_source_ids
+
+
 def test_dashboard_overview_returns_operator_summary(tmp_path):
     client, service = _seeded_client(tmp_path)
     service.store_detection(

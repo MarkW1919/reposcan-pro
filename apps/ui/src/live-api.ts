@@ -1,4 +1,4 @@
-import type { AlertItem } from "./demo-data";
+import type { AlertItem, RecoveryLogEntry } from "./demo-data";
 
 export interface HealthDependency {
   name: string;
@@ -15,6 +15,7 @@ export interface HealthResponse {
 }
 
 export type ReviewAction = "confirm" | "correct" | "flag" | "dismiss";
+export type DashboardAlertStatus = "active" | "acknowledged" | "dismissed";
 
 export interface ReviewRecord {
   review_id: string;
@@ -58,7 +59,10 @@ export interface DashboardAlert {
   match_confidence: number;
   hotlist_label: string | null;
   notes: string | null;
-  status: string;
+  response_operator_id: string | null;
+  response_notes: string | null;
+  updated_at_utc: string | null;
+  status: DashboardAlertStatus;
   gps_latitude: number | null;
   gps_longitude: number | null;
 }
@@ -78,6 +82,12 @@ export interface HotlistSubmission {
   label?: string;
   notes?: string;
   active: boolean;
+}
+
+export interface AlertUpdateSubmission {
+  status: DashboardAlertStatus;
+  operator_id?: string;
+  response_notes?: string;
 }
 
 export interface DashboardPopupActivityEvent {
@@ -238,6 +248,25 @@ function buildPopupImageLabel(event: DashboardPopupActivityEvent): string {
   return event.event_type === "hotlist" ? "Live hotlist frame" : "Live scan frame";
 }
 
+function alertSortKey(alert: DashboardAlert): string {
+  return alert.updated_at_utc ?? alert.timestamp_utc;
+}
+
+function sortAlerts(alerts: DashboardAlert[]): DashboardAlert[] {
+  return [...alerts].sort((left, right) => alertSortKey(right).localeCompare(alertSortKey(left)));
+}
+
+function recoveryLogStatus(status: DashboardAlert["status"]): RecoveryLogEntry["status"] {
+  switch (status) {
+    case "acknowledged":
+      return "watch";
+    case "dismissed":
+      return "closed";
+    default:
+      return "active";
+  }
+}
+
 export async function fetchDashboardOverview(signal?: AbortSignal): Promise<DashboardOverviewResponse> {
   const response = await fetch(`${apiBaseUrl()}/dashboard/overview`, { signal });
   if (!response.ok) {
@@ -304,6 +333,20 @@ export async function updateHotlist(entryId: string, submission: HotlistSubmissi
   return (await response.json()) as DashboardHotlist;
 }
 
+export async function updateAlert(entryId: string, submission: AlertUpdateSubmission): Promise<DashboardAlert> {
+  const response = await fetch(`${apiBaseUrl()}/alerts/${encodeURIComponent(entryId)}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(submission),
+  });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, `Failed to update alert (${response.status})`));
+  }
+  return (await response.json()) as DashboardAlert;
+}
+
 export async function fetchReviews(detectionId: string, signal?: AbortSignal): Promise<ReviewRecord[]> {
   const response = await fetch(`${apiBaseUrl()}/reviews/${encodeURIComponent(detectionId)}`, { signal });
   if (!response.ok) {
@@ -336,12 +379,14 @@ export function mapOverviewToAlertItems(
 
   const detectionsById = new Map(overview.detections.map((record) => [record.detection_id, record]));
 
-  return overview.alerts.map((alert) => {
+  return sortAlerts(overview.alerts).map((alert) => {
     const detection = detectionsById.get(alert.detection_id);
     const gps = formatGps(alert.gps_latitude ?? detection?.gps_latitude, alert.gps_longitude ?? detection?.gps_longitude);
     const severity = alert.status === "active" ? "critical" : alert.status === "acknowledged" ? "priority" : "watch";
     const scenario = alert.status === "active" ? "tow_ready" : alert.status === "acknowledged" ? "visual_match" : "assignment";
     const status = alert.status === "active" ? "monitoring" : alert.status === "acknowledged" ? "onsite" : "cleared";
+    const routeAction = alert.status === "active" ? "Acknowledge" : alert.status === "acknowledged" ? "Stand down" : "Re-open";
+    const fieldNotes = [alert.notes, alert.response_notes].filter(Boolean).join(" \u00b7 ");
     return {
       id: alert.alert_id,
       detectionId: alert.detection_id,
@@ -355,13 +400,30 @@ export function mapOverviewToAlertItems(
       severity,
       scenario,
       status,
-      routeAction: alert.status === "active" ? "Open Route" : "Review Alert",
+      routeAction,
       location: gps,
       distance: "Live API",
-      notes: alert.notes ?? `Hotlist: ${alert.hotlist_label ?? "Unlabeled entry"}`,
+      notes: fieldNotes || `Hotlist: ${alert.hotlist_label ?? "Unlabeled entry"}`,
       bestApproach: "Use the nearest safe lane and visually confirm before engagement.",
     };
   });
+}
+
+export function mapOverviewToRecoveryLog(overview: DashboardOverviewResponse): RecoveryLogEntry[] {
+  const detectionsById = new Map(overview.detections.map((record) => [record.detection_id, record]));
+
+  return sortAlerts(overview.alerts)
+    .slice(0, 6)
+    .map((alert) => {
+      const detection = detectionsById.get(alert.detection_id);
+      return {
+        id: alert.alert_id,
+        status: recoveryLogStatus(alert.status),
+        title: alert.hotlist_label ?? buildVehicleLabel(detection, alert),
+        plate: alert.matched_plate_text,
+        updatedAt: formatTime(alert.updated_at_utc ?? alert.timestamp_utc),
+      };
+    });
 }
 
 export function mapOverviewToPopupHistory(overview: DashboardOverviewResponse) {

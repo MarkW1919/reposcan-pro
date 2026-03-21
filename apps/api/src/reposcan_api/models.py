@@ -13,6 +13,7 @@ from reposcan_contracts.hotlist import HotlistEntry
 from reposcan_contracts.popup import PopupActivityEvent
 from reposcan_contracts.review import ReviewAction
 from reposcan_contracts.types import UtcTimestamp
+from reposcan_contracts.alert import AlertStatus
 
 
 class ReviewSubmission(BaseModel):
@@ -37,6 +38,12 @@ class HotlistSubmission(BaseModel):
     label: Optional[str] = Field(None, description="Human-readable label")
     notes: Optional[str] = Field(None, description="Operator notes")
     active: bool = Field(True, description="Whether this entry should be actively matched")
+
+
+class AlertUpdateSubmission(BaseModel):
+    status: AlertStatus = Field(..., description="Next status for the alert")
+    operator_id: Optional[str] = Field(None, description="Operator updating the alert")
+    response_notes: Optional[str] = Field(None, description="Response or disposition notes")
 
 
 class DemoRunSubmission(BaseModel):

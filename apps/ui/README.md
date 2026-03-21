@@ -8,6 +8,7 @@ Current preview slice:
 - browser-persisted layout presets for map, camera, alert feed, and target-card placement
 - address-based scan mode with arrival-radius activation, operator override, and live API popup activity when available
 - field-settings hotlist manager for creating, editing, pausing, and seeding local hotlist entries from the selected alert
+- quick-actions alert response controls for acknowledge, stand down, and reopen state changes when the live API is available
 - selected-alert review history and local review submission when the live API is available
 - quick-actions demo runtime controls for launching headless ingest runs from a local frame folder when the live API is available
 - always-on hotlist popup behavior that stays active regardless of navigation or address-scan state

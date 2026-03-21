@@ -55,6 +55,19 @@ class TestAlertRecord:
         with pytest.raises(ValidationError):
             AlertRecord.model_validate(self._valid(timestamp_utc="2026-03-19T22:10:00-07:00"))
 
+    def test_response_metadata_roundtrips(self):
+        alert = AlertRecord.model_validate(
+            self._valid(
+                response_operator_id="cab_demo_01",
+                response_notes="Scene verified and logged.",
+                updated_at_utc="2026-03-19T22:20:00Z",
+            )
+        )
+
+        assert alert.response_operator_id == "cab_demo_01"
+        assert alert.response_notes == "Scene verified and logged."
+        assert alert.updated_at_utc == "2026-03-19T22:20:00Z"
+
 
 # ---------------------------------------------------------------------------
 # HotlistEntry

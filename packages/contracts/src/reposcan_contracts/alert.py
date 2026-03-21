@@ -35,6 +35,12 @@ class AlertRecord(BaseModel):
 
     hotlist_label: Optional[str] = Field(None, description="Human-readable label from the hotlist entry")
     notes: Optional[str] = Field(None, description="Operator notes attached to this alert")
+    response_operator_id: Optional[str] = Field(None, description="Operator who responded to the alert")
+    response_notes: Optional[str] = Field(None, description="Most recent response note for this alert")
+    updated_at_utc: Optional[UtcTimestamp] = Field(
+        None,
+        description="UTC timestamp of the most recent alert response update",
+    )
 
     status: AlertStatus = Field(AlertStatus.active)
 

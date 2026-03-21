@@ -78,6 +78,16 @@ Confirm that the seeded local API and the cab-first UI behave like a usable repo
 5. Click `New entry` or `Seed from selected alert` and create a new hotlist entry
 6. Refresh the page and confirm the new or updated hotlist entry remains visible from the live API
 
+## Alert Response Workflow
+
+1. Open `Recovery Alerts` and keep the live API connected
+2. Select an active alert, then open `Quick Actions`
+3. Enter an operator ID and optional response notes
+4. Click `Acknowledge` and confirm the success message appears
+5. Refresh the page and confirm the alert still shows the updated workflow state
+6. Click `Stand down` and confirm the alert drops out of `Live popup activity`
+7. Click `Re-open` and confirm the alert returns to active monitoring state
+
 ## Review Loop
 
 1. Select the primary alert and open the target card

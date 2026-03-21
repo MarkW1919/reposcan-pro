@@ -107,6 +107,11 @@ class StorageService:
     def store_alert(self, alert: AlertRecord) -> AlertRecord:
         return self.repository.create_alert(alert)
 
+    def update_alert(self, alert: AlertRecord) -> AlertRecord:
+        if self.repository.get_alert(alert.alert_id) is None:
+            raise AlertNotFoundError(alert.alert_id)
+        return self.repository.create_alert(alert)
+
     def list_hotlists(self, *, active_only: bool = False, limit: int = 100) -> list[HotlistEntry]:
         return self.repository.list_hotlists(active_only=active_only, limit=limit)
 

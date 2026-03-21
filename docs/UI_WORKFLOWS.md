@@ -26,10 +26,11 @@ The operator experience should support fast decision-making under field conditio
 - display alert severity, plate read, and confidence
 - show camera ID, GPS location, and time
 - preserve a durable record of alert acknowledgement and response
+- support acknowledge, stand down, and reopen actions without losing context on the selected target
+- suppress dismissed alerts from the live popup stream while keeping the status visible in history
 
 ## Related Documents
 
 - [API Contracts](API_CONTRACTS.md)
 - [Product](PRODUCT.md)
 - [Requirements](REQUIREMENTS.md)
-
