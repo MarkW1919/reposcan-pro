@@ -6,7 +6,7 @@ definitions and config loaders — no inference, IO, or business logic.
 
 from .alert import AlertRecord, AlertStatus
 from .detection import BoundingBox, DetectionRecord, PlateCandidate, SyncStatus
-from .frame import CameraProfile, FrameEnvelope, GpsSnapshot, SourceType
+from .frame import CameraProfile, FrameEnvelope, GpsSnapshot, PreparedFrame, PreprocessingMetadata, SourceType
 from .health import DependencyHealth, HealthResponse, HealthState
 from .hotlist import HotlistEntry, HotlistMatchResult
 from .inference import AttributePredictions, InferenceCandidate, ModelVersions, PlateDetection, VehicleDetection
@@ -40,6 +40,8 @@ __all__ = [
     "FrameEnvelope",
     "CameraProfile",
     "GpsSnapshot",
+    "PreparedFrame",
+    "PreprocessingMetadata",
     "SourceType",
     # inference (inter-service)
     "InferenceCandidate",

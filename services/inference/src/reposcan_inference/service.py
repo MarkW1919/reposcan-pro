@@ -7,7 +7,7 @@ from time import perf_counter
 from reposcan_contracts.config.loader import load_model_config, load_pipeline_config
 from reposcan_contracts.config.model import ClassifierModelConfig, DetectorModelConfig, ModelStackConfig, OcrModelConfig
 from reposcan_contracts.config.pipeline import PipelineConfig
-from reposcan_contracts.frame import FrameEnvelope
+from reposcan_contracts.frame import FrameEnvelope, PreparedFrame
 from reposcan_contracts.inference import InferenceCandidate, ModelVersions
 
 from .adapters import ModelAdapterBundle
@@ -55,7 +55,7 @@ class InferenceService:
             classifier=classifier_version,
         )
 
-    def run(self, frame: FrameEnvelope) -> InferenceCandidate:
+    def run(self, frame: FrameEnvelope | PreparedFrame) -> InferenceCandidate:
         started = perf_counter()
         vehicle_detections = self.adapters.vehicle_detector.detect(frame)
         plate_detections = self.adapters.plate_detector.detect(
@@ -81,5 +81,5 @@ class InferenceService:
             processing_latency_ms=max((perf_counter() - started) * 1000.0, 0.0),
         )
 
-    def run_batch(self, frames: list[FrameEnvelope]) -> list[InferenceCandidate]:
+    def run_batch(self, frames: list[FrameEnvelope | PreparedFrame]) -> list[InferenceCandidate]:
         return [self.run(frame) for frame in frames]

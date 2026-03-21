@@ -30,6 +30,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pipeline-config", default="configs/pipelines/default-edge.yaml")
     parser.add_argument("--deployment-config", default="configs/deployments/local-dev.yaml")
     parser.add_argument("--metadata-root", default="runtime/storage")
+    parser.add_argument("--preprocessed-root", default="runtime/preprocessed")
     parser.add_argument("--start-timestamp-utc", default="2026-03-20T12:00:00Z")
     parser.add_argument("--frame-interval-ms", type=float, default=100.0)
     parser.add_argument("--glob-pattern", default="*.jpg")
@@ -51,6 +52,7 @@ def main() -> int:
         pipeline_config_path=repo_root / args.pipeline_config,
         deployment_config_path=repo_root / args.deployment_config,
         metadata_root=repo_root / args.metadata_root,
+        preprocessed_root=repo_root / args.preprocessed_root,
         plate_text=args.plate_text,
     )
     summary = runner.run_file_sequence(

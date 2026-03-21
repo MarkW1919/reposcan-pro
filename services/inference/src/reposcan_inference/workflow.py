@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Iterable
 
-from reposcan_contracts.frame import FrameEnvelope
+from reposcan_contracts.frame import FrameEnvelope, PreparedFrame
 from reposcan_contracts.inference import InferenceCandidate
 from reposcan_preprocessing import PreprocessingService
 
@@ -22,7 +22,7 @@ class FrameToCandidateWorkflow:
         self.preprocessing_service = preprocessing_service
 
     def process(self, frame: FrameEnvelope) -> InferenceCandidate:
-        prepared = frame
+        prepared: FrameEnvelope | PreparedFrame = frame
         if self.preprocessing_service is not None:
             prepared = self.preprocessing_service.prepare(frame)
         return self.inference_service.run(prepared)

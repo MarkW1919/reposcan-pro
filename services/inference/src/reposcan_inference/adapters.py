@@ -7,15 +7,17 @@ from typing import Protocol, Sequence
 
 from reposcan_contracts.config.model import ClassifierModelConfig, DetectorModelConfig, ModelStackConfig, OcrModelConfig
 from reposcan_contracts.config.pipeline import PlateDetectionStrategy
-from reposcan_contracts.frame import FrameEnvelope
+from reposcan_contracts.frame import FrameEnvelope, PreparedFrame
 from reposcan_contracts.inference import AttributePredictions, PlateDetection, VehicleDetection
 from reposcan_contracts.detection import PlateCandidate
+
+InferenceFrame = FrameEnvelope | PreparedFrame
 
 
 class VehicleDetectorAdapter(Protocol):
     model_config: DetectorModelConfig
 
-    def detect(self, frame: FrameEnvelope) -> list[VehicleDetection]:
+    def detect(self, frame: InferenceFrame) -> list[VehicleDetection]:
         ...
 
 
@@ -24,7 +26,7 @@ class PlateDetectorAdapter(Protocol):
 
     def detect(
         self,
-        frame: FrameEnvelope,
+        frame: InferenceFrame,
         *,
         vehicle_detections: Sequence[VehicleDetection],
         strategy: PlateDetectionStrategy,
@@ -35,7 +37,7 @@ class PlateDetectorAdapter(Protocol):
 class OcrAdapter(Protocol):
     model_config: OcrModelConfig
 
-    def recognize(self, frame: FrameEnvelope, plate_detections: Sequence[PlateDetection]) -> list[PlateCandidate]:
+    def recognize(self, frame: InferenceFrame, plate_detections: Sequence[PlateDetection]) -> list[PlateCandidate]:
         ...
 
 
@@ -44,7 +46,7 @@ class ClassifierAdapter(Protocol):
 
     def predict(
         self,
-        frame: FrameEnvelope,
+        frame: InferenceFrame,
         vehicle_detections: Sequence[VehicleDetection],
     ) -> list[AttributePredictions]:
         ...
@@ -55,7 +57,7 @@ class StaticVehicleDetectorAdapter:
     model_config: DetectorModelConfig
     outputs: list[VehicleDetection] = field(default_factory=list)
 
-    def detect(self, frame: FrameEnvelope) -> list[VehicleDetection]:
+    def detect(self, frame: InferenceFrame) -> list[VehicleDetection]:
         return list(self.outputs)
 
 
@@ -66,7 +68,7 @@ class StaticPlateDetectorAdapter:
 
     def detect(
         self,
-        frame: FrameEnvelope,
+        frame: InferenceFrame,
         *,
         vehicle_detections: Sequence[VehicleDetection],
         strategy: PlateDetectionStrategy,
@@ -81,7 +83,7 @@ class StaticOcrAdapter:
     model_config: OcrModelConfig
     outputs: list[PlateCandidate] = field(default_factory=list)
 
-    def recognize(self, frame: FrameEnvelope, plate_detections: Sequence[PlateDetection]) -> list[PlateCandidate]:
+    def recognize(self, frame: InferenceFrame, plate_detections: Sequence[PlateDetection]) -> list[PlateCandidate]:
         if not plate_detections:
             return []
         return list(self.outputs)
@@ -94,7 +96,7 @@ class StaticClassifierAdapter:
 
     def predict(
         self,
-        frame: FrameEnvelope,
+        frame: InferenceFrame,
         vehicle_detections: Sequence[VehicleDetection],
     ) -> list[AttributePredictions]:
         if not vehicle_detections or not self.model_config.enabled:

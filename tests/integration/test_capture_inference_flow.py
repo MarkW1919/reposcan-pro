@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from reposcan_api import create_app
 from reposcan_capture import CaptureService, FileSequenceFrameSource
 from reposcan_contracts.config.camera import CameraConfig
 from reposcan_contracts.config.loader import load_model_config, load_pipeline_config
+from reposcan_contracts.frame import CameraProfile, FrameEnvelope, PreparedFrame, SourceType
 from reposcan_contracts.inference import AttributePredictions, PlateDetection, VehicleDetection
 from reposcan_contracts.detection import PlateCandidate
 from reposcan_contracts.hotlist import HotlistEntry
@@ -23,6 +25,11 @@ from reposcan_inference import (
 from reposcan_preprocessing import PreprocessingService
 from reposcan_storage.memory import InMemoryStorageRepository
 from reposcan_storage.service import StorageService
+
+
+def _write_demo_image(path, *, color: tuple[int, int, int]) -> None:
+    image = Image.new("RGB", (96, 64), color=color)
+    image.save(path, format="JPEG")
 
 
 def test_capture_to_inference_workflow_with_file_source(tmp_path):
@@ -128,6 +135,41 @@ def test_capture_to_inference_workflow_with_file_source(tmp_path):
     assert envelopes[1].frame_number == 1
 
 
+def test_preprocessing_service_generates_prepared_artifact_for_real_image(tmp_path):
+    source_path = tmp_path / "frame_0001.jpg"
+    _write_demo_image(source_path, color=(12, 12, 12))
+
+    frame = FrameEnvelope.model_validate(
+        {
+            "frame_id": "frm_real_001",
+            "camera_id": "cam_real_01",
+            "timestamp_utc": "2026-03-20T12:00:00Z",
+            "frame_path": str(source_path),
+            "frame_number": 0,
+            "source_type": "file",
+            "camera_profile": CameraProfile(
+                camera_id="cam_real_01",
+                source_type=SourceType.file,
+                ir_mode=True,
+            ).model_dump(mode="json"),
+        }
+    )
+
+    pipeline_config = load_pipeline_config("configs/pipelines/default-edge.yaml")
+    prepared = PreprocessingService(
+        pipeline_config,
+        artifact_root=tmp_path / "preprocessed",
+    ).prepare(frame)
+
+    assert isinstance(prepared, PreparedFrame)
+    assert prepared.raw_frame_path == str(source_path)
+    assert prepared.prepared_frame_path != prepared.raw_frame_path
+    assert (tmp_path / "preprocessed").exists()
+    assert prepared.preprocessing.artifact_generated is True
+    assert prepared.preprocessing.night_mode_triggered is True
+    assert prepared.preprocessing.mean_brightness_after >= prepared.preprocessing.mean_brightness_before
+
+
 def test_headless_file_sequence_runner_persists_fresh_detections_and_alerts(tmp_path):
     frames_dir = tmp_path / "frames"
     frames_dir.mkdir()
@@ -168,6 +210,48 @@ def test_headless_file_sequence_runner_persists_fresh_detections_and_alerts(tmp_
     overview = client.get("/dashboard/overview").json()
     assert summary.stored_detection_ids[0] in {record["detection_id"] for record in overview["detections"]}
     assert summary.created_alert_ids[0] in {record["alert_id"] for record in overview["alerts"]}
+
+
+def test_headless_runner_writes_preprocessed_artifacts_and_preserves_raw_evidence(tmp_path):
+    frames_dir = tmp_path / "frames"
+    frames_dir.mkdir()
+    for index, color in enumerate(((10, 10, 10), (14, 14, 14), (18, 18, 18)), start=1):
+        _write_demo_image(frames_dir / f"frame_{index:04d}.jpg", color=color)
+
+    storage_service = StorageService(
+        repository=InMemoryStorageRepository(),
+        media_root=tmp_path / "media",
+    )
+    storage_service.create_hotlist(
+        HotlistEntry.model_validate(
+            {
+                "entry_id": "hl_demo_002",
+                "plate_text": "6BZN220",
+                "label": "Night recovery target",
+                "created_at_utc": "2026-03-20T11:00:00Z",
+                "updated_at_utc": "2026-03-20T11:00:00Z",
+            }
+        )
+    )
+
+    runner = HeadlessFileSequenceRunner.from_config_paths(
+        storage_service=storage_service,
+        preprocessed_root=tmp_path / "preprocessed",
+    )
+    summary = runner.run_file_sequence(
+        frames_dir,
+        start_timestamp_utc="2026-03-20T12:00:00Z",
+        frame_interval_ms=100.0,
+        sequence_id="seq_runtime_real_images",
+    )
+
+    prepared_files = sorted((tmp_path / "preprocessed").rglob("*_prepared.jpg"))
+    detection = storage_service.get_detection(summary.stored_detection_ids[0])
+
+    assert len(prepared_files) == 3
+    assert detection is not None
+    assert detection.image_path.startswith(str(frames_dir))
+    assert not detection.image_path.startswith(str(tmp_path / "preprocessed"))
 
 
 def test_headless_file_sequence_runner_requires_enough_frames(tmp_path):

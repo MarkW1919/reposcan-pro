@@ -150,6 +150,7 @@ class HeadlessFileSequenceRunner:
         pipeline_config_path: str | Path = "configs/pipelines/default-edge.yaml",
         deployment_config_path: str | Path = "configs/deployments/local-dev.yaml",
         metadata_root: str | Path = "runtime/storage",
+        preprocessed_root: str | Path = "runtime/preprocessed",
         plate_text: str = "6BZN220",
         storage_service: StorageService | None = None,
     ) -> "HeadlessFileSequenceRunner":
@@ -169,7 +170,10 @@ class HeadlessFileSequenceRunner:
             frame_queue=FrameEnvelopeQueue(),
             candidate_workflow=FrameToCandidateWorkflow(
                 inference_service=inference_service,
-                preprocessing_service=PreprocessingService(pipeline_config),
+                preprocessing_service=PreprocessingService(
+                    pipeline_config,
+                    artifact_root=preprocessed_root,
+                ),
             ),
             tracking_service=TrackingService.from_config_path(str(pipeline_config_path)),
             alerting_service=AlertingService.from_config_path(str(pipeline_config_path)),

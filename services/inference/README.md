@@ -8,6 +8,6 @@ Design rule:
 Current integrated slice:
 - config-driven inference service that loads model and pipeline configs
 - replaceable stub adapter bundle for vehicle, plate, OCR, and attribute stages
-- frame-to-candidate workflow helper for the local capture-to-inference path
+- frame-to-candidate workflow helper for the local capture-to-inference path using prepared-frame artifacts when preprocessing is active
 - headless file-sequence runtime that chains preprocessing, inference, tracking, alerting, and storage for local end-to-end validation
 - inference profiling helpers for latency benchmarking and deployment recommendations

@@ -1,7 +1,9 @@
-"""FrameEnvelope — inter-service contract from capture to preprocessing.
+"""FrameEnvelope and PreparedFrame — inter-service contracts for image flow.
 
 Produced by: services/capture
 Consumed by: services/preprocessing
+
+PreparedFrame is produced by preprocessing and consumed by inference.
 """
 
 from __future__ import annotations
@@ -68,3 +70,38 @@ class FrameEnvelope(BaseModel):
     sequence_id: Optional[str] = Field(
         None, description="Session or recording identifier for grouping frames"
     )
+
+
+class PreprocessingMetadata(BaseModel):
+    """Summary of preprocessing decisions made for a frame."""
+
+    artifact_generated: bool = False
+    denoise_applied: bool = False
+    contrast_enhanced: bool = False
+    night_mode_triggered: bool = False
+    mean_brightness_before: Optional[float] = Field(None, ge=0.0, le=255.0)
+    mean_brightness_after: Optional[float] = Field(None, ge=0.0, le=255.0)
+
+
+class PreparedFrame(BaseModel):
+    """Inference-ready frame produced by preprocessing.
+
+    raw_frame_path always preserves the original capture evidence path.
+    prepared_frame_path points to the artifact that inference should consume.
+    """
+
+    frame_id: str = Field(..., description="Stable unique identifier for this frame")
+    camera_id: str = Field(..., description="Logical camera identifier")
+    timestamp_utc: UtcTimestamp = Field(..., description="Capture timestamp (ISO 8601 UTC)")
+    raw_frame_path: str = Field(..., description="Original captured frame path")
+    prepared_frame_path: str = Field(..., description="Inference-ready frame path")
+    frame_number: int = Field(..., ge=0, description="Monotonic frame counter from this camera")
+    source_type: SourceType
+    camera_profile: CameraProfile
+    gps_snapshot: Optional[GpsSnapshot] = Field(
+        None, description="GPS fix at capture time, when available"
+    )
+    sequence_id: Optional[str] = Field(
+        None, description="Session or recording identifier for grouping frames"
+    )
+    preprocessing: PreprocessingMetadata = Field(default_factory=PreprocessingMetadata)

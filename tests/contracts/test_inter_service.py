@@ -5,7 +5,14 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from reposcan_contracts.frame import CameraProfile, FrameEnvelope, GpsSnapshot, SourceType
+from reposcan_contracts.frame import (
+    CameraProfile,
+    FrameEnvelope,
+    GpsSnapshot,
+    PreparedFrame,
+    PreprocessingMetadata,
+    SourceType,
+)
 from reposcan_contracts.inference import (
     AttributePredictions,
     InferenceCandidate,
@@ -70,6 +77,48 @@ class TestFrameEnvelope:
     def test_invalid_timestamp_rejected(self):
         with pytest.raises(ValidationError):
             FrameEnvelope.model_validate(self._valid(timestamp_utc="bad-timestamp"))
+
+
+class TestPreparedFrame:
+    def _profile(self) -> CameraProfile:
+        return CameraProfile(
+            camera_id="cam_north_gate_01",
+            source_type=SourceType.file,
+            ir_mode=True,
+        )
+
+    def _valid(self, **overrides) -> dict:
+        base = {
+            "frame_id": "frm_001",
+            "camera_id": "cam_north_gate_01",
+            "timestamp_utc": "2026-03-19T22:10:00Z",
+            "raw_frame_path": "/data/frames/frm_001.jpg",
+            "prepared_frame_path": "/data/preprocessed/frm_001_prepared.jpg",
+            "frame_number": 0,
+            "source_type": "file",
+            "camera_profile": self._profile().model_dump(mode="json"),
+            "preprocessing": PreprocessingMetadata(
+                artifact_generated=True,
+                denoise_applied=True,
+                contrast_enhanced=True,
+                night_mode_triggered=True,
+                mean_brightness_before=22.0,
+                mean_brightness_after=58.0,
+            ).model_dump(mode="json"),
+        }
+        base.update(overrides)
+        return base
+
+    def test_valid_prepared_frame(self):
+        env = PreparedFrame.model_validate(self._valid())
+        assert env.raw_frame_path.endswith("frm_001.jpg")
+        assert env.preprocessing.artifact_generated is True
+
+    def test_brightness_bounds_rejected(self):
+        with pytest.raises(ValidationError):
+            PreparedFrame.model_validate(
+                self._valid(preprocessing={"mean_brightness_before": 999.0})
+            )
 
 
 # ---------------------------------------------------------------------------
