@@ -9,6 +9,7 @@ This repository currently contains:
 - local-first storage, alert, review, sync, and profiling service foundations
 - FastAPI endpoints for health, detections, alerts, reviews, hotlists, dashboard overview, and popup activity
 - a cab-first React operator UI with live popup activity, hotlist management, and local review workflow when the API is available, plus local demo fallback when it is not
+- a headless file-sequence ingest path that runs capture, preprocessing, inference, tracking, alerting, and storage without camera hardware
 - bootstrap, build, and validation scripts for the current integrated slice
 
 The design-first scaffold has already been turned into a working implementation foundation.
@@ -93,6 +94,16 @@ reposcan-pro/
 5. Start the API with `npm run api:dev`
 6. Start the UI with `npm run ui:dev`
 7. Use the manual demo checklist in [tests/manual/demo_vertical_slice.md](tests/manual/demo_vertical_slice.md)
+
+## Headless Ingest Demo
+
+Use the file-sequence runner to turn any folder of `.jpg` test frames into fresh detections and alerts that the live API and UI can serve immediately.
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\run_file_sequence_demo.py --frames-dir C:\path\to\frame-folder
+```
+
+The runner uses [configs/cameras/local-file-demo.yaml](configs/cameras/local-file-demo.yaml) by default and writes development metadata under `runtime/storage` unless you override it.
 
 ## Desktop Launcher
 

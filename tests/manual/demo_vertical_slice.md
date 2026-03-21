@@ -53,6 +53,14 @@ Confirm that the seeded local API and the cab-first UI behave like a usable repo
 4. Open `Field Settings`
 5. Confirm layout changes persist in the browser after refresh
 
+## Headless Ingest Simulation
+
+1. With the API still running, open a new terminal in the repo
+2. Run `.\.venv\Scripts\python.exe .\scripts\run_file_sequence_demo.py --frames-dir C:\path\to\frame-folder`
+3. Confirm the script reports captured frames, finalized tracks, and at least one stored detection
+4. Refresh the dashboard and confirm new live detections appear without restarting the API
+5. If an active hotlist entry matches the simulated plate, confirm a new alert appears in `Recovery Alerts`
+
 ## Hotlist Management
 
 1. Stay in `Field Settings`

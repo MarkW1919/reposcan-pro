@@ -1,0 +1,45 @@
+# Local file-sequence camera profile for headless demo ingestion.
+# Validated by: reposcan_contracts.config.camera.CameraConfig
+
+camera_id: cam_file_demo_01
+display_name: "Local File Demo Camera"
+source_type: file
+# Placeholder path for validation and local defaults. The demo runner supplies the
+# actual input folder via --frames-dir when executing a file sequence.
+stream_url: "./data/demo-frames"
+device_index: null
+
+sensor:
+  type: demo_file_source
+  resolution_w: 1920
+  resolution_h: 1080
+  fps: 10
+  bits_per_pixel: 8
+  color_mode: color
+
+optics:
+  focal_length_mm: 35.0
+  aperture_f: 1.8
+  ir_illuminator: false
+  ir_wavelength_nm: null
+
+exposure:
+  mode: auto
+  target_brightness: 128
+  shutter_speed_us: null
+  gain_db: null
+
+mounting:
+  height_m: 3.0
+  angle_deg: -10.0
+  orientation: fixed
+  gps_latitude: 37.42172
+  gps_longitude: -122.08408
+  gps_accuracy_m: 3.0
+
+capture:
+  target_fps: 10
+  reconnect_delay_s: 1.0
+  max_reconnect_attempts: 0
+
+enabled: true
