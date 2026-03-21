@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useRef, useState, type FormEvent, type ReactElement, type ReactNode } from "react";
+import { startTransition, useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactElement, type ReactNode } from "react";
 
 import {
   addressScanDetections,
@@ -1043,6 +1043,7 @@ function App() {
                   <strong>{currentDistanceLabel}</strong>
                 </div>
                 <input
+                  aria-label="Arrival distance simulator"
                   className="range-control"
                   max="1760"
                   min="0"
@@ -1058,9 +1059,7 @@ function App() {
               <div className="trigger-meter">
                 <div
                   className="trigger-meter__fill"
-                  style={{
-                    width: `${Math.min(100, (Math.max(0, 1760 - currentDistanceFeet) / 1760) * 100)}%`,
-                  }}
+                  style={{ "--fill": `${Math.min(100, (Math.max(0, 1760 - currentDistanceFeet) / 1760) * 100)}%` } as CSSProperties}
                 />
               </div>
               <div className="panel-actions">
@@ -1139,10 +1138,7 @@ function App() {
                   className={`map-marker map-marker--${severityTone(alert.severity)} ${
                     alert.id === selectedAlert.id ? "is-active" : ""
                   }`}
-                  style={{
-                    left: `${18 + index * 19}%`,
-                    top: `${20 + (index % 3) * 18}%`,
-                  }}
+                  style={{ "--x": `${18 + index * 19}%`, "--y": `${20 + (index % 3) * 18}%` } as CSSProperties}
                   type="button"
                   onClick={() => setSelectedAlertId(alert.id)}
                 >

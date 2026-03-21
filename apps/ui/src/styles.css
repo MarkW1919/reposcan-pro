@@ -512,6 +512,7 @@ textarea.input-control {
 
 .trigger-meter__fill {
   height: 100%;
+  width: var(--fill, 0%);
   border-radius: inherit;
   background: linear-gradient(90deg, #4f92ff, #7fb0ff);
 }
@@ -624,6 +625,8 @@ textarea.input-control {
 .map-marker {
   position: absolute;
   z-index: 1;
+  left: var(--x, 0%);
+  top: var(--y, 0%);
   width: 42px;
   height: 42px;
   border-radius: 999px;
