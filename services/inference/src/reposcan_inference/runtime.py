@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
+from threading import Lock, Thread
 from typing import Iterable
+from uuid import uuid4
 
 from reposcan_alerting import AlertingService
 from reposcan_capture import CaptureService, FileSequenceFrameSource
@@ -30,6 +33,10 @@ from .adapters import (
 )
 from .service import InferenceService
 from .workflow import FrameToCandidateWorkflow
+
+
+def _utcnow() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 @dataclass
@@ -57,6 +64,35 @@ class HeadlessRunSummary:
     tracks_finalized: int
     stored_detection_ids: list[str]
     created_alert_ids: list[str]
+
+
+@dataclass(frozen=True)
+class DemoRunRequest:
+    frames_directory: str
+    start_timestamp_utc: str
+    frame_interval_ms: float = 33.3
+    glob_pattern: str = "*.jpg"
+    start_frame_number: int = 0
+    sequence_id: str | None = None
+    plate_text: str = "6BZN220"
+
+
+@dataclass(frozen=True)
+class DemoRunStatus:
+    state: str
+    run_id: str | None = None
+    started_at_utc: str | None = None
+    completed_at_utc: str | None = None
+    frames_directory: str | None = None
+    glob_pattern: str | None = None
+    sequence_id: str | None = None
+    plate_text: str | None = None
+    error_message: str | None = None
+    summary: HeadlessRunSummary | None = None
+
+
+class DemoRunInProgressError(RuntimeError):
+    pass
 
 
 def build_demo_adapter_bundle(
@@ -273,3 +309,128 @@ class HeadlessFileSequenceRunner:
             stored_detection_ids=summary.stored_detection_ids,
             created_alert_ids=summary.created_alert_ids,
         )
+
+
+class HeadlessDemoRunManager:
+    """Manage background headless ingest runs for the no-hardware demo path."""
+
+    def __init__(
+        self,
+        *,
+        storage_service: StorageService,
+        camera_config_path: str | Path = "configs/cameras/local-file-demo.yaml",
+        model_config_path: str | Path = "configs/models/example-model-stack.yaml",
+        pipeline_config_path: str | Path = "configs/pipelines/default-edge.yaml",
+        deployment_config_path: str | Path = "configs/deployments/local-dev.yaml",
+        metadata_root: str | Path = "runtime/storage",
+        preprocessed_root: str | Path = "runtime/preprocessed",
+    ) -> None:
+        self.storage_service = storage_service
+        self.camera_config_path = camera_config_path
+        self.model_config_path = model_config_path
+        self.pipeline_config_path = pipeline_config_path
+        self.deployment_config_path = deployment_config_path
+        self.metadata_root = metadata_root
+        self.preprocessed_root = preprocessed_root
+        self._lock = Lock()
+        self._status = DemoRunStatus(state="idle")
+
+    def status(self) -> DemoRunStatus:
+        with self._lock:
+            return self._status
+
+    def start_run(
+        self,
+        *,
+        frames_directory: str | Path,
+        start_timestamp_utc: str | None = None,
+        frame_interval_ms: float = 100.0,
+        glob_pattern: str = "*.jpg",
+        start_frame_number: int = 0,
+        sequence_id: str | None = None,
+        plate_text: str = "6BZN220",
+    ) -> DemoRunStatus:
+        request = DemoRunRequest(
+            frames_directory=str(frames_directory),
+            start_timestamp_utc=start_timestamp_utc or _utcnow(),
+            frame_interval_ms=frame_interval_ms,
+            glob_pattern=glob_pattern,
+            start_frame_number=start_frame_number,
+            sequence_id=sequence_id,
+            plate_text=plate_text,
+        )
+        started_at_utc = _utcnow()
+        run_id = f"demo_{uuid4().hex[:12]}"
+
+        with self._lock:
+            if self._status.state == "running":
+                raise DemoRunInProgressError("A headless demo run is already in progress.")
+            self._status = DemoRunStatus(
+                state="running",
+                run_id=run_id,
+                started_at_utc=started_at_utc,
+                frames_directory=request.frames_directory,
+                glob_pattern=request.glob_pattern,
+                sequence_id=request.sequence_id,
+                plate_text=request.plate_text,
+            )
+
+        Thread(
+            target=self._execute_run,
+            args=(run_id, started_at_utc, request),
+            daemon=True,
+        ).start()
+        return self.status()
+
+    def _execute_run(
+        self,
+        run_id: str,
+        started_at_utc: str,
+        request: DemoRunRequest,
+    ) -> None:
+        try:
+            runner = HeadlessFileSequenceRunner.from_config_paths(
+                camera_config_path=self.camera_config_path,
+                model_config_path=self.model_config_path,
+                pipeline_config_path=self.pipeline_config_path,
+                deployment_config_path=self.deployment_config_path,
+                metadata_root=self.metadata_root,
+                preprocessed_root=self.preprocessed_root,
+                plate_text=request.plate_text,
+                storage_service=self.storage_service,
+            )
+            summary = runner.run_file_sequence(
+                request.frames_directory,
+                start_timestamp_utc=request.start_timestamp_utc,
+                frame_interval_ms=request.frame_interval_ms,
+                glob_pattern=request.glob_pattern,
+                start_frame_number=request.start_frame_number,
+                sequence_id=request.sequence_id,
+            )
+        except Exception as exc:
+            with self._lock:
+                self._status = DemoRunStatus(
+                    state="failed",
+                    run_id=run_id,
+                    started_at_utc=started_at_utc,
+                    completed_at_utc=_utcnow(),
+                    frames_directory=request.frames_directory,
+                    glob_pattern=request.glob_pattern,
+                    sequence_id=request.sequence_id,
+                    plate_text=request.plate_text,
+                    error_message=str(exc),
+                )
+            return
+
+        with self._lock:
+            self._status = DemoRunStatus(
+                state="succeeded",
+                run_id=run_id,
+                started_at_utc=started_at_utc,
+                completed_at_utc=_utcnow(),
+                frames_directory=request.frames_directory,
+                glob_pattern=request.glob_pattern,
+                sequence_id=request.sequence_id,
+                plate_text=request.plate_text,
+                summary=summary,
+            )

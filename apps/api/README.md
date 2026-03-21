@@ -11,6 +11,7 @@ Current integrated slice:
 - review endpoints at `POST /reviews/{id}` and `GET /reviews/{id}`
 - alert endpoints at `GET /alerts` and `GET /alerts/{id}`
 - hotlist endpoints at `GET /hotlists`, `POST /hotlists`, and `PUT /hotlists/{id}`
+- demo runtime endpoints at `GET /demo/runtime` and `POST /demo/runs` for app-driven headless ingest
 - seeded development storage for a live local UI demo path
 
 Design rules:

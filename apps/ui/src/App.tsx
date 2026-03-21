@@ -28,12 +28,15 @@ import {
 import {
   createHotlist,
   createReview,
+  fetchDemoRuntimeStatus,
   fetchHotlists,
   fetchReviews,
   fetchDashboardOverview,
   mapOverviewToAlertItems,
   mapOverviewToPopupHistory,
+  startDemoRun,
   updateHotlist,
+  type DemoRuntimeStatus as DemoRuntimeStatusRecord,
   type DashboardHotlist,
   type DashboardOverviewResponse,
   type ReviewAction,
@@ -220,6 +223,32 @@ function formatHotlistTimestamp(timestampUtc: string): string {
   });
 }
 
+function demoRuntimeLabel(state: DemoRuntimeStatusRecord["state"] | undefined): string {
+  switch (state) {
+    case "running":
+      return "Running";
+    case "succeeded":
+      return "Ready";
+    case "failed":
+      return "Failed";
+    default:
+      return "Idle";
+  }
+}
+
+function demoRuntimeBadgeTone(state: DemoRuntimeStatusRecord["state"] | undefined): string {
+  switch (state) {
+    case "running":
+      return "badge--priority";
+    case "succeeded":
+      return "badge--good";
+    case "failed":
+      return "badge--critical";
+    default:
+      return "badge--muted";
+  }
+}
+
 function App() {
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceId>("dashboard");
   const [layoutEditorOpen, setLayoutEditorOpen] = useState(false);
@@ -258,8 +287,18 @@ function App() {
   const [hotlistSaving, setHotlistSaving] = useState(false);
   const [hotlistError, setHotlistError] = useState<string | null>(null);
   const [hotlistSuccess, setHotlistSuccess] = useState<string | null>(null);
+  const [demoRuntimeStatus, setDemoRuntimeStatus] = useState<DemoRuntimeStatusRecord | null>(null);
+  const [demoFramesDirectory, setDemoFramesDirectory] = useState("");
+  const [demoSequenceId, setDemoSequenceId] = useState("seq_console_demo");
+  const [demoPlateText, setDemoPlateText] = useState(alerts[0]?.plate ?? "6BZN220");
+  const [demoLoading, setDemoLoading] = useState(false);
+  const [demoSubmitting, setDemoSubmitting] = useState(false);
+  const [demoError, setDemoError] = useState<string | null>(null);
+  const [demoSuccess, setDemoSuccess] = useState<string | null>(null);
   const previousWithinArrivalRef = useRef(false);
   const queuedLivePopupIdsRef = useRef<Set<string>>(new Set());
+  const previousDemoRunStateRef = useRef<DemoRuntimeStatusRecord["state"]>("idle");
+  const previousDemoRunIdRef = useRef<string | null>(null);
 
   const operatorAlerts = liveOverview ? mapOverviewToAlertItems(liveOverview, alerts) : alerts;
   const selectedAlert = operatorAlerts.find((alert) => alert.id === selectedAlertId) ?? operatorAlerts[0];
@@ -282,12 +321,18 @@ function App() {
       : "Address popups disabled";
   const reviewsEnabled = liveDataSource === "live" && selectedDetectionId !== null;
   const hotlistsEnabled = liveDataSource === "live";
+  const demoRuntimeEnabled = liveDataSource === "live";
   const latestReview = reviewHistory[0] ?? null;
   const canSubmitReview =
     reviewsEnabled &&
     !reviewSubmitting &&
     (reviewAction !== "correct" || reviewCorrectedPlate.trim().length > 0);
   const canSubmitHotlist = hotlistsEnabled && !hotlistSaving && hotlistPlateText.trim().length > 0;
+  const canStartDemoRun =
+    demoRuntimeEnabled &&
+    !demoSubmitting &&
+    demoFramesDirectory.trim().length > 0 &&
+    demoRuntimeStatus?.state !== "running";
 
   async function refreshOverview(signal?: AbortSignal): Promise<void> {
     try {
@@ -307,6 +352,29 @@ function App() {
       setLiveOverview(null);
       setLiveDataSource("fallback");
       setLiveError(error instanceof Error ? error.message : "Live API unavailable");
+    }
+  }
+
+  async function refreshDemoStatus(signal?: AbortSignal): Promise<void> {
+    if (!demoRuntimeEnabled) {
+      return;
+    }
+
+    try {
+      const status = await fetchDemoRuntimeStatus(signal);
+      if (signal?.aborted) {
+        return;
+      }
+
+      setDemoRuntimeStatus(status);
+      setDemoError(null);
+    } catch (error) {
+      if (signal?.aborted) {
+        return;
+      }
+
+      setDemoRuntimeStatus(null);
+      setDemoError(error instanceof Error ? error.message : "Demo runtime unavailable");
     }
   }
 
@@ -360,6 +428,93 @@ function App() {
     setReviewSuccess(null);
     setReviewError(null);
   }, [selectedAlert.id, selectedAlert.plate]);
+
+  useEffect(() => {
+    if (demoPlateText.trim().length > 0) {
+      return;
+    }
+    setDemoPlateText(selectedAlert.plate);
+  }, [demoPlateText, selectedAlert.plate]);
+
+  useEffect(() => {
+    if (!demoRuntimeEnabled) {
+      setDemoRuntimeStatus(null);
+      setDemoLoading(false);
+      setDemoError(null);
+      setDemoSuccess(null);
+      previousDemoRunStateRef.current = "idle";
+      previousDemoRunIdRef.current = null;
+      return;
+    }
+
+    let disposed = false;
+    const controller = new AbortController();
+    setDemoLoading(true);
+
+    fetchDemoRuntimeStatus(controller.signal)
+      .then((status) => {
+        if (disposed) {
+          return;
+        }
+
+        setDemoRuntimeStatus(status);
+        setDemoError(null);
+        previousDemoRunStateRef.current = status.state;
+        previousDemoRunIdRef.current = status.run_id;
+      })
+      .catch((error) => {
+        if (controller.signal.aborted || disposed) {
+          return;
+        }
+
+        setDemoRuntimeStatus(null);
+        setDemoError(error instanceof Error ? error.message : "Demo runtime unavailable");
+      })
+      .finally(() => {
+        if (!disposed) {
+          setDemoLoading(false);
+        }
+      });
+
+    const interval = window.setInterval(() => {
+      void refreshDemoStatus();
+    }, 4000);
+
+    return () => {
+      disposed = true;
+      controller.abort();
+      window.clearInterval(interval);
+    };
+  }, [demoRuntimeEnabled]);
+
+  useEffect(() => {
+    if (!demoRuntimeStatus?.run_id) {
+      previousDemoRunStateRef.current = demoRuntimeStatus?.state ?? "idle";
+      previousDemoRunIdRef.current = demoRuntimeStatus?.run_id ?? null;
+      return;
+    }
+
+    const runJustCompleted =
+      demoRuntimeStatus.run_id !== previousDemoRunIdRef.current ||
+      (previousDemoRunStateRef.current === "running" && demoRuntimeStatus.state !== "running");
+
+    if (runJustCompleted && demoRuntimeStatus.state === "succeeded") {
+      setDemoSuccess(
+        `Demo run ready: ${demoRuntimeStatus.summary?.stored_detection_ids.length ?? 0} detection${
+          demoRuntimeStatus.summary?.stored_detection_ids.length === 1 ? "" : "s"
+        } and ${demoRuntimeStatus.summary?.created_alert_ids.length ?? 0} alert${
+          demoRuntimeStatus.summary?.created_alert_ids.length === 1 ? "" : "s"
+        } recorded.`,
+      );
+      void refreshOverview();
+    } else if (runJustCompleted && demoRuntimeStatus.state === "failed" && demoRuntimeStatus.error_message) {
+      setDemoError(demoRuntimeStatus.error_message);
+      setDemoSuccess(null);
+    }
+
+    previousDemoRunStateRef.current = demoRuntimeStatus.state;
+    previousDemoRunIdRef.current = demoRuntimeStatus.run_id;
+  }, [demoRuntimeStatus]);
 
   useEffect(() => {
     if (!hotlistsEnabled) {
@@ -715,6 +870,43 @@ function App() {
       setHotlistError(error instanceof Error ? error.message : "Failed to save hotlist entry");
     } finally {
       setHotlistSaving(false);
+    }
+  }
+
+  async function handleDemoRunSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    if (!demoRuntimeEnabled) {
+      return;
+    }
+
+    const framesDirectory = demoFramesDirectory.trim();
+    const plateText = demoPlateText.trim().toUpperCase();
+    if (framesDirectory.length === 0) {
+      setDemoError("A local frame folder is required before starting a demo run.");
+      return;
+    }
+    if (plateText.length === 0) {
+      setDemoError("A demo plate value is required before starting a demo run.");
+      return;
+    }
+
+    setDemoSubmitting(true);
+    setDemoError(null);
+    setDemoSuccess(null);
+
+    try {
+      const status = await startDemoRun({
+        frames_directory: framesDirectory,
+        frame_interval_ms: 100.0,
+        sequence_id: demoSequenceId.trim() || undefined,
+        plate_text: plateText,
+      });
+      setDemoRuntimeStatus(status);
+      setDemoSuccess(`Demo run started for ${plateText}. The dashboard will refresh when the ingest job completes.`);
+    } catch (error) {
+      setDemoError(error instanceof Error ? error.message : "Failed to start demo run");
+    } finally {
+      setDemoSubmitting(false);
     }
   }
 
@@ -1157,19 +1349,143 @@ function App() {
       case "dispatchBoard":
         return (
           <PanelFrame panelId={panelId}>
-            <div className="action-grid">
-              {[
-                selectedAlert.routeAction,
-                "Mark sighted",
-                "Call office",
-                "Log pass",
-                "Tow ready",
-                "Stand down",
-              ].map((action, index) => (
-                <button key={action} className={`button ${index === 0 ? "button--primary" : ""}`} type="button">
-                  {action}
-                </button>
-              ))}
+            <div className="runtime-shell">
+              <div className="live-activity__header">
+                <strong>Demo runtime</strong>
+                <span className={`badge ${demoRuntimeBadgeTone(demoRuntimeStatus?.state)}`}>
+                  {demoRuntimeLabel(demoRuntimeStatus?.state)}
+                </span>
+              </div>
+              {demoRuntimeEnabled ? (
+                <>
+                  <div className="runtime-summary">
+                    <div className="runtime-summary__grid">
+                      <StatusLine label="Run ID" value={demoRuntimeStatus?.run_id ?? "Waiting"} />
+                      <StatusLine
+                        label="Started"
+                        value={
+                          demoRuntimeStatus?.started_at_utc
+                            ? formatHotlistTimestamp(demoRuntimeStatus.started_at_utc)
+                            : "Not started"
+                        }
+                      />
+                      <StatusLine
+                        label="Completed"
+                        value={
+                          demoRuntimeStatus?.completed_at_utc
+                            ? formatHotlistTimestamp(demoRuntimeStatus.completed_at_utc)
+                            : demoRuntimeStatus?.state === "running"
+                              ? "In progress"
+                              : "Not completed"
+                        }
+                      />
+                      <StatusLine
+                        label="Plate seed"
+                        value={demoRuntimeStatus?.plate_text ?? (demoPlateText.trim().toUpperCase() || "Unset")}
+                      />
+                    </div>
+                    <div className="runtime-summary__grid">
+                      <StatusLine
+                        label="Frames folder"
+                        value={demoRuntimeStatus?.frames_directory ?? (demoFramesDirectory.trim() || "Set a local path")}
+                      />
+                      <StatusLine
+                        label="Detections"
+                        value={String(demoRuntimeStatus?.summary?.stored_detection_ids.length ?? 0)}
+                      />
+                      <StatusLine
+                        label="Alerts"
+                        value={String(demoRuntimeStatus?.summary?.created_alert_ids.length ?? 0)}
+                      />
+                      <StatusLine
+                        label="Tracks"
+                        value={String(demoRuntimeStatus?.summary?.tracks_finalized ?? 0)}
+                      />
+                    </div>
+                  </div>
+                  <form className="review-form" onSubmit={handleDemoRunSubmit}>
+                    <div className="form-grid review-form__grid">
+                      <label className="field-group">
+                        <span>Frame folder</span>
+                        <input
+                          className="input-control"
+                          placeholder="C:\\frames\\demo-run"
+                          type="text"
+                          value={demoFramesDirectory}
+                          onChange={(event) => setDemoFramesDirectory(event.target.value)}
+                        />
+                      </label>
+                      <label className="field-group">
+                        <span>Sequence ID</span>
+                        <input
+                          className="input-control"
+                          placeholder="seq_console_demo"
+                          type="text"
+                          value={demoSequenceId}
+                          onChange={(event) => setDemoSequenceId(event.target.value)}
+                        />
+                      </label>
+                      <label className="field-group">
+                        <span>Plate seed</span>
+                        <input
+                          className="input-control"
+                          placeholder="6BZN220"
+                          type="text"
+                          value={demoPlateText}
+                          onChange={(event) => setDemoPlateText(event.target.value.toUpperCase())}
+                        />
+                      </label>
+                    </div>
+                    {demoLoading ? <div className="review-empty">Loading demo runtime status...</div> : null}
+                    {demoError ? <div className="review-feedback review-feedback--error">{demoError}</div> : null}
+                    {demoSuccess ? <div className="review-feedback review-feedback--good">{demoSuccess}</div> : null}
+                    <div className="panel-actions">
+                      <button className="button button--primary" disabled={!canStartDemoRun} type="submit">
+                        {demoSubmitting
+                          ? "Starting demo..."
+                          : demoRuntimeStatus?.state === "running"
+                            ? "Demo running..."
+                            : "Run headless demo"}
+                      </button>
+                      <button
+                        className="button"
+                        disabled={!demoRuntimeEnabled || demoLoading}
+                        type="button"
+                        onClick={() => {
+                          void refreshDemoStatus();
+                        }}
+                      >
+                        Refresh status
+                      </button>
+                      <button className="button" type="button" onClick={() => setDemoPlateText(selectedAlert.plate)}>
+                        Use selected plate
+                      </button>
+                    </div>
+                  </form>
+                </>
+              ) : (
+                <div className="review-empty">
+                  Connect the live API to launch headless demo ingest runs from the app and watch new detections land live.
+                </div>
+              )}
+              <div className="live-activity__header">
+                <strong>Field actions</strong>
+                <span>Quick shortcuts for the selected target</span>
+              </div>
+              <div className="action-grid">
+                {[
+                  selectedAlert.routeAction,
+                  "Mark sighted",
+                  "Call office",
+                  "Log pass",
+                  "Tow ready",
+                  "Stand down",
+                ].map((action, index) => (
+                  <button key={action} className={`button ${index === 0 ? "button--primary" : ""}`} type="button">
+                    {action}
+                  </button>
+                ))}
+              </div>
             </div>
           </PanelFrame>
         );

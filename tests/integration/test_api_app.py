@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import time
+
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from reposcan_contracts.alert import AlertRecord
 from reposcan_contracts.detection import DetectionRecord
@@ -26,6 +29,21 @@ def _seeded_client(tmp_path) -> tuple[TestClient, StorageService]:
         )
     )
     return TestClient(create_app(storage_service=service)), service
+
+
+def _write_demo_image(path, *, color: tuple[int, int, int]) -> None:
+    image = Image.new("RGB", (96, 64), color=color)
+    image.save(path, format="JPEG")
+
+
+def _wait_for_demo_run_completion(client: TestClient, timeout_s: float = 5.0) -> dict:
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        payload = client.get("/demo/runtime").json()
+        if payload["state"] in {"succeeded", "failed"}:
+            return payload
+        time.sleep(0.05)
+    raise AssertionError("Timed out waiting for demo runtime completion")
 
 
 def test_health_endpoint_reports_api_and_storage(tmp_path):
@@ -264,3 +282,72 @@ def test_dashboard_overview_returns_operator_summary(tmp_path):
     assert payload["popup_activity"][0]["source_record_id"] == "det_20260320_000002"
     assert payload["popup_activity"][1]["event_type"] == "hotlist"
     assert payload["popup_activity"][1]["source_record_id"] == "alert_002"
+
+
+def test_demo_runtime_endpoints_run_headless_ingest_and_update_dashboard(tmp_path):
+    client, service = _seeded_client(tmp_path)
+    frames_dir = tmp_path / "demo_frames"
+    frames_dir.mkdir()
+    for index, color in enumerate(((12, 12, 12), (16, 16, 16), (20, 20, 20)), start=1):
+        _write_demo_image(frames_dir / f"frame_{index:04d}.jpg", color=color)
+
+    service.create_hotlist(
+        HotlistEntry.model_validate(
+            {
+                "entry_id": "hl_demo_runtime",
+                "plate_text": "6BZN220",
+                "label": "Demo runtime target",
+                "created_at_utc": "2026-03-20T04:00:00Z",
+                "updated_at_utc": "2026-03-20T04:00:00Z",
+            }
+        )
+    )
+
+    idle_response = client.get("/demo/runtime")
+    assert idle_response.status_code == 200
+    assert idle_response.json()["state"] == "idle"
+
+    start_response = client.post(
+        "/demo/runs",
+        json={
+            "frames_directory": str(frames_dir),
+            "frame_interval_ms": 100.0,
+            "sequence_id": "seq_api_demo",
+            "plate_text": "6BZN220",
+        },
+    )
+
+    assert start_response.status_code == 202
+    assert start_response.json()["state"] == "running"
+
+    completed = _wait_for_demo_run_completion(client)
+    assert completed["state"] == "succeeded"
+    assert completed["summary"]["frames_captured"] == 3
+    assert len(completed["summary"]["stored_detection_ids"]) == 1
+    assert len(completed["summary"]["created_alert_ids"]) == 1
+
+    overview = client.get("/dashboard/overview").json()
+    assert completed["summary"]["stored_detection_ids"][0] in {
+        record["detection_id"] for record in overview["detections"]
+    }
+    assert completed["summary"]["created_alert_ids"][0] in {
+        record["alert_id"] for record in overview["alerts"]
+    }
+
+
+def test_demo_runtime_reports_failures_for_missing_frame_folder(tmp_path):
+    client, _ = _seeded_client(tmp_path)
+
+    start_response = client.post(
+        "/demo/runs",
+        json={
+            "frames_directory": str(tmp_path / "missing_frames"),
+            "sequence_id": "seq_missing",
+            "plate_text": "6BZN220",
+        },
+    )
+
+    assert start_response.status_code == 202
+    completed = _wait_for_demo_run_completion(client)
+    assert completed["state"] == "failed"
+    assert "No frame files found" in completed["error_message"]

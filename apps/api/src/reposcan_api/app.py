@@ -14,6 +14,7 @@ from reposcan_contracts.health import HealthResponse, HealthState
 from reposcan_contracts.hotlist import HotlistEntry
 from reposcan_contracts.popup import PopupActivityEvent, PopupEventType
 from reposcan_contracts.review import ReviewRecord
+from reposcan_inference import DemoRunInProgressError, DemoRunStatus as RuntimeDemoRunStatus, HeadlessDemoRunManager
 from reposcan_storage.service import (
     DetectionNotFoundError,
     HotlistNotFoundError,
@@ -21,7 +22,15 @@ from reposcan_storage.service import (
     create_development_storage_service,
 )
 
-from .models import DashboardCounts, DashboardOverview, HotlistSubmission, ReviewSubmission
+from .models import (
+    DashboardCounts,
+    DashboardOverview,
+    DemoRunSubmission,
+    DemoRunSummary,
+    DemoRuntimeStatus,
+    HotlistSubmission,
+    ReviewSubmission,
+)
 
 
 def _utcnow() -> str:
@@ -104,8 +113,37 @@ def _build_popup_activity(
     return events[:limit]
 
 
-def create_app(storage_service: StorageService | None = None) -> FastAPI:
+def _build_demo_runtime_status(status: RuntimeDemoRunStatus) -> DemoRuntimeStatus:
+    summary = None
+    if status.summary is not None:
+        summary = DemoRunSummary(
+            frames_captured=status.summary.frames_captured,
+            candidates_processed=status.summary.candidates_processed,
+            tracks_finalized=status.summary.tracks_finalized,
+            stored_detection_ids=status.summary.stored_detection_ids,
+            created_alert_ids=status.summary.created_alert_ids,
+        )
+
+    return DemoRuntimeStatus(
+        state=status.state,
+        run_id=status.run_id,
+        started_at_utc=status.started_at_utc,
+        completed_at_utc=status.completed_at_utc,
+        frames_directory=status.frames_directory,
+        glob_pattern=status.glob_pattern,
+        sequence_id=status.sequence_id,
+        plate_text=status.plate_text,
+        error_message=status.error_message,
+        summary=summary,
+    )
+
+
+def create_app(
+    storage_service: StorageService | None = None,
+    demo_run_manager: HeadlessDemoRunManager | None = None,
+) -> FastAPI:
     service = storage_service or create_development_storage_service()
+    demo_manager = demo_run_manager or HeadlessDemoRunManager(storage_service=service)
 
     app = FastAPI(
         title="RepoScan Pro API",
@@ -123,6 +161,7 @@ def create_app(storage_service: StorageService | None = None) -> FastAPI:
         allow_headers=["*"],
     )
     app.state.storage_service = service
+    app.state.demo_run_manager = demo_manager
 
     def build_health_response() -> HealthResponse:
         dependencies = service.dependency_health()
@@ -160,6 +199,26 @@ def create_app(storage_service: StorageService | None = None) -> FastAPI:
             hotlists=hotlists,
             popup_activity=popup_activity,
         )
+
+    @app.get("/demo/runtime", response_model=DemoRuntimeStatus)
+    def get_demo_runtime_status() -> DemoRuntimeStatus:
+        return _build_demo_runtime_status(demo_manager.status())
+
+    @app.post("/demo/runs", response_model=DemoRuntimeStatus, status_code=status.HTTP_202_ACCEPTED)
+    def start_demo_run(submission: DemoRunSubmission) -> DemoRuntimeStatus:
+        try:
+            run_status = demo_manager.start_run(
+                frames_directory=submission.frames_directory,
+                start_timestamp_utc=submission.start_timestamp_utc,
+                frame_interval_ms=submission.frame_interval_ms,
+                glob_pattern=submission.glob_pattern,
+                start_frame_number=submission.start_frame_number,
+                sequence_id=submission.sequence_id,
+                plate_text=submission.plate_text,
+            )
+        except DemoRunInProgressError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        return _build_demo_runtime_status(run_status)
 
     @app.get("/detections", response_model=list[DetectionRecord])
     def list_detections(

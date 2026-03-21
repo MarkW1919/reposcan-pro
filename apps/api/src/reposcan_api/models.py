@@ -39,6 +39,40 @@ class HotlistSubmission(BaseModel):
     active: bool = Field(True, description="Whether this entry should be actively matched")
 
 
+class DemoRunSubmission(BaseModel):
+    frames_directory: str = Field(..., min_length=1, description="Local directory containing demo frames")
+    start_timestamp_utc: Optional[UtcTimestamp] = Field(
+        None,
+        description="Optional override for the simulated first-frame timestamp",
+    )
+    frame_interval_ms: float = Field(100.0, gt=0.0, description="Milliseconds between simulated frames")
+    glob_pattern: str = Field("*.jpg", min_length=1, description="Glob used to select frame files")
+    start_frame_number: int = Field(0, ge=0, description="First frame number for the simulated sequence")
+    sequence_id: Optional[str] = Field(None, description="Optional grouping identifier for the run")
+    plate_text: str = Field("6BZN220", min_length=1, description="Deterministic demo plate text")
+
+
+class DemoRunSummary(BaseModel):
+    frames_captured: int = Field(..., ge=0)
+    candidates_processed: int = Field(..., ge=0)
+    tracks_finalized: int = Field(..., ge=0)
+    stored_detection_ids: list[str]
+    created_alert_ids: list[str]
+
+
+class DemoRuntimeStatus(BaseModel):
+    state: str = Field(..., description="idle, running, succeeded, or failed")
+    run_id: Optional[str] = None
+    started_at_utc: Optional[UtcTimestamp] = None
+    completed_at_utc: Optional[UtcTimestamp] = None
+    frames_directory: Optional[str] = None
+    glob_pattern: Optional[str] = None
+    sequence_id: Optional[str] = None
+    plate_text: Optional[str] = None
+    error_message: Optional[str] = None
+    summary: Optional[DemoRunSummary] = None
+
+
 class DashboardCounts(BaseModel):
     active_alerts: int = Field(..., ge=0)
     recent_detections: int = Field(..., ge=0)

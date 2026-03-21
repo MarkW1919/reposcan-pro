@@ -8,7 +8,7 @@ This repository currently contains:
 - shared contracts and config loaders
 - local-first storage, alert, review, sync, and profiling service foundations
 - FastAPI endpoints for health, detections, alerts, reviews, hotlists, dashboard overview, and popup activity
-- a cab-first React operator UI with live popup activity, hotlist management, and local review workflow when the API is available, plus local demo fallback when it is not
+- a cab-first React operator UI with live popup activity, hotlist management, local review workflow, and app-driven demo ingest control when the API is available, plus local demo fallback when it is not
 - a headless file-sequence ingest path that runs capture, low-light-oriented preprocessing, inference, tracking, alerting, and storage without camera hardware
 - bootstrap, build, and validation scripts for the current integrated slice
 
@@ -99,6 +99,9 @@ reposcan-pro/
 
 Use the file-sequence runner to turn any folder of `.jpg` test frames into fresh detections and alerts that the live API and UI can serve immediately.
 When preprocessing is enabled, the runner also writes inference-ready frame artifacts under `runtime/preprocessed` by default.
+
+For a closer-to-deployable demo flow, start the API and UI, then launch the same ingest path from the `Quick Actions` panel inside `Recovery Alerts`.
+The UI talks to the live API demo runtime endpoints, so new detections and alerts appear without opening another terminal.
 
 ```powershell
 .\.venv\Scripts\python.exe .\scripts\run_file_sequence_demo.py --frames-dir C:\path\to\frame-folder

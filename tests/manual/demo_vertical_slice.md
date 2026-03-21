@@ -55,12 +55,19 @@ Confirm that the seeded local API and the cab-first UI behave like a usable repo
 
 ## Headless Ingest Simulation
 
+1. Open `Recovery Alerts`
+2. In `Quick Actions`, enter a local frame folder path and leave the selected alert plate or replace it with a demo plate
+3. Click `Run headless demo`
+4. Confirm the status changes to `Running`, then to `Ready`
+5. Confirm preprocessing artifacts appear under `runtime/preprocessed` or the configured preprocessing output folder
+6. Confirm new live detections appear without restarting the API
+7. If an active hotlist entry matches the simulated plate, confirm a new alert appears in `Recovery Alerts`
+
+## Headless Ingest CLI Fallback
+
 1. With the API still running, open a new terminal in the repo
 2. Run `.\.venv\Scripts\python.exe .\scripts\run_file_sequence_demo.py --frames-dir C:\path\to\frame-folder`
 3. Confirm the script reports captured frames, finalized tracks, and at least one stored detection
-4. Confirm preprocessing artifacts appear under `runtime/preprocessed` or the configured preprocessing output folder
-5. Refresh the dashboard and confirm new live detections appear without restarting the API
-6. If an active hotlist entry matches the simulated plate, confirm a new alert appears in `Recovery Alerts`
 
 ## Hotlist Management
 

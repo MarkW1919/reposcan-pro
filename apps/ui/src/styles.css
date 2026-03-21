@@ -942,6 +942,33 @@ textarea.input-control {
   gap: 12px;
 }
 
+.runtime-shell,
+.runtime-summary,
+.runtime-summary__grid {
+  display: grid;
+  gap: 12px;
+}
+
+.runtime-summary {
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(126, 155, 206, 0.14);
+  background: rgba(17, 28, 51, 0.76);
+}
+
+.runtime-summary .status-line {
+  align-items: flex-start;
+}
+
+.runtime-summary .status-line strong {
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.runtime-summary__grid {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
 .log-row {
   grid-template-columns: auto minmax(0, 1fr) auto;
   padding: 14px;

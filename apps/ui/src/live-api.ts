@@ -99,6 +99,37 @@ export interface DashboardPopupActivityEvent {
   note: string | null;
 }
 
+export interface DemoRunSummary {
+  frames_captured: number;
+  candidates_processed: number;
+  tracks_finalized: number;
+  stored_detection_ids: string[];
+  created_alert_ids: string[];
+}
+
+export interface DemoRuntimeStatus {
+  state: "idle" | "running" | "succeeded" | "failed";
+  run_id: string | null;
+  started_at_utc: string | null;
+  completed_at_utc: string | null;
+  frames_directory: string | null;
+  glob_pattern: string | null;
+  sequence_id: string | null;
+  plate_text: string | null;
+  error_message: string | null;
+  summary: DemoRunSummary | null;
+}
+
+export interface DemoRunSubmission {
+  frames_directory: string;
+  start_timestamp_utc?: string;
+  frame_interval_ms?: number;
+  glob_pattern?: string;
+  start_frame_number?: number;
+  sequence_id?: string;
+  plate_text?: string;
+}
+
 export interface DashboardOverviewResponse {
   generated_at_utc: string;
   health: HealthResponse;
@@ -115,6 +146,18 @@ export interface DashboardOverviewResponse {
 
 function apiBaseUrl(): string {
   return (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ?? "http://127.0.0.1:8000";
+}
+
+async function responseErrorMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const payload = (await response.json()) as { detail?: string };
+    if (payload.detail) {
+      return payload.detail;
+    }
+  } catch {
+    // Ignore JSON parsing issues and use the fallback message below.
+  }
+  return fallback;
 }
 
 function titleCase(value: string | null | undefined): string {
@@ -201,6 +244,28 @@ export async function fetchDashboardOverview(signal?: AbortSignal): Promise<Dash
     throw new Error(`Failed to load dashboard overview (${response.status})`);
   }
   return (await response.json()) as DashboardOverviewResponse;
+}
+
+export async function fetchDemoRuntimeStatus(signal?: AbortSignal): Promise<DemoRuntimeStatus> {
+  const response = await fetch(`${apiBaseUrl()}/demo/runtime`, { signal });
+  if (!response.ok) {
+    throw new Error(`Failed to load demo runtime status (${response.status})`);
+  }
+  return (await response.json()) as DemoRuntimeStatus;
+}
+
+export async function startDemoRun(submission: DemoRunSubmission): Promise<DemoRuntimeStatus> {
+  const response = await fetch(`${apiBaseUrl()}/demo/runs`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(submission),
+  });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, `Failed to start demo run (${response.status})`));
+  }
+  return (await response.json()) as DemoRuntimeStatus;
 }
 
 export async function fetchHotlists(signal?: AbortSignal): Promise<DashboardHotlist[]> {
