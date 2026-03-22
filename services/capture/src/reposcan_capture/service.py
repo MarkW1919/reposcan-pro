@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 from uuid import uuid4
@@ -15,6 +16,15 @@ from .sources import CapturedFrame
 
 def _camera_source_type(value: str) -> SourceType:
     return SourceType(value)
+
+
+@dataclass(frozen=True)
+class RegisteredCamera:
+    camera_id: str
+    display_name: str | None
+    source_type: str
+    enabled: bool
+    binding: str
 
 
 class CameraRegistry:
@@ -31,6 +41,22 @@ class CameraRegistry:
             cameras[config.camera_id] = config
         return cls(cameras)
 
+    @classmethod
+    def from_directory(
+        cls,
+        config_dir: str | Path,
+        *,
+        pattern: str = "*.yaml",
+    ) -> "CameraRegistry":
+        root = Path(config_dir)
+        if not root.exists():
+            raise FileNotFoundError(f"Camera config directory '{root}' does not exist")
+
+        paths = sorted(path for path in root.glob(pattern) if path.is_file())
+        if not paths:
+            raise ValueError(f"No camera config files matched '{pattern}' in '{root}'")
+        return cls.from_files(paths)
+
     def get(self, camera_id: str) -> CameraConfig:
         try:
             return self._cameras[camera_id]
@@ -39,6 +65,30 @@ class CameraRegistry:
 
     def list_camera_ids(self) -> list[str]:
         return sorted(self._cameras.keys())
+
+    def list_cameras(self, *, enabled_only: bool = False) -> list[CameraConfig]:
+        cameras = sorted(self._cameras.values(), key=lambda camera: camera.camera_id)
+        if enabled_only:
+            cameras = [camera for camera in cameras if camera.enabled]
+        return cameras
+
+    def enabled_camera_ids(self) -> list[str]:
+        return [camera.camera_id for camera in self.list_cameras(enabled_only=True)]
+
+    def registrations(self) -> list[RegisteredCamera]:
+        registrations: list[RegisteredCamera] = []
+        for camera in self.list_cameras():
+            binding = camera.stream_url if camera.stream_url is not None else f"device:{camera.device_index}"
+            registrations.append(
+                RegisteredCamera(
+                    camera_id=camera.camera_id,
+                    display_name=camera.display_name,
+                    source_type=camera.source_type.value,
+                    enabled=camera.enabled,
+                    binding=binding,
+                )
+            )
+        return registrations
 
 
 class CaptureService:

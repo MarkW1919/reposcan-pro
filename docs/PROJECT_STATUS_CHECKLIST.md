@@ -26,12 +26,12 @@ Last reviewed against repo state: `2026-03-21`
 - [x] ~~Camera registry loading exists for validated camera configs.~~
 - [x] ~~File-backed capture source exists for deterministic local testing.~~
 - [x] ~~Capture can hand frames into the headless ingest runtime without hardware.~~
-- [ ] RTSP ingest path is implemented.
-- [ ] USB ingest path is implemented.
-- [ ] Live camera reconnect behavior is implemented and validated.
+- [x] ~~RTSP ingest path is implemented.~~
+- [x] ~~USB ingest path is implemented.~~
+- [x] ~~Live camera reconnect behavior is implemented and validated.~~
 - [ ] Live GPS ingestion is wired from deployment hardware.
-- [ ] Camera discovery and registration workflow is implemented for deployed rigs.
-- [ ] Camera placement, vibration, and angle-of-incidence validation workflow is documented and repeatable.
+- [x] ~~Camera discovery and registration workflow is implemented for deployed rigs.~~
+- [x] ~~Camera placement, vibration, and angle-of-incidence validation workflow is documented and repeatable.~~
 - [ ] Required long-distance imaging validation scenes are captured and reviewed.
 - [ ] Required low-light, no-light, glare, and IR-assisted validation scenes are captured and reviewed.
 

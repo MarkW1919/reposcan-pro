@@ -35,6 +35,7 @@ The canonical mission and rules live in [CLAUDE.md](CLAUDE.md).
 - [Implementation Blueprint](docs/IMPLEMENTATION_BLUEPRINT.md)
 - [Requirements](docs/REQUIREMENTS.md)
 - [Camera And Imaging](docs/CAMERA_AND_IMAGING.md)
+- [Camera Deployment Workflow](docs/CAMERA_DEPLOYMENT_WORKFLOW.md)
 - [Models](docs/MODELS.md)
 - [Datasets](docs/DATASETS.md)
 - [Training](docs/TRAINING.md)

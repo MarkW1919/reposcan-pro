@@ -40,6 +40,12 @@ class TestCameraConfigSchema:
         assert cam.source_type == SourceType.rtsp
         assert cam.enabled is True
 
+    def test_usb_example_file_parses(self):
+        cam = load_camera_config(CONFIGS / "cameras" / "example-usb-camera.yaml")
+        assert cam.camera_id == "cam_cab_usb_01"
+        assert cam.source_type == SourceType.usb
+        assert cam.device_index == 0
+
     def test_sensor_fields(self):
         cam = load_camera_config(CONFIGS / "cameras" / "example-camera.yaml")
         assert cam.sensor.resolution_w == 3840
