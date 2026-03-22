@@ -22,7 +22,7 @@ from reposcan_contracts.config.loader import (
 )
 from reposcan_contracts.config.camera import CameraConfig, SourceType, ColorMode
 from reposcan_contracts.config.model import ModelStackConfig, InferenceBackend
-from reposcan_contracts.config.pipeline import PipelineConfig, PlateDetectionStrategy
+from reposcan_contracts.config.pipeline import PipelineConfig, PlateDetectionStrategy, PreprocessingBackend
 from reposcan_contracts.config.deployment import DeploymentConfig, TargetHardware
 
 
@@ -187,6 +187,9 @@ class TestPipelineConfigSchema:
         pipeline = load_pipeline_config(CONFIGS / "pipelines" / "default-edge.yaml")
         assert pipeline.preprocessing.enabled is True
         assert pipeline.preprocessing.denoise is True
+        assert pipeline.preprocessing.enhancement_backend == PreprocessingBackend.auto
+        assert pipeline.preprocessing.exposure_compensation is True
+        assert pipeline.preprocessing.rectify_plate_crops is True
 
     def test_thresholds(self):
         pipeline = load_pipeline_config(CONFIGS / "pipelines" / "default-edge.yaml")

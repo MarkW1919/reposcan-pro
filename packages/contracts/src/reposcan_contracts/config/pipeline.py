@@ -23,6 +23,12 @@ class NightModePolicy(str, Enum):
     never = "never"
 
 
+class PreprocessingBackend(str, Enum):
+    auto = "auto"
+    pillow = "pillow"
+    opencv = "opencv"
+
+
 class OcrAggregation(str, Enum):
     majority_vote = "majority_vote"
     best_confidence = "best_confidence"
@@ -37,14 +43,19 @@ class TrackingAlgorithm(str, Enum):
 
 class PreprocessingConfig(BaseModel):
     enabled: bool = True
+    enhancement_backend: PreprocessingBackend = PreprocessingBackend.auto
     denoise: bool = True
     denoise_strength: float = Field(0.5, ge=0.0, le=1.0)
+    exposure_compensation: bool = True
+    target_mean_brightness: float = Field(90.0, ge=0.0, le=255.0)
     contrast_enhancement: bool = True
     contrast_clip_limit: float = Field(2.0, gt=0.0)
+    clahe_tile_grid_size: int = Field(8, ge=2, le=32)
     night_mode_threshold_lux: Optional[float] = Field(
         10.0, ge=0.0, description="Lux level below which night preprocessing activates"
     )
     ir_night_mode: NightModePolicy = NightModePolicy.auto
+    rectify_plate_crops: bool = True
 
 
 class ThresholdConfig(BaseModel):

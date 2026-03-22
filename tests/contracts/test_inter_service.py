@@ -99,8 +99,11 @@ class TestPreparedFrame:
             "camera_profile": self._profile().model_dump(mode="json"),
             "preprocessing": PreprocessingMetadata(
                 artifact_generated=True,
+                enhancement_backend="opencv",
                 denoise_applied=True,
+                exposure_adjusted=True,
                 contrast_enhanced=True,
+                clahe_applied=True,
                 night_mode_triggered=True,
                 mean_brightness_before=22.0,
                 mean_brightness_after=58.0,
@@ -113,6 +116,9 @@ class TestPreparedFrame:
         env = PreparedFrame.model_validate(self._valid())
         assert env.raw_frame_path.endswith("frm_001.jpg")
         assert env.preprocessing.artifact_generated is True
+        assert env.preprocessing.enhancement_backend == "opencv"
+        assert env.preprocessing.exposure_adjusted is True
+        assert env.preprocessing.clahe_applied is True
 
     def test_brightness_bounds_rejected(self):
         with pytest.raises(ValidationError):

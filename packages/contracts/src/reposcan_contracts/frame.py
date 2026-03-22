@@ -76,8 +76,11 @@ class PreprocessingMetadata(BaseModel):
     """Summary of preprocessing decisions made for a frame."""
 
     artifact_generated: bool = False
+    enhancement_backend: Optional[str] = None
     denoise_applied: bool = False
+    exposure_adjusted: bool = False
     contrast_enhanced: bool = False
+    clahe_applied: bool = False
     night_mode_triggered: bool = False
     mean_brightness_before: Optional[float] = Field(None, ge=0.0, le=255.0)
     mean_brightness_after: Optional[float] = Field(None, ge=0.0, le=255.0)

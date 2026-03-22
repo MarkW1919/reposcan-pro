@@ -41,9 +41,9 @@ Last reviewed against repo state: `2026-03-21`
 - [x] ~~Preprocessing can write local debug artifacts during headless ingest.~~
 - [x] ~~Basic denoising and low-light-oriented contrast enhancement are implemented.~~
 - [x] ~~Safe passthrough behavior exists when frames are missing or undecodable.~~
-- [ ] Exposure-aware scene tuning is implemented.
-- [ ] OCR crop rectification helpers are implemented.
-- [ ] Production-grade CLAHE / OpenCV-oriented enhancement path is implemented.
+- [x] ~~Exposure-aware scene tuning is implemented.~~
+- [x] ~~OCR crop rectification helpers are implemented.~~
+- [x] ~~Production-grade CLAHE / OpenCV-oriented enhancement path is implemented.~~
 - [ ] Preprocessing impact on OCR and low-light performance is benchmarked and documented.
 
 ## 4. Inference Runtime

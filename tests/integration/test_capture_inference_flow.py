@@ -166,8 +166,29 @@ def test_preprocessing_service_generates_prepared_artifact_for_real_image(tmp_pa
     assert prepared.prepared_frame_path != prepared.raw_frame_path
     assert (tmp_path / "preprocessed").exists()
     assert prepared.preprocessing.artifact_generated is True
+    assert prepared.preprocessing.enhancement_backend in {"opencv", "pillow"}
+    assert prepared.preprocessing.exposure_adjusted is True
     assert prepared.preprocessing.night_mode_triggered is True
     assert prepared.preprocessing.mean_brightness_after >= prepared.preprocessing.mean_brightness_before
+
+
+def test_preprocessing_service_rectifies_plate_crop(tmp_path):
+    source_path = tmp_path / "plate_crop.jpg"
+    _write_demo_image(source_path, color=(20, 20, 20))
+
+    pipeline_config = load_pipeline_config("configs/pipelines/default-edge.yaml")
+    service = PreprocessingService(
+        pipeline_config,
+        artifact_root=tmp_path / "preprocessed",
+    )
+
+    rectified = service.prepare_plate_crop(
+        source_path,
+        corners=((6.0, 4.0), (90.0, 2.0), (92.0, 28.0), (4.0, 30.0)),
+        output_size=(144, 48),
+    )
+
+    assert rectified.size == (144, 48)
 
 
 def test_headless_file_sequence_runner_persists_fresh_detections_and_alerts(tmp_path):
