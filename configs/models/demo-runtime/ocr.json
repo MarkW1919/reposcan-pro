@@ -1,0 +1,6 @@
+{
+  "artifact_type": "builtin_ocr",
+  "default_plate_text": "6BZN220",
+  "default_confidence": 0.93,
+  "filename_pattern": "(?<![A-Z0-9])([A-Z0-9]{5,8})(?![A-Z0-9])"
+}

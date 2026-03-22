@@ -28,6 +28,13 @@ Inference is edge-first and local-first. Cloud services may augment analysis lat
 - record model version metadata with detections where practical
 - protect throughput from blocking sync or UI work
 
+## Current Repo Runtime State
+
+- the repo ships a tracked builtin demo runtime stack for no-hardware validation
+- that stack can read per-frame `*.inference.json` sidecars to vary detections, OCR, and vehicle attributes during headless ingest
+- exported ONNX and TensorRT stacks remain a later promotion target and are not yet treated as field-ready in this repo
+- model-stack readiness should be checked with `scripts/validate_model_stack.py` before swapping runtime configs
+
 ## Failure Handling
 
 - camera loss must not crash the full stack
@@ -41,4 +48,3 @@ Inference is edge-first and local-first. Cloud services may augment analysis lat
 - [Models](MODELS.md)
 - [Deployment](DEPLOYMENT.md)
 - [API Contracts](API_CONTRACTS.md)
-

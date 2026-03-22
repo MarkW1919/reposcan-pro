@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 
 class InferenceBackend(str, Enum):
+    builtin = "builtin"
     onnx = "onnx"
     tensorrt = "tensorrt"
     pytorch = "pytorch"
@@ -69,5 +70,5 @@ class ModelStackConfig(BaseModel):
     plate_detector: DetectorModelConfig
     ocr: OcrModelConfig
     classifier: Optional[ClassifierModelConfig] = Field(
-        None, description="Classifier is optional — disable for inference-only deployments"
+        None, description="Classifier is optional; disable for inference-only deployments"
     )

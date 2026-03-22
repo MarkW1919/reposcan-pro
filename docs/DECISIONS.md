@@ -111,3 +111,10 @@ Maintenance rule:
 - Status: Accepted
 - Decision: Once an alert is dismissed, suppress both its hotlist popup entry and the linked detection from the live popup activity stream.
 - Rationale: A stand-down action should behave like a real operator suppression event; leaving the linked detection visible as a general popup would undermine alert lifecycle semantics in the live UI.
+
+## ADR-016 Tracked Demo Runtime Separate From Exported Model Stacks
+
+- Date: 2026-03-22
+- Status: Accepted
+- Decision: Keep a repo-tracked builtin model stack for the no-hardware demo path, and keep the exported ONNX/TensorRT stack definitions separate until real promoted artifacts exist.
+- Rationale: The repo needs a self-contained inference runtime for integration demos and tests today, but it should not imply that placeholder exported model paths are already validated deployable assets.

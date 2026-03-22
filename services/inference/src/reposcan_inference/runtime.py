@@ -31,6 +31,7 @@ from .adapters import (
     StaticPlateDetectorAdapter,
     StaticVehicleDetectorAdapter,
 )
+from .runtime_adapters import build_runtime_adapter_bundle
 from .service import InferenceService
 from .workflow import FrameToCandidateWorkflow
 
@@ -93,6 +94,17 @@ class DemoRunStatus:
 
 class DemoRunInProgressError(RuntimeError):
     pass
+
+
+def build_configured_adapter_bundle(
+    model_stack: ModelStackConfig,
+    *,
+    plate_text: str = "6BZN220",
+) -> ModelAdapterBundle:
+    configured = build_runtime_adapter_bundle(model_stack, default_plate_text=plate_text)
+    if configured is not None:
+        return configured
+    return build_demo_adapter_bundle(model_stack, plate_text=plate_text)
 
 
 def build_demo_adapter_bundle(
@@ -182,7 +194,7 @@ class HeadlessFileSequenceRunner:
         cls,
         *,
         camera_config_path: str | Path = "configs/cameras/local-file-demo.yaml",
-        model_config_path: str | Path = "configs/models/example-model-stack.yaml",
+        model_config_path: str | Path = "configs/models/local-demo-runtime.yaml",
         pipeline_config_path: str | Path = "configs/pipelines/default-edge.yaml",
         deployment_config_path: str | Path = "configs/deployments/local-dev.yaml",
         metadata_root: str | Path = "runtime/storage",
@@ -192,7 +204,7 @@ class HeadlessFileSequenceRunner:
     ) -> "HeadlessFileSequenceRunner":
         camera = load_camera_config(camera_config_path)
         model_stack = load_model_config(model_config_path)
-        adapters = build_demo_adapter_bundle(model_stack, plate_text=plate_text)
+        adapters = build_configured_adapter_bundle(model_stack, plate_text=plate_text)
         inference_service = InferenceService.from_config_paths(
             model_config_path=str(model_config_path),
             pipeline_config_path=str(pipeline_config_path),
@@ -319,7 +331,7 @@ class HeadlessDemoRunManager:
         *,
         storage_service: StorageService,
         camera_config_path: str | Path = "configs/cameras/local-file-demo.yaml",
-        model_config_path: str | Path = "configs/models/example-model-stack.yaml",
+        model_config_path: str | Path = "configs/models/local-demo-runtime.yaml",
         pipeline_config_path: str | Path = "configs/pipelines/default-edge.yaml",
         deployment_config_path: str | Path = "configs/deployments/local-dev.yaml",
         metadata_root: str | Path = "runtime/storage",

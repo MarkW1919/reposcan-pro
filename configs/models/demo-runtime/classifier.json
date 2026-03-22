@@ -1,0 +1,9 @@
+{
+  "artifact_type": "builtin_classifier",
+  "default_make": "toyota",
+  "default_make_confidence": 0.82,
+  "default_model": "camry",
+  "default_model_confidence": 0.78,
+  "default_year": "2018-2021",
+  "default_year_confidence": 0.66
+}

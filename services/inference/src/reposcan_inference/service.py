@@ -11,6 +11,7 @@ from reposcan_contracts.frame import FrameEnvelope, PreparedFrame
 from reposcan_contracts.inference import InferenceCandidate, ModelVersions
 
 from .adapters import ModelAdapterBundle
+from .runtime_adapters import build_runtime_adapter_bundle
 
 
 def _model_version(model_config: DetectorModelConfig | OcrModelConfig | ClassifierModelConfig) -> str:
@@ -38,10 +39,13 @@ class InferenceService:
     ) -> "InferenceService":
         model_stack = load_model_config(model_config_path)
         pipeline_config = load_pipeline_config(pipeline_config_path)
+        configured_adapters = adapters
+        if configured_adapters is None:
+            configured_adapters = build_runtime_adapter_bundle(model_stack)
         return cls(
             model_stack=model_stack,
             pipeline_config=pipeline_config,
-            adapters=adapters or ModelAdapterBundle.noop_from_config(model_stack),
+            adapters=configured_adapters or ModelAdapterBundle.noop_from_config(model_stack),
         )
 
     def model_versions(self) -> ModelVersions:

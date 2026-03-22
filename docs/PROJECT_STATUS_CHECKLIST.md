@@ -6,7 +6,7 @@ Status convention:
 - completed items use `- [x] ~~item~~`
 - incomplete items use `- [ ] item`
 
-Last reviewed against repo state: `2026-03-21`
+Last reviewed against repo state: `2026-03-22`
 
 ## 1. Program Foundations
 

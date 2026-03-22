@@ -127,6 +127,14 @@ class TestModelStackConfigSchema:
         stack = load_model_config(CONFIGS / "models" / "example-model-stack.yaml")
         assert stack.stack_name == "default-lpr-stack"
 
+    def test_local_demo_runtime_file_parses(self):
+        stack = load_model_config(CONFIGS / "models" / "local-demo-runtime.yaml")
+        assert stack.stack_name == "local-demo-runtime"
+        assert stack.vehicle_detector.backend == InferenceBackend.builtin
+        assert stack.ocr.backend == InferenceBackend.builtin
+        assert stack.classifier is not None
+        assert stack.classifier.backend == InferenceBackend.builtin
+
     def test_vehicle_detector_fields(self):
         stack = load_model_config(CONFIGS / "models" / "example-model-stack.yaml")
         vd = stack.vehicle_detector
