@@ -7,6 +7,8 @@ from .adapters import (
     StaticPlateDetectorAdapter,
     StaticVehicleDetectorAdapter,
 )
+from .adapter_factory import build_runtime_adapter_bundle
+from .onnx_adapters import build_onnx_adapter_bundle, validate_onnx_artifact
 from .profiling import InferenceLatencyProfile, InferenceProfiler, recommend_runtime_tuning
 from .runtime import (
     DemoRunInProgressError,
@@ -19,7 +21,7 @@ from .runtime import (
     build_configured_adapter_bundle,
     build_demo_adapter_bundle,
 )
-from .runtime_adapters import build_runtime_adapter_bundle
+from .runtime_adapters import build_builtin_runtime_adapter_bundle
 from .service import InferenceService
 from .validation import ModelStackValidationReport, StageValidationReport, ValidationIssue, validate_model_stack
 from .workflow import FrameToCandidateWorkflow
@@ -44,9 +46,12 @@ __all__ = [
     "StaticPlateDetectorAdapter",
     "StaticVehicleDetectorAdapter",
     "ValidationIssue",
+    "build_builtin_runtime_adapter_bundle",
+    "build_onnx_adapter_bundle",
     "build_configured_adapter_bundle",
     "build_demo_adapter_bundle",
     "build_runtime_adapter_bundle",
     "recommend_runtime_tuning",
+    "validate_onnx_artifact",
     "validate_model_stack",
 ]

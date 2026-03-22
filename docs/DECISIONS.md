@@ -118,3 +118,10 @@ Maintenance rule:
 - Status: Accepted
 - Decision: Keep a repo-tracked builtin model stack for the no-hardware demo path, and keep the exported ONNX/TensorRT stack definitions separate until real promoted artifacts exist.
 - Rationale: The repo needs a self-contained inference runtime for integration demos and tests today, but it should not imply that placeholder exported model paths are already validated deployable assets.
+
+## ADR-017 ONNX Fixture Runtime Before Promoted Field Models
+
+- Date: 2026-03-22
+- Status: Accepted
+- Decision: Add a tracked ONNX runtime fixture stack to prove real backend-loaded inference execution before promoted field models and TensorRT exports are ready.
+- Rationale: The repo needs to verify true runtime wiring for vehicle, plate, OCR, and attribute stages now, while still keeping accuracy, export promotion, and edge-benchmark claims separate.

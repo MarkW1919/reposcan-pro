@@ -11,6 +11,7 @@ This repository currently contains:
 - a cab-first React operator UI with live popup activity, evidence preview, hotlist management, persistent alert response workflow, local review workflow, and app-driven demo ingest control when the API is available, plus local demo fallback when it is not
 - a headless file-sequence ingest path that runs capture, low-light-oriented preprocessing, inference, tracking, alerting, and storage without camera hardware
 - a tracked builtin inference-runtime stack plus model-stack validation for no-hardware demos and config readiness checks
+- a tracked ONNX runtime fixture stack that proves real backend-loaded vehicle, plate, OCR, and attribute execution without requiring field hardware
 - bootstrap, build, and validation scripts for the current integrated slice
 
 The design-first scaffold has already been turned into a working implementation foundation.
@@ -107,18 +108,18 @@ When preprocessing is enabled, the runner also writes inference-ready frame arti
 
 For a closer-to-deployable demo flow, start the API and UI, then launch the same ingest path from the `Quick Actions` panel inside `Recovery Alerts`.
 The UI talks to the live API demo runtime endpoints, so new detections and alerts appear without opening another terminal, and the same panel can persist alert acknowledge, stand-down, and reopen actions during the demo.
-The runner now defaults to [configs/models/local-demo-runtime.yaml](configs/models/local-demo-runtime.yaml), which is a tracked builtin runtime stack for demo use. If a frame has a sibling `*.inference.json` sidecar, that sidecar can drive per-frame detections, OCR, and vehicle attributes through the full ingest path.
+The runner now defaults to [configs/models/local-onnx-runtime.yaml](configs/models/local-onnx-runtime.yaml), which is a tracked ONNX runtime fixture stack for demo use. If a frame has a sibling `*.inference.json` sidecar, that sidecar can drive per-frame detections, OCR, and vehicle attributes through the full ingest path. The older [configs/models/local-demo-runtime.yaml](configs/models/local-demo-runtime.yaml) builtin stack remains available as the no-hardware fallback.
 
 ```powershell
 .\.venv\Scripts\python.exe .\scripts\run_file_sequence_demo.py --frames-dir C:\path\to\frame-folder
 ```
 
-The runner uses [configs/cameras/local-file-demo.yaml](configs/cameras/local-file-demo.yaml) and [configs/models/local-demo-runtime.yaml](configs/models/local-demo-runtime.yaml) by default, writes development metadata under `runtime/storage`, and writes preprocessing artifacts under `runtime/preprocessed` unless you override those paths.
+The runner uses [configs/cameras/local-file-demo.yaml](configs/cameras/local-file-demo.yaml) and [configs/models/local-onnx-runtime.yaml](configs/models/local-onnx-runtime.yaml) by default, writes development metadata under `runtime/storage`, and writes preprocessing artifacts under `runtime/preprocessed` unless you override those paths.
 
 Validate a model stack before a demo or runtime swap with:
 
 ```powershell
-.\.venv\Scripts\python.exe .\scripts\validate_model_stack.py --model-config .\configs\models\local-demo-runtime.yaml
+.\.venv\Scripts\python.exe .\scripts\validate_model_stack.py --model-config .\configs\models\local-onnx-runtime.yaml
 ```
 
 ## Desktop Launcher

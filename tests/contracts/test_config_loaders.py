@@ -135,6 +135,15 @@ class TestModelStackConfigSchema:
         assert stack.classifier is not None
         assert stack.classifier.backend == InferenceBackend.builtin
 
+    def test_local_onnx_runtime_file_parses(self):
+        stack = load_model_config(CONFIGS / "models" / "local-onnx-runtime.yaml")
+        assert stack.stack_name == "local-onnx-runtime"
+        assert stack.vehicle_detector.backend == InferenceBackend.onnx
+        assert stack.plate_detector.backend == InferenceBackend.onnx
+        assert stack.ocr.backend == InferenceBackend.onnx
+        assert stack.classifier is not None
+        assert stack.classifier.backend == InferenceBackend.onnx
+
     def test_vehicle_detector_fields(self):
         stack = load_model_config(CONFIGS / "models" / "example-model-stack.yaml")
         vd = stack.vehicle_detector

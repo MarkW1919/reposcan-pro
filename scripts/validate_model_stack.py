@@ -23,7 +23,7 @@ def _configure_pythonpath(repo_root: Path) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Validate a RepoScan Pro model stack for runtime readiness.")
-    parser.add_argument("--model-config", default="configs/models/local-demo-runtime.yaml")
+    parser.add_argument("--model-config", default="configs/models/local-onnx-runtime.yaml")
     parser.add_argument("--json", action="store_true", dest="as_json")
     return parser.parse_args()
 

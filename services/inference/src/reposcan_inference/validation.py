@@ -14,6 +14,7 @@ from reposcan_contracts.config.model import (
     OcrModelConfig,
 )
 
+from .onnx_adapters import validate_onnx_artifact
 from .runtime_adapters import (
     BuiltinClassifierArtifact,
     BuiltinOcrArtifact,
@@ -99,6 +100,8 @@ def _validate_exported_backend(stage: str, backend: InferenceBackend, artifact_p
                 message=f"Expected a PyTorch checkpoint for {stage}, found '{artifact_path.name}'.",
             )
         )
+    elif backend == InferenceBackend.onnx:
+        return []
     return issues
 
 
@@ -121,6 +124,11 @@ def _stage_report(
 
     if model_config.backend == InferenceBackend.builtin:
         issues.extend(_validate_builtin(stage, artifact_path))
+    elif model_config.backend == InferenceBackend.onnx:
+        issues.extend(
+            ValidationIssue(severity="error", stage=stage, message=message)
+            for message in validate_onnx_artifact(stage, model_config)
+        )
     else:
         issues.extend(_validate_exported_backend(stage, model_config.backend, artifact_path))
 

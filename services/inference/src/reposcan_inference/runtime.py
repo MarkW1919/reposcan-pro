@@ -31,7 +31,7 @@ from .adapters import (
     StaticPlateDetectorAdapter,
     StaticVehicleDetectorAdapter,
 )
-from .runtime_adapters import build_runtime_adapter_bundle
+from .adapter_factory import build_runtime_adapter_bundle
 from .service import InferenceService
 from .workflow import FrameToCandidateWorkflow
 
@@ -194,7 +194,7 @@ class HeadlessFileSequenceRunner:
         cls,
         *,
         camera_config_path: str | Path = "configs/cameras/local-file-demo.yaml",
-        model_config_path: str | Path = "configs/models/local-demo-runtime.yaml",
+        model_config_path: str | Path = "configs/models/local-onnx-runtime.yaml",
         pipeline_config_path: str | Path = "configs/pipelines/default-edge.yaml",
         deployment_config_path: str | Path = "configs/deployments/local-dev.yaml",
         metadata_root: str | Path = "runtime/storage",
@@ -331,7 +331,7 @@ class HeadlessDemoRunManager:
         *,
         storage_service: StorageService,
         camera_config_path: str | Path = "configs/cameras/local-file-demo.yaml",
-        model_config_path: str | Path = "configs/models/local-demo-runtime.yaml",
+        model_config_path: str | Path = "configs/models/local-onnx-runtime.yaml",
         pipeline_config_path: str | Path = "configs/pipelines/default-edge.yaml",
         deployment_config_path: str | Path = "configs/deployments/local-dev.yaml",
         metadata_root: str | Path = "runtime/storage",

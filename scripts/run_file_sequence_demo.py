@@ -26,7 +26,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--frames-dir", required=True, help="Directory containing input frame files")
     parser.add_argument("--camera-config", default="configs/cameras/local-file-demo.yaml")
-    parser.add_argument("--model-config", default="configs/models/local-demo-runtime.yaml")
+    parser.add_argument("--model-config", default="configs/models/local-onnx-runtime.yaml")
     parser.add_argument("--pipeline-config", default="configs/pipelines/default-edge.yaml")
     parser.add_argument("--deployment-config", default="configs/deployments/local-dev.yaml")
     parser.add_argument("--metadata-root", default="runtime/storage")

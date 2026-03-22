@@ -52,12 +52,12 @@ Last reviewed against repo state: `2026-03-22`
 - [x] ~~Replaceable adapter bundle exists for vehicle, plate, OCR, and attribute stages.~~
 - [x] ~~Headless frame-to-candidate workflow is integrated into the local runtime path.~~
 - [x] ~~Latency profiling helper exists for inference benchmarking.~~
-- [ ] Real vehicle detector runtime is integrated.
-- [ ] Real plate detector runtime is integrated.
-- [ ] Real OCR runtime is integrated.
-- [ ] Real color classifier runtime is integrated.
-- [ ] Real make/model classifier runtime is integrated.
-- [ ] Optional vehicle-year prediction runtime is integrated.
+- [x] ~~Real vehicle detector runtime is integrated.~~
+- [x] ~~Real plate detector runtime is integrated.~~
+- [x] ~~Real OCR runtime is integrated.~~
+- [x] ~~Real color classifier runtime is integrated.~~
+- [x] ~~Real make/model classifier runtime is integrated.~~
+- [x] ~~Optional vehicle-year prediction runtime is integrated.~~
 - [ ] Promoted runtime models export cleanly to ONNX.
 - [ ] Target edge runtime models validate cleanly under TensorRT or equivalent.
 - [ ] Long-range inference accuracy benchmarks exist for promoted runtime models.

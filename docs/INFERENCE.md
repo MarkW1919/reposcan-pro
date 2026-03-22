@@ -30,7 +30,8 @@ Inference is edge-first and local-first. Cloud services may augment analysis lat
 
 ## Current Repo Runtime State
 
-- the repo ships a tracked builtin demo runtime stack for no-hardware validation
+- the repo ships a tracked ONNX runtime fixture stack for real backend-loaded no-hardware validation
+- the repo also keeps a tracked builtin demo runtime stack as the fallback path when external runtime packages or exported models are intentionally not in use
 - that stack can read per-frame `*.inference.json` sidecars to vary detections, OCR, and vehicle attributes during headless ingest
 - exported ONNX and TensorRT stacks remain a later promotion target and are not yet treated as field-ready in this repo
 - model-stack readiness should be checked with `scripts/validate_model_stack.py` before swapping runtime configs

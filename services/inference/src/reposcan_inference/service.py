@@ -11,7 +11,7 @@ from reposcan_contracts.frame import FrameEnvelope, PreparedFrame
 from reposcan_contracts.inference import InferenceCandidate, ModelVersions
 
 from .adapters import ModelAdapterBundle
-from .runtime_adapters import build_runtime_adapter_bundle
+from .adapter_factory import build_runtime_adapter_bundle
 
 
 def _model_version(model_config: DetectorModelConfig | OcrModelConfig | ClassifierModelConfig) -> str:

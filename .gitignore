@@ -32,10 +32,11 @@ runtime/
 *.engine
 *.trt
 *.weights
+!ml/inference/fixtures/
+!ml/inference/fixtures/**/*.onnx
 
 # Database and local service state
 *.sqlite
 *.db
 postgres_data/
 redis_data/
-

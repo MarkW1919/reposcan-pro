@@ -58,20 +58,21 @@ Confirm that the seeded local API and the cab-first UI behave like a usable repo
 1. Open `Recovery Alerts`
 2. In `Quick Actions`, enter a local frame folder path and leave the selected alert plate or replace it with a demo plate
 3. If you want frame-specific outputs, place sibling `*.inference.json` files next to the `.jpg` frames before running the demo
-4. Optionally validate the runtime stack first with `.\.venv\Scripts\python.exe .\scripts\validate_model_stack.py --model-config .\configs\models\local-demo-runtime.yaml`
+4. Optionally validate the runtime stack first with `.\.venv\Scripts\python.exe .\scripts\validate_model_stack.py --model-config .\configs\models\local-onnx-runtime.yaml`
 5. Click `Run headless demo`
 6. Confirm the status changes to `Running`, then to `Ready`
 7. Confirm preprocessing artifacts appear under `runtime/preprocessed` or the configured preprocessing output folder
 8. Confirm new live detections appear without restarting the API
 9. Select the new alert and confirm the target card shows a live evidence frame and, when available, a plate crop preview
 10. If an active hotlist entry matches the simulated plate, confirm a new alert appears in `Recovery Alerts`
+11. If you intentionally want the builtin fallback instead of ONNX fixtures, rerun the flow with `--model-config .\configs\models\local-demo-runtime.yaml`
 
 ## Headless Ingest CLI Fallback
 
 1. With the API still running, open a new terminal in the repo
 2. Run `.\.venv\Scripts\python.exe .\scripts\run_file_sequence_demo.py --frames-dir C:\path\to\frame-folder`
 3. Confirm the script reports captured frames, finalized tracks, and at least one stored detection
-4. Confirm the default model config is `configs/models/local-demo-runtime.yaml` unless you override `--model-config`
+4. Confirm the default model config is `configs/models/local-onnx-runtime.yaml` unless you override `--model-config`
 
 ## Hotlist Management
 

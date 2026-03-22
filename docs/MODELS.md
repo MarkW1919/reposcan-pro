@@ -27,6 +27,7 @@ TensorRT
 
 ## Current Repo Runtime Split
 
+- `configs/models/local-onnx-runtime.yaml` is a tracked ONNX runtime fixture stack that proves real backend-loaded inference execution in the repo today
 - `configs/models/local-demo-runtime.yaml` is a tracked builtin runtime stack for no-hardware demos and integration tests
 - `configs/models/example-model-stack.yaml` remains the placeholder shape for future exported model artifacts
 - exported ONNX and TensorRT model stacks are still promotion targets, not completed repo assets today

@@ -1,4 +1,4 @@
-"""Artifact-backed runtime adapters for the local no-hardware demo path.
+"""Builtin artifact-backed runtime adapters for the local no-hardware demo path.
 
 These adapters are intentionally simple and deterministic. They read tracked
 artifact manifests from the repo and can also consume per-frame sidecar files
@@ -385,7 +385,7 @@ class BuiltinClassifierAdapter:
         return [prediction for _ in vehicle_detections]
 
 
-def build_runtime_adapter_bundle(
+def build_builtin_runtime_adapter_bundle(
     model_stack: ModelStackConfig,
     *,
     default_plate_text: str | None = None,
