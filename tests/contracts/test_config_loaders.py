@@ -351,6 +351,22 @@ class TestTrainingDatasetManifestSchema:
         assert manifest.format == DatasetFormat.imagefolder
         assert len(manifest.splits) == 2
 
+    def test_curated_detection_manifest_parses(self):
+        manifest = load_training_dataset_manifest(CONFIGS / "datasets" / "example-curated-plate-detection.yaml")
+        assert manifest.dataset_name == "example-curated-oklahoma-plate-detection"
+        assert manifest.format == DatasetFormat.yolo_detection
+        assert {split.split for split in manifest.splits} == {
+            DatasetSplit.train,
+            DatasetSplit.validation,
+            DatasetSplit.holdout,
+        }
+
+    def test_field_eval_holdout_manifest_parses(self):
+        manifest = load_training_dataset_manifest(CONFIGS / "datasets" / "example-field-eval-holdout.yaml")
+        assert manifest.dataset_name == "example-curated-oklahoma-plate-detection-field-eval"
+        assert manifest.format == DatasetFormat.eval_holdout
+        assert manifest.splits[0].split == DatasetSplit.field_eval
+
     def test_dataset_split_manifest_parses(self):
         manifest = load_dataset_split_manifest(CONFIGS / "datasets" / "example-dataset-split.yaml")
         assert manifest.dataset_name == "example-oklahoma-capture-intake"

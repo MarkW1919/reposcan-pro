@@ -42,6 +42,7 @@ The canonical mission and rules live in [CLAUDE.md](CLAUDE.md).
 - [Datasets](docs/DATASETS.md)
 - [Annotation Standards](docs/ANNOTATION_STANDARDS.md)
 - [Dataset Intake Workflow](docs/DATASET_INTAKE_WORKFLOW.md)
+- [Detection Dataset Curation](docs/DETECTION_DATASET_CURATION.md)
 - [Training](docs/TRAINING.md)
 - [Training Workflows](docs/TRAINING_WORKFLOWS.md)
 - [Inference](docs/INFERENCE.md)
@@ -152,6 +153,13 @@ Prepare a training run from a profile and dataset manifest with:
 
 ```powershell
 .\.venv\Scripts\python.exe .\scripts\train_attribute_classifier.py --profile .\configs\training\vehicle-make-model-warmstart.yaml --dataset-manifest C:\path\to\dataset-manifest.yaml --run-name warmstart_01
+```
+
+Export a detection label index and promote reviewed YOLO labels into curated manifests with:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\export_detection_label_index.py --dataset-manifest .\data\manifests\legacy\legacy-oklahoma-detection-reviewed.yaml --output .\data\manifests\legacy\legacy-oklahoma-detection-label-index.csv
+.\.venv\Scripts\python.exe .\scripts\promote_detection_dataset.py --dataset-manifest .\data\manifests\legacy\legacy-oklahoma-detection-reviewed.yaml --split-manifest .\data\manifests\legacy\legacy-oklahoma-detection-split.yaml --labels-root C:\datasets\oklahoma_detection_labels --output-root .\data\curated --output-manifest .\data\manifests\legacy\legacy-oklahoma-detection-curated.yaml --field-eval-manifest .\data\manifests\legacy\legacy-oklahoma-detection-field-eval.yaml --reviewer qa_annotator_01
 ```
 
 ## Desktop Launcher

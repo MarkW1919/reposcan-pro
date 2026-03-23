@@ -174,3 +174,10 @@ Maintenance rule:
 - Status: Accepted
 - Decision: Drive training through typed profiles and dataset manifests, with `prepare-only` and `dry-run` behavior as the default safety mode before execution.
 - Rationale: Fine-tuning jobs are expensive and environment-sensitive; the repo needs reviewable settings, reproducible prep artifacts, and a safe validation step before any real training run starts.
+
+## ADR-025 Curated Detection Datasets Are Promoted From Reviewed Capture Manifests
+
+- Date: 2026-03-23
+- Status: Accepted
+- Decision: Promote plate-detection datasets from reviewed `generic_capture` manifests plus validated YOLO labels into typed `yolo_detection` and `eval_holdout` manifests instead of treating ad hoc image folders as train-ready.
+- Rationale: Detector fine-tuning and regression evaluation need protected holdouts, reviewed provenance, and repeatable label validation; a promotion workflow keeps the data boundary consistent with the rest of the repository.

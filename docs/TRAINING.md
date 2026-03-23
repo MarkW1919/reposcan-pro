@@ -57,6 +57,7 @@ Avoid:
 - validate every dataset manifest before a training run starts
 - plan capture-derived splits by session where possible
 - import legacy Seen-It-First assets through typed manifests instead of coupling to the old codebase
+- promote reviewed capture labels into curated `yolo_detection` and `eval_holdout` manifests before detector fine-tuning
 - use training profiles under `configs/training/` so task settings and augmentation stay reviewable
 - prefer `prepare-only` and `dry-run` validation before any long-running training job
 
@@ -65,6 +66,7 @@ Avoid:
 - [Datasets](DATASETS.md)
 - [Annotation Standards](ANNOTATION_STANDARDS.md)
 - [Dataset Intake Workflow](DATASET_INTAKE_WORKFLOW.md)
+- [Detection Dataset Curation](DETECTION_DATASET_CURATION.md)
 - [Training Workflows](TRAINING_WORKFLOWS.md)
 - [Models](MODELS.md)
 - [Inference](INFERENCE.md)

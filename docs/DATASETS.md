@@ -56,10 +56,13 @@ No dataset enters a training plan until it passes provenance, annotation quality
 
 Legacy Seen-It-First training assets on this machine should enter RepoScan Pro through typed manifests and review, not through direct code reuse.
 
+For plate detection, reviewed captures should be promoted into curated YOLO datasets and eval holdouts with the workflow in [Detection Dataset Curation](DETECTION_DATASET_CURATION.md).
+
 ## Related Documents
 
 - [Training](TRAINING.md)
 - [Annotation Standards](ANNOTATION_STANDARDS.md)
 - [Dataset Intake Workflow](DATASET_INTAKE_WORKFLOW.md)
+- [Detection Dataset Curation](DETECTION_DATASET_CURATION.md)
 - [Requirements](REQUIREMENTS.md)
 - [Dataset Intake Skill](../.claude/skills/dataset-intake/SKILL.md)

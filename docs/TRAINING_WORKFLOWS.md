@@ -27,6 +27,21 @@ These scripts are prepare-first.
 - `configs/training/vehicle-color-classifier.yaml`
 - `configs/training/vehicle-make-model-warmstart.yaml`
 
+## Detection Dataset Promotion
+
+Detector fine-tuning should not point at loose staged capture folders.
+
+Use this flow instead:
+
+1. reviewed `generic_capture` manifest
+2. optional session-aware split manifest
+3. `scripts/export_detection_label_index.py`
+4. mirrored YOLO labels root
+5. `scripts/promote_detection_dataset.py`
+6. `scripts/train_detection_model.py`
+
+This keeps detection training, holdout protection, and later regression evaluation tied back to typed manifests instead of ad hoc folder edits.
+
 ## Framework Expectations
 
 - `ultralytics` for detection fine-tuning

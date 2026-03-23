@@ -60,6 +60,12 @@ This keeps capture sessions together and can reserve dedicated `field_eval` samp
 - `curated/` is for training-ready datasets with accepted labels
 - `eval/` is for protected holdouts and field-eval sets
 
+For plate-detection capture sets:
+
+1. export a label-review index with `scripts/export_detection_label_index.py`
+2. place YOLO labels under a mirrored labels root
+3. promote the reviewed labels with `scripts/promote_detection_dataset.py`
+
 Do not move data into a training plan until the manifest passes provenance, license, and annotation review.
 
 ## Legacy Source Notes
@@ -76,4 +82,5 @@ Today the most reusable legacy sources are:
 
 - [Datasets](DATASETS.md)
 - [Annotation Standards](ANNOTATION_STANDARDS.md)
+- [Detection Dataset Curation](DETECTION_DATASET_CURATION.md)
 - [Training](TRAINING.md)

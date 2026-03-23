@@ -10,6 +10,6 @@ Current examples include:
 - Jetson Orin edge deployment tuning under `deployments/jetson-orin-edge.yaml`
 - RTSP camera registration under `cameras/example-camera.yaml`
 - USB camera registration under `cameras/example-usb-camera.yaml`
-- capture-intake and integrated training dataset manifests under `datasets/`
+- capture-intake, curated detection, eval holdout, and integrated training dataset examples under `datasets/`
 - training workflow profiles under `training/`
 - promoted-bundle benchmark scaffolding under `benchmarks/example-promoted-onnx-benchmark.yaml`
