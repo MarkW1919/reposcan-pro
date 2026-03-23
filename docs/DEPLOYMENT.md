@@ -33,6 +33,23 @@ RepoScan Pro is designed for local development on a workstation and deployment o
 - avoid uncontrolled external dependencies on the mission-critical path
 - support rollback-safe model or service promotion
 
+## Runtime Bundle Validation
+
+Before an external promoted bundle is treated as deployment-ready, validate it against the intended deployment profile:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\validate_edge_runtime_bundle.py `
+  --model-config C:\artifacts\models\promoted\bundle-20260322\promoted-tensorrt.yaml `
+  --deployment-config .\configs\deployments\jetson-orin-edge.yaml
+```
+
+This catches mismatches between the promoted bundle and the deployment target, including:
+
+- backend expectations such as TensorRT on Jetson Orin
+- config-dir-relative bundle requirements
+- target runtime identifiers
+- CUDA version, TensorRT version, and device compute capability expectations when the deployment profile requires them
+
 ## Related Documents
 
 - [Requirements](REQUIREMENTS.md)

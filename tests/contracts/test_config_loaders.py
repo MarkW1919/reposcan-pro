@@ -262,6 +262,8 @@ class TestDeploymentConfigSchema:
     def test_sync_disabled_in_local_dev(self):
         dep = load_deployment_config(CONFIGS / "deployments" / "local-dev.yaml")
         assert dep.enabled_services.sync is False
+        assert dep.runtime.required_backend == InferenceBackend.onnx
+        assert dep.runtime.target_runtime == "onnxruntime"
 
     def test_all_core_services_enabled(self):
         dep = load_deployment_config(CONFIGS / "deployments" / "local-dev.yaml")
@@ -282,6 +284,11 @@ class TestDeploymentConfigSchema:
         assert dep.target_hardware == TargetHardware.jetson_orin
         assert dep.enabled_services.sync is True
         assert dep.performance.frame_queue_depth == 16
+        assert dep.runtime.required_backend == InferenceBackend.tensorrt
+        assert dep.runtime.required_path_base == ArtifactPathBase.config_dir
+        assert dep.runtime.required_cuda_version == "12.2"
+        assert dep.runtime.required_tensorrt_version == "10.0.1"
+        assert dep.runtime.required_compute_capability == "8.7"
 
     def test_invalid_port_rejected(self):
         with pytest.raises(ValidationError):

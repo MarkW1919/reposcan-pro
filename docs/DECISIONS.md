@@ -146,3 +146,10 @@ Maintenance rule:
 - Status: Accepted
 - Decision: Require promoted TensorRT engine manifests to record target runtime, precision, CUDA version, TensorRT version, and target device compute capability.
 - Rationale: A TensorRT engine is tightly coupled to its runtime environment; external bundle review needs compatibility metadata even before true edge execution validation is available.
+
+## ADR-021 Deployment Profiles Gate Promoted Bundle Compatibility
+
+- Date: 2026-03-22
+- Status: Accepted
+- Decision: Validate promoted runtime bundles against deployment-profile runtime expectations before treating them as deployable-ready handoff artifacts.
+- Rationale: Bundle-level validation is necessary but not sufficient; deployability also depends on matching the target backend, runtime, and edge-compatibility metadata defined by the deployment profile.

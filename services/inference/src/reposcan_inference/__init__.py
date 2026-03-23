@@ -8,6 +8,11 @@ from .adapters import (
     StaticVehicleDetectorAdapter,
 )
 from .adapter_factory import build_runtime_adapter_bundle
+from .deployment_validation import (
+    DeploymentCompatibilityReport,
+    DeploymentValidationIssue,
+    validate_deployment_runtime_bundle,
+)
 from .onnx_adapters import build_onnx_adapter_bundle, validate_onnx_artifact
 from .profiling import InferenceLatencyProfile, InferenceProfiler, recommend_runtime_tuning
 from .promotion import (
@@ -49,6 +54,8 @@ __all__ = [
     "InferenceLatencyProfile",
     "InferenceProfiler",
     "InferenceService",
+    "DeploymentCompatibilityReport",
+    "DeploymentValidationIssue",
     "ModelAdapterBundle",
     "ModelStackValidationReport",
     "PromotedBundlePackageReport",
@@ -71,6 +78,7 @@ __all__ = [
     "package_promoted_onnx_bundle",
     "recommend_runtime_tuning",
     "sha256_file",
+    "validate_deployment_runtime_bundle",
     "validate_onnx_artifact",
     "validate_model_stack",
     "validate_promoted_model_stack",

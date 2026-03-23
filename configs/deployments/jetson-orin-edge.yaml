@@ -38,3 +38,11 @@ performance:
   max_worker_threads: 6
   frame_queue_depth: 16
   enable_profiling: true
+
+runtime:
+  required_backend: tensorrt
+  target_runtime: tensorrt
+  required_path_base: config_dir
+  required_cuda_version: "12.2"
+  required_tensorrt_version: "10.0.1"
+  required_compute_capability: "8.7"

@@ -131,6 +131,12 @@ Package a self-contained promoted ONNX bundle outside git with:
 
 For future edge bundles, use [configs/models/promoted-tensorrt-template.yaml](configs/models/promoted-tensorrt-template.yaml) as the contract shape for external TensorRT engine manifests.
 
+Validate a promoted bundle against a deployment target with:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\validate_edge_runtime_bundle.py --model-config C:\path\to\promoted-bundle\promoted-tensorrt.yaml --deployment-config .\configs\deployments\jetson-orin-edge.yaml
+```
+
 ## Desktop Launcher
 
 To create the desktop launcher and double-click shortcut for this repo, run:

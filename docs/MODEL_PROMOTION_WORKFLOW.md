@@ -108,6 +108,16 @@ This validation checks:
 - relative bundle paths still resolve correctly when `path_base: config_dir` is used
 - TensorRT bundles include the required engine compatibility metadata
 
+Then validate the promoted bundle against the target deployment profile:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\validate_edge_runtime_bundle.py `
+  --model-config C:\artifacts\models\promoted\bundle-20260322\promoted-tensorrt.yaml `
+  --deployment-config .\configs\deployments\jetson-orin-edge.yaml
+```
+
+This deployment-level check verifies that bundle metadata matches the intended target environment rather than just checking the bundle in isolation.
+
 ## What This Does Not Prove
 
 This workflow does not by itself prove:

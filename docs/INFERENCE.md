@@ -38,6 +38,7 @@ Inference is edge-first and local-first. Cloud services may augment analysis lat
 - self-contained promoted ONNX bundles can be packaged with `scripts/package_promoted_onnx_bundle.py`
 - promoted external bundles should be checked with `scripts/validate_promoted_model_bundle.py` once per-stage manifests exist
 - TensorRT promoted bundles now have a metadata contract for CUDA, TensorRT version, precision, and device capability, but that is still not the same as validated edge execution
+- deployment-target compatibility can be checked with `scripts/validate_edge_runtime_bundle.py`
 
 ## Failure Handling
 

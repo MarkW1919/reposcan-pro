@@ -17,4 +17,5 @@ Current integrated slice:
 - promoted-bundle manifest helpers and validation scripts for external artifact handoff
 - promoted ONNX bundle packaging helpers for self-contained external handoff directories
 - TensorRT promoted-bundle validation rules for required engine compatibility metadata
+- deployment-target validation helpers that compare promoted bundles against deployment-profile runtime requirements
 - inference profiling helpers for latency benchmarking and deployment recommendations

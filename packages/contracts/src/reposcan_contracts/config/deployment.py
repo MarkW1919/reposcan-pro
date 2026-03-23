@@ -10,6 +10,8 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
+from .model import ArtifactPathBase, InferenceBackend
+
 
 class TargetHardware(str, Enum):
     cpu = "cpu"
@@ -65,6 +67,24 @@ class PerformanceConfig(BaseModel):
     enable_profiling: bool = False
 
 
+class RuntimeCompatibilityConfig(BaseModel):
+    required_backend: InferenceBackend | None = Field(
+        None,
+        description="Required inference backend for this deployment profile.",
+    )
+    target_runtime: str | None = Field(
+        None,
+        description="Expected runtime identifier for promoted bundles such as onnxruntime or tensorrt.",
+    )
+    required_path_base: ArtifactPathBase | None = Field(
+        None,
+        description="Require a specific path resolution mode for deployment bundles.",
+    )
+    required_cuda_version: str | None = None
+    required_tensorrt_version: str | None = None
+    required_compute_capability: str | None = None
+
+
 class DeploymentConfig(BaseModel):
     """Complete deployment profile loaded from configs/deployments/*.yaml."""
 
@@ -75,3 +95,4 @@ class DeploymentConfig(BaseModel):
     infrastructure: InfrastructureConfig = Field(default_factory=InfrastructureConfig)
     media_retention: MediaRetentionConfig = Field(default_factory=MediaRetentionConfig)
     performance: PerformanceConfig = Field(default_factory=PerformanceConfig)
+    runtime: RuntimeCompatibilityConfig = Field(default_factory=RuntimeCompatibilityConfig)
