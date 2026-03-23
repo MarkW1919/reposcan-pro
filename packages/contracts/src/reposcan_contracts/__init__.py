@@ -31,6 +31,14 @@ from .hotlist import HotlistEntry, HotlistMatchResult
 from .inference import AttributePredictions, InferenceCandidate, ModelVersions, PlateDetection, VehicleDetection
 from .model_artifact import ModelArtifactManifest
 from .popup import PopupActivityEvent, PopupEventType
+from .release import (
+    ModelReleaseChannel,
+    ModelReleaseRecord,
+    ReleaseBenchmarkSummary,
+    ReleaseChannelAction,
+    ReleaseChannelEvent,
+    ReleaseValidationSummary,
+)
 from .review import ReviewAction, ReviewRecord
 from .training import (
     AugmentationPolicy,
@@ -93,6 +101,12 @@ __all__ = [
     "EvidenceRefs",
     "PopupActivityEvent",
     "PopupEventType",
+    "ReleaseBenchmarkSummary",
+    "ReleaseChannelAction",
+    "ReleaseChannelEvent",
+    "ReleaseValidationSummary",
+    "ModelReleaseRecord",
+    "ModelReleaseChannel",
     "TrainingFramework",
     "DatasetAdapter",
     "AugmentationPolicy",

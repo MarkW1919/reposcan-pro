@@ -19,6 +19,8 @@ from reposcan_contracts.config.loader import (
     load_camera_config,
     load_dataset_split_manifest,
     load_deployment_config,
+    load_model_release_channel,
+    load_model_release_record,
     load_model_config,
     load_pipeline_config,
     load_training_dataset_manifest,
@@ -457,3 +459,17 @@ class TestTrainingProfileSchema:
         )
         with pytest.raises(ConfigLoadError):
             load_training_profile(bad)
+
+
+class TestReleaseRegistrySchema:
+    def test_release_record_example_parses(self):
+        record = load_model_release_record(CONFIGS / "releases" / "example-release-record.yaml")
+        assert record.release_id == "local-onnx-20260323-101500"
+        assert record.validation.deployment_ready is True
+        assert record.subset_benchmarks["long_range"].frames == 18
+
+    def test_release_channel_example_parses(self):
+        channel = load_model_release_channel(CONFIGS / "releases" / "example-release-channel.yaml")
+        assert channel.channel_name == "local-dev-demo"
+        assert channel.current_release_id == "local-onnx-20260323-101500"
+        assert channel.events[-1].action.value == "promote"

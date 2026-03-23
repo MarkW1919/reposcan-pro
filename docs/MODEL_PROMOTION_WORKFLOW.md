@@ -120,6 +120,21 @@ This deployment-level check verifies that bundle metadata matches the intended t
 
 After bundle and deployment validation, use the promoted-bundle benchmark harness to collect exact-match and character-accuracy metrics across tagged subsets such as `long_range` and `low_light`.
 
+## Register An Accepted Release
+
+Once a promoted bundle has passed bundle validation, deployment validation, and benchmark review, register it into an external release registry:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\register_model_release.py `
+  --model-config C:\artifacts\models\promoted\bundle-20260322\promoted-onnx.yaml `
+  --deployment-config .\configs\deployments\local-dev.yaml `
+  --benchmark-manifest C:\artifacts\models\benchmarks\oklahoma-night-long-range.yaml `
+  --registry-root C:\artifacts\models\registry `
+  --channel local-dev-demo
+```
+
+That registration writes a versioned release record, snapshots the relevant configs, stores the benchmark report, and updates the chosen release channel pointer. If a later release regresses, use `scripts/rollback_model_release.py` to move the channel back to the previous accepted release without rewriting history.
+
 ## What This Does Not Prove
 
 This workflow does not by itself prove:
@@ -139,5 +154,6 @@ Those are separate acceptance gates and remain tracked in [Project Status Checkl
 - [Training](TRAINING.md)
 - [Inference](INFERENCE.md)
 - [Deployment](DEPLOYMENT.md)
+- [Model Releases](MODEL_RELEASES.md)
 - [Promoted Model Benchmarks](PROMOTED_MODEL_BENCHMARKS.md)
 - [Decisions](DECISIONS.md)

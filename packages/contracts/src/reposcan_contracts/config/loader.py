@@ -23,6 +23,7 @@ from .model import ModelStackConfig
 from .pipeline import PipelineConfig
 from ..benchmark import PromotedModelBenchmarkManifest
 from ..dataset import DatasetSplitManifest, TrainingDatasetManifest
+from ..release import ModelReleaseChannel, ModelReleaseRecord
 from ..training import TrainingProfileConfig
 
 
@@ -123,5 +124,21 @@ def load_training_profile(path: Union[str, Path]) -> TrainingProfileConfig:
     data = _load_yaml(path)
     try:
         return TrainingProfileConfig.model_validate(data)
+    except ValidationError as exc:
+        raise ConfigLoadError(path, str(exc)) from exc
+
+
+def load_model_release_record(path: Union[str, Path]) -> ModelReleaseRecord:
+    data = _load_yaml(path)
+    try:
+        return ModelReleaseRecord.model_validate(data)
+    except ValidationError as exc:
+        raise ConfigLoadError(path, str(exc)) from exc
+
+
+def load_model_release_channel(path: Union[str, Path]) -> ModelReleaseChannel:
+    data = _load_yaml(path)
+    try:
+        return ModelReleaseChannel.model_validate(data)
     except ValidationError as exc:
         raise ConfigLoadError(path, str(exc)) from exc

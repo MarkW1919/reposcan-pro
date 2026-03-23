@@ -181,3 +181,10 @@ Maintenance rule:
 - Status: Accepted
 - Decision: Promote plate-detection datasets from reviewed `generic_capture` manifests plus validated YOLO labels into typed `yolo_detection` and `eval_holdout` manifests instead of treating ad hoc image folders as train-ready.
 - Rationale: Detector fine-tuning and regression evaluation need protected holdouts, reviewed provenance, and repeatable label validation; a promotion workflow keeps the data boundary consistent with the rest of the repository.
+
+## ADR-026 Accepted Model Releases Are Tracked In An External Registry
+
+- Date: 2026-03-23
+- Status: Accepted
+- Decision: Register accepted promoted bundles into an external release registry with channel pointers and rollback events instead of treating folder names or ad hoc notes as the source of truth.
+- Rationale: Promotion validation, benchmark evidence, deployment readiness, and rollback history all need a stable record outside git because the promoted artifacts themselves also live outside the repository.

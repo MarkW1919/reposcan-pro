@@ -151,7 +151,7 @@ Last reviewed against repo state: `2026-03-23`
 - [x] ~~Make/model classifier training workflow exists.~~
 - [x] ~~Realistic augmentation suite exists and is documented.~~
 - [ ] Field-relevant evaluation reports exist for exact match, character accuracy, low light, long range, latency, and export viability.
-- [ ] Model promotion and rollback process exists with versioned artifacts kept outside git.
+- [x] ~~Model promotion and rollback process exists with versioned artifacts kept outside git.~~
 
 ## 11. Deployment And Operations
 

@@ -11,5 +11,6 @@ Current examples include:
 - RTSP camera registration under `cameras/example-camera.yaml`
 - USB camera registration under `cameras/example-usb-camera.yaml`
 - capture-intake, curated detection, eval holdout, and integrated training dataset examples under `datasets/`
+- accepted release-record and release-channel examples under `releases/`
 - training workflow profiles under `training/`
 - promoted-bundle benchmark scaffolding under `benchmarks/example-promoted-onnx-benchmark.yaml`

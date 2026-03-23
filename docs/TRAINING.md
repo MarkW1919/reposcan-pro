@@ -48,6 +48,7 @@ Avoid:
 - for TensorRT engine bundles, record CUDA version, TensorRT version, precision, and target device capability in the manifest
 - validate promoted bundles against their runtime config before deployment handoff
 - benchmark promoted bundles against tagged long-range and low-light manifests before promotion decisions are treated as evidence-backed
+- register accepted promoted bundles into an external release registry
 - record runtime implications for TensorRT or equivalent deployment targets
 - keep a rollback path to the previously accepted model
 
@@ -68,6 +69,7 @@ Avoid:
 - [Dataset Intake Workflow](DATASET_INTAKE_WORKFLOW.md)
 - [Detection Dataset Curation](DETECTION_DATASET_CURATION.md)
 - [Training Workflows](TRAINING_WORKFLOWS.md)
+- [Model Releases](MODEL_RELEASES.md)
 - [Models](MODELS.md)
 - [Inference](INFERENCE.md)
 - [Model Promotion Workflow](MODEL_PROMOTION_WORKFLOW.md)

@@ -31,6 +31,12 @@ from .promotion import (
     sha256_file,
     validate_promoted_model_stack,
 )
+from .release_registry import (
+    ModelReleaseRegistrationReport,
+    ModelReleaseRollbackReport,
+    register_model_release,
+    rollback_model_release,
+)
 from .runtime import (
     DemoRunInProgressError,
     DemoRunRequest,
@@ -67,6 +73,8 @@ __all__ = [
     "PromotedBundlePackageReport",
     "PromotedBundleValidationReport",
     "PromotedModelBenchmarkReport",
+    "ModelReleaseRegistrationReport",
+    "ModelReleaseRollbackReport",
     "PromotedStageValidationReport",
     "PromotionIssue",
     "StageValidationReport",
@@ -84,7 +92,9 @@ __all__ = [
     "benchmark_promoted_model",
     "load_model_artifact_manifest",
     "package_promoted_onnx_bundle",
+    "register_model_release",
     "recommend_runtime_tuning",
+    "rollback_model_release",
     "sha256_file",
     "validate_deployment_runtime_bundle",
     "validate_onnx_artifact",

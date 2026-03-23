@@ -50,9 +50,12 @@ This catches mismatches between the promoted bundle and the deployment target, i
 - target runtime identifiers
 - CUDA version, TensorRT version, and device compute capability expectations when the deployment profile requires them
 
+After a bundle passes deployment validation and benchmark review, register it into an external release registry and move the deployment channel pointer rather than hand-tracking "current" bundles in notes or folder names. This keeps rollback to the previous accepted bundle explicit and audit-friendly.
+
 ## Related Documents
 
 - [Requirements](REQUIREMENTS.md)
 - [Inference](INFERENCE.md)
 - [Model Promotion Workflow](MODEL_PROMOTION_WORKFLOW.md)
+- [Model Releases](MODEL_RELEASES.md)
 - [Decisions](DECISIONS.md)

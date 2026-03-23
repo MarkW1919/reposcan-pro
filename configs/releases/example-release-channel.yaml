@@ -1,0 +1,18 @@
+channel_name: local-dev-demo
+current_release_id: local-onnx-20260323-101500
+previous_release_id: local-onnx-20260320-114500
+updated_at_utc: 2026-03-23T10:20:00Z
+release_history:
+  - local-onnx-20260320-114500
+  - local-onnx-20260323-101500
+events:
+  - occurred_at_utc: 2026-03-20T11:45:00Z
+    action: promote
+    release_id: local-onnx-20260320-114500
+    notes: Initial accepted fixture bundle.
+  - occurred_at_utc: 2026-03-23T10:20:00Z
+    action: promote
+    release_id: local-onnx-20260323-101500
+    previous_release_id: local-onnx-20260320-114500
+    notes: Promoted after benchmark rerun.
+notes: Example accepted release-channel shape only.

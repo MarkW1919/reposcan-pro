@@ -45,6 +45,7 @@ The canonical mission and rules live in [CLAUDE.md](CLAUDE.md).
 - [Detection Dataset Curation](docs/DETECTION_DATASET_CURATION.md)
 - [Training](docs/TRAINING.md)
 - [Training Workflows](docs/TRAINING_WORKFLOWS.md)
+- [Model Releases](docs/MODEL_RELEASES.md)
 - [Inference](docs/INFERENCE.md)
 - [Model Promotion Workflow](docs/MODEL_PROMOTION_WORKFLOW.md)
 - [Promoted Model Benchmarks](docs/PROMOTED_MODEL_BENCHMARKS.md)
@@ -160,6 +161,12 @@ Export a detection label index and promote reviewed YOLO labels into curated man
 ```powershell
 .\.venv\Scripts\python.exe .\scripts\export_detection_label_index.py --dataset-manifest .\data\manifests\legacy\legacy-oklahoma-detection-reviewed.yaml --output .\data\manifests\legacy\legacy-oklahoma-detection-label-index.csv
 .\.venv\Scripts\python.exe .\scripts\promote_detection_dataset.py --dataset-manifest .\data\manifests\legacy\legacy-oklahoma-detection-reviewed.yaml --split-manifest .\data\manifests\legacy\legacy-oklahoma-detection-split.yaml --labels-root C:\datasets\oklahoma_detection_labels --output-root .\data\curated --output-manifest .\data\manifests\legacy\legacy-oklahoma-detection-curated.yaml --field-eval-manifest .\data\manifests\legacy\legacy-oklahoma-detection-field-eval.yaml --reviewer qa_annotator_01
+```
+
+Register a validated promoted bundle into an external release registry with:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\register_model_release.py --model-config C:\artifacts\models\promoted\fixture-local-dev\promoted-onnx.yaml --deployment-config .\configs\deployments\local-dev.yaml --benchmark-manifest C:\artifacts\models\benchmarks\oklahoma-night-long-range.yaml --registry-root C:\artifacts\models\registry --channel local-dev-demo
 ```
 
 ## Desktop Launcher
