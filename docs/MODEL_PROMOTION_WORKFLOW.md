@@ -118,6 +118,8 @@ Then validate the promoted bundle against the target deployment profile:
 
 This deployment-level check verifies that bundle metadata matches the intended target environment rather than just checking the bundle in isolation.
 
+After bundle and deployment validation, use the promoted-bundle benchmark harness to collect exact-match and character-accuracy metrics across tagged subsets such as `long_range` and `low_light`.
+
 ## What This Does Not Prove
 
 This workflow does not by itself prove:
@@ -137,4 +139,5 @@ Those are separate acceptance gates and remain tracked in [Project Status Checkl
 - [Training](TRAINING.md)
 - [Inference](INFERENCE.md)
 - [Deployment](DEPLOYMENT.md)
+- [Promoted Model Benchmarks](PROMOTED_MODEL_BENCHMARKS.md)
 - [Decisions](DECISIONS.md)

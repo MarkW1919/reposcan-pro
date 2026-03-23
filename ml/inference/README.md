@@ -14,3 +14,4 @@ Current tracked assets:
 - `..\..\scripts\package_promoted_onnx_bundle.py` packages a runtime-ready ONNX stack into a self-contained external promoted bundle
 - `..\..\configs\models\promoted-tensorrt-template.yaml` documents the expected external TensorRT engine bundle shape and required manifest metadata
 - `..\..\scripts\validate_edge_runtime_bundle.py` checks a promoted bundle against a deployment profile such as `jetson-orin-edge`
+- `..\..\scripts\benchmark_promoted_bundle.py` benchmarks a promoted bundle against a tagged frame manifest

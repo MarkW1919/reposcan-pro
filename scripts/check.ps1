@@ -25,6 +25,7 @@ $requiredFiles = @(
     "docs/TRAINING.md",
     "docs/INFERENCE.md",
     "docs/MODEL_PROMOTION_WORKFLOW.md",
+    "docs/PROMOTED_MODEL_BENCHMARKS.md",
     "docs/DEPLOYMENT.md",
     "docs/API_CONTRACTS.md",
     "docs/UI_WORKFLOWS.md",

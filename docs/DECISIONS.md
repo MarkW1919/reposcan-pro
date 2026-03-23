@@ -153,3 +153,10 @@ Maintenance rule:
 - Status: Accepted
 - Decision: Validate promoted runtime bundles against deployment-profile runtime expectations before treating them as deployable-ready handoff artifacts.
 - Rationale: Bundle-level validation is necessary but not sufficient; deployability also depends on matching the target backend, runtime, and edge-compatibility metadata defined by the deployment profile.
+
+## ADR-022 Promoted Benchmarking Uses Tagged Frame Manifests
+
+- Date: 2026-03-23
+- Status: Accepted
+- Decision: Benchmark promoted bundles with typed frame manifests that carry subset tags such as `long_range` and `low_light`.
+- Rationale: The repo needs a repeatable way to compare promoted bundles against the specific scenarios that matter most without hardcoding benchmark subsets into the evaluator.

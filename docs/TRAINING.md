@@ -47,6 +47,7 @@ Avoid:
 - generate and retain per-stage artifact manifests outside git
 - for TensorRT engine bundles, record CUDA version, TensorRT version, precision, and target device capability in the manifest
 - validate promoted bundles against their runtime config before deployment handoff
+- benchmark promoted bundles against tagged long-range and low-light manifests before promotion decisions are treated as evidence-backed
 - record runtime implications for TensorRT or equivalent deployment targets
 - keep a rollback path to the previously accepted model
 

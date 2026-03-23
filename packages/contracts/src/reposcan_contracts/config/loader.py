@@ -20,6 +20,7 @@ from .camera import CameraConfig
 from .deployment import DeploymentConfig
 from .model import ModelStackConfig
 from .pipeline import PipelineConfig
+from ..benchmark import PromotedModelBenchmarkManifest
 
 
 class ConfigLoadError(Exception):
@@ -75,5 +76,13 @@ def load_deployment_config(path: Union[str, Path]) -> DeploymentConfig:
     data = _load_yaml(path)
     try:
         return DeploymentConfig.model_validate(data)
+    except ValidationError as exc:
+        raise ConfigLoadError(path, str(exc)) from exc
+
+
+def load_benchmark_manifest(path: Union[str, Path]) -> PromotedModelBenchmarkManifest:
+    data = _load_yaml(path)
+    try:
+        return PromotedModelBenchmarkManifest.model_validate(data)
     except ValidationError as exc:
         raise ConfigLoadError(path, str(exc)) from exc

@@ -5,6 +5,7 @@ definitions and config loaders - no inference, IO, or business logic.
 """
 
 from .alert import AlertRecord, AlertStatus
+from .benchmark import BenchmarkFrameExpectation, PromotedModelBenchmarkManifest
 from .detection import BoundingBox, DetectionRecord, PlateCandidate, SyncStatus
 from .frame import CameraProfile, FrameEnvelope, GpsSnapshot, PreparedFrame, PreprocessingMetadata, SourceType
 from .health import DependencyHealth, HealthResponse, HealthState
@@ -25,6 +26,8 @@ __all__ = [
     "SyncStatus",
     "AlertRecord",
     "AlertStatus",
+    "BenchmarkFrameExpectation",
+    "PromotedModelBenchmarkManifest",
     "HotlistEntry",
     "HotlistMatchResult",
     "ReviewRecord",

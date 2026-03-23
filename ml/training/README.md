@@ -5,4 +5,4 @@ Reserve training plans, experiment drivers, and evaluation harnesses for detecto
 Constraints:
 - do not commit datasets or model weights
 - document experiment inputs, outputs, and promotion criteria
-
+- keep benchmark manifests and reports reviewable even when the underlying datasets stay outside git

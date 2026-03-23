@@ -8,6 +8,11 @@ from .adapters import (
     StaticVehicleDetectorAdapter,
 )
 from .adapter_factory import build_runtime_adapter_bundle
+from .benchmarking import (
+    BenchmarkSubsetMetrics,
+    PromotedModelBenchmarkReport,
+    benchmark_promoted_model,
+)
 from .deployment_validation import (
     DeploymentCompatibilityReport,
     DeploymentValidationIssue,
@@ -56,10 +61,12 @@ __all__ = [
     "InferenceService",
     "DeploymentCompatibilityReport",
     "DeploymentValidationIssue",
+    "BenchmarkSubsetMetrics",
     "ModelAdapterBundle",
     "ModelStackValidationReport",
     "PromotedBundlePackageReport",
     "PromotedBundleValidationReport",
+    "PromotedModelBenchmarkReport",
     "PromotedStageValidationReport",
     "PromotionIssue",
     "StageValidationReport",
@@ -74,6 +81,7 @@ __all__ = [
     "build_configured_adapter_bundle",
     "build_demo_adapter_bundle",
     "build_runtime_adapter_bundle",
+    "benchmark_promoted_model",
     "load_model_artifact_manifest",
     "package_promoted_onnx_bundle",
     "recommend_runtime_tuning",

@@ -15,6 +15,7 @@ from pydantic import ValidationError
 
 from reposcan_contracts.config.loader import (
     ConfigLoadError,
+    load_benchmark_manifest,
     load_camera_config,
     load_deployment_config,
     load_model_config,
@@ -303,3 +304,22 @@ class TestDeploymentConfigSchema:
         with pytest.raises(ConfigLoadError) as exc_info:
             load_deployment_config(bad)
         assert "mapping" in str(exc_info.value)
+
+
+# ---------------------------------------------------------------------------
+# Benchmark manifest
+# ---------------------------------------------------------------------------
+
+class TestBenchmarkManifestSchema:
+    def test_example_benchmark_manifest_parses(self):
+        manifest = load_benchmark_manifest(CONFIGS / "benchmarks" / "example-promoted-onnx-benchmark.yaml")
+        assert manifest.benchmark_name == "example-promoted-onnx-benchmark"
+        assert manifest.camera_id == "cam_benchmark_01"
+        assert len(manifest.frames) == 2
+        assert "long_range" in manifest.frames[0].tags
+
+    def test_benchmark_manifest_requires_frames(self, tmp_path):
+        bad = tmp_path / "benchmark.yaml"
+        bad.write_text("benchmark_name: empty-benchmark\nframes: []\n", encoding="utf-8")
+        with pytest.raises(ConfigLoadError):
+            load_benchmark_manifest(bad)
