@@ -91,6 +91,11 @@ def build_model_artifact_manifest(
     opset_version: int | None = None,
     precision: str | None = None,
     target_runtime: str | None = None,
+    cuda_version: str | None = None,
+    tensorrt_version: str | None = None,
+    device_compute_capability: str | None = None,
+    engine_profile: str | None = None,
+    workspace_megabytes: int | None = None,
     notes: str | None = None,
 ) -> ModelArtifactManifest:
     artifact_path = Path(resolved_artifact_path or model_config.artifact_path)
@@ -111,6 +116,11 @@ def build_model_artifact_manifest(
         opset_version=opset_version,
         precision=precision,
         target_runtime=target_runtime,
+        cuda_version=cuda_version,
+        tensorrt_version=tensorrt_version,
+        device_compute_capability=device_compute_capability,
+        engine_profile=engine_profile,
+        workspace_megabytes=workspace_megabytes,
         notes=notes,
     )
 
@@ -133,6 +143,60 @@ def _require_packagable_onnx_stack(model_stack: ModelStackConfig) -> None:
     non_onnx = [stage for stage, model in _stage_entries(model_stack) if model.backend != InferenceBackend.onnx]
     if non_onnx:
         raise ValueError(f"Promoted ONNX packaging currently supports ONNX-only stacks. Non-ONNX stages: {', '.join(non_onnx)}")
+
+
+def _validate_tensorrt_manifest(stage: str, manifest: ModelArtifactManifest) -> list[PromotionIssue]:
+    issues: list[PromotionIssue] = []
+    artifact_suffix = Path(manifest.artifact_path).suffix.lower()
+    if artifact_suffix not in {".engine", ".trt"}:
+        issues.append(
+            PromotionIssue(
+                severity="error",
+                stage=stage,
+                message=f"TensorRT manifest artifact_path should end in .engine or .trt, found '{manifest.artifact_path}'.",
+            )
+        )
+    if (manifest.target_runtime or "").strip().lower() != "tensorrt":
+        issues.append(
+            PromotionIssue(
+                severity="error",
+                stage=stage,
+                message="TensorRT manifests must declare target_runtime='tensorrt'.",
+            )
+        )
+    if not manifest.precision:
+        issues.append(
+            PromotionIssue(
+                severity="error",
+                stage=stage,
+                message="TensorRT manifests must record precision.",
+            )
+        )
+    if not manifest.cuda_version:
+        issues.append(
+            PromotionIssue(
+                severity="error",
+                stage=stage,
+                message="TensorRT manifests must record cuda_version.",
+            )
+        )
+    if not manifest.tensorrt_version:
+        issues.append(
+            PromotionIssue(
+                severity="error",
+                stage=stage,
+                message="TensorRT manifests must record tensorrt_version.",
+            )
+        )
+    if not manifest.device_compute_capability:
+        issues.append(
+            PromotionIssue(
+                severity="error",
+                stage=stage,
+                message="TensorRT manifests must record device_compute_capability.",
+            )
+        )
+    return issues
 
 
 def validate_promoted_model_stack(model_stack: ModelStackConfig) -> PromotedBundleValidationReport:
@@ -215,6 +279,9 @@ def validate_promoted_model_stack(model_stack: ModelStackConfig) -> PromotedBund
                     message="Manifest input dimensions do not match the model config.",
                 )
             )
+
+        if manifest.backend == InferenceBackend.tensorrt:
+            issues.extend(_validate_tensorrt_manifest(stage, manifest))
 
         artifact_file = model_stack.resolve_artifact_path(model_config.artifact_path)
         if not artifact_file.exists():

@@ -23,6 +23,7 @@ RepoScan Pro is designed for local development on a workstation and deployment o
 - ONNX for portable runtime packaging
 - TensorRT where hardware support and validation justify it
 - promoted runtime bundles should be self-contained, use config-dir-relative paths, and include per-stage manifests plus hash validation before deployment handoff
+- TensorRT bundles should also record engine compatibility metadata so deployment review can confirm CUDA, TensorRT, precision, and target device assumptions
 - separate service packaging so ingest, inference, storage, and sync can recover independently
 
 ## Operational Requirements

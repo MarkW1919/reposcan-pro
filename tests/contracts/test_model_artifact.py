@@ -48,3 +48,11 @@ def test_model_artifact_manifest_requires_sha256_hex_digest():
 
     with pytest.raises(ValidationError):
         ModelArtifactManifest.model_validate(payload)
+
+
+def test_model_artifact_manifest_requires_positive_workspace_megabytes():
+    payload = _manifest_payload()
+    payload["workspace_megabytes"] = 0
+
+    with pytest.raises(ValidationError):
+        ModelArtifactManifest.model_validate(payload)

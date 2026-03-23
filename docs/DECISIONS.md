@@ -139,3 +139,10 @@ Maintenance rule:
 - Status: Accepted
 - Decision: Support `path_base: config_dir` for model stacks so packaged promoted bundles can resolve artifact and manifest paths relative to the external bundle config instead of assuming the repository root.
 - Rationale: A promoted bundle should remain valid after it is copied outside the repo; repo-root-relative paths are fine for tracked development configs but are too brittle for deployment handoff artifacts.
+
+## ADR-020 TensorRT Promoted Bundles Require Engine Compatibility Metadata
+
+- Date: 2026-03-22
+- Status: Accepted
+- Decision: Require promoted TensorRT engine manifests to record target runtime, precision, CUDA version, TensorRT version, and target device compute capability.
+- Rationale: A TensorRT engine is tightly coupled to its runtime environment; external bundle review needs compatibility metadata even before true edge execution validation is available.

@@ -14,6 +14,7 @@ RepoScan Pro keeps promoted model artifacts outside git, but the repo still need
 A promoted bundle should provide:
 
 - a model-stack config shaped like [configs/models/promoted-onnx-template.yaml](../configs/models/promoted-onnx-template.yaml)
+- for TensorRT engine bundles, use [configs/models/promoted-tensorrt-template.yaml](../configs/models/promoted-tensorrt-template.yaml)
 - one artifact per stage
 - one manifest per stage
 - stable references to the source run, checkpoint, and dataset manifests when available
@@ -31,6 +32,22 @@ Each stage manifest should record at minimum:
 Optional metadata should include the training run, checkpoint reference, export tool, opset, precision, target runtime, and dataset manifests whenever those details exist.
 
 Promoted bundle configs should set `path_base: config_dir` so relative artifact and manifest paths stay valid when the bundle is moved outside the repository.
+
+## TensorRT Manifest Metadata
+
+TensorRT promoted bundles need more metadata than plain ONNX handoff because the engine is tied to a runtime stack and device profile. For TensorRT manifests, record:
+
+- `target_runtime: tensorrt`
+- `precision`
+- `cuda_version`
+- `tensorrt_version`
+- `device_compute_capability`
+
+Optional but recommended TensorRT metadata includes:
+
+- `engine_profile`
+- `workspace_megabytes`
+- the original checkpoint or export command in `source_checkpoint_ref` and `export_tool`
 
 ## Package A Promoted ONNX Bundle
 
@@ -89,6 +106,7 @@ This validation checks:
 - the artifact exists at the declared path
 - the artifact SHA-256 matches the manifest
 - relative bundle paths still resolve correctly when `path_base: config_dir` is used
+- TensorRT bundles include the required engine compatibility metadata
 
 ## What This Does Not Prove
 
@@ -97,6 +115,7 @@ This workflow does not by itself prove:
 - long-range accuracy
 - low-light accuracy
 - TensorRT readiness
+- real TensorRT engine loadability on target hardware
 - edge latency suitability
 - field deployment approval
 

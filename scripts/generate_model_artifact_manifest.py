@@ -35,6 +35,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--opset-version", type=int)
     parser.add_argument("--precision")
     parser.add_argument("--target-runtime")
+    parser.add_argument("--cuda-version")
+    parser.add_argument("--tensorrt-version")
+    parser.add_argument("--device-compute-capability")
+    parser.add_argument("--engine-profile")
+    parser.add_argument("--workspace-megabytes", type=int)
     parser.add_argument("--notes")
     return parser.parse_args()
 
@@ -65,6 +70,11 @@ def main() -> int:
         opset_version=args.opset_version,
         precision=args.precision,
         target_runtime=args.target_runtime,
+        cuda_version=args.cuda_version,
+        tensorrt_version=args.tensorrt_version,
+        device_compute_capability=args.device_compute_capability,
+        engine_profile=args.engine_profile,
+        workspace_megabytes=args.workspace_megabytes,
         notes=args.notes,
     )
 

@@ -129,6 +129,8 @@ Package a self-contained promoted ONNX bundle outside git with:
 .\.venv\Scripts\python.exe .\scripts\package_promoted_onnx_bundle.py --source-model-config .\configs\models\local-onnx-runtime.yaml --output-dir C:\artifacts\models\promoted\fixture-bundle
 ```
 
+For future edge bundles, use [configs/models/promoted-tensorrt-template.yaml](configs/models/promoted-tensorrt-template.yaml) as the contract shape for external TensorRT engine manifests.
+
 ## Desktop Launcher
 
 To create the desktop launcher and double-click shortcut for this repo, run:

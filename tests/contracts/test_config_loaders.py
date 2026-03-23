@@ -155,6 +155,15 @@ class TestModelStackConfigSchema:
         assert stack.classifier is not None
         assert stack.classifier.artifact_manifest_path is not None
 
+    def test_promoted_tensorrt_template_parses(self):
+        stack = load_model_config(CONFIGS / "models" / "promoted-tensorrt-template.yaml")
+        assert stack.stack_name == "promoted-tensorrt-template"
+        assert stack.path_base == ArtifactPathBase.config_dir
+        assert stack.vehicle_detector.backend == InferenceBackend.tensorrt
+        assert stack.vehicle_detector.artifact_manifest_path is not None
+        assert stack.classifier is not None
+        assert stack.classifier.backend == InferenceBackend.tensorrt
+
     def test_vehicle_detector_fields(self):
         stack = load_model_config(CONFIGS / "models" / "example-model-stack.yaml")
         vd = stack.vehicle_detector

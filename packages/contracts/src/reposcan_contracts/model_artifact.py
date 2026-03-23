@@ -27,4 +27,9 @@ class ModelArtifactManifest(BaseModel):
     opset_version: int | None = Field(None, gt=0)
     precision: str | None = None
     target_runtime: str | None = None
+    cuda_version: str | None = None
+    tensorrt_version: str | None = None
+    device_compute_capability: str | None = None
+    engine_profile: str | None = None
+    workspace_megabytes: int | None = Field(None, gt=0)
     notes: str | None = None
