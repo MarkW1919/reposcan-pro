@@ -23,11 +23,17 @@ RepoScan Pro must be trained and validated with data that reflects real deployme
 
 ```text
 data/
-├─ raw/
-├─ staged/
-├─ curated/
-├─ eval/
-└─ manifests/
+|-- raw/
+|-- staged/
+|-- curated/
+|-- eval/
+`-- manifests/
+```
+
+Create it locally with:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\init_dataset_workspace.py --root .\data
 ```
 
 ## Annotation Requirements
@@ -48,9 +54,12 @@ data/
 
 No dataset enters a training plan until it passes provenance, annotation quality, and imaging realism review.
 
+Legacy Seen-It-First training assets on this machine should enter RepoScan Pro through typed manifests and review, not through direct code reuse.
+
 ## Related Documents
 
 - [Training](TRAINING.md)
+- [Annotation Standards](ANNOTATION_STANDARDS.md)
+- [Dataset Intake Workflow](DATASET_INTAKE_WORKFLOW.md)
 - [Requirements](REQUIREMENTS.md)
 - [Dataset Intake Skill](../.claude/skills/dataset-intake/SKILL.md)
-

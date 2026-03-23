@@ -6,6 +6,24 @@ definitions and config loaders - no inference, IO, or business logic.
 
 from .alert import AlertRecord, AlertStatus
 from .benchmark import BenchmarkFrameExpectation, PromotedModelBenchmarkManifest
+from .dataset import (
+    AnnotationReview,
+    AnnotationTask,
+    DatasetAssetRecord,
+    DatasetFormat,
+    DatasetLicenseTier,
+    DatasetProvenance,
+    DatasetReviewStatus,
+    DatasetSourceKind,
+    DatasetSplit,
+    DatasetSplitAssignment,
+    DatasetSplitManifest,
+    DatasetSplitSource,
+    DatasetTask,
+    DistanceBand,
+    LightingCondition,
+    TrainingDatasetManifest,
+)
 from .detection import BoundingBox, DetectionRecord, PlateCandidate, SyncStatus
 from .frame import CameraProfile, FrameEnvelope, GpsSnapshot, PreparedFrame, PreprocessingMetadata, SourceType
 from .health import DependencyHealth, HealthResponse, HealthState
@@ -28,6 +46,22 @@ __all__ = [
     "AlertStatus",
     "BenchmarkFrameExpectation",
     "PromotedModelBenchmarkManifest",
+    "TrainingDatasetManifest",
+    "DatasetTask",
+    "DatasetFormat",
+    "DatasetSourceKind",
+    "DatasetLicenseTier",
+    "DatasetReviewStatus",
+    "DatasetSplit",
+    "AnnotationTask",
+    "LightingCondition",
+    "DistanceBand",
+    "DatasetProvenance",
+    "AnnotationReview",
+    "DatasetAssetRecord",
+    "DatasetSplitSource",
+    "DatasetSplitAssignment",
+    "DatasetSplitManifest",
     "HotlistEntry",
     "HotlistMatchResult",
     "ReviewRecord",

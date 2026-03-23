@@ -51,9 +51,18 @@ Avoid:
 - record runtime implications for TensorRT or equivalent deployment targets
 - keep a rollback path to the previously accepted model
 
+## Dataset Readiness Workflow
+
+- initialize the local dataset workspace before importing or staging data
+- validate every dataset manifest before a training run starts
+- plan capture-derived splits by session where possible
+- import legacy Seen-It-First assets through typed manifests instead of coupling to the old codebase
+
 ## Related Documents
 
 - [Datasets](DATASETS.md)
+- [Annotation Standards](ANNOTATION_STANDARDS.md)
+- [Dataset Intake Workflow](DATASET_INTAKE_WORKFLOW.md)
 - [Models](MODELS.md)
 - [Inference](INFERENCE.md)
 - [Model Promotion Workflow](MODEL_PROMOTION_WORKFLOW.md)

@@ -40,6 +40,8 @@ The canonical mission and rules live in [CLAUDE.md](CLAUDE.md).
 - [Camera Deployment Workflow](docs/CAMERA_DEPLOYMENT_WORKFLOW.md)
 - [Models](docs/MODELS.md)
 - [Datasets](docs/DATASETS.md)
+- [Annotation Standards](docs/ANNOTATION_STANDARDS.md)
+- [Dataset Intake Workflow](docs/DATASET_INTAKE_WORKFLOW.md)
 - [Training](docs/TRAINING.md)
 - [Inference](docs/INFERENCE.md)
 - [Model Promotion Workflow](docs/MODEL_PROMOTION_WORKFLOW.md)
@@ -136,6 +138,13 @@ Validate a promoted bundle against a deployment target with:
 
 ```powershell
 .\.venv\Scripts\python.exe .\scripts\validate_edge_runtime_bundle.py --model-config C:\path\to\promoted-bundle\promoted-tensorrt.yaml --deployment-config .\configs\deployments\jetson-orin-edge.yaml
+```
+
+Prepare the local training-data workspace and import legacy training sources with:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\init_dataset_workspace.py --root .\data
+.\.venv\Scripts\python.exe .\scripts\import_legacy_training_sources.py --output-dir .\data\manifests\legacy
 ```
 
 ## Desktop Launcher

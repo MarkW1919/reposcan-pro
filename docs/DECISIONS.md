@@ -160,3 +160,10 @@ Maintenance rule:
 - Status: Accepted
 - Decision: Benchmark promoted bundles with typed frame manifests that carry subset tags such as `long_range` and `low_light`.
 - Rationale: The repo needs a repeatable way to compare promoted bundles against the specific scenarios that matter most without hardcoding benchmark subsets into the evaluator.
+
+## ADR-023 Legacy Training Assets Enter RepoScan Through Typed Dataset Manifests
+
+- Date: 2026-03-23
+- Status: Accepted
+- Decision: Reuse old Seen-It-First training assets only through typed RepoScan dataset manifests and review tooling rather than importing the old training/runtime code paths directly.
+- Rationale: The legacy workspace contains useful warm-start datasets, staged raw captures, and synthetic OCR support data, but RepoScan Pro needs provenance review, split control, and artifact discipline that match the new repository boundaries.

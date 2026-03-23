@@ -6,7 +6,7 @@ Status convention:
 - completed items use `- [x] ~~item~~`
 - incomplete items use `- [ ] item`
 
-Last reviewed against repo state: `2026-03-22`
+Last reviewed against repo state: `2026-03-23`
 
 ## 1. Program Foundations
 
@@ -139,10 +139,10 @@ Last reviewed against repo state: `2026-03-22`
 
 ## 10. Datasets And Training
 
-- [ ] Local dataset layout exists for raw, staged, curated, eval, and manifest data.
-- [ ] Dataset intake gate exists for provenance, license, and annotation review.
-- [ ] Annotation standards exist for vehicles, plates, OCR text, attributes, and lighting metadata.
-- [ ] Train/validation/holdout split strategy is implemented by capture session where possible.
+- [x] ~~Local dataset layout exists for raw, staged, curated, eval, and manifest data.~~
+- [x] ~~Dataset intake gate exists for provenance, license, and annotation review.~~
+- [x] ~~Annotation standards exist for vehicles, plates, OCR text, attributes, and lighting metadata.~~
+- [x] ~~Train/validation/holdout split strategy is implemented by capture session where possible.~~
 - [ ] Dedicated field-eval holdouts exist for night and long-range regression checks.
 - [ ] Vehicle detector fine-tuning workflow exists.
 - [ ] Plate detector fine-tuning workflow exists for small, low-light targets.

@@ -22,6 +22,8 @@ $requiredFiles = @(
     "docs/CAMERA_AND_IMAGING.md",
     "docs/MODELS.md",
     "docs/DATASETS.md",
+    "docs/ANNOTATION_STANDARDS.md",
+    "docs/DATASET_INTAKE_WORKFLOW.md",
     "docs/TRAINING.md",
     "docs/INFERENCE.md",
     "docs/MODEL_PROMOTION_WORKFLOW.md",

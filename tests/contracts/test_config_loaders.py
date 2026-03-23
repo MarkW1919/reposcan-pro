@@ -17,11 +17,19 @@ from reposcan_contracts.config.loader import (
     ConfigLoadError,
     load_benchmark_manifest,
     load_camera_config,
+    load_dataset_split_manifest,
     load_deployment_config,
     load_model_config,
     load_pipeline_config,
+    load_training_dataset_manifest,
 )
 from reposcan_contracts.config.camera import CameraConfig, SourceType, ColorMode
+from reposcan_contracts.dataset import (
+    DatasetFormat,
+    DatasetReviewStatus,
+    DatasetSplit,
+    DatasetTask,
+)
 from reposcan_contracts.config.model import ArtifactPathBase, ModelStackConfig, InferenceBackend
 from reposcan_contracts.config.pipeline import PipelineConfig, PlateDetectionStrategy, PreprocessingBackend
 from reposcan_contracts.config.deployment import DeploymentConfig, TargetHardware
@@ -323,3 +331,76 @@ class TestBenchmarkManifestSchema:
         bad.write_text("benchmark_name: empty-benchmark\nframes: []\n", encoding="utf-8")
         with pytest.raises(ConfigLoadError):
             load_benchmark_manifest(bad)
+
+
+class TestTrainingDatasetManifestSchema:
+    def test_capture_intake_manifest_parses(self):
+        manifest = load_training_dataset_manifest(CONFIGS / "datasets" / "example-capture-intake.yaml")
+        assert manifest.dataset_name == "example-oklahoma-capture-intake"
+        assert manifest.task == DatasetTask.plate_detection
+        assert manifest.format == DatasetFormat.generic_capture
+        assert manifest.review_status == DatasetReviewStatus.approved
+        assert len(manifest.assets) == 3
+
+    def test_integrated_training_dataset_manifest_parses(self):
+        manifest = load_training_dataset_manifest(CONFIGS / "datasets" / "example-integrated-training-dataset.yaml")
+        assert manifest.dataset_name == "example-stanford-cars-warmstart"
+        assert manifest.task == DatasetTask.vehicle_make_model_classification
+        assert manifest.format == DatasetFormat.imagefolder
+        assert len(manifest.splits) == 2
+
+    def test_dataset_split_manifest_parses(self):
+        manifest = load_dataset_split_manifest(CONFIGS / "datasets" / "example-dataset-split.yaml")
+        assert manifest.dataset_name == "example-oklahoma-capture-intake"
+        assert manifest.assignments[0].split == DatasetSplit.field_eval
+
+    def test_approved_dataset_requires_annotation_review(self, tmp_path):
+        bad = tmp_path / "dataset.yaml"
+        bad.write_text(
+            "\n".join(
+                [
+                    "dataset_name: bad-approved-dataset",
+                    "dataset_version: 1",
+                    "task: plate_detection",
+                    "format: generic_capture",
+                    "storage_root: data/staged/bad",
+                    "review_status: approved",
+                    "provenance:",
+                    "  source_name: bad",
+                    "  source_kind: field_capture",
+                    "  license_tier: internal",
+                    "  license_name: internal",
+                    "  license_reference: internal://bad",
+                    "assets:",
+                    "  - asset_id: a1",
+                    "    relative_path: batch/frame.jpg",
+                    "    capture_session_id: session_01",
+                    "    lighting_conditions: [unknown]",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        with pytest.raises(ConfigLoadError):
+            load_training_dataset_manifest(bad)
+
+    def test_dataset_split_ratios_cannot_exceed_one(self, tmp_path):
+        bad = tmp_path / "split.yaml"
+        bad.write_text(
+            "\n".join(
+                [
+                    "split_name: bad",
+                    "dataset_name: bad",
+                    "train_ratio: 0.7",
+                    "validation_ratio: 0.2",
+                    "holdout_ratio: 0.2",
+                    "assignments:",
+                    "  - asset_id: a1",
+                    "    capture_session_id: s1",
+                    "    split: train",
+                    "    relative_path: batch/frame.jpg",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        with pytest.raises(ConfigLoadError):
+            load_dataset_split_manifest(bad)
