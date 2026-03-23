@@ -6,6 +6,7 @@
 
 stack_name: local-demo-runtime
 description: "Tracked builtin runtime stack for no-hardware demo and integration validation"
+path_base: repo_root
 
 vehicle_detector:
   name: builtin-vehicle-detector

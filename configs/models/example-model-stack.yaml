@@ -6,6 +6,7 @@
 
 stack_name: default-lpr-stack
 description: "Default ONNX model stack for edge LPR deployment"
+path_base: repo_root
 
 vehicle_detector:
   name: yolov8n-vehicle

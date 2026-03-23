@@ -11,11 +11,13 @@ from .adapter_factory import build_runtime_adapter_bundle
 from .onnx_adapters import build_onnx_adapter_bundle, validate_onnx_artifact
 from .profiling import InferenceLatencyProfile, InferenceProfiler, recommend_runtime_tuning
 from .promotion import (
+    PromotedBundlePackageReport,
     PromotedBundleValidationReport,
     PromotedStageValidationReport,
     PromotionIssue,
     build_model_artifact_manifest,
     load_model_artifact_manifest,
+    package_promoted_onnx_bundle,
     sha256_file,
     validate_promoted_model_stack,
 )
@@ -49,6 +51,7 @@ __all__ = [
     "InferenceService",
     "ModelAdapterBundle",
     "ModelStackValidationReport",
+    "PromotedBundlePackageReport",
     "PromotedBundleValidationReport",
     "PromotedStageValidationReport",
     "PromotionIssue",
@@ -65,6 +68,7 @@ __all__ = [
     "build_demo_adapter_bundle",
     "build_runtime_adapter_bundle",
     "load_model_artifact_manifest",
+    "package_promoted_onnx_bundle",
     "recommend_runtime_tuning",
     "sha256_file",
     "validate_onnx_artifact",

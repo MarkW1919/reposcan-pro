@@ -132,3 +132,10 @@ Maintenance rule:
 - Status: Accepted
 - Decision: Require promoted runtime bundles to provide one manifest per stage, and validate those manifests against the runtime config before deployment handoff.
 - Rationale: Exported artifacts live outside git, so the repo needs a stable, reviewable contract for artifact identity, hash verification, and promotion metadata without pretending that placeholder paths alone are deployable proof.
+
+## ADR-019 External Promoted Bundles Resolve Paths Relative To The Bundle Config
+
+- Date: 2026-03-22
+- Status: Accepted
+- Decision: Support `path_base: config_dir` for model stacks so packaged promoted bundles can resolve artifact and manifest paths relative to the external bundle config instead of assuming the repository root.
+- Rationale: A promoted bundle should remain valid after it is copied outside the repo; repo-root-relative paths are fine for tracked development configs but are too brittle for deployment handoff artifacts.

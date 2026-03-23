@@ -30,7 +30,7 @@ TensorRT
 - `configs/models/local-onnx-runtime.yaml` is a tracked ONNX runtime fixture stack that proves real backend-loaded inference execution in the repo today
 - `configs/models/local-demo-runtime.yaml` is a tracked builtin runtime stack for no-hardware demos and integration tests
 - `configs/models/example-model-stack.yaml` remains the placeholder shape for future exported model artifacts
-- `configs/models/promoted-onnx-template.yaml` shows the expected shape for a promoted external ONNX bundle with per-stage artifact manifests
+- `configs/models/promoted-onnx-template.yaml` shows the expected shape for a promoted external ONNX bundle with per-stage artifact manifests and `path_base: config_dir`
 - exported ONNX and TensorRT model stacks are still promotion targets, not completed repo assets today
 
 ## Selection Notes

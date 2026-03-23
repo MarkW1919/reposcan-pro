@@ -43,6 +43,7 @@ Avoid:
 
 - document dataset versions and assumptions
 - export promoted models to ONNX
+- package promoted ONNX bundles outside git for deployment handoff
 - generate and retain per-stage artifact manifests outside git
 - validate promoted bundles against their runtime config before deployment handoff
 - record runtime implications for TensorRT or equivalent deployment targets

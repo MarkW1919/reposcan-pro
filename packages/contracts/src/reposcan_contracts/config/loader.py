@@ -56,9 +56,11 @@ def load_camera_config(path: Union[str, Path]) -> CameraConfig:
 def load_model_config(path: Union[str, Path]) -> ModelStackConfig:
     data = _load_yaml(path)
     try:
-        return ModelStackConfig.model_validate(data)
+        config = ModelStackConfig.model_validate(data)
     except ValidationError as exc:
         raise ConfigLoadError(path, str(exc)) from exc
+    config.set_config_path(path)
+    return config
 
 
 def load_pipeline_config(path: Union[str, Path]) -> PipelineConfig:

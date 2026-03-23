@@ -6,9 +6,10 @@ Loaded from configs/models/*.yaml by the inference service.
 from __future__ import annotations
 
 from enum import Enum
+from pathlib import Path
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 
 
 class InferenceBackend(str, Enum):
@@ -18,12 +19,17 @@ class InferenceBackend(str, Enum):
     pytorch = "pytorch"
 
 
+class ArtifactPathBase(str, Enum):
+    repo_root = "repo_root"
+    config_dir = "config_dir"
+
+
 class DetectorModelConfig(BaseModel):
     """Config for a YOLO-style detection model (vehicle or plate detector)."""
 
     name: str = Field(..., description="Human-readable model name")
     backend: InferenceBackend = InferenceBackend.onnx
-    artifact_path: str = Field(..., description="Path to model artifact relative to repo root")
+    artifact_path: str = Field(..., description="Path to model artifact resolved according to the stack path_base")
     artifact_manifest_path: str | None = Field(None, description="Optional path to the promoted artifact manifest")
     input_width: int = Field(..., gt=0)
     input_height: int = Field(..., gt=0)
@@ -39,7 +45,7 @@ class OcrModelConfig(BaseModel):
 
     name: str
     backend: InferenceBackend = InferenceBackend.onnx
-    artifact_path: str
+    artifact_path: str = Field(..., description="Path to model artifact resolved according to the stack path_base")
     artifact_manifest_path: str | None = Field(None, description="Optional path to the promoted artifact manifest")
     input_width: int = Field(..., gt=0)
     input_height: int = Field(..., gt=0)
@@ -53,7 +59,7 @@ class ClassifierModelConfig(BaseModel):
 
     name: str
     backend: InferenceBackend = InferenceBackend.onnx
-    artifact_path: str
+    artifact_path: str = Field(..., description="Path to model artifact resolved according to the stack path_base")
     artifact_manifest_path: str | None = Field(None, description="Optional path to the promoted artifact manifest")
     input_width: int = Field(..., gt=0)
     input_height: int = Field(..., gt=0)
@@ -69,9 +75,25 @@ class ModelStackConfig(BaseModel):
 
     stack_name: str = Field(..., description="Identifier for this model stack")
     description: Optional[str] = None
+    path_base: ArtifactPathBase = Field(
+        default=ArtifactPathBase.repo_root,
+        description="How relative artifact paths should be resolved.",
+    )
     vehicle_detector: DetectorModelConfig
     plate_detector: DetectorModelConfig
     ocr: OcrModelConfig
     classifier: Optional[ClassifierModelConfig] = Field(
         None, description="Classifier is optional; disable for inference-only deployments"
     )
+    _config_dir: Path | None = PrivateAttr(default=None)
+
+    def set_config_path(self, path: str | Path) -> None:
+        self._config_dir = Path(path).resolve().parent
+
+    def resolve_artifact_path(self, value: str | Path) -> Path:
+        path = Path(value)
+        if path.is_absolute():
+            return path
+        if self.path_base == ArtifactPathBase.config_dir and self._config_dir is not None:
+            return (self._config_dir / path).resolve()
+        return (Path.cwd() / path).resolve()

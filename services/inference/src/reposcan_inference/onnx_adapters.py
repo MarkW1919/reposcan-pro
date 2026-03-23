@@ -130,6 +130,8 @@ def _load_session(path: str):
 def validate_onnx_artifact(
     stage: str,
     model_config: DetectorModelConfig | OcrModelConfig | ClassifierModelConfig,
+    *,
+    artifact_path: Path | None = None,
 ) -> list[str]:
     issues: list[str] = []
     if model_config.backend != InferenceBackend.onnx:
@@ -138,7 +140,7 @@ def validate_onnx_artifact(
     if ort is None:
         return ["onnxruntime is not installed in the active Python environment."]
 
-    artifact_path = Path(model_config.artifact_path)
+    artifact_path = artifact_path or Path(model_config.artifact_path)
     if artifact_path.suffix.lower() != ".onnx":
         issues.append(f"Expected an .onnx artifact for {stage}, found '{artifact_path.name}'.")
         return issues
@@ -177,9 +179,10 @@ def validate_onnx_artifact(
 
 
 class OnnxVehicleDetectorAdapter:
-    def __init__(self, model_config: DetectorModelConfig) -> None:
+    def __init__(self, model_config: DetectorModelConfig, *, artifact_path: str | Path | None = None) -> None:
         self.model_config = model_config
-        self.session = _load_session(model_config.artifact_path)
+        self.artifact_path = str(artifact_path or model_config.artifact_path)
+        self.session = _load_session(self.artifact_path)
         self.input_name = self.session.get_inputs()[0].name
 
     def detect(self, frame: InferenceFrame) -> list[VehicleDetection]:
@@ -226,9 +229,10 @@ class OnnxVehicleDetectorAdapter:
 
 
 class OnnxPlateDetectorAdapter:
-    def __init__(self, model_config: DetectorModelConfig) -> None:
+    def __init__(self, model_config: DetectorModelConfig, *, artifact_path: str | Path | None = None) -> None:
         self.model_config = model_config
-        self.session = _load_session(model_config.artifact_path)
+        self.artifact_path = str(artifact_path or model_config.artifact_path)
+        self.session = _load_session(self.artifact_path)
         self.input_name = self.session.get_inputs()[0].name
 
     def detect(
@@ -315,10 +319,17 @@ class OnnxPlateDetectorAdapter:
 
 
 class OnnxOcrAdapter:
-    def __init__(self, model_config: OcrModelConfig, *, default_plate_text: str | None = None) -> None:
+    def __init__(
+        self,
+        model_config: OcrModelConfig,
+        *,
+        default_plate_text: str | None = None,
+        artifact_path: str | Path | None = None,
+    ) -> None:
         self.model_config = model_config
         self.default_plate_text = default_plate_text
-        self.session = _load_session(model_config.artifact_path)
+        self.artifact_path = str(artifact_path or model_config.artifact_path)
+        self.session = _load_session(self.artifact_path)
         self.input_name = self.session.get_inputs()[0].name
 
     def recognize(self, frame: InferenceFrame, plate_detections: Sequence[PlateDetection]) -> list[PlateCandidate]:
@@ -353,9 +364,10 @@ class OnnxOcrAdapter:
 
 
 class OnnxClassifierAdapter:
-    def __init__(self, model_config: ClassifierModelConfig) -> None:
+    def __init__(self, model_config: ClassifierModelConfig, *, artifact_path: str | Path | None = None) -> None:
         self.model_config = model_config
-        self.session = _load_session(model_config.artifact_path)
+        self.artifact_path = str(artifact_path or model_config.artifact_path)
+        self.session = _load_session(self.artifact_path)
         self.input_name = self.session.get_inputs()[0].name
 
     def predict(
@@ -433,22 +445,35 @@ def build_onnx_adapter_bundle(
         return None
 
     artifact_paths = [
-        model_stack.vehicle_detector.artifact_path,
-        model_stack.plate_detector.artifact_path,
-        model_stack.ocr.artifact_path,
+        model_stack.resolve_artifact_path(model_stack.vehicle_detector.artifact_path),
+        model_stack.resolve_artifact_path(model_stack.plate_detector.artifact_path),
+        model_stack.resolve_artifact_path(model_stack.ocr.artifact_path),
     ]
     if model_stack.classifier is not None:
-        artifact_paths.append(model_stack.classifier.artifact_path)
+        artifact_paths.append(model_stack.resolve_artifact_path(model_stack.classifier.artifact_path))
     if not all(_artifact_exists(path) for path in artifact_paths):
         return None
 
     classifier = None
     if model_stack.classifier is not None:
-        classifier = OnnxClassifierAdapter(model_stack.classifier)
+        classifier = OnnxClassifierAdapter(
+            model_stack.classifier,
+            artifact_path=model_stack.resolve_artifact_path(model_stack.classifier.artifact_path),
+        )
 
     return ModelAdapterBundle(
-        vehicle_detector=OnnxVehicleDetectorAdapter(model_stack.vehicle_detector),
-        plate_detector=OnnxPlateDetectorAdapter(model_stack.plate_detector),
-        ocr=OnnxOcrAdapter(model_stack.ocr, default_plate_text=default_plate_text),
+        vehicle_detector=OnnxVehicleDetectorAdapter(
+            model_stack.vehicle_detector,
+            artifact_path=model_stack.resolve_artifact_path(model_stack.vehicle_detector.artifact_path),
+        ),
+        plate_detector=OnnxPlateDetectorAdapter(
+            model_stack.plate_detector,
+            artifact_path=model_stack.resolve_artifact_path(model_stack.plate_detector.artifact_path),
+        ),
+        ocr=OnnxOcrAdapter(
+            model_stack.ocr,
+            default_plate_text=default_plate_text,
+            artifact_path=model_stack.resolve_artifact_path(model_stack.ocr.artifact_path),
+        ),
         classifier=classifier,
     )

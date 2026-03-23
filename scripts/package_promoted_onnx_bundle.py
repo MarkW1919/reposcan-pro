@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import argparse
-import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -22,10 +22,11 @@ def _configure_pythonpath(repo_root: Path) -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Generate a promoted model artifact manifest for one stage.")
-    parser.add_argument("--model-config", required=True)
-    parser.add_argument("--stage", required=True, choices=["vehicle_detector", "plate_detector", "ocr", "classifier"])
-    parser.add_argument("--output", required=True)
+    parser = argparse.ArgumentParser(description="Package a runtime-ready ONNX stack as a promoted external bundle.")
+    parser.add_argument("--source-model-config", default="configs/models/local-onnx-runtime.yaml")
+    parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--bundle-name")
+    parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--exported-at-utc")
     parser.add_argument("--source-run-id")
     parser.add_argument("--source-checkpoint-ref")
@@ -44,18 +45,21 @@ def main() -> int:
     _configure_pythonpath(repo_root)
 
     from reposcan_contracts.config.loader import load_model_config
-    from reposcan_inference.promotion import build_model_artifact_manifest
+    from reposcan_inference import package_promoted_onnx_bundle
 
     args = parse_args()
-    model_stack = load_model_config(repo_root / args.model_config)
-    stage_config = getattr(model_stack, args.stage)
-    if stage_config is None:
-        raise ValueError(f"Stage '{args.stage}' is not configured in '{args.model_config}'.")
+    source_model_config = load_model_config(repo_root / args.source_model_config)
+    output_dir = Path(args.output_dir)
 
-    manifest = build_model_artifact_manifest(
-        stage=args.stage,
-        model_config=stage_config,
-        resolved_artifact_path=model_stack.resolve_artifact_path(stage_config.artifact_path),
+    if output_dir.exists() and args.overwrite:
+        shutil.rmtree(output_dir)
+    elif output_dir.exists() and any(output_dir.iterdir()):
+        raise FileExistsError(f"Output directory '{output_dir}' already exists and is not empty. Use --overwrite to replace it.")
+
+    report = package_promoted_onnx_bundle(
+        source_model_config,
+        output_dir=output_dir,
+        bundle_name=args.bundle_name,
         exported_at_utc=args.exported_at_utc,
         source_run_id=args.source_run_id,
         source_checkpoint_ref=args.source_checkpoint_ref,
@@ -68,11 +72,16 @@ def main() -> int:
         notes=args.notes,
     )
 
-    output_path = repo_root / args.output
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(manifest.model_dump(mode="json"), indent=2), encoding="utf-8")
-    print(f"Wrote artifact manifest to {output_path}")
-    return 0
+    print(f"Bundle: {report.bundle_name}")
+    print(f"Output dir: {report.output_dir}")
+    print(f"Config path: {report.config_path}")
+    print(f"Ready: {'yes' if report.ready else 'no'}")
+    for stage in report.validation.stages:
+        print(f"- {stage.stage}: ready={'yes' if stage.ready else 'no'}")
+        for issue in stage.issues:
+            print(f"  - {issue.severity}: {issue.message}")
+
+    return 0 if report.ready else 1
 
 
 if __name__ == "__main__":

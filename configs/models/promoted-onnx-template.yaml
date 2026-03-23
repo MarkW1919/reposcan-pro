@@ -3,6 +3,7 @@
 
 stack_name: promoted-onnx-template
 description: "Template for a promoted ONNX stack with external artifact manifests"
+path_base: config_dir
 
 vehicle_detector:
   name: yolov8n-vehicle

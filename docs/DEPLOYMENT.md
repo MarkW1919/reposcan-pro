@@ -22,7 +22,7 @@ RepoScan Pro is designed for local development on a workstation and deployment o
 - PyTorch for model development
 - ONNX for portable runtime packaging
 - TensorRT where hardware support and validation justify it
-- promoted runtime bundles should include per-stage manifests and hash validation before deployment handoff
+- promoted runtime bundles should be self-contained, use config-dir-relative paths, and include per-stage manifests plus hash validation before deployment handoff
 - separate service packaging so ingest, inference, storage, and sync can recover independently
 
 ## Operational Requirements

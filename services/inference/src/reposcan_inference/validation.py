@@ -106,12 +106,13 @@ def _validate_exported_backend(stage: str, backend: InferenceBackend, artifact_p
 
 
 def _stage_report(
+    model_stack: ModelStackConfig,
     stage: str,
     model_config: DetectorModelConfig | OcrModelConfig | ClassifierModelConfig,
 ) -> StageValidationReport:
     issues: list[ValidationIssue] = []
     try:
-        artifact_path = _artifact_exists(model_config.artifact_path)
+        artifact_path = _artifact_exists(model_stack.resolve_artifact_path(model_config.artifact_path))
     except FileNotFoundError as exc:
         issues.append(ValidationIssue(severity="error", stage=stage, message=str(exc)))
         return StageValidationReport(
@@ -127,7 +128,7 @@ def _stage_report(
     elif model_config.backend == InferenceBackend.onnx:
         issues.extend(
             ValidationIssue(severity="error", stage=stage, message=message)
-            for message in validate_onnx_artifact(stage, model_config)
+            for message in validate_onnx_artifact(stage, model_config, artifact_path=artifact_path)
         )
     else:
         issues.extend(_validate_exported_backend(stage, model_config.backend, artifact_path))
@@ -144,12 +145,12 @@ def _stage_report(
 
 def validate_model_stack(model_stack: ModelStackConfig) -> ModelStackValidationReport:
     stages = [
-        _stage_report("vehicle_detector", model_stack.vehicle_detector),
-        _stage_report("plate_detector", model_stack.plate_detector),
-        _stage_report("ocr", model_stack.ocr),
+        _stage_report(model_stack, "vehicle_detector", model_stack.vehicle_detector),
+        _stage_report(model_stack, "plate_detector", model_stack.plate_detector),
+        _stage_report(model_stack, "ocr", model_stack.ocr),
     ]
     if model_stack.classifier is not None:
-        stages.append(_stage_report("classifier", model_stack.classifier))
+        stages.append(_stage_report(model_stack, "classifier", model_stack.classifier))
 
     return ModelStackValidationReport(
         stack_name=model_stack.stack_name,

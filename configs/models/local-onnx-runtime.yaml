@@ -6,6 +6,7 @@
 
 stack_name: local-onnx-runtime
 description: "Tracked ONNX runtime fixture stack for no-hardware integration and demo validation"
+path_base: repo_root
 
 vehicle_detector:
   name: fixture-vehicle-detector

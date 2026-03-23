@@ -15,4 +15,5 @@ Current integrated slice:
 - frame sidecar support via `*.inference.json` files so demo sequences can vary detections, OCR, and attributes per frame
 - model-stack validation helpers and a CLI script for runtime readiness checks
 - promoted-bundle manifest helpers and validation scripts for external artifact handoff
+- promoted ONNX bundle packaging helpers for self-contained external handoff directories
 - inference profiling helpers for latency benchmarking and deployment recommendations

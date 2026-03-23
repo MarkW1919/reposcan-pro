@@ -123,6 +123,12 @@ Validate a model stack before a demo or runtime swap with:
 .\.venv\Scripts\python.exe .\scripts\validate_model_stack.py --model-config .\configs\models\local-onnx-runtime.yaml
 ```
 
+Package a self-contained promoted ONNX bundle outside git with:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\package_promoted_onnx_bundle.py --source-model-config .\configs\models\local-onnx-runtime.yaml --output-dir C:\artifacts\models\promoted\fixture-bundle
+```
+
 ## Desktop Launcher
 
 To create the desktop launcher and double-click shortcut for this repo, run:

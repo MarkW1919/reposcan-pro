@@ -30,6 +30,27 @@ Each stage manifest should record at minimum:
 
 Optional metadata should include the training run, checkpoint reference, export tool, opset, precision, target runtime, and dataset manifests whenever those details exist.
 
+Promoted bundle configs should set `path_base: config_dir` so relative artifact and manifest paths stay valid when the bundle is moved outside the repository.
+
+## Package A Promoted ONNX Bundle
+
+If you already have a runtime-ready ONNX stack, use the packaging helper to build a self-contained external bundle:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\package_promoted_onnx_bundle.py `
+  --source-model-config .\configs\models\local-onnx-runtime.yaml `
+  --output-dir C:\artifacts\models\promoted\bundle-20260322 `
+  --bundle-name lpr-bundle-20260322 `
+  --source-run-id run_20260322_01 `
+  --export-tool reposcan.package_promoted_onnx_bundle `
+  --export-tool-version 0.1.0 `
+  --opset-version 13 `
+  --precision fp32 `
+  --target-runtime onnxruntime
+```
+
+That command copies the ONNX artifacts into the output directory, writes `promoted-onnx.yaml`, writes per-stage manifests, and validates the packaged bundle before returning success.
+
 ## Generate Per-Stage Manifests
 
 Use the repo helper to generate a manifest for each stage after an export is written:
@@ -67,6 +88,7 @@ This validation checks:
 - the manifest stage, model name, backend, artifact path, and input shape match the runtime config
 - the artifact exists at the declared path
 - the artifact SHA-256 matches the manifest
+- relative bundle paths still resolve correctly when `path_base: config_dir` is used
 
 ## What This Does Not Prove
 

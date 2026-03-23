@@ -21,7 +21,7 @@ from reposcan_contracts.config.loader import (
     load_pipeline_config,
 )
 from reposcan_contracts.config.camera import CameraConfig, SourceType, ColorMode
-from reposcan_contracts.config.model import ModelStackConfig, InferenceBackend
+from reposcan_contracts.config.model import ArtifactPathBase, ModelStackConfig, InferenceBackend
 from reposcan_contracts.config.pipeline import PipelineConfig, PlateDetectionStrategy, PreprocessingBackend
 from reposcan_contracts.config.deployment import DeploymentConfig, TargetHardware
 
@@ -130,6 +130,7 @@ class TestModelStackConfigSchema:
     def test_local_demo_runtime_file_parses(self):
         stack = load_model_config(CONFIGS / "models" / "local-demo-runtime.yaml")
         assert stack.stack_name == "local-demo-runtime"
+        assert stack.path_base == ArtifactPathBase.repo_root
         assert stack.vehicle_detector.backend == InferenceBackend.builtin
         assert stack.ocr.backend == InferenceBackend.builtin
         assert stack.classifier is not None
@@ -138,6 +139,7 @@ class TestModelStackConfigSchema:
     def test_local_onnx_runtime_file_parses(self):
         stack = load_model_config(CONFIGS / "models" / "local-onnx-runtime.yaml")
         assert stack.stack_name == "local-onnx-runtime"
+        assert stack.path_base == ArtifactPathBase.repo_root
         assert stack.vehicle_detector.backend == InferenceBackend.onnx
         assert stack.plate_detector.backend == InferenceBackend.onnx
         assert stack.ocr.backend == InferenceBackend.onnx
@@ -147,6 +149,7 @@ class TestModelStackConfigSchema:
     def test_promoted_onnx_template_parses(self):
         stack = load_model_config(CONFIGS / "models" / "promoted-onnx-template.yaml")
         assert stack.stack_name == "promoted-onnx-template"
+        assert stack.path_base == ArtifactPathBase.config_dir
         assert stack.vehicle_detector.artifact_manifest_path is not None
         assert stack.ocr.artifact_manifest_path is not None
         assert stack.classifier is not None
