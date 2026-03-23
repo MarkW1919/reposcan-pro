@@ -42,6 +42,7 @@ The canonical mission and rules live in [CLAUDE.md](CLAUDE.md).
 - [Datasets](docs/DATASETS.md)
 - [Training](docs/TRAINING.md)
 - [Inference](docs/INFERENCE.md)
+- [Model Promotion Workflow](docs/MODEL_PROMOTION_WORKFLOW.md)
 - [Preprocessing Benchmark](docs/PREPROCESSING_BENCHMARK.md)
 - [Deployment](docs/DEPLOYMENT.md)
 - [API Contracts](docs/API_CONTRACTS.md)

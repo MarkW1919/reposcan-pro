@@ -10,6 +10,15 @@ from .adapters import (
 from .adapter_factory import build_runtime_adapter_bundle
 from .onnx_adapters import build_onnx_adapter_bundle, validate_onnx_artifact
 from .profiling import InferenceLatencyProfile, InferenceProfiler, recommend_runtime_tuning
+from .promotion import (
+    PromotedBundleValidationReport,
+    PromotedStageValidationReport,
+    PromotionIssue,
+    build_model_artifact_manifest,
+    load_model_artifact_manifest,
+    sha256_file,
+    validate_promoted_model_stack,
+)
 from .runtime import (
     DemoRunInProgressError,
     DemoRunRequest,
@@ -40,6 +49,9 @@ __all__ = [
     "InferenceService",
     "ModelAdapterBundle",
     "ModelStackValidationReport",
+    "PromotedBundleValidationReport",
+    "PromotedStageValidationReport",
+    "PromotionIssue",
     "StageValidationReport",
     "StaticClassifierAdapter",
     "StaticOcrAdapter",
@@ -47,11 +59,15 @@ __all__ = [
     "StaticVehicleDetectorAdapter",
     "ValidationIssue",
     "build_builtin_runtime_adapter_bundle",
+    "build_model_artifact_manifest",
     "build_onnx_adapter_bundle",
     "build_configured_adapter_bundle",
     "build_demo_adapter_bundle",
     "build_runtime_adapter_bundle",
+    "load_model_artifact_manifest",
     "recommend_runtime_tuning",
+    "sha256_file",
     "validate_onnx_artifact",
     "validate_model_stack",
+    "validate_promoted_model_stack",
 ]

@@ -144,6 +144,14 @@ class TestModelStackConfigSchema:
         assert stack.classifier is not None
         assert stack.classifier.backend == InferenceBackend.onnx
 
+    def test_promoted_onnx_template_parses(self):
+        stack = load_model_config(CONFIGS / "models" / "promoted-onnx-template.yaml")
+        assert stack.stack_name == "promoted-onnx-template"
+        assert stack.vehicle_detector.artifact_manifest_path is not None
+        assert stack.ocr.artifact_manifest_path is not None
+        assert stack.classifier is not None
+        assert stack.classifier.artifact_manifest_path is not None
+
     def test_vehicle_detector_fields(self):
         stack = load_model_config(CONFIGS / "models" / "example-model-stack.yaml")
         vd = stack.vehicle_detector

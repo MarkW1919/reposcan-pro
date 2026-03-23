@@ -35,6 +35,7 @@ Inference is edge-first and local-first. Cloud services may augment analysis lat
 - that stack can read per-frame `*.inference.json` sidecars to vary detections, OCR, and vehicle attributes during headless ingest
 - exported ONNX and TensorRT stacks remain a later promotion target and are not yet treated as field-ready in this repo
 - model-stack readiness should be checked with `scripts/validate_model_stack.py` before swapping runtime configs
+- promoted external bundles should be checked with `scripts/validate_promoted_model_bundle.py` once per-stage manifests exist
 
 ## Failure Handling
 
@@ -47,5 +48,6 @@ Inference is edge-first and local-first. Cloud services may augment analysis lat
 
 - [Architecture](ARCHITECTURE.md)
 - [Models](MODELS.md)
+- [Model Promotion Workflow](MODEL_PROMOTION_WORKFLOW.md)
 - [Deployment](DEPLOYMENT.md)
 - [API Contracts](API_CONTRACTS.md)

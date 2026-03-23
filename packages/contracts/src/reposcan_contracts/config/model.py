@@ -24,6 +24,7 @@ class DetectorModelConfig(BaseModel):
     name: str = Field(..., description="Human-readable model name")
     backend: InferenceBackend = InferenceBackend.onnx
     artifact_path: str = Field(..., description="Path to model artifact relative to repo root")
+    artifact_manifest_path: str | None = Field(None, description="Optional path to the promoted artifact manifest")
     input_width: int = Field(..., gt=0)
     input_height: int = Field(..., gt=0)
     normalization_mean: list[float] = Field(default_factory=lambda: [0.0, 0.0, 0.0])
@@ -39,6 +40,7 @@ class OcrModelConfig(BaseModel):
     name: str
     backend: InferenceBackend = InferenceBackend.onnx
     artifact_path: str
+    artifact_manifest_path: str | None = Field(None, description="Optional path to the promoted artifact manifest")
     input_width: int = Field(..., gt=0)
     input_height: int = Field(..., gt=0)
     charset: str = Field(..., description="Character set recognized by the model")
@@ -52,6 +54,7 @@ class ClassifierModelConfig(BaseModel):
     name: str
     backend: InferenceBackend = InferenceBackend.onnx
     artifact_path: str
+    artifact_manifest_path: str | None = Field(None, description="Optional path to the promoted artifact manifest")
     input_width: int = Field(..., gt=0)
     input_height: int = Field(..., gt=0)
     normalization_mean: list[float] = Field(default_factory=lambda: [0.485, 0.456, 0.406])

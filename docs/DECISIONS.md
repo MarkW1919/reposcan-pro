@@ -125,3 +125,10 @@ Maintenance rule:
 - Status: Accepted
 - Decision: Add a tracked ONNX runtime fixture stack to prove real backend-loaded inference execution before promoted field models and TensorRT exports are ready.
 - Rationale: The repo needs to verify true runtime wiring for vehicle, plate, OCR, and attribute stages now, while still keeping accuracy, export promotion, and edge-benchmark claims separate.
+
+## ADR-018 Promoted Bundles Require Per-Stage Artifact Manifests
+
+- Date: 2026-03-22
+- Status: Accepted
+- Decision: Require promoted runtime bundles to provide one manifest per stage, and validate those manifests against the runtime config before deployment handoff.
+- Rationale: Exported artifacts live outside git, so the repo needs a stable, reviewable contract for artifact identity, hash verification, and promotion metadata without pretending that placeholder paths alone are deployable proof.

@@ -43,6 +43,8 @@ Avoid:
 
 - document dataset versions and assumptions
 - export promoted models to ONNX
+- generate and retain per-stage artifact manifests outside git
+- validate promoted bundles against their runtime config before deployment handoff
 - record runtime implications for TensorRT or equivalent deployment targets
 - keep a rollback path to the previously accepted model
 
@@ -51,4 +53,4 @@ Avoid:
 - [Datasets](DATASETS.md)
 - [Models](MODELS.md)
 - [Inference](INFERENCE.md)
-
+- [Model Promotion Workflow](MODEL_PROMOTION_WORKFLOW.md)

@@ -14,4 +14,5 @@ Current integrated slice:
 - headless file-sequence runtime that chains preprocessing, inference, tracking, alerting, and storage for local end-to-end validation
 - frame sidecar support via `*.inference.json` files so demo sequences can vary detections, OCR, and attributes per frame
 - model-stack validation helpers and a CLI script for runtime readiness checks
+- promoted-bundle manifest helpers and validation scripts for external artifact handoff
 - inference profiling helpers for latency benchmarking and deployment recommendations
