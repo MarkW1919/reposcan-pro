@@ -32,6 +32,13 @@ from .inference import AttributePredictions, InferenceCandidate, ModelVersions, 
 from .model_artifact import ModelArtifactManifest
 from .popup import PopupActivityEvent, PopupEventType
 from .review import ReviewAction, ReviewRecord
+from .training import (
+    AugmentationPolicy,
+    DatasetAdapter,
+    TrainingFramework,
+    TrainingProfileConfig,
+    TrainingRunManifest,
+)
 from .tracking import ConfidenceSummary, EvidenceRefs, TrackedDetection
 from .types import PlateMatchType, UtcTimestamp
 
@@ -86,6 +93,11 @@ __all__ = [
     "EvidenceRefs",
     "PopupActivityEvent",
     "PopupEventType",
+    "TrainingFramework",
+    "DatasetAdapter",
+    "AugmentationPolicy",
+    "TrainingProfileConfig",
+    "TrainingRunManifest",
     "UtcTimestamp",
     "PlateMatchType",
 ]

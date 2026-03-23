@@ -22,6 +22,7 @@ from reposcan_contracts.config.loader import (
     load_model_config,
     load_pipeline_config,
     load_training_dataset_manifest,
+    load_training_profile,
 )
 from reposcan_contracts.config.camera import CameraConfig, SourceType, ColorMode
 from reposcan_contracts.dataset import (
@@ -30,6 +31,7 @@ from reposcan_contracts.dataset import (
     DatasetSplit,
     DatasetTask,
 )
+from reposcan_contracts.training import DatasetAdapter, TrainingFramework
 from reposcan_contracts.config.model import ArtifactPathBase, ModelStackConfig, InferenceBackend
 from reposcan_contracts.config.pipeline import PipelineConfig, PlateDetectionStrategy, PreprocessingBackend
 from reposcan_contracts.config.deployment import DeploymentConfig, TargetHardware
@@ -404,3 +406,38 @@ class TestTrainingDatasetManifestSchema:
         )
         with pytest.raises(ConfigLoadError):
             load_dataset_split_manifest(bad)
+
+
+class TestTrainingProfileSchema:
+    def test_vehicle_detector_profile_parses(self):
+        profile = load_training_profile(CONFIGS / "training" / "vehicle-detector-finetune.yaml")
+        assert profile.task == DatasetTask.vehicle_detection
+        assert profile.framework == TrainingFramework.ultralytics
+        assert profile.class_names == ["vehicle"]
+
+    def test_plate_ocr_profile_parses(self):
+        profile = load_training_profile(CONFIGS / "training" / "plate-ocr-finetune.yaml")
+        assert profile.task == DatasetTask.plate_ocr
+        assert profile.framework == TrainingFramework.paddleocr
+
+    def test_make_model_warmstart_profile_parses(self):
+        profile = load_training_profile(CONFIGS / "training" / "vehicle-make-model-warmstart.yaml")
+        assert profile.task == DatasetTask.vehicle_make_model_classification
+        assert profile.framework == TrainingFramework.torchvision
+        assert profile.dataset_adapter == DatasetAdapter.stanford_cars
+
+    def test_detection_profile_requires_class_names(self, tmp_path):
+        bad = tmp_path / "profile.yaml"
+        bad.write_text(
+            "\n".join(
+                [
+                    "profile_name: bad-detector",
+                    "task: plate_detection",
+                    "framework: ultralytics",
+                    "dataset_adapter: manifest_split",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        with pytest.raises(ConfigLoadError):
+            load_training_profile(bad)

@@ -1,0 +1,312 @@
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+
+def _configure_pythonpath(repo_root: Path) -> None:
+    source_roots = [
+        repo_root / "packages" / "contracts" / "src",
+        repo_root / "ml" / "training" / "src",
+    ]
+    for source_root in reversed(source_roots):
+        sys.path.insert(0, str(source_root))
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Prepare or run a RepoScan attribute-classifier training workflow.")
+    parser.add_argument("--profile", required=True)
+    parser.add_argument("--dataset-manifest", required=True)
+    parser.add_argument("--run-name")
+    parser.add_argument("--allow-pending", action="store_true")
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--execute", action="store_true")
+    return parser.parse_args()
+
+
+def _evaluate(model, loader, device) -> float:
+    import torch
+
+    model.eval()
+    total = 0
+    correct = 0
+    with torch.no_grad():
+        for images, labels in loader:
+            images = images.to(device)
+            labels = labels.to(device)
+            logits = model(images)
+            preds = torch.argmax(logits, dim=1)
+            correct += (preds == labels).sum().item()
+            total += labels.size(0)
+    return (correct / total) if total else 0.0
+
+
+def _build_imagefolder_loaders(profile, manifest, repo_root: Path):
+    import torch
+    from torchvision import datasets, transforms
+
+    from reposcan_contracts.dataset import DatasetSplit
+    from reposcan_training import resolve_storage_root
+
+    storage_root = resolve_storage_root(repo_root, manifest.storage_root)
+    split_map = {split.split: split for split in manifest.splits}
+    train_root = storage_root / split_map[DatasetSplit.train].relative_path
+    validation_split = split_map.get(DatasetSplit.validation)
+    validation_root = storage_root / validation_split.relative_path if validation_split else None
+
+    transform = transforms.Compose(
+        [
+            transforms.Resize((profile.image_size, profile.image_size)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ]
+    )
+
+    train_dataset = datasets.ImageFolder(str(train_root), transform=transform)
+    if validation_root is not None and validation_root.exists():
+        validation_dataset = datasets.ImageFolder(str(validation_root), transform=transform)
+        class_names = list(train_dataset.classes)
+    else:
+        if len(train_dataset) < 10:
+            raise ValueError("imagefolder training requires at least 10 samples when no validation split is provided")
+        val_size = max(1, int(len(train_dataset) * 0.1))
+        train_size = len(train_dataset) - val_size
+        train_dataset, validation_dataset = torch.utils.data.random_split(
+            train_dataset,
+            [train_size, val_size],
+            generator=torch.Generator().manual_seed(profile.seed),
+        )
+        class_names = list(train_dataset.dataset.classes)
+
+    train_loader = torch.utils.data.DataLoader(
+        train_dataset,
+        batch_size=profile.batch_size,
+        shuffle=True,
+        num_workers=0,
+    )
+    validation_loader = torch.utils.data.DataLoader(
+        validation_dataset,
+        batch_size=profile.batch_size,
+        shuffle=False,
+        num_workers=0,
+    )
+    return train_loader, validation_loader, class_names
+
+
+def _build_stanford_cars_loaders(profile, manifest, repo_root: Path):
+    import torch
+    from PIL import Image
+    from scipy.io import loadmat
+    from torch.utils.data import Dataset, random_split
+    from torchvision import transforms
+
+    from reposcan_training import resolve_storage_root
+
+    storage_root = resolve_storage_root(repo_root, manifest.storage_root)
+
+    class StanfordCarsTrainDataset(Dataset):
+        def __init__(self, root: Path):
+            self.root = root
+            self.transform = transforms.Compose(
+                [
+                    transforms.Resize((profile.image_size, profile.image_size)),
+                    transforms.ToTensor(),
+                    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+                ]
+            )
+            ann_path = self.root / "devkit" / "cars_train_annos.mat"
+            if not ann_path.exists():
+                ann_path = self.root / "cars_train_annos.mat"
+            meta_path = self.root / "devkit" / "cars_meta.mat"
+            if not meta_path.exists():
+                meta_path = self.root / "cars_meta.mat"
+            ann = loadmat(str(ann_path))["annotations"][0]
+            meta = loadmat(str(meta_path))["class_names"][0]
+            self.classes = [str(item[0]) for item in meta]
+            self.samples = []
+            train_dir = self.root / "cars_train"
+            for item in ann:
+                class_index = int(item["class"][0, 0]) - 1
+                filename = str(item["fname"][0])
+                image_path = train_dir / filename
+                if image_path.exists():
+                    self.samples.append((image_path, class_index))
+
+        def __len__(self):
+            return len(self.samples)
+
+        def __getitem__(self, index):
+            image_path, target = self.samples[index]
+            image = Image.open(image_path).convert("RGB")
+            return self.transform(image), target
+
+    dataset = StanfordCarsTrainDataset(storage_root)
+    val_size = max(1, int(len(dataset) * 0.1))
+    train_size = len(dataset) - val_size
+    train_dataset, validation_dataset = random_split(
+        dataset,
+        [train_size, val_size],
+        generator=torch.Generator().manual_seed(profile.seed),
+    )
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=profile.batch_size, shuffle=True, num_workers=0)
+    validation_loader = torch.utils.data.DataLoader(validation_dataset, batch_size=profile.batch_size, shuffle=False, num_workers=0)
+    return train_loader, validation_loader, dataset.classes
+
+
+def main() -> int:
+    repo_root = Path(__file__).resolve().parents[1]
+    _configure_pythonpath(repo_root)
+
+    from reposcan_contracts.config.loader import load_training_dataset_manifest, load_training_profile
+    from reposcan_contracts.training import DatasetAdapter
+    from reposcan_training import (
+        build_run_manifest,
+        ensure_dataset_review_status,
+        make_run_name,
+        prepare_classification_workspace,
+    )
+
+    args = parse_args()
+    profile_path = repo_root / args.profile if not Path(args.profile).is_absolute() else Path(args.profile)
+    dataset_manifest_path = (
+        repo_root / args.dataset_manifest if not Path(args.dataset_manifest).is_absolute() else Path(args.dataset_manifest)
+    )
+
+    profile = load_training_profile(profile_path)
+    dataset_manifest = load_training_dataset_manifest(dataset_manifest_path)
+    ensure_dataset_review_status(dataset_manifest, allow_pending=profile.allow_pending_review or args.allow_pending)
+
+    run_name = make_run_name(profile.profile_name, args.run_name)
+    output_root = Path(profile.output_root)
+    if not output_root.is_absolute():
+        output_root = (repo_root / output_root).resolve()
+    workspace_dir = output_root / run_name
+    workspace_dir.mkdir(parents=True, exist_ok=True)
+
+    prepared_files, notes, _ = prepare_classification_workspace(repo_root, profile, dataset_manifest, workspace_dir)
+    training_command = [
+        str(Path(sys.executable).resolve()),
+        str(Path(__file__).resolve()),
+        "--profile",
+        str(profile_path),
+        "--dataset-manifest",
+        str(dataset_manifest_path),
+        "--run-name",
+        run_name,
+        "--execute",
+    ]
+
+    run_manifest = build_run_manifest(
+        profile=profile,
+        manifest=dataset_manifest,
+        dataset_manifest_path=dataset_manifest_path,
+        workspace_dir=workspace_dir,
+        run_name=run_name,
+        prepared_files=prepared_files,
+        training_command=training_command,
+        notes=notes,
+    )
+    run_manifest_path = workspace_dir / "run_manifest.json"
+    run_manifest_path.write_text(run_manifest.model_dump_json(indent=2), encoding="utf-8")
+
+    print(f"Run name: {run_name}")
+    print(f"Workspace: {workspace_dir}")
+    print(f"Run manifest: {run_manifest_path}")
+    for prepared_file in prepared_files:
+        print(f"- prepared: {prepared_file}")
+
+    if args.dry_run or not args.execute:
+        print("Training command:")
+        print(subprocess.list2cmdline(training_command))
+        if not args.execute:
+            print("Preparation complete. Training was not started.")
+        return 0
+
+    try:
+        import torch
+        from torchvision import models
+    except ImportError as exc:
+        raise RuntimeError("torch and torchvision are required to execute attribute-classifier training") from exc
+
+    if profile.dataset_adapter == DatasetAdapter.stanford_cars:
+        train_loader, validation_loader, class_names = _build_stanford_cars_loaders(profile, dataset_manifest, repo_root)
+    else:
+        train_loader, validation_loader, class_names = _build_imagefolder_loaders(profile, dataset_manifest, repo_root)
+
+    try:
+        weights = models.ResNet18_Weights.DEFAULT
+        model = models.resnet18(weights=weights)
+        print("Using torchvision ResNet18 default pretrained weights.")
+    except Exception:
+        model = models.resnet18(weights=None)
+        print("Falling back to randomly initialized ResNet18 weights.")
+
+    model.fc = torch.nn.Linear(model.fc.in_features, len(class_names))
+    device = torch.device("cuda" if torch.cuda.is_available() and profile.device != "cpu" else "cpu")
+    model = model.to(device)
+    criterion = torch.nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+
+    checkpoints_dir = workspace_dir / "checkpoints"
+    exports_dir = workspace_dir / "exports"
+    checkpoints_dir.mkdir(parents=True, exist_ok=True)
+    exports_dir.mkdir(parents=True, exist_ok=True)
+    best_checkpoint = checkpoints_dir / "best.pt"
+
+    best_val = 0.0
+    for epoch in range(1, profile.epochs + 1):
+        model.train()
+        for images, labels in train_loader:
+            images = images.to(device)
+            labels = labels.to(device)
+            logits = model(images)
+            loss = criterion(logits, labels)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+        train_acc = _evaluate(model, train_loader, device)
+        val_acc = _evaluate(model, validation_loader, device)
+        print(f"epoch={epoch} train_acc={train_acc:.4f} val_acc={val_acc:.4f}")
+        if val_acc >= best_val:
+            best_val = val_acc
+            torch.save({"state_dict": model.state_dict(), "classes": class_names}, best_checkpoint)
+
+    checkpoint = torch.load(best_checkpoint, map_location="cpu", weights_only=False)
+    model.load_state_dict(checkpoint["state_dict"])
+    model = model.to("cpu")
+    model.eval()
+    dummy = torch.randn(1, 3, profile.image_size, profile.image_size)
+    onnx_path = exports_dir / "model.onnx"
+    torch.onnx.export(
+        model,
+        dummy,
+        onnx_path,
+        input_names=["images"],
+        output_names=["logits"],
+        dynamic_axes={"images": {0: "batch"}, "logits": {0: "batch"}},
+        opset_version=17,
+    )
+
+    labels_path = exports_dir / "labels.json"
+    labels_path.write_text(json.dumps({"classes": class_names, "image_size": profile.image_size}, indent=2), encoding="utf-8")
+
+    print(f"Best checkpoint: {best_checkpoint}")
+    print(f"Exported ONNX: {onnx_path}")
+    print(f"Labels: {labels_path}")
+    return 0
+
+
+def _entrypoint() -> int:
+    try:
+        return main()
+    except Exception as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(_entrypoint())

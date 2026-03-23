@@ -23,6 +23,7 @@ from .model import ModelStackConfig
 from .pipeline import PipelineConfig
 from ..benchmark import PromotedModelBenchmarkManifest
 from ..dataset import DatasetSplitManifest, TrainingDatasetManifest
+from ..training import TrainingProfileConfig
 
 
 class ConfigLoadError(Exception):
@@ -114,5 +115,13 @@ def load_dataset_split_manifest(path: Union[str, Path]) -> DatasetSplitManifest:
     data = _load_yaml(path)
     try:
         return DatasetSplitManifest.model_validate(data)
+    except ValidationError as exc:
+        raise ConfigLoadError(path, str(exc)) from exc
+
+
+def load_training_profile(path: Union[str, Path]) -> TrainingProfileConfig:
+    data = _load_yaml(path)
+    try:
+        return TrainingProfileConfig.model_validate(data)
     except ValidationError as exc:
         raise ConfigLoadError(path, str(exc)) from exc

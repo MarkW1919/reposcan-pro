@@ -25,6 +25,7 @@ $requiredFiles = @(
     "docs/ANNOTATION_STANDARDS.md",
     "docs/DATASET_INTAKE_WORKFLOW.md",
     "docs/TRAINING.md",
+    "docs/TRAINING_WORKFLOWS.md",
     "docs/INFERENCE.md",
     "docs/MODEL_PROMOTION_WORKFLOW.md",
     "docs/PROMOTED_MODEL_BENCHMARKS.md",

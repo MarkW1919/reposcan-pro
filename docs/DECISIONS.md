@@ -167,3 +167,10 @@ Maintenance rule:
 - Status: Accepted
 - Decision: Reuse old Seen-It-First training assets only through typed RepoScan dataset manifests and review tooling rather than importing the old training/runtime code paths directly.
 - Rationale: The legacy workspace contains useful warm-start datasets, staged raw captures, and synthetic OCR support data, but RepoScan Pro needs provenance review, split control, and artifact discipline that match the new repository boundaries.
+
+## ADR-024 Training Workflows Are Profile-Driven And Prepare-First
+
+- Date: 2026-03-23
+- Status: Accepted
+- Decision: Drive training through typed profiles and dataset manifests, with `prepare-only` and `dry-run` behavior as the default safety mode before execution.
+- Rationale: Fine-tuning jobs are expensive and environment-sensitive; the repo needs reviewable settings, reproducible prep artifacts, and a safe validation step before any real training run starts.

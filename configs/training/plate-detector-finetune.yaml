@@ -1,0 +1,26 @@
+profile_name: plate-detector-finetune
+task: plate_detection
+framework: ultralytics
+output_root: runtime/training
+allow_pending_review: false
+dataset_adapter: manifest_split
+base_model: yolov8s.pt
+image_size: 640
+epochs: 120
+batch_size: 16
+workers: 4
+patience: 24
+precision: fp16
+device: auto
+class_names:
+  - plate
+augmentation:
+  motion_blur: true
+  defocus_blur: true
+  brightness_contrast: true
+  noise: true
+  compression_artifacts: true
+  perspective_distortion: true
+  synthetic_support_ratio: 0.15
+  notes:
+    - Keep low-light and long-range plate crops in the promoted holdout path.

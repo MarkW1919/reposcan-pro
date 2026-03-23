@@ -43,6 +43,7 @@ The canonical mission and rules live in [CLAUDE.md](CLAUDE.md).
 - [Annotation Standards](docs/ANNOTATION_STANDARDS.md)
 - [Dataset Intake Workflow](docs/DATASET_INTAKE_WORKFLOW.md)
 - [Training](docs/TRAINING.md)
+- [Training Workflows](docs/TRAINING_WORKFLOWS.md)
 - [Inference](docs/INFERENCE.md)
 - [Model Promotion Workflow](docs/MODEL_PROMOTION_WORKFLOW.md)
 - [Promoted Model Benchmarks](docs/PROMOTED_MODEL_BENCHMARKS.md)
@@ -145,6 +146,12 @@ Prepare the local training-data workspace and import legacy training sources wit
 ```powershell
 .\.venv\Scripts\python.exe .\scripts\init_dataset_workspace.py --root .\data
 .\.venv\Scripts\python.exe .\scripts\import_legacy_training_sources.py --output-dir .\data\manifests\legacy
+```
+
+Prepare a training run from a profile and dataset manifest with:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\train_attribute_classifier.py --profile .\configs\training\vehicle-make-model-warmstart.yaml --dataset-manifest C:\path\to\dataset-manifest.yaml --run-name warmstart_01
 ```
 
 ## Desktop Launcher

@@ -57,12 +57,15 @@ Avoid:
 - validate every dataset manifest before a training run starts
 - plan capture-derived splits by session where possible
 - import legacy Seen-It-First assets through typed manifests instead of coupling to the old codebase
+- use training profiles under `configs/training/` so task settings and augmentation stay reviewable
+- prefer `prepare-only` and `dry-run` validation before any long-running training job
 
 ## Related Documents
 
 - [Datasets](DATASETS.md)
 - [Annotation Standards](ANNOTATION_STANDARDS.md)
 - [Dataset Intake Workflow](DATASET_INTAKE_WORKFLOW.md)
+- [Training Workflows](TRAINING_WORKFLOWS.md)
 - [Models](MODELS.md)
 - [Inference](INFERENCE.md)
 - [Model Promotion Workflow](MODEL_PROMOTION_WORKFLOW.md)

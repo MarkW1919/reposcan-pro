@@ -1,0 +1,24 @@
+profile_name: vehicle-color-classifier
+task: vehicle_color_classification
+framework: torchvision
+output_root: runtime/training
+allow_pending_review: false
+dataset_adapter: imagefolder
+base_model: resnet18
+image_size: 224
+epochs: 40
+batch_size: 32
+workers: 4
+patience: 8
+precision: fp32
+device: auto
+augmentation:
+  motion_blur: true
+  defocus_blur: false
+  brightness_contrast: true
+  noise: true
+  compression_artifacts: true
+  perspective_distortion: false
+  synthetic_support_ratio: 0.0
+  notes:
+    - Preserve color fidelity and avoid overusing distortion-heavy augmentation.
