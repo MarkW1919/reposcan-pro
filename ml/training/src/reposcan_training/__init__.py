@@ -10,6 +10,7 @@ from .datasets import (
     validate_yolo_label_file,
     write_detection_label_index,
 )
+from .field_eval import qualify_field_eval_dataset
 from .workflows import (
     US_PLATE_CHARS,
     build_run_manifest,
@@ -40,4 +41,5 @@ __all__ = [
     "validate_yolo_label_file",
     "write_detection_label_index",
     "build_run_manifest",
+    "qualify_field_eval_dataset",
 ]

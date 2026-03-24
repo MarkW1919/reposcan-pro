@@ -31,6 +31,12 @@ from .dataset import (
     TrainingDatasetManifest,
 )
 from .detection import BoundingBox, DetectionRecord, PlateCandidate, SyncStatus
+from .field_eval import (
+    FieldEvalCoveragePolicy,
+    FieldEvalQualificationIssue,
+    FieldEvalQualificationReport,
+    FieldEvalSubsetSummary,
+)
 from .frame import CameraProfile, FrameEnvelope, GpsSnapshot, PreparedFrame, PreprocessingMetadata, SourceType
 from .health import DependencyHealth, HealthResponse, HealthState
 from .hotlist import HotlistEntry, HotlistMatchResult
@@ -63,6 +69,10 @@ __all__ = [
     "BoundingBox",
     "PlateCandidate",
     "SyncStatus",
+    "FieldEvalCoveragePolicy",
+    "FieldEvalQualificationIssue",
+    "FieldEvalQualificationReport",
+    "FieldEvalSubsetSummary",
     "AlertRecord",
     "AlertStatus",
     "BenchmarkFrameExpectation",

@@ -60,6 +60,8 @@ For plate detection, reviewed captures should be promoted into curated YOLO data
 
 Approved `eval_holdout` manifests are also the preferred source for promoted-bundle benchmark runs. The benchmark CLI can derive a tagged frame manifest directly from an approved holdout manifest so evaluation stays tied to reviewed dataset records instead of ad hoc path lists.
 
+Before a holdout is treated as a real regression gate, run the qualification workflow in [Field Eval Qualification](FIELD_EVAL_QUALIFICATION.md). That step verifies minimum coverage for `long_range`, `low_light`, session spread, and benchmark-ready labeling.
+
 ## Related Documents
 
 - [Training](TRAINING.md)

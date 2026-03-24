@@ -61,6 +61,7 @@ Avoid:
 - import legacy Seen-It-First assets through typed manifests instead of coupling to the old codebase
 - promote reviewed capture labels into curated `yolo_detection` and `eval_holdout` manifests before detector fine-tuning
 - derive benchmark manifests and evaluation reports from approved `eval_holdout` datasets rather than rebuilding ad hoc frame lists
+- qualify reviewed `eval_holdout` manifests before treating them as real regression gates
 - use training profiles under `configs/training/` so task settings and augmentation stay reviewable
 - prefer `prepare-only` and `dry-run` validation before any long-running training job
 

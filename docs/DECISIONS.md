@@ -195,3 +195,10 @@ Maintenance rule:
 - Status: Accepted
 - Decision: Derive promoted-bundle benchmark manifests and persistent evaluation reports from approved `eval_holdout` dataset manifests whenever possible instead of maintaining separate handwritten frame lists.
 - Rationale: Regression evidence is only trustworthy when it stays tied to reviewed dataset provenance, expected labels, and protected field-eval boundaries; deriving the benchmark input from the holdout manifest keeps training, evaluation, and release evidence on one typed path.
+
+## ADR-028 Field-Eval Holdouts Need A Qualification Gate
+
+- Date: 2026-03-24
+- Status: Accepted
+- Decision: Treat reviewed `eval_holdout` manifests as candidates until they pass a typed qualification gate for total coverage, `long_range` coverage, `low_light` coverage, session spread, and benchmark-ready labeling.
+- Rationale: A holdout manifest that merely exists is not enough to close the remaining training and evaluation checklist items; the repo needs an explicit pass/fail report that distinguishes placeholder holdouts from usable regression gates.

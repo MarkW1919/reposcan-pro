@@ -43,6 +43,7 @@ The canonical mission and rules live in [CLAUDE.md](CLAUDE.md).
 - [Annotation Standards](docs/ANNOTATION_STANDARDS.md)
 - [Dataset Intake Workflow](docs/DATASET_INTAKE_WORKFLOW.md)
 - [Detection Dataset Curation](docs/DETECTION_DATASET_CURATION.md)
+- [Field Eval Qualification](docs/FIELD_EVAL_QUALIFICATION.md)
 - [Training](docs/TRAINING.md)
 - [Training Workflows](docs/TRAINING_WORKFLOWS.md)
 - [Model Releases](docs/MODEL_RELEASES.md)
@@ -167,6 +168,12 @@ Generate a benchmark report directly from an approved field-eval dataset manifes
 
 ```powershell
 .\.venv\Scripts\python.exe .\scripts\benchmark_promoted_bundle.py --model-config C:\artifacts\models\promoted\fixture-local-dev\promoted-onnx.yaml --dataset-manifest .\configs\datasets\example-field-eval-holdout.yaml --deployment-config .\configs\deployments\local-dev.yaml --derived-benchmark-output C:\artifacts\models\benchmarks\example-field-eval-benchmark.yaml --report-output C:\artifacts\models\reports\example-field-eval-report.json
+```
+
+Qualify a reviewed field-eval manifest before treating it as a real regression holdout with:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\qualify_field_eval_dataset.py --dataset-manifest C:\artifacts\data\manifests\oklahoma-field-eval.yaml --verify-files --report-output C:\artifacts\data\reports\oklahoma-field-eval-qualification.json
 ```
 
 Register a validated promoted bundle into an external release registry with:
