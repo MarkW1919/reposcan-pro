@@ -93,6 +93,19 @@ All profiles carry an explicit augmentation policy covering:
 
 This keeps augmentation reviewable instead of burying it in ad hoc trainer code.
 
+## Synthetic OCR Dataset Generator
+
+`scripts/generate_synthetic_ok_ocr_dataset.py` generates RepoScan-compatible synthetic Oklahoma plate crops for OCR support training. It produces a manifest with `format=ocr_manifest` and `review_status=pending` by default.
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\generate_synthetic_ok_ocr_dataset.py `
+  --count 300 `
+  --output-root .\data\staged\synthetic_ok_ocr_run_01 `
+  --seed 42
+```
+
+The generated dataset plugs directly into the OCR prepare workflow with `--allow-pending`. Synthetic support data should stay supplemental to reviewed field plate crops, matching the `synthetic_support_ratio` cap in the OCR profile.
+
 ## Legacy Dataset Integration
 
 The imported `C:\LPR_Training` manifests fit directly into these workflows:
