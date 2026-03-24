@@ -38,6 +38,11 @@ tracking:
   max_lost_frames: 30
   min_hits_to_confirm: 3
   ocr_aggregation: majority_vote
+  min_match_iou: 0.05
+  camera_motion_tolerance_px: 72.0
+  duplicate_suppression_window_seconds: 12.0
+  duplicate_suppression_min_plate_confidence: 0.85
+  duplicate_suppression_min_iou: 0.2
 
 fusion:
   # Promote as the canonical read only when very confident

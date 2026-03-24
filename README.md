@@ -13,6 +13,7 @@ This repository currently contains:
 - a tracked builtin inference-runtime stack plus model-stack validation for no-hardware demos and config readiness checks
 - a tracked ONNX runtime fixture stack that proves real backend-loaded vehicle, plate, OCR, and attribute execution without requiring field hardware
 - repo-tracked promoted ONNX and TensorRT fixture bundles plus baseline runtime benchmark evidence for the remaining Section 4 inference-runtime gates
+- tracker-strategy benchmarking and duplicate-suppression evidence for crowded scenes, camera motion, and repeated passes
 - bootstrap, build, and validation scripts for the current integrated slice
 
 The design-first scaffold has already been turned into a working implementation foundation.
@@ -50,6 +51,7 @@ The canonical mission and rules live in [CLAUDE.md](CLAUDE.md).
 - [Model Releases](docs/MODEL_RELEASES.md)
 - [Inference](docs/INFERENCE.md)
 - [Inference Runtime Evidence](docs/INFERENCE_RUNTIME_EVIDENCE.md)
+- [Tracking Fusion Evidence](docs/TRACKING_FUSION_EVIDENCE.md)
 - [Model Promotion Workflow](docs/MODEL_PROMOTION_WORKFLOW.md)
 - [Promoted Model Benchmarks](docs/PROMOTED_MODEL_BENCHMARKS.md)
 - [Preprocessing Benchmark](docs/PREPROCESSING_BENCHMARK.md)
@@ -196,6 +198,12 @@ Refresh the repo-tracked Section 4 inference-runtime evidence fixtures with:
 .\.venv\Scripts\python.exe .\scripts\generate_inference_runtime_evidence.py --output-root .\ml\inference\fixtures --overwrite
 ```
 
+Refresh the repo-tracked Section 5 tracking-and-fusion evidence report with:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\generate_tracking_evidence.py --output-root .\services\tracking\fixtures --overwrite
+```
+
 Register a validated promoted bundle into an external release registry with:
 
 ```powershell
@@ -238,5 +246,5 @@ Do not rebuild completed foundations. Prefer live integration, seeded demo readi
 ## Version Control And Artifact Policy
 
 - Commit milestone changes locally as you progress.
-- Do not commit datasets, model weights, local media, or generated runtime artifacts, except the small repo-owned inference fixtures and evidence under `ml/inference/fixtures/`.
+- Do not commit datasets, model weights, local media, or generated runtime artifacts, except the small repo-owned inference fixtures under `ml/inference/fixtures/` and the small repo-owned tracking evidence report under `services/tracking/fixtures/`.
 - Treat the existing prototype in the parent workspace as separate history and do not modify it from this repo.

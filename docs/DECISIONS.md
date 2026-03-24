@@ -216,3 +216,10 @@ Maintenance rule:
 - Status: Accepted
 - Decision: Close the remaining Section 4 inference-runtime checklist items with repo-tracked promoted ONNX and TensorRT fixture bundles plus a qualified internal benchmark holdout, while keeping field-representative evaluation and target-hardware acceptance as later gates.
 - Rationale: Section 4 is about runtime export, validation, and benchmark evidence. The repo now needs stable, reproducible artifacts for those mechanics without falsely implying that fixture data and contract-validated TensorRT bundles are the same thing as field-ready models or edge-device proof.
+
+## ADR-031 Section 5 Tracking Evidence Uses Deterministic Synthetic Workloads
+
+- Date: 2026-03-24
+- Status: Accepted
+- Decision: Close the remaining Section 5 tracking-and-fusion checklist items with deterministic synthetic workloads that measure crowded-scene identity continuity, aggressive camera-motion tolerance, repeat-pass duplicate suppression, and cross-strategy comparison.
+- Rationale: The repo needs stable, reproducible tracking evidence before real moving-platform acceptance runs exist. Field-shaped synthetic scenarios are enough to prove strategy behavior, tuning, and regression boundaries without pretending they replace later hardware and field validation gates.

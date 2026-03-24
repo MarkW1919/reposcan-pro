@@ -60,6 +60,11 @@ from .training import (
     TrainingRunManifest,
 )
 from .tracking import ConfidenceSummary, EvidenceRefs, TrackedDetection
+from .tracking_benchmark import (
+    TrackingAlgorithmBenchmark,
+    TrackingScenarioMetrics,
+    TrackingStrategyBenchmarkReport,
+)
 from .types import PlateMatchType, UtcTimestamp
 
 __version__ = "0.1.0"
@@ -118,6 +123,9 @@ __all__ = [
     "TrackedDetection",
     "ConfidenceSummary",
     "EvidenceRefs",
+    "TrackingAlgorithmBenchmark",
+    "TrackingScenarioMetrics",
+    "TrackingStrategyBenchmarkReport",
     "PopupActivityEvent",
     "PopupEventType",
     "ReleaseBenchmarkSummary",

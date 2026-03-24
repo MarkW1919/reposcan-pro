@@ -69,9 +69,9 @@ Last reviewed against repo state: `2026-03-24`
 - [x] ~~Stateful multi-frame association exists in the tracking service.~~
 - [x] ~~OCR candidate fusion and best-read promotion exist.~~
 - [x] ~~Tracked detections flow into storage and alerting in the headless runtime.~~
-- [ ] Tracker identity lifecycle is hardened for crowded scenes and camera motion.
-- [ ] Duplicate suppression is benchmarked and tuned for repeated passes.
-- [ ] Alternate tracker strategies are evaluated against field-relevant workloads.
+- [x] ~~Tracker identity lifecycle is hardened for crowded scenes and camera motion.~~
+- [x] ~~Duplicate suppression is benchmarked and tuned for repeated passes.~~
+- [x] ~~Alternate tracker strategies are evaluated against field-relevant workloads.~~
 
 ## 6. Storage And Media
 

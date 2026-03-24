@@ -248,6 +248,11 @@ class TestPipelineConfigSchema:
     def test_tracking_algorithm(self):
         pipeline = load_pipeline_config(CONFIGS / "pipelines" / "default-edge.yaml")
         assert pipeline.tracking.algorithm.value == "byte_tracker"
+        assert pipeline.tracking.min_match_iou == pytest.approx(0.05)
+        assert pipeline.tracking.camera_motion_tolerance_px == pytest.approx(72.0)
+        assert pipeline.tracking.duplicate_suppression_window_seconds == pytest.approx(12.0)
+        assert pipeline.tracking.duplicate_suppression_min_plate_confidence == pytest.approx(0.85)
+        assert pipeline.tracking.duplicate_suppression_min_iou == pytest.approx(0.2)
 
     def test_fusion_promotion_threshold(self):
         pipeline = load_pipeline_config(CONFIGS / "pipelines" / "default-edge.yaml")

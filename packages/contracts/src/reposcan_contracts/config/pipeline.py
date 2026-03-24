@@ -75,6 +75,29 @@ class TrackingConfig(BaseModel):
     max_lost_frames: int = Field(30, gt=0, description="Frames before a lost track is terminated")
     min_hits_to_confirm: int = Field(3, gt=0, description="Minimum detections to confirm a track")
     ocr_aggregation: OcrAggregation = OcrAggregation.majority_vote
+    min_match_iou: float = Field(0.05, ge=0.0, le=1.0, description="Minimum IoU used for candidate track matching")
+    camera_motion_tolerance_px: float = Field(
+        72.0,
+        ge=0.0,
+        description="Extra center-distance tolerance used when camera motion or rapid object motion is expected",
+    )
+    duplicate_suppression_window_seconds: float = Field(
+        12.0,
+        ge=0.0,
+        description="Window for suppressing repeated same-plate detections from the same camera",
+    )
+    duplicate_suppression_min_plate_confidence: float = Field(
+        0.85,
+        ge=0.0,
+        le=1.0,
+        description="Minimum promoted plate confidence before duplicate suppression is applied",
+    )
+    duplicate_suppression_min_iou: float = Field(
+        0.2,
+        ge=0.0,
+        le=1.0,
+        description="Minimum bbox IoU used when deciding whether a repeated same-plate detection is a duplicate",
+    )
 
 
 class FusionConfig(BaseModel):
