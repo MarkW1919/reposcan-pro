@@ -11,7 +11,7 @@ import re
 import yaml
 from pydantic import BaseModel
 
-from reposcan_contracts.benchmark import PromotedModelBenchmarkManifest
+from reposcan_contracts.benchmark import BenchmarkSubsetMetrics, PromotedModelBenchmarkReport, PromotedModelBenchmarkManifest
 from reposcan_contracts.config.deployment import DeploymentConfig
 from reposcan_contracts.config.loader import (
     load_benchmark_manifest,
@@ -31,7 +31,7 @@ from reposcan_contracts.release import (
     ReleaseValidationSummary,
 )
 
-from .benchmarking import BenchmarkSubsetMetrics, PromotedModelBenchmarkReport, benchmark_promoted_model
+from .benchmarking import benchmark_promoted_model
 from .deployment_validation import DeploymentCompatibilityReport, validate_deployment_runtime_bundle
 from .promotion import load_model_artifact_manifest
 from .service import InferenceService
@@ -174,7 +174,12 @@ def register_model_release(
         model_config_path=model_config_path,
         pipeline_config_path=pipeline_config_path,
     )
-    benchmark_report = benchmark_promoted_model(inference_service, benchmark_manifest)
+    benchmark_report = benchmark_promoted_model(
+        inference_service,
+        benchmark_manifest,
+        deployment=deployment,
+        benchmark_manifest_path=benchmark_manifest_path,
+    )
 
     final_release_id = release_id or _default_release_id(channel_name, model_stack.stack_name)
     release_dir, release_record_path, benchmark_report_path = _release_paths(registry_root, final_release_id)

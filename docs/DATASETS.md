@@ -58,6 +58,8 @@ Legacy Seen-It-First training assets on this machine should enter RepoScan Pro t
 
 For plate detection, reviewed captures should be promoted into curated YOLO datasets and eval holdouts with the workflow in [Detection Dataset Curation](DETECTION_DATASET_CURATION.md).
 
+Approved `eval_holdout` manifests are also the preferred source for promoted-bundle benchmark runs. The benchmark CLI can derive a tagged frame manifest directly from an approved holdout manifest so evaluation stays tied to reviewed dataset records instead of ad hoc path lists.
+
 ## Related Documents
 
 - [Training](TRAINING.md)

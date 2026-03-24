@@ -19,4 +19,5 @@ Current integrated slice:
 - TensorRT promoted-bundle validation rules for required engine compatibility metadata
 - deployment-target validation helpers that compare promoted bundles against deployment-profile runtime requirements
 - promoted-bundle benchmark helpers for tagged long-range / low-light evaluation scaffolds
+- dataset-backed eval-holdout benchmarking so approved holdout manifests can generate benchmark inputs and persistent reports
 - inference profiling helpers for latency benchmarking and deployment recommendations

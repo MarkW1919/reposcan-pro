@@ -11,6 +11,7 @@ from .adapter_factory import build_runtime_adapter_bundle
 from .benchmarking import (
     BenchmarkSubsetMetrics,
     PromotedModelBenchmarkReport,
+    build_benchmark_manifest_from_eval_holdout,
     benchmark_promoted_model,
 )
 from .deployment_validation import (
@@ -88,6 +89,7 @@ __all__ = [
     "build_onnx_adapter_bundle",
     "build_configured_adapter_bundle",
     "build_demo_adapter_bundle",
+    "build_benchmark_manifest_from_eval_holdout",
     "build_runtime_adapter_bundle",
     "benchmark_promoted_model",
     "load_model_artifact_manifest",

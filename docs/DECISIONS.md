@@ -188,3 +188,10 @@ Maintenance rule:
 - Status: Accepted
 - Decision: Register accepted promoted bundles into an external release registry with channel pointers and rollback events instead of treating folder names or ad hoc notes as the source of truth.
 - Rationale: Promotion validation, benchmark evidence, deployment readiness, and rollback history all need a stable record outside git because the promoted artifacts themselves also live outside the repository.
+
+## ADR-027 Eval Holdouts Are The Preferred Source For Benchmark Reports
+
+- Date: 2026-03-23
+- Status: Accepted
+- Decision: Derive promoted-bundle benchmark manifests and persistent evaluation reports from approved `eval_holdout` dataset manifests whenever possible instead of maintaining separate handwritten frame lists.
+- Rationale: Regression evidence is only trustworthy when it stays tied to reviewed dataset provenance, expected labels, and protected field-eval boundaries; deriving the benchmark input from the holdout manifest keeps training, evaluation, and release evidence on one typed path.

@@ -25,6 +25,13 @@ The bundle artifacts themselves stay in their own promoted bundle directory. The
 - channel pointers
 - config and manifest snapshots for audit
 
+The benchmark output now carries more than just exact-match summaries. It can include:
+
+- overall and per-tag accuracy metrics
+- latency summary
+- runtime / promotion / deployment readiness
+- source dataset linkage when the benchmark came from an approved `eval_holdout` manifest
+
 ## Register A Release
 
 ```powershell
@@ -66,6 +73,7 @@ Each release record captures:
 - deployment profile used for validation
 - benchmark manifest and benchmark report path
 - overall and per-tag benchmark metrics
+- latency summary from the benchmark report artifact
 - runtime, promotion, and deployment readiness summary
 - source run ids, checkpoints, and dataset-manifest references when present
 - superseded release id and operator notes

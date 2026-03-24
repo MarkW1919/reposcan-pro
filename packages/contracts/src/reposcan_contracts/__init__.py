@@ -5,7 +5,13 @@ definitions and config loaders - no inference, IO, or business logic.
 """
 
 from .alert import AlertRecord, AlertStatus
-from .benchmark import BenchmarkFrameExpectation, PromotedModelBenchmarkManifest
+from .benchmark import (
+    BenchmarkFrameExpectation,
+    BenchmarkSubsetMetrics,
+    BenchmarkValidationSummary,
+    PromotedModelBenchmarkManifest,
+    PromotedModelBenchmarkReport,
+)
 from .dataset import (
     AnnotationReview,
     AnnotationTask,
@@ -60,7 +66,10 @@ __all__ = [
     "AlertRecord",
     "AlertStatus",
     "BenchmarkFrameExpectation",
+    "BenchmarkSubsetMetrics",
+    "BenchmarkValidationSummary",
     "PromotedModelBenchmarkManifest",
+    "PromotedModelBenchmarkReport",
     "TrainingDatasetManifest",
     "DatasetTask",
     "DatasetFormat",

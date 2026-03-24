@@ -28,6 +28,9 @@ assets:
     distance_band: long_range
     annotations:
       - plate_detection
+    expected_plate_text: 6BZN220
+    vehicle_color: white
+    vehicle_make: toyota
     tags:
       - low_light
       - long_range

@@ -163,6 +163,12 @@ Export a detection label index and promote reviewed YOLO labels into curated man
 .\.venv\Scripts\python.exe .\scripts\promote_detection_dataset.py --dataset-manifest .\data\manifests\legacy\legacy-oklahoma-detection-reviewed.yaml --split-manifest .\data\manifests\legacy\legacy-oklahoma-detection-split.yaml --labels-root C:\datasets\oklahoma_detection_labels --output-root .\data\curated --output-manifest .\data\manifests\legacy\legacy-oklahoma-detection-curated.yaml --field-eval-manifest .\data\manifests\legacy\legacy-oklahoma-detection-field-eval.yaml --reviewer qa_annotator_01
 ```
 
+Generate a benchmark report directly from an approved field-eval dataset manifest with:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\benchmark_promoted_bundle.py --model-config C:\artifacts\models\promoted\fixture-local-dev\promoted-onnx.yaml --dataset-manifest .\configs\datasets\example-field-eval-holdout.yaml --deployment-config .\configs\deployments\local-dev.yaml --derived-benchmark-output C:\artifacts\models\benchmarks\example-field-eval-benchmark.yaml --report-output C:\artifacts\models\reports\example-field-eval-report.json
+```
+
 Register a validated promoted bundle into an external release registry with:
 
 ```powershell

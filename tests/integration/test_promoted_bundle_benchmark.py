@@ -6,7 +6,7 @@ import pytest
 import yaml
 from PIL import Image
 
-from reposcan_contracts.config.loader import load_benchmark_manifest, load_model_config
+from reposcan_contracts.config.loader import load_benchmark_manifest, load_deployment_config, load_model_config
 from reposcan_inference import InferenceService, benchmark_promoted_model, package_promoted_onnx_bundle
 
 
@@ -75,14 +75,30 @@ def test_benchmark_promoted_model_reports_overall_and_tagged_metrics(tmp_path):
         model_config_path=package_report.config_path,
         pipeline_config_path="configs/pipelines/default-edge.yaml",
     )
-    report = benchmark_promoted_model(inference_service, load_benchmark_manifest(manifest_path))
+    deployment = load_deployment_config("configs/deployments/local-dev.yaml")
+    report = benchmark_promoted_model(
+        inference_service,
+        load_benchmark_manifest(manifest_path),
+        deployment=deployment,
+        benchmark_manifest_path=manifest_path,
+    )
 
     assert report.benchmark_name == "sample-promoted-benchmark"
     assert report.model_stack_name == "benchmark-bundle"
+    assert report.benchmark_manifest_path == str(manifest_path)
     assert report.overall.frames == 3
     assert report.overall.exact_match_rate == pytest.approx(2 / 3)
     assert report.overall.character_accuracy == pytest.approx((1.0 + 1.0 + (6 / 7)) / 3)
     assert report.overall.color_accuracy == pytest.approx(1.0)
     assert report.overall.make_accuracy == pytest.approx(1.0)
+    assert report.overall.average_latency_ms is not None
+    assert report.overall.p95_latency_ms is not None
+    assert report.overall.max_latency_ms is not None
     assert report.subsets["long_range"].exact_match_rate == pytest.approx(1.0)
     assert report.subsets["low_light"].exact_match_rate == pytest.approx(0.5)
+    assert report.subsets["low_light"].average_latency_ms is not None
+    assert report.validation is not None
+    assert report.validation.runtime_ready is True
+    assert report.validation.promotion_ready is True
+    assert report.validation.deployment_ready is True
+    assert report.validation.deployment_name == "local-dev"
