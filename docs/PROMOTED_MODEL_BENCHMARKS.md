@@ -66,6 +66,7 @@ Before treating that holdout as a meaningful regression gate, qualify it first:
 - reports can break out `long_range` and `low_light` subset metrics
 - evaluation reports can capture latency plus runtime / promotion / deployment readiness alongside accuracy metrics
 - field-eval qualification can flag when a reviewed holdout is still too small or too weakly covered for real regression use
+- the repo now ships a reproducible baseline benchmark report for the promoted ONNX fixture bundle in [Inference Runtime Evidence](INFERENCE_RUNTIME_EVIDENCE.md)
 
 ## What This Does Not Prove Yet
 
@@ -77,10 +78,23 @@ Before treating that holdout as a meaningful regression gate, qualify it first:
 
 Those remain open until the team runs this harness against true holdout datasets and promoted field models.
 
+## Repo-Tracked Fixture Baseline
+
+The repo now includes:
+
+- a qualified internal fixture holdout manifest:
+  - [configs/datasets/runtime-benchmark-qualified-holdout.yaml](../configs/datasets/runtime-benchmark-qualified-holdout.yaml)
+- a promoted ONNX fixture benchmark report:
+  - [ml/inference/fixtures/reports/promoted-onnx-runtime.benchmark.json](../ml/inference/fixtures/reports/promoted-onnx-runtime.benchmark.json)
+
+That baseline is for runtime-plumbing evidence only.
+It closes the Section 4 requirement that promoted runtime bundles have `long_range` and `low_light` benchmark reports, but it does not close the later training, deployment, or field-acceptance gates.
+
 ## Related Documents
 
 - [Training](TRAINING.md)
 - [Datasets](DATASETS.md)
+- [Inference Runtime Evidence](INFERENCE_RUNTIME_EVIDENCE.md)
 - [Model Promotion Workflow](MODEL_PROMOTION_WORKFLOW.md)
 - [Model Releases](MODEL_RELEASES.md)
 - [Project Status Checklist](PROJECT_STATUS_CHECKLIST.md)

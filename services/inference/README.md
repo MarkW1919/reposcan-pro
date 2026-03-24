@@ -15,9 +15,11 @@ Current integrated slice:
 - frame sidecar support via `*.inference.json` files so demo sequences can vary detections, OCR, and attributes per frame
 - model-stack validation helpers and a CLI script for runtime readiness checks
 - promoted-bundle manifest helpers and validation scripts for external artifact handoff
+- promoted ONNX bundle assembly from exported per-stage ONNX artifacts
 - promoted ONNX bundle packaging helpers for self-contained external handoff directories
 - TensorRT promoted-bundle validation rules for required engine compatibility metadata
 - deployment-target validation helpers that compare promoted bundles against deployment-profile runtime requirements
 - promoted-bundle benchmark helpers for tagged long-range / low-light evaluation scaffolds
 - dataset-backed eval-holdout benchmarking so approved holdout manifests can generate benchmark inputs and persistent reports
+- repo-tracked fixture bundles and baseline evidence reports for the closed Section 4 runtime checklist items
 - inference profiling helpers for latency benchmarking and deployment recommendations

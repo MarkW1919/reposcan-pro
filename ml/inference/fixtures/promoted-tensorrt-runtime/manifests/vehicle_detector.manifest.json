@@ -1,0 +1,26 @@
+{
+  "stage": "vehicle_detector",
+  "model_name": "yolov8n-vehicle-trt",
+  "backend": "tensorrt",
+  "artifact_path": "artifacts/yolov8n-vehicle.engine",
+  "artifact_sha256": "09cb2a7f4907948358a28535ff07bd26cc226cd5ef3325cb2d3f5eafb5d7cdf8",
+  "exported_at_utc": "2026-03-24T18:00:00Z",
+  "input_width": 640,
+  "input_height": 640,
+  "source_run_id": "fixture_tensorrt_export_001",
+  "source_checkpoint_ref": "vehicle_detector_best.engine",
+  "dataset_manifests": [
+    "configs/datasets/runtime-benchmark-qualified-holdout.yaml"
+  ],
+  "export_tool": "trtexec",
+  "export_tool_version": "10.0",
+  "opset_version": null,
+  "precision": "fp16",
+  "target_runtime": "tensorrt",
+  "cuda_version": "12.2",
+  "tensorrt_version": "10.0.1",
+  "device_compute_capability": "8.7",
+  "engine_profile": "opt",
+  "workspace_megabytes": 1024,
+  "notes": "Contract-validation TensorRT fixture bundle for Section 4 evidence."
+}

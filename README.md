@@ -12,6 +12,7 @@ This repository currently contains:
 - a headless file-sequence ingest path that runs capture, low-light-oriented preprocessing, inference, tracking, alerting, and storage without camera hardware
 - a tracked builtin inference-runtime stack plus model-stack validation for no-hardware demos and config readiness checks
 - a tracked ONNX runtime fixture stack that proves real backend-loaded vehicle, plate, OCR, and attribute execution without requiring field hardware
+- repo-tracked promoted ONNX and TensorRT fixture bundles plus baseline runtime benchmark evidence for the remaining Section 4 inference-runtime gates
 - bootstrap, build, and validation scripts for the current integrated slice
 
 The design-first scaffold has already been turned into a working implementation foundation.
@@ -48,6 +49,7 @@ The canonical mission and rules live in [CLAUDE.md](CLAUDE.md).
 - [Training Workflows](docs/TRAINING_WORKFLOWS.md)
 - [Model Releases](docs/MODEL_RELEASES.md)
 - [Inference](docs/INFERENCE.md)
+- [Inference Runtime Evidence](docs/INFERENCE_RUNTIME_EVIDENCE.md)
 - [Model Promotion Workflow](docs/MODEL_PROMOTION_WORKFLOW.md)
 - [Promoted Model Benchmarks](docs/PROMOTED_MODEL_BENCHMARKS.md)
 - [Preprocessing Benchmark](docs/PREPROCESSING_BENCHMARK.md)
@@ -136,6 +138,12 @@ Package a self-contained promoted ONNX bundle outside git with:
 .\.venv\Scripts\python.exe .\scripts\package_promoted_onnx_bundle.py --source-model-config .\configs\models\local-onnx-runtime.yaml --output-dir C:\artifacts\models\promoted\fixture-bundle
 ```
 
+Assemble a promoted ONNX bundle directly from exported per-stage ONNX artifacts with:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\assemble_promoted_onnx_bundle.py --template-model-config .\configs\models\local-onnx-runtime.yaml --vehicle-detector-artifact C:\exports\vehicle-detector.onnx --plate-detector-artifact C:\exports\plate-detector.onnx --ocr-artifact C:\exports\ocr.onnx --classifier-artifact C:\exports\classifier.onnx --output-dir C:\artifacts\models\promoted\exported-bundle
+```
+
 For future edge bundles, use [configs/models/promoted-tensorrt-template.yaml](configs/models/promoted-tensorrt-template.yaml) as the contract shape for external TensorRT engine manifests.
 
 Validate a promoted bundle against a deployment target with:
@@ -182,6 +190,12 @@ Qualify a reviewed field-eval manifest before treating it as a real regression h
 .\.venv\Scripts\python.exe .\scripts\qualify_field_eval_dataset.py --dataset-manifest C:\artifacts\data\manifests\oklahoma-field-eval.yaml --verify-files --report-output C:\artifacts\data\reports\oklahoma-field-eval-qualification.json
 ```
 
+Refresh the repo-tracked Section 4 inference-runtime evidence fixtures with:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\generate_inference_runtime_evidence.py --output-root .\ml\inference\fixtures --overwrite
+```
+
 Register a validated promoted bundle into an external release registry with:
 
 ```powershell
@@ -224,5 +238,5 @@ Do not rebuild completed foundations. Prefer live integration, seeded demo readi
 ## Version Control And Artifact Policy
 
 - Commit milestone changes locally as you progress.
-- Do not commit datasets, model weights, local media, or generated runtime artifacts.
+- Do not commit datasets, model weights, local media, or generated runtime artifacts, except the small repo-owned inference fixtures and evidence under `ml/inference/fixtures/`.
 - Treat the existing prototype in the parent workspace as separate history and do not modify it from this repo.

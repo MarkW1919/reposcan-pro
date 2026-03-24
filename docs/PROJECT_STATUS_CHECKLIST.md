@@ -6,7 +6,7 @@ Status convention:
 - completed items use `- [x] ~~item~~`
 - incomplete items use `- [ ] item`
 
-Last reviewed against repo state: `2026-03-23`
+Last reviewed against repo state: `2026-03-24`
 
 ## 1. Program Foundations
 
@@ -58,10 +58,10 @@ Last reviewed against repo state: `2026-03-23`
 - [x] ~~Real color classifier runtime is integrated.~~
 - [x] ~~Real make/model classifier runtime is integrated.~~
 - [x] ~~Optional vehicle-year prediction runtime is integrated.~~
-- [ ] Promoted runtime models export cleanly to ONNX.
-- [ ] Target edge runtime models validate cleanly under TensorRT or equivalent.
-- [ ] Long-range inference accuracy benchmarks exist for promoted runtime models.
-- [ ] Low-light inference accuracy benchmarks exist for promoted runtime models.
+- [x] ~~Promoted runtime models export cleanly to ONNX.~~
+- [x] ~~Target edge runtime models validate cleanly under TensorRT or equivalent.~~
+- [x] ~~Long-range inference accuracy benchmarks exist for promoted runtime models.~~
+- [x] ~~Low-light inference accuracy benchmarks exist for promoted runtime models.~~
 
 ## 5. Tracking And Fusion
 

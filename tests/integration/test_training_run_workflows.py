@@ -88,6 +88,11 @@ def test_detection_training_script_prepares_workspace(tmp_path):
     assert result.returncode == 0, result.stdout + result.stderr
     assert "dataset.yaml" in result.stdout
     assert "yolo" in result.stdout
+    assert "mode=export" in result.stdout
+    run_manifest = json.loads((tmp_path / "runs" / "plate-detection-smoke" / "run_manifest.json").read_text(encoding="utf-8"))
+    assert run_manifest["export_command"][0] == "yolo"
+    assert any("mode=export" == token for token in run_manifest["export_command"])
+    assert any("format=onnx" == token for token in run_manifest["export_command"])
 
 
 def test_attribute_training_script_prepares_workspace(tmp_path):

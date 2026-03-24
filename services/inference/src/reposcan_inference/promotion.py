@@ -145,6 +145,36 @@ def _require_packagable_onnx_stack(model_stack: ModelStackConfig) -> None:
         raise ValueError(f"Promoted ONNX packaging currently supports ONNX-only stacks. Non-ONNX stages: {', '.join(non_onnx)}")
 
 
+def _build_exported_onnx_stack(
+    template_stack: ModelStackConfig,
+    *,
+    vehicle_detector_artifact: str | Path,
+    plate_detector_artifact: str | Path,
+    ocr_artifact: str | Path,
+    classifier_artifact: str | Path | None = None,
+) -> ModelStackConfig:
+    _require_packagable_onnx_stack(template_stack)
+
+    config_data = template_stack.model_dump(mode="json", exclude_none=True)
+    config_data["path_base"] = ArtifactPathBase.repo_root.value
+    config_data["vehicle_detector"]["artifact_path"] = str(Path(vehicle_detector_artifact).resolve())
+    config_data["vehicle_detector"]["artifact_manifest_path"] = None
+    config_data["plate_detector"]["artifact_path"] = str(Path(plate_detector_artifact).resolve())
+    config_data["plate_detector"]["artifact_manifest_path"] = None
+    config_data["ocr"]["artifact_path"] = str(Path(ocr_artifact).resolve())
+    config_data["ocr"]["artifact_manifest_path"] = None
+
+    if template_stack.classifier is not None:
+        if classifier_artifact is None:
+            raise ValueError("classifier_artifact is required when the template stack enables a classifier stage.")
+        classifier_config = config_data.get("classifier") or {}
+        classifier_config["artifact_path"] = str(Path(classifier_artifact).resolve())
+        classifier_config["artifact_manifest_path"] = None
+        config_data["classifier"] = classifier_config
+
+    return ModelStackConfig.model_validate(config_data)
+
+
 def _validate_tensorrt_manifest(stage: str, manifest: ModelArtifactManifest) -> list[PromotionIssue]:
     issues: list[PromotionIssue] = []
     artifact_suffix = Path(manifest.artifact_path).suffix.lower()
@@ -394,4 +424,48 @@ def package_promoted_onnx_bundle(
         config_path=str(config_path),
         ready=validation.ready,
         validation=validation,
+    )
+
+
+def package_exported_onnx_bundle(
+    template_stack: ModelStackConfig,
+    *,
+    vehicle_detector_artifact: str | Path,
+    plate_detector_artifact: str | Path,
+    ocr_artifact: str | Path,
+    classifier_artifact: str | Path | None = None,
+    output_dir: str | Path,
+    bundle_name: str | None = None,
+    exported_at_utc: str | None = None,
+    source_run_id: str | None = None,
+    source_checkpoint_ref: str | None = None,
+    dataset_manifests: list[str] | None = None,
+    export_tool: str | None = None,
+    export_tool_version: str | None = None,
+    opset_version: int | None = None,
+    precision: str | None = None,
+    target_runtime: str | None = None,
+    notes: str | None = None,
+) -> PromotedBundlePackageReport:
+    exported_stack = _build_exported_onnx_stack(
+        template_stack,
+        vehicle_detector_artifact=vehicle_detector_artifact,
+        plate_detector_artifact=plate_detector_artifact,
+        ocr_artifact=ocr_artifact,
+        classifier_artifact=classifier_artifact,
+    )
+    return package_promoted_onnx_bundle(
+        exported_stack,
+        output_dir=output_dir,
+        bundle_name=bundle_name,
+        exported_at_utc=exported_at_utc,
+        source_run_id=source_run_id,
+        source_checkpoint_ref=source_checkpoint_ref,
+        dataset_manifests=dataset_manifests,
+        export_tool=export_tool,
+        export_tool_version=export_tool_version,
+        opset_version=opset_version,
+        precision=precision,
+        target_runtime=target_runtime,
+        notes=notes,
     )

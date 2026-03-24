@@ -1,0 +1,8 @@
+{
+  "deployment_name": "local-dev",
+  "stack_name": "fixture-promoted-onnx-runtime",
+  "runtime_ready": true,
+  "promotion_ready": true,
+  "ready": true,
+  "issues": []
+}

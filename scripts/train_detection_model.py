@@ -26,6 +26,21 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _build_export_command(workspace_dir: Path, profile) -> list[str]:
+    return [
+        "yolo",
+        "task=detect",
+        "mode=export",
+        f"model={(workspace_dir / 'weights' / 'best.pt')}",
+        "format=onnx",
+        f"imgsz={profile.image_size}",
+        "dynamic=True",
+        "simplify=False",
+        "opset=17",
+        "device=cpu",
+    ]
+
+
 def main() -> int:
     repo_root = Path(__file__).resolve().parents[1]
     _configure_pythonpath(repo_root)
@@ -69,6 +84,7 @@ def main() -> int:
         f"patience={profile.patience}",
         f"device={profile.device}",
     ]
+    export_command = _build_export_command(workspace_dir, profile)
 
     run_manifest = build_run_manifest(
         profile=profile,
@@ -78,6 +94,7 @@ def main() -> int:
         run_name=run_name,
         prepared_files=prepared_files,
         training_command=training_command,
+        export_command=export_command,
         notes=notes,
     )
     run_manifest_path = workspace_dir / "run_manifest.json"
@@ -92,6 +109,8 @@ def main() -> int:
     if args.dry_run or not args.execute:
         print("Training command:")
         print(subprocess.list2cmdline(training_command))
+        print("Export command:")
+        print(subprocess.list2cmdline(export_command))
         if not args.execute:
             print("Preparation complete. Training was not started.")
         return 0
@@ -122,7 +141,20 @@ def main() -> int:
     )
 
     save_dir = Path(getattr(model.trainer, "save_dir", workspace_dir))
+    best_weights = save_dir / "weights" / "best.pt"
+    if not best_weights.exists():
+        raise RuntimeError(f"Ultralytics training completed but no best checkpoint was found at {best_weights}")
+    model = YOLO(best_weights)
+    export_path = model.export(
+        format="onnx",
+        imgsz=profile.image_size,
+        dynamic=True,
+        simplify=False,
+        opset=17,
+        device="cpu",
+    )
     print(f"Training run dir: {save_dir}")
+    print(f"Exported ONNX: {export_path}")
     return 0
 
 

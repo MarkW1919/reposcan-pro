@@ -209,3 +209,10 @@ Maintenance rule:
 - Status: Accepted
 - Decision: Allow OCR workflows to accept synthetic support manifests, but only mix them into the training split and only up to the profile-capped `synthetic_support_ratio`.
 - Rationale: Synthetic crops are useful for OCR support, especially before enough real plate crops are available, but validation and holdout evidence must remain grounded in the primary dataset to avoid overstating model quality.
+
+## ADR-030 Section 4 Runtime Evidence Uses Qualified Internal Fixtures
+
+- Date: 2026-03-24
+- Status: Accepted
+- Decision: Close the remaining Section 4 inference-runtime checklist items with repo-tracked promoted ONNX and TensorRT fixture bundles plus a qualified internal benchmark holdout, while keeping field-representative evaluation and target-hardware acceptance as later gates.
+- Rationale: Section 4 is about runtime export, validation, and benchmark evidence. The repo now needs stable, reproducible artifacts for those mechanics without falsely implying that fixture data and contract-validated TensorRT bundles are the same thing as field-ready models or edge-device proof.

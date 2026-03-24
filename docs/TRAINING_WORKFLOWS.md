@@ -7,6 +7,7 @@ RepoScan Pro training workflows are profile-driven and dataset-manifest-driven.
 - detection training workflow via `scripts/train_detection_model.py`
 - attribute classifier workflow via `scripts/train_attribute_classifier.py`
 - OCR workflow via `scripts/train_ocr_recognizer.py`
+- dry-run export handoff commands for detection ONNX export
 - reusable training profiles under `configs/training/`
 - run-manifest generation under `runtime/training/` by default
 
@@ -60,6 +61,8 @@ Prepare a plate-detector run:
   --run-name plate_detector_run_01 `
   --dry-run
 ```
+
+That dry-run now prints both the training command and the expected ONNX export command so the promoted-runtime handoff stays reviewable before execution.
 
 Prepare a vehicle make/model warm-start run from an imported legacy manifest:
 

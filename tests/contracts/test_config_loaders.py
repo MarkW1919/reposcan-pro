@@ -369,6 +369,13 @@ class TestTrainingDatasetManifestSchema:
         assert manifest.format == DatasetFormat.eval_holdout
         assert manifest.splits[0].split == DatasetSplit.field_eval
 
+    def test_runtime_benchmark_holdout_manifest_parses(self):
+        manifest = load_training_dataset_manifest(CONFIGS / "datasets" / "runtime-benchmark-qualified-holdout.yaml")
+        assert manifest.dataset_name == "runtime-benchmark-qualified-holdout"
+        assert manifest.format == DatasetFormat.eval_holdout
+        assert len(manifest.assets) == 10
+        assert manifest.splits[0].split == DatasetSplit.field_eval
+
     def test_dataset_split_manifest_parses(self):
         manifest = load_dataset_split_manifest(CONFIGS / "datasets" / "example-dataset-split.yaml")
         assert manifest.dataset_name == "example-oklahoma-capture-intake"

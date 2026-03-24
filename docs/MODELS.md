@@ -32,7 +32,8 @@ TensorRT
 - `configs/models/example-model-stack.yaml` remains the placeholder shape for future exported model artifacts
 - `configs/models/promoted-onnx-template.yaml` shows the expected shape for a promoted external ONNX bundle with per-stage artifact manifests and `path_base: config_dir`
 - `configs/models/promoted-tensorrt-template.yaml` shows the expected shape for a promoted external TensorRT bundle with per-stage engine manifests and compatibility metadata
-- exported ONNX and TensorRT model stacks are still promotion targets, not completed repo assets today
+- `ml/inference/fixtures/promoted-onnx-runtime/` is the repo-tracked promoted ONNX fixture bundle used for Section 4 runtime evidence
+- `ml/inference/fixtures/promoted-tensorrt-runtime/` is the repo-tracked TensorRT contract-validation fixture bundle used for deployment-profile checks
 
 ## Selection Notes
 

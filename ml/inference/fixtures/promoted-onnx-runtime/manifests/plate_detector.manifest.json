@@ -1,0 +1,26 @@
+{
+  "stage": "plate_detector",
+  "model_name": "fixture-plate-detector",
+  "backend": "onnx",
+  "artifact_path": "artifacts/plate-detector.onnx",
+  "artifact_sha256": "c949efc28eb60467864240d4101501685215e87f518d1505b395cf5c0f043568",
+  "exported_at_utc": "2026-03-24T18:00:00Z",
+  "input_width": 320,
+  "input_height": 160,
+  "source_run_id": "fixture_onnx_export_001",
+  "source_checkpoint_ref": "fixture_onnx_runtime_checkpoint",
+  "dataset_manifests": [
+    "configs/datasets/runtime-benchmark-qualified-holdout.yaml"
+  ],
+  "export_tool": "reposcan.assemble_promoted_onnx_bundle",
+  "export_tool_version": "0.1.0",
+  "opset_version": 17,
+  "precision": "fp32",
+  "target_runtime": "onnxruntime",
+  "cuda_version": null,
+  "tensorrt_version": null,
+  "device_compute_capability": null,
+  "engine_profile": null,
+  "workspace_megabytes": null,
+  "notes": "Promoted ONNX fixture bundle for Section 4 runtime evidence."
+}

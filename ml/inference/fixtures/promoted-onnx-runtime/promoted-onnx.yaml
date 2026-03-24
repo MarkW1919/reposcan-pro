@@ -1,0 +1,87 @@
+stack_name: fixture-promoted-onnx-runtime
+description: Packaged promoted ONNX bundle derived from local-onnx-runtime
+path_base: config_dir
+vehicle_detector:
+  name: fixture-vehicle-detector
+  backend: onnx
+  artifact_path: artifacts/vehicle-detector.onnx
+  input_width: 640
+  input_height: 640
+  normalization_mean:
+  - 0.0
+  - 0.0
+  - 0.0
+  normalization_std:
+  - 1.0
+  - 1.0
+  - 1.0
+  class_labels:
+  - car
+  confidence_threshold: 0.4
+  nms_iou_threshold: 0.5
+  artifact_manifest_path: manifests/vehicle_detector.manifest.json
+plate_detector:
+  name: fixture-plate-detector
+  backend: onnx
+  artifact_path: artifacts/plate-detector.onnx
+  input_width: 320
+  input_height: 160
+  normalization_mean:
+  - 0.0
+  - 0.0
+  - 0.0
+  normalization_std:
+  - 1.0
+  - 1.0
+  - 1.0
+  class_labels:
+  - plate
+  confidence_threshold: 0.5
+  nms_iou_threshold: 0.45
+  artifact_manifest_path: manifests/plate_detector.manifest.json
+ocr:
+  name: fixture-ocr
+  backend: onnx
+  artifact_path: artifacts/ocr.onnx
+  input_width: 144
+  input_height: 48
+  charset: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ '
+  beam_width: 1
+  confidence_threshold: 0.6
+  artifact_manifest_path: manifests/ocr.manifest.json
+classifier:
+  name: fixture-vehicle-attributes
+  backend: onnx
+  artifact_path: artifacts/classifier.onnx
+  input_width: 224
+  input_height: 224
+  normalization_mean:
+  - 0.485
+  - 0.456
+  - 0.406
+  normalization_std:
+  - 0.229
+  - 0.224
+  - 0.225
+  color_labels:
+  - white
+  - black
+  - silver
+  - gray
+  - blue
+  - red
+  - green
+  - yellow
+  - orange
+  - brown
+  - other
+  make_labels:
+  - toyota
+  - honda
+  - ford
+  - chevrolet
+  - bmw
+  - mercedes
+  - other
+  enabled: true
+  artifact_manifest_path: manifests/classifier.manifest.json

@@ -68,6 +68,28 @@ If you already have a runtime-ready ONNX stack, use the packaging helper to buil
 
 That command copies the ONNX artifacts into the output directory, writes `promoted-onnx.yaml`, writes per-stage manifests, and validates the packaged bundle before returning success.
 
+If your detector, OCR, and classifier stages have already been exported to standalone ONNX files, assemble them into the same promoted-bundle shape with:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\assemble_promoted_onnx_bundle.py `
+  --template-model-config .\configs\models\local-onnx-runtime.yaml `
+  --vehicle-detector-artifact C:\exports\vehicle-detector.onnx `
+  --plate-detector-artifact C:\exports\plate-detector.onnx `
+  --ocr-artifact C:\exports\ocr.onnx `
+  --classifier-artifact C:\exports\classifier.onnx `
+  --output-dir C:\artifacts\models\promoted\bundle-20260324 `
+  --bundle-name exported-bundle-20260324 `
+  --source-run-id run_20260324_01 `
+  --dataset-manifest configs\datasets\runtime-benchmark-qualified-holdout.yaml `
+  --export-tool reposcan.assemble_promoted_onnx_bundle `
+  --export-tool-version 0.1.0 `
+  --opset-version 17 `
+  --precision fp32 `
+  --target-runtime onnxruntime
+```
+
+That handoff flow is what the repo now uses for the tracked Section 4 promoted ONNX fixture bundle under `ml/inference/fixtures/promoted-onnx-runtime/`.
+
 ## Generate Per-Stage Manifests
 
 Use the repo helper to generate a manifest for each stage after an export is written:
@@ -139,9 +161,8 @@ That registration writes a versioned release record, snapshots the relevant conf
 
 This workflow does not by itself prove:
 
-- long-range accuracy
-- low-light accuracy
-- TensorRT readiness
+- field long-range accuracy
+- field low-light accuracy
 - real TensorRT engine loadability on target hardware
 - edge latency suitability
 - field deployment approval
@@ -153,6 +174,7 @@ Those are separate acceptance gates and remain tracked in [Project Status Checkl
 - [Models](MODELS.md)
 - [Training](TRAINING.md)
 - [Inference](INFERENCE.md)
+- [Inference Runtime Evidence](INFERENCE_RUNTIME_EVIDENCE.md)
 - [Deployment](DEPLOYMENT.md)
 - [Model Releases](MODEL_RELEASES.md)
 - [Promoted Model Benchmarks](PROMOTED_MODEL_BENCHMARKS.md)
