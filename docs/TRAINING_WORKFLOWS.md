@@ -79,6 +79,17 @@ Prepare an OCR fine-tuning run:
   --run-name plate_ocr_run_01
 ```
 
+Prepare an OCR fine-tuning run with supplemental synthetic support data:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\train_ocr_recognizer.py `
+  --profile .\configs\training\plate-ocr-finetune.yaml `
+  --dataset-manifest C:\path\to\reviewed-field-ocr.yaml `
+  --support-dataset-manifest .\data\staged\synthetic_ok_ocr_run_01\manifest.yaml `
+  --run-name plate_ocr_with_support_01 `
+  --allow-pending
+```
+
 ## Augmentation Policy
 
 All profiles carry an explicit augmentation policy covering:
@@ -105,6 +116,13 @@ This keeps augmentation reviewable instead of burying it in ad hoc trainer code.
 ```
 
 The generated dataset plugs directly into the OCR prepare workflow with `--allow-pending`. Synthetic support data should stay supplemental to reviewed field plate crops, matching the `synthetic_support_ratio` cap in the OCR profile.
+
+When `--support-dataset-manifest` is supplied to the OCR workflow:
+
+- the primary dataset remains the source of validation and holdout lists
+- synthetic support rows are only mixed into the training list
+- the profile `augmentation.synthetic_support_ratio` caps how many synthetic training rows are added
+- the workspace records the applied mix in `ocr_support_mix_summary.json`
 
 ## Legacy Dataset Integration
 

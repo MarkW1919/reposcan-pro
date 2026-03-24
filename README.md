@@ -157,6 +157,12 @@ Prepare a training run from a profile and dataset manifest with:
 .\.venv\Scripts\python.exe .\scripts\train_attribute_classifier.py --profile .\configs\training\vehicle-make-model-warmstart.yaml --dataset-manifest C:\path\to\dataset-manifest.yaml --run-name warmstart_01
 ```
 
+Supplement a primary OCR dataset with a capped synthetic support manifest through the same prepare workflow:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\train_ocr_recognizer.py --profile .\configs\training\plate-ocr-finetune.yaml --dataset-manifest C:\path\to\reviewed-field-ocr.yaml --support-dataset-manifest .\data\staged\synthetic_ok_ocr_claude_handoff_2026-03-24\manifest.yaml --run-name field_ocr_with_support --allow-pending
+```
+
 Export a detection label index and promote reviewed YOLO labels into curated manifests with:
 
 ```powershell

@@ -202,3 +202,10 @@ Maintenance rule:
 - Status: Accepted
 - Decision: Treat reviewed `eval_holdout` manifests as candidates until they pass a typed qualification gate for total coverage, `long_range` coverage, `low_light` coverage, session spread, and benchmark-ready labeling.
 - Rationale: A holdout manifest that merely exists is not enough to close the remaining training and evaluation checklist items; the repo needs an explicit pass/fail report that distinguishes placeholder holdouts from usable regression gates.
+
+## ADR-029 Synthetic OCR Support Mixes Into Train Only
+
+- Date: 2026-03-24
+- Status: Accepted
+- Decision: Allow OCR workflows to accept synthetic support manifests, but only mix them into the training split and only up to the profile-capped `synthetic_support_ratio`.
+- Rationale: Synthetic crops are useful for OCR support, especially before enough real plate crops are available, but validation and holdout evidence must remain grounded in the primary dataset to avoid overstating model quality.

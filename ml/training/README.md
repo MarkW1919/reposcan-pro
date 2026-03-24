@@ -13,4 +13,5 @@ Constraints:
 - feed approved `eval_holdout` manifests into `scripts/benchmark_promoted_bundle.py` to generate benchmark inputs and evaluation reports tied to reviewed datasets
 - gate reviewed holdouts with `scripts/qualify_field_eval_dataset.py` before treating them as real regression sets
 - use `configs/training/` profiles plus `train_*` scripts for make/model, color, detection, and OCR runs
+- feed OCR support manifests through `train_ocr_recognizer.py --support-dataset-manifest` so synthetic rows stay capped and train-only
 - prefer `prepare-only` and `dry-run` checks before using `--execute`

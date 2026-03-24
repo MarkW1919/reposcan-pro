@@ -19,6 +19,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Prepare or run a RepoScan OCR training workflow.")
     parser.add_argument("--profile", required=True)
     parser.add_argument("--dataset-manifest", required=True)
+    parser.add_argument("--support-dataset-manifest", action="append", default=[])
     parser.add_argument("--paddleocr-root")
     parser.add_argument("--run-name")
     parser.add_argument("--allow-pending", action="store_true")
@@ -89,10 +90,19 @@ def main() -> int:
     dataset_manifest_path = (
         repo_root / args.dataset_manifest if not Path(args.dataset_manifest).is_absolute() else Path(args.dataset_manifest)
     )
+    support_manifest_paths = [
+        (repo_root / raw_path).resolve() if not Path(raw_path).is_absolute() else Path(raw_path).resolve()
+        for raw_path in args.support_dataset_manifest
+    ]
 
     profile = load_training_profile(profile_path)
     dataset_manifest = load_training_dataset_manifest(dataset_manifest_path)
     ensure_dataset_review_status(dataset_manifest, allow_pending=profile.allow_pending_review or args.allow_pending)
+    support_manifests = []
+    for support_manifest_path in support_manifest_paths:
+        support_manifest = load_training_dataset_manifest(support_manifest_path)
+        ensure_dataset_review_status(support_manifest, allow_pending=profile.allow_pending_review or args.allow_pending)
+        support_manifests.append(support_manifest)
 
     run_name = make_run_name(profile.profile_name, args.run_name)
     output_root = Path(profile.output_root)
@@ -101,7 +111,14 @@ def main() -> int:
     workspace_dir = output_root / run_name
     workspace_dir.mkdir(parents=True, exist_ok=True)
 
-    prepared_files, notes, context = prepare_ocr_workspace(repo_root, profile, dataset_manifest, workspace_dir)
+    prepared_files, notes, context = prepare_ocr_workspace(
+        repo_root,
+        profile,
+        dataset_manifest,
+        workspace_dir,
+        support_manifests=support_manifests,
+        support_manifest_paths=support_manifest_paths,
+    )
     training_command: list[str] = []
     export_command: list[str] = []
     paddle_root = Path(args.paddleocr_root).resolve() if args.paddleocr_root else None
@@ -130,6 +147,7 @@ def main() -> int:
         training_command=training_command,
         export_command=export_command,
         notes=notes,
+        auxiliary_dataset_manifest_paths=[str(path) for path in support_manifest_paths],
     )
     run_manifest_path = workspace_dir / "run_manifest.json"
     run_manifest_path.write_text(run_manifest.model_dump_json(indent=2), encoding="utf-8")

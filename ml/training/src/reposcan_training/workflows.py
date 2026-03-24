@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import random
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -210,11 +211,43 @@ def _read_ocr_labels(storage_root: Path, image_root: Path, labels_path: Path) ->
     return rows
 
 
+def _read_ocr_split_rows(storage_root: Path, split_config) -> list[tuple[str, str]]:
+    if split_config.label_path is None:
+        raise ValueError(f"OCR split '{split_config.split.value}' requires label_path")
+    image_root = storage_root / split_config.relative_path
+    labels_path = storage_root / split_config.label_path
+    if not image_root.exists():
+        raise ValueError(f"OCR split path does not exist: {image_root}")
+    if not labels_path.exists():
+        raise ValueError(f"OCR label path does not exist: {labels_path}")
+    return _read_ocr_labels(storage_root, image_root, labels_path)
+
+
+def _write_ocr_list(path: Path, rows: list[tuple[str, str]]) -> None:
+    lines = [f"{relative_path}\t{text}" for relative_path, text in rows]
+    path.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+
+
+def _sample_support_rows(rows: list, *, limit: int, seed: int) -> list:
+    if limit <= 0 or not rows:
+        return []
+    if len(rows) <= limit:
+        return list(rows)
+    generator = random.Random(seed)
+    indexed_rows = list(enumerate(rows))
+    generator.shuffle(indexed_rows)
+    selected = sorted(indexed_rows[:limit], key=lambda item: item[0])
+    return [row for _, row in selected]
+
+
 def prepare_ocr_workspace(
     repo_root: Path,
     profile: TrainingProfileConfig,
     manifest: TrainingDatasetManifest,
     workspace_dir: Path,
+    *,
+    support_manifests: list[TrainingDatasetManifest] | None = None,
+    support_manifest_paths: list[Path] | None = None,
 ) -> tuple[list[str], list[str], dict[str, str]]:
     if manifest.format != DatasetFormat.ocr_manifest:
         raise ValueError("OCR training requires a dataset manifest with format=ocr_manifest")
@@ -225,23 +258,72 @@ def prepare_ocr_workspace(
     validation_split = _require_split(manifest, DatasetSplit.validation)
     holdout_split = mapping.get(DatasetSplit.holdout)
 
-    def build_list(split_config) -> Path:
-        if split_config.label_path is None:
-            raise ValueError(f"OCR split '{split_config.split.value}' requires label_path")
-        image_root = storage_root / split_config.relative_path
-        labels_path = storage_root / split_config.label_path
-        if not image_root.exists():
-            raise ValueError(f"OCR split path does not exist: {image_root}")
-        if not labels_path.exists():
-            raise ValueError(f"OCR label path does not exist: {labels_path}")
-        rows = _read_ocr_labels(storage_root, image_root, labels_path)
-        list_path = workspace_dir / f"{split_config.split.value}_list.txt"
-        lines = [f"{relative_path}\t{text}" for relative_path, text in rows]
-        list_path.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
-        return list_path
+    train_rows = _read_ocr_split_rows(storage_root, train_split)
+    validation_rows = _read_ocr_split_rows(storage_root, validation_split)
+    train_list = workspace_dir / "train_list.txt"
+    validation_list = workspace_dir / "validation_list.txt"
 
-    train_list = build_list(train_split)
-    validation_list = build_list(validation_split)
+    support_manifests = support_manifests or []
+    support_manifest_paths = support_manifest_paths or []
+    support_summary = {
+        "primary_dataset_name": manifest.dataset_name,
+        "primary_dataset_version": manifest.dataset_version,
+        "primary_train_rows": len(train_rows),
+        "synthetic_support_ratio": profile.augmentation.synthetic_support_ratio,
+        "support_datasets": [],
+        "selected_support_train_rows": 0,
+    }
+
+    if support_manifests:
+        if profile.augmentation.synthetic_support_ratio <= 0.0:
+            raise ValueError(
+                "OCR support dataset manifests were provided, but profile augmentation.synthetic_support_ratio is 0.0"
+            )
+
+        synthetic_rows: list[tuple[int, tuple[str, str]]] = []
+        max_support_rows = int(len(train_rows) * profile.augmentation.synthetic_support_ratio)
+        support_summary["max_support_train_rows"] = max_support_rows
+
+        for index, support_manifest in enumerate(support_manifests):
+            if support_manifest.task != manifest.task:
+                raise ValueError("OCR support dataset task must match the primary OCR dataset task")
+            if support_manifest.format != DatasetFormat.ocr_manifest:
+                raise ValueError("OCR support dataset manifests must use format=ocr_manifest")
+            if support_manifest.provenance.source_kind.value != "synthetic":
+                raise ValueError("OCR support dataset manifests must come from synthetic provenance")
+
+            support_storage_root = resolve_storage_root(repo_root, support_manifest.storage_root)
+            support_train_split = _require_split(support_manifest, DatasetSplit.train)
+            support_train_rows = _read_ocr_split_rows(support_storage_root, support_train_split)
+            synthetic_rows.extend((index, row) for row in support_train_rows)
+            support_summary["support_datasets"].append(
+                {
+                    "dataset_name": support_manifest.dataset_name,
+                    "dataset_version": support_manifest.dataset_version,
+                    "dataset_manifest_path": (
+                        str(support_manifest_paths[index]) if index < len(support_manifest_paths) else ""
+                    ),
+                    "available_train_rows": len(support_train_rows),
+                }
+            )
+
+        selected_support_rows = _sample_support_rows(
+            synthetic_rows,
+            limit=max_support_rows,
+            seed=profile.seed,
+        )
+        train_rows = [*train_rows, *(row for _, row in selected_support_rows)]
+        support_summary["selected_support_train_rows"] = len(selected_support_rows)
+        selected_by_dataset: dict[int, int] = {}
+        for dataset_index, _ in selected_support_rows:
+            selected_by_dataset[dataset_index] = selected_by_dataset.get(dataset_index, 0) + 1
+        for dataset_index, item in enumerate(support_summary["support_datasets"]):
+            item["selected_train_rows"] = selected_by_dataset.get(dataset_index, 0)
+    else:
+        support_summary["max_support_train_rows"] = 0
+
+    _write_ocr_list(train_list, train_rows)
+    _write_ocr_list(validation_list, validation_rows)
     prepared_files = [str(train_list), str(validation_list)]
     context = {
         "storage_root": str(storage_root),
@@ -250,7 +332,9 @@ def prepare_ocr_workspace(
     }
 
     if holdout_split is not None:
-        holdout_list = build_list(holdout_split)
+        holdout_rows = _read_ocr_split_rows(storage_root, holdout_split)
+        holdout_list = workspace_dir / "holdout_list.txt"
+        _write_ocr_list(holdout_list, holdout_rows)
         prepared_files.append(str(holdout_list))
         context["holdout_list"] = str(holdout_list)
 
@@ -259,10 +343,19 @@ def prepare_ocr_workspace(
     prepared_files.append(str(char_dict_path))
     context["char_dict_path"] = str(char_dict_path)
 
+    if support_manifests:
+        support_summary_path = workspace_dir / "ocr_support_mix_summary.json"
+        support_summary_path.write_text(json.dumps(support_summary, indent=2), encoding="utf-8")
+        prepared_files.append(str(support_summary_path))
+        context["support_mix_summary"] = str(support_summary_path)
+
     notes = [
         f"dataset_root={storage_root}",
         "char_dict=US alphanumeric uppercase",
     ]
+    if support_manifests:
+        notes.append(f"synthetic_support_train_rows={support_summary['selected_support_train_rows']}")
+        notes.append(f"synthetic_support_ratio={profile.augmentation.synthetic_support_ratio}")
     return prepared_files, notes, context
 
 
@@ -277,6 +370,7 @@ def build_run_manifest(
     training_command: list[str],
     export_command: list[str] | None = None,
     notes: list[str] | None = None,
+    auxiliary_dataset_manifest_paths: list[str] | None = None,
 ) -> TrainingRunManifest:
     return TrainingRunManifest(
         run_name=run_name,
@@ -286,6 +380,7 @@ def build_run_manifest(
         dataset_name=manifest.dataset_name,
         dataset_version=manifest.dataset_version,
         dataset_manifest_path=str(dataset_manifest_path),
+        auxiliary_dataset_manifest_paths=auxiliary_dataset_manifest_paths or [],
         prepared_at_utc=utc_now_utc(),
         workspace_dir=str(workspace_dir),
         prepared_files=prepared_files,

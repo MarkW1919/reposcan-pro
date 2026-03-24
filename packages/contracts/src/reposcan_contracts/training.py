@@ -89,6 +89,7 @@ class TrainingRunManifest(BaseModel):
     dataset_name: str = Field(..., min_length=1)
     dataset_version: str = Field(..., min_length=1)
     dataset_manifest_path: str = Field(..., min_length=1)
+    auxiliary_dataset_manifest_paths: list[str] = Field(default_factory=list)
     prepared_at_utc: UtcTimestamp
     workspace_dir: str = Field(..., min_length=1)
     prepared_files: list[str] = Field(default_factory=list)
