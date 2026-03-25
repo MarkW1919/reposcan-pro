@@ -60,6 +60,13 @@ class MediaRetentionConfig(BaseModel):
     exports_days: int = Field(90, ge=1)
 
 
+class StoragePressureConfig(BaseModel):
+    """Free-space thresholds used by storage maintenance and export workflows."""
+
+    warning_free_space_gb: float = Field(5.0, ge=0.0)
+    minimum_free_space_gb: float = Field(2.0, ge=0.0)
+
+
 class PerformanceConfig(BaseModel):
     inference_batch_size: int = Field(1, ge=1, description="Frames per inference batch")
     max_worker_threads: int = Field(4, ge=1)
@@ -94,5 +101,6 @@ class DeploymentConfig(BaseModel):
     enabled_services: EnabledServices = Field(default_factory=EnabledServices)
     infrastructure: InfrastructureConfig = Field(default_factory=InfrastructureConfig)
     media_retention: MediaRetentionConfig = Field(default_factory=MediaRetentionConfig)
+    storage_pressure: StoragePressureConfig = Field(default_factory=StoragePressureConfig)
     performance: PerformanceConfig = Field(default_factory=PerformanceConfig)
     runtime: RuntimeCompatibilityConfig = Field(default_factory=RuntimeCompatibilityConfig)

@@ -282,6 +282,8 @@ class TestDeploymentConfigSchema:
         assert dep.enabled_services.sync is False
         assert dep.runtime.required_backend == InferenceBackend.onnx
         assert dep.runtime.target_runtime == "onnxruntime"
+        assert dep.storage_pressure.warning_free_space_gb == pytest.approx(5.0)
+        assert dep.storage_pressure.minimum_free_space_gb == pytest.approx(2.0)
 
     def test_all_core_services_enabled(self):
         dep = load_deployment_config(CONFIGS / "deployments" / "local-dev.yaml")
@@ -302,6 +304,8 @@ class TestDeploymentConfigSchema:
         assert dep.target_hardware == TargetHardware.jetson_orin
         assert dep.enabled_services.sync is True
         assert dep.performance.frame_queue_depth == 16
+        assert dep.storage_pressure.warning_free_space_gb == pytest.approx(8.0)
+        assert dep.storage_pressure.minimum_free_space_gb == pytest.approx(4.0)
         assert dep.runtime.required_backend == InferenceBackend.tensorrt
         assert dep.runtime.required_path_base == ArtifactPathBase.config_dir
         assert dep.runtime.required_cuda_version == "12.2"

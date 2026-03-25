@@ -34,6 +34,10 @@ media_retention:
   snippets_days: 14
   exports_days: 90
 
+storage_pressure:
+  warning_free_space_gb: 5.0
+  minimum_free_space_gb: 2.0
+
 performance:
   inference_batch_size: 1
   max_worker_threads: 4

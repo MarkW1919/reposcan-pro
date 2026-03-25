@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+import json
+import shutil
+import zipfile
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from reposcan_contracts.alert import AlertRecord, AlertStatus
+from reposcan_contracts.config.deployment import DeploymentConfig, MediaRetentionConfig, StoragePressureConfig
 from reposcan_contracts.config.loader import load_deployment_config
 from reposcan_contracts.detection import DetectionRecord
 from reposcan_contracts.health import DependencyHealth, HealthState
@@ -30,10 +36,54 @@ class HotlistNotFoundError(KeyError):
     pass
 
 
+class StorageCapacityError(RuntimeError):
+    pass
+
+
+def _utcnow() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _parse_utc(timestamp_utc: str) -> datetime:
+    return datetime.fromisoformat(timestamp_utc.replace("Z", "+00:00")).astimezone(timezone.utc)
+
+
+@dataclass(frozen=True)
+class StoragePressureReport:
+    total_bytes: int
+    used_bytes: int
+    free_bytes: int
+    warning_threshold_bytes: int
+    minimum_threshold_bytes: int
+    status: str
+
+
+@dataclass(frozen=True)
+class MediaRetentionSweepReport:
+    reference_time_utc: str
+    deleted_counts: dict[str, int] = field(default_factory=dict)
+    kept_counts: dict[str, int] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class EvidenceExportResult:
+    detection_id: str
+    export_path: Path
+    included_files: list[str] = field(default_factory=list)
+    missing_files: list[str] = field(default_factory=list)
+
+
 class StorageService:
-    def __init__(self, repository: StorageRepository, media_root: str | Path) -> None:
+    def __init__(
+        self,
+        repository: StorageRepository,
+        media_root: str | Path,
+        *,
+        deployment_config: DeploymentConfig | None = None,
+    ) -> None:
         self.repository = repository
         self.media_layout = ensure_media_layout(media_root)
+        self.deployment_config = deployment_config
 
     def list_detections(self, *, camera_id: str | None = None, limit: int = 100) -> list[DetectionRecord]:
         return self.repository.list_detections(camera_id=camera_id, limit=limit)
@@ -126,7 +176,165 @@ class StorageService:
             raise HotlistNotFoundError(entry.entry_id)
         return self.repository.upsert_hotlist(entry)
 
+    def _retention_config(self) -> MediaRetentionConfig:
+        if self.deployment_config is not None:
+            return self.deployment_config.media_retention
+        return MediaRetentionConfig()
+
+    def _storage_pressure_config(self) -> StoragePressureConfig:
+        if self.deployment_config is not None:
+            return self.deployment_config.storage_pressure
+        return StoragePressureConfig()
+
+    def assess_storage_pressure(self) -> StoragePressureReport:
+        pressure = self._storage_pressure_config()
+        usage = shutil.disk_usage(self.media_layout.root)
+        warning_threshold_bytes = int(pressure.warning_free_space_gb * (1024**3))
+        minimum_threshold_bytes = int(pressure.minimum_free_space_gb * (1024**3))
+        if usage.free < minimum_threshold_bytes:
+            status = "critical"
+        elif usage.free < warning_threshold_bytes:
+            status = "warning"
+        else:
+            status = "ok"
+        return StoragePressureReport(
+            total_bytes=usage.total,
+            used_bytes=usage.used,
+            free_bytes=usage.free,
+            warning_threshold_bytes=warning_threshold_bytes,
+            minimum_threshold_bytes=minimum_threshold_bytes,
+            status=status,
+        )
+
+    def sweep_media_retention(self, *, reference_time_utc: str | None = None) -> MediaRetentionSweepReport:
+        retention = self._retention_config()
+        reference_time = _parse_utc(reference_time_utc) if reference_time_utc is not None else datetime.now(timezone.utc)
+        categories = {
+            "frames": (self.media_layout.frames, retention.frames_days),
+            "crops": (self.media_layout.crops, retention.crops_days),
+            "snippets": (self.media_layout.snippets, retention.snippets_days),
+            "exports": (self.media_layout.exports, retention.exports_days),
+        }
+
+        deleted_counts: dict[str, int] = {}
+        kept_counts: dict[str, int] = {}
+        for name, (root, days) in categories.items():
+            cutoff = reference_time - timedelta(days=days)
+            deleted = 0
+            kept = 0
+            for path in root.rglob("*"):
+                if not path.is_file():
+                    continue
+                modified_at = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+                if modified_at < cutoff:
+                    path.unlink()
+                    deleted += 1
+                else:
+                    kept += 1
+            deleted_counts[name] = deleted
+            kept_counts[name] = kept
+
+        return MediaRetentionSweepReport(
+            reference_time_utc=reference_time.replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+            deleted_counts=deleted_counts,
+            kept_counts=kept_counts,
+        )
+
+    def _resolve_media_reference(self, media_reference: str | None) -> Path | None:
+        if not media_reference:
+            return None
+        candidate = Path(media_reference)
+        if candidate.is_absolute():
+            return candidate if candidate.exists() else None
+
+        parts = candidate.parts
+        if parts and parts[0] == self.media_layout.root.name:
+            relative_parts = parts[1:]
+        else:
+            relative_parts = parts
+        relative_path = Path(*relative_parts) if relative_parts else Path()
+
+        for base in (self.media_layout.root, self.media_layout.root.parent):
+            resolved = base / relative_path
+            if resolved.exists():
+                return resolved
+        return None
+
+    def export_detection_package(
+        self,
+        detection_id: str,
+        *,
+        destination_path: str | Path | None = None,
+    ) -> EvidenceExportResult:
+        detection = self.get_detection(detection_id)
+        if detection is None:
+            raise DetectionNotFoundError(detection_id)
+
+        pressure = self.assess_storage_pressure()
+        if pressure.status == "critical":
+            raise StorageCapacityError(
+                f"storage free space below minimum threshold: {pressure.free_bytes} < {pressure.minimum_threshold_bytes}"
+            )
+
+        export_path = Path(destination_path) if destination_path is not None else self.media_layout.exports / f"{detection_id}.zip"
+        export_path.parent.mkdir(parents=True, exist_ok=True)
+
+        reviews = self.list_reviews(detection_id)
+        alerts = [alert for alert in self.list_alerts(limit=10_000) if alert.detection_id == detection_id]
+        hotlist_entries = [
+            hotlist
+            for hotlist in (
+                self.get_hotlist(alert.hotlist_entry_id)
+                for alert in alerts
+                if alert.hotlist_entry_id is not None
+            )
+            if hotlist is not None
+        ]
+
+        included_files: list[str] = []
+        missing_files: list[str] = []
+        media_entries = [
+            ("frame", detection.image_path, "evidence/frame"),
+            ("plate_crop", detection.plate_crop_path, "evidence/crop"),
+            ("snippet", detection.source_video_path, "evidence/snippet"),
+        ]
+        manifest = {
+            "exported_at_utc": _utcnow(),
+            "detection": detection.model_dump(mode="json"),
+            "reviews": [review.model_dump(mode="json") for review in reviews],
+            "alerts": [alert.model_dump(mode="json") for alert in alerts],
+            "hotlists": [entry.model_dump(mode="json") for entry in hotlist_entries],
+            "storage_pressure": {
+                "status": pressure.status,
+                "free_bytes": pressure.free_bytes,
+                "warning_threshold_bytes": pressure.warning_threshold_bytes,
+                "minimum_threshold_bytes": pressure.minimum_threshold_bytes,
+            },
+            "included_files": included_files,
+            "missing_files": missing_files,
+        }
+
+        with zipfile.ZipFile(export_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for label, reference, export_prefix in media_entries:
+                resolved_path = self._resolve_media_reference(reference)
+                if resolved_path is None:
+                    if reference:
+                        missing_files.append(label)
+                    continue
+                archive_name = f"{export_prefix}/{resolved_path.name}"
+                archive.write(resolved_path, arcname=archive_name)
+                included_files.append(archive_name)
+            archive.writestr("manifest.json", json.dumps(manifest, indent=2))
+
+        return EvidenceExportResult(
+            detection_id=detection_id,
+            export_path=export_path,
+            included_files=included_files,
+            missing_files=missing_files,
+        )
+
     def dependency_health(self) -> list[DependencyHealth]:
+        pressure = self.assess_storage_pressure()
         return [
             DependencyHealth(
                 name="metadata-store",
@@ -137,6 +345,17 @@ class StorageService:
                 name="media-root",
                 state=HealthState.ok,
                 message=str(self.media_layout.root),
+            ),
+            DependencyHealth(
+                name="storage-pressure",
+                state=(
+                    HealthState.ok
+                    if pressure.status == "ok"
+                    else HealthState.warning
+                    if pressure.status == "warning"
+                    else HealthState.error
+                ),
+                message=f"{pressure.status}: {pressure.free_bytes} bytes free",
             ),
         ]
 
@@ -151,6 +370,7 @@ def create_development_storage_service(
     service = StorageService(
         repository=repository,
         media_root=deployment.infrastructure.media_root,
+        deployment_config=deployment,
     )
     seed_development_operator_data(service)
     return service

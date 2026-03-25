@@ -36,17 +36,56 @@ class JsonFileStorageRepository:
         self._ensure_file(self._alerts_path)
         self._ensure_file(self._hotlists_path)
 
+    def _backup_path(self, path: Path) -> Path:
+        return path.with_suffix(f"{path.suffix}.bak")
+
+    def _temp_path(self, path: Path) -> Path:
+        return path.with_suffix(f"{path.suffix}.tmp")
+
+    def _load_payload(self, path: Path) -> list[object]:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, list):
+            raise ValueError(f"{path} does not contain a list payload")
+        return payload
+
+    def _restore_from(self, source: Path, destination: Path) -> bool:
+        try:
+            self._load_payload(source)
+        except (OSError, ValueError, json.JSONDecodeError):
+            return False
+        destination.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+        return True
+
     def _ensure_file(self, path: Path) -> None:
-        if not path.exists():
-            path.write_text("[]\n", encoding="utf-8")
+        backup = self._backup_path(path)
+        temp = self._temp_path(path)
+
+        if path.exists():
+            try:
+                self._load_payload(path)
+                return
+            except (OSError, ValueError, json.JSONDecodeError):
+                if self._restore_from(temp, path) or self._restore_from(backup, path):
+                    return
+        else:
+            if self._restore_from(temp, path) or self._restore_from(backup, path):
+                return
+
+        path.write_text("[]\n", encoding="utf-8")
 
     def _read_records(self, path: Path, model_type: type[ModelT]) -> list[ModelT]:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = self._load_payload(path)
         return [model_type.model_validate(item) for item in payload]
 
     def _write_records(self, path: Path, records: list[BaseModel]) -> None:
         payload = [record.model_dump(mode="json") for record in records]
-        path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        temp_path = self._temp_path(path)
+        backup_path = self._backup_path(path)
+        temp_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        if path.exists():
+            path.replace(backup_path)
+        temp_path.replace(path)
+        backup_path.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
 
     def list_detections(self, *, camera_id: str | None = None, limit: int = 100) -> list[DetectionRecord]:
         with self._lock:

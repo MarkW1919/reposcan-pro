@@ -223,3 +223,10 @@ Maintenance rule:
 - Status: Accepted
 - Decision: Close the remaining Section 5 tracking-and-fusion checklist items with deterministic synthetic workloads that measure crowded-scene identity continuity, aggressive camera-motion tolerance, repeat-pass duplicate suppression, and cross-strategy comparison.
 - Rationale: The repo needs stable, reproducible tracking evidence before real moving-platform acceptance runs exist. Field-shaped synthetic scenarios are enough to prove strategy behavior, tuning, and regression boundaries without pretending they replace later hardware and field validation gates.
+
+## ADR-032 File-Backed Storage Gets Lifecycle Hardening Before Postgres Cutover
+
+- Date: 2026-03-24
+- Status: Accepted
+- Decision: Add retention enforcement, low-space guarding, evidence export packaging, and backup-based recovery to the JSON-backed storage path before introducing the Postgres/PostGIS backend.
+- Rationale: The current demo and local-first validation flows still depend on file-backed storage. Hardening lifecycle behavior now improves deployable-demo readiness and protects operator workflows without forcing the repository to block on the database adapter first.

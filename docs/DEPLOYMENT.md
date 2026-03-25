@@ -32,6 +32,23 @@ RepoScan Pro is designed for local development on a workstation and deployment o
 - preserve local detections during remote outages
 - avoid uncontrolled external dependencies on the mission-critical path
 - support rollback-safe model or service promotion
+- enforce media retention and react to low-storage conditions before writes start failing
+- support operator-friendly evidence export for local handoff
+
+## Storage Lifecycle
+
+Use the deployment profile to drive storage maintenance and evidence export behavior:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\run_storage_maintenance.py --deployment-config .\configs\deployments\local-dev.yaml --json
+.\.venv\Scripts\python.exe .\scripts\export_detection_package.py --detection-id det_20260320_010001 --deployment-config .\configs\deployments\local-dev.yaml --json
+```
+
+The storage lifecycle now uses:
+
+- `media_retention` for category-specific pruning windows
+- `storage_pressure` for warning and minimum free-space thresholds
+- `.tmp` and `.bak` recovery files for the JSON-backed metadata store
 
 ## Runtime Bundle Validation
 

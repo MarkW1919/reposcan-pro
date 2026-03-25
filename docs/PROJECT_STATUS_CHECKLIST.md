@@ -84,10 +84,10 @@ Last reviewed against repo state: `2026-03-24`
 - [x] ~~In-memory repository exists for tests and local wiring.~~
 - [x] ~~Development seed data exists for operator demo flows.~~
 - [ ] Postgres/PostGIS metadata backend is implemented.
-- [ ] Media retention enforcement jobs are implemented.
-- [ ] Disk-pressure handling and low-storage response paths are implemented.
-- [ ] Evidence export packaging is implemented for operator handoff.
-- [ ] Storage recovery behavior is hardened for real crash and restart scenarios.
+- [x] ~~Media retention enforcement jobs are implemented.~~
+- [x] ~~Disk-pressure handling and low-storage response paths are implemented.~~
+- [x] ~~Evidence export packaging is implemented for operator handoff.~~
+- [x] ~~Storage recovery behavior is hardened for real crash and restart scenarios.~~
 
 ## 7. Alerting And Sync
 

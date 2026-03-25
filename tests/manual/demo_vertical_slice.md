@@ -102,6 +102,15 @@ Confirm that the seeded local API and the cab-first UI behave like a usable repo
 5. Confirm the success message appears and the new review is inserted at the top of the review history
 6. Refresh the page and confirm the saved review remains visible from the live API
 
+## Evidence Export And Maintenance
+
+1. In a new terminal, run `.\.venv\Scripts\python.exe .\scripts\run_storage_maintenance.py --deployment-config .\configs\deployments\local-dev.yaml --json`
+2. Confirm the output reports both `storage_pressure` and `retention`
+3. Pick a live or seeded detection ID such as `det_20260320_010001`
+4. Run `.\.venv\Scripts\python.exe .\scripts\export_detection_package.py --detection-id det_20260320_010001 --deployment-config .\configs\deployments\local-dev.yaml --json`
+5. Confirm the export zip path is returned
+6. Confirm the zip contains `manifest.json` and any available evidence files
+
 ## Validation Commands
 
 - `.\.venv\Scripts\python.exe -m pytest -q`

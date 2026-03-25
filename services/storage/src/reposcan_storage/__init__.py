@@ -7,7 +7,11 @@ from .memory import InMemoryStorageRepository
 from .service import (
     AlertNotFoundError,
     DetectionNotFoundError,
+    EvidenceExportResult,
     HotlistNotFoundError,
+    MediaRetentionSweepReport,
+    StorageCapacityError,
+    StoragePressureReport,
     StorageService,
     create_development_storage_service,
 )
@@ -15,10 +19,14 @@ from .service import (
 __all__ = [
     "AlertNotFoundError",
     "DetectionNotFoundError",
+    "EvidenceExportResult",
     "HotlistNotFoundError",
     "InMemoryStorageRepository",
     "JsonFileStorageRepository",
     "MediaLayout",
+    "MediaRetentionSweepReport",
+    "StorageCapacityError",
+    "StoragePressureReport",
     "StorageService",
     "create_development_storage_service",
     "ensure_media_layout",
