@@ -230,3 +230,10 @@ Maintenance rule:
 - Status: Accepted
 - Decision: Add retention enforcement, low-space guarding, evidence export packaging, and backup-based recovery to the JSON-backed storage path before introducing the Postgres/PostGIS backend.
 - Rationale: The current demo and local-first validation flows still depend on file-backed storage. Hardening lifecycle behavior now improves deployable-demo readiness and protects operator workflows without forcing the repository to block on the database adapter first.
+
+## ADR-033 Deployment Profiles Choose The Storage Metadata Backend
+
+- Date: 2026-03-24
+- Status: Accepted
+- Decision: Add a deployment-selectable metadata backend so local-dev can stay json-backed while edge-style profiles can use the Postgres/PostGIS repository.
+- Rationale: The repo needs a real database-backed storage path without destabilizing the no-hardware demo baseline. Backend selection by deployment profile lets the database adapter land now while preserving the lightweight local development flow.

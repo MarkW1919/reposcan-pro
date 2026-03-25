@@ -24,6 +24,9 @@ dev = [
     "pytest>=8.0",
     "pytest-cov",
 ]
+postgres = [
+    "psycopg[binary]>=3.2,<4.0",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

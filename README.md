@@ -15,6 +15,7 @@ This repository currently contains:
 - repo-tracked promoted ONNX and TensorRT fixture bundles plus baseline runtime benchmark evidence for the remaining Section 4 inference-runtime gates
 - tracker-strategy benchmarking and duplicate-suppression evidence for crowded scenes, camera motion, and repeated passes
 - deployment-aware storage maintenance, evidence export packaging, and JSON recovery hardening
+- a deployment-selectable Postgres/PostGIS metadata backend while local-dev remains json-backed by default
 - bootstrap, build, and validation scripts for the current integrated slice
 
 The design-first scaffold has already been turned into a working implementation foundation.
@@ -211,6 +212,7 @@ Run storage maintenance and export a detection evidence package with:
 ```powershell
 .\.venv\Scripts\python.exe .\scripts\run_storage_maintenance.py --deployment-config .\configs\deployments\local-dev.yaml --json
 .\.venv\Scripts\python.exe .\scripts\export_detection_package.py --detection-id det_20260320_010001 --json
+.\.venv\Scripts\python.exe .\scripts\bootstrap_postgres_storage.py --deployment-config .\configs\deployments\jetson-orin-edge.yaml
 ```
 
 Register a validated promoted bundle into an external release registry with:

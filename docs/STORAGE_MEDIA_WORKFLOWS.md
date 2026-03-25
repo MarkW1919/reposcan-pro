@@ -3,14 +3,40 @@
 This document records the current storage-lifecycle workflows that close the software-only Section 6 storage/media items.
 
 These workflows prove retention enforcement, low-space response, evidence export packaging, and file-backed recovery behavior.
-They do not claim that the Postgres/PostGIS backend is complete yet.
+They now also include a deployment-selectable Postgres/PostGIS metadata backend.
 
 ## Current Capabilities
 
+- deployment-selectable metadata backend:
+  - `json` for local-dev
+  - `postgres` for edge-style deployment profiles
 - deployment-aware media retention sweeps using the active deployment profile
 - free-space checks with `ok`, `warning`, and `critical` storage-pressure states
 - evidence export packaging for a single detection, including manifest, reviews, alerts, hotlist context, and available media files
 - JSON-backed metadata writes with `.tmp` and `.bak` recovery on restart
+- Postgres schema bootstrap that enables PostGIS before creating metadata tables
+
+## Postgres Backend
+
+The repository now includes a real `PostgresStorageRepository` adapter while keeping `json` as the default local-dev backend.
+
+Current profile defaults:
+
+- `configs/deployments/local-dev.yaml` -> `metadata_backend: json`
+- `configs/deployments/jetson-orin-edge.yaml` -> `metadata_backend: postgres`
+
+When a deployment profile uses `metadata_backend: postgres`, initialize the metadata schema with:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\bootstrap_postgres_storage.py `
+  --deployment-config .\configs\deployments\jetson-orin-edge.yaml
+```
+
+The bootstrap path:
+
+- connects through `infrastructure.postgres_url`
+- requests `CREATE EXTENSION IF NOT EXISTS postgis`
+- creates the storage metadata tables and indexes if they do not already exist
 
 ## Storage Maintenance
 
@@ -68,9 +94,6 @@ On startup:
 
 ## Scope Boundary
 
-This is enough to close the software-only storage lifecycle items in Section 6.
+This is enough to close Section 6 storage/media.
 
-It is not enough to close:
-
-- the Postgres/PostGIS metadata backend item
-- later deployment, acceptance, and full-system field-readiness gates
+It is not enough to close later deployment, acceptance, and full-system field-readiness gates.

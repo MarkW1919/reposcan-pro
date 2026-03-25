@@ -50,6 +50,21 @@ The storage lifecycle now uses:
 - `storage_pressure` for warning and minimum free-space thresholds
 - `.tmp` and `.bak` recovery files for the JSON-backed metadata store
 
+## Metadata Backend
+
+Deployment profiles now choose the storage metadata backend explicitly:
+
+- local-dev keeps `metadata_backend: json` so the no-hardware demo path stays lightweight
+- edge-style profiles can use `metadata_backend: postgres`
+
+When using the Postgres backend, initialize the schema with:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\bootstrap_postgres_storage.py --deployment-config .\configs\deployments\jetson-orin-edge.yaml
+```
+
+The Postgres adapter expects `psycopg` support in the environment, which is declared in the repo's `postgres` optional dependency group.
+
 ## Runtime Bundle Validation
 
 Before an external promoted bundle is treated as deployment-ready, validate it against the intended deployment profile:

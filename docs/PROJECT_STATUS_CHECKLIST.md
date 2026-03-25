@@ -83,7 +83,7 @@ Last reviewed against repo state: `2026-03-24`
 - [x] ~~JSON-backed local metadata persistence exists.~~
 - [x] ~~In-memory repository exists for tests and local wiring.~~
 - [x] ~~Development seed data exists for operator demo flows.~~
-- [ ] Postgres/PostGIS metadata backend is implemented.
+- [x] ~~Postgres/PostGIS metadata backend is implemented.~~
 - [x] ~~Media retention enforcement jobs are implemented.~~
 - [x] ~~Disk-pressure handling and low-storage response paths are implemented.~~
 - [x] ~~Evidence export packaging is implemented for operator handoff.~~

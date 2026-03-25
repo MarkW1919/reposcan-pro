@@ -10,7 +10,12 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from reposcan_contracts.alert import AlertRecord, AlertStatus
-from reposcan_contracts.config.deployment import DeploymentConfig, MediaRetentionConfig, StoragePressureConfig
+from reposcan_contracts.config.deployment import (
+    DeploymentConfig,
+    MediaRetentionConfig,
+    MetadataBackend,
+    StoragePressureConfig,
+)
 from reposcan_contracts.config.loader import load_deployment_config
 from reposcan_contracts.detection import DetectionRecord
 from reposcan_contracts.health import DependencyHealth, HealthState
@@ -20,6 +25,7 @@ from reposcan_contracts.tracking import TrackedDetection
 
 from .json_store import JsonFileStorageRepository
 from .layout import MediaLayout, ensure_media_layout
+from .postgres import PostgresStorageRepository
 from .repository import StorageRepository
 from .dev_seed import seed_development_operator_data
 
@@ -360,17 +366,35 @@ class StorageService:
         ]
 
 
-def create_development_storage_service(
+def create_storage_service_from_deployment(
     *,
     deployment_config_path: str | Path = "configs/deployments/local-dev.yaml",
     metadata_root: str | Path = "runtime/storage",
+    seed_demo_data: bool = False,
 ) -> StorageService:
     deployment = load_deployment_config(deployment_config_path)
-    repository = JsonFileStorageRepository(metadata_root)
+    if deployment.infrastructure.metadata_backend == MetadataBackend.postgres:
+        repository = PostgresStorageRepository(deployment.infrastructure.postgres_url)
+    else:
+        repository = JsonFileStorageRepository(metadata_root)
     service = StorageService(
         repository=repository,
         media_root=deployment.infrastructure.media_root,
         deployment_config=deployment,
     )
-    seed_development_operator_data(service)
+    if seed_demo_data:
+        seed_development_operator_data(service)
+    return service
+
+
+def create_development_storage_service(
+    *,
+    deployment_config_path: str | Path = "configs/deployments/local-dev.yaml",
+    metadata_root: str | Path = "runtime/storage",
+) -> StorageService:
+    service = create_storage_service_from_deployment(
+        deployment_config_path=deployment_config_path,
+        metadata_root=metadata_root,
+        seed_demo_data=True,
+    )
     return service

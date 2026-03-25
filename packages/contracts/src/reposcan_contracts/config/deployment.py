@@ -27,6 +27,11 @@ class LogLevel(str, Enum):
     error = "error"
 
 
+class MetadataBackend(str, Enum):
+    json = "json"
+    postgres = "postgres"
+
+
 class EnabledServices(BaseModel):
     capture: bool = True
     preprocessing: bool = True
@@ -40,6 +45,10 @@ class EnabledServices(BaseModel):
 
 
 class InfrastructureConfig(BaseModel):
+    metadata_backend: MetadataBackend = Field(
+        MetadataBackend.json,
+        description="Metadata persistence backend for the storage service",
+    )
     postgres_url: str = Field(
         "postgresql://reposcan:reposcan@localhost:5432/reposcan",
         description="PostgreSQL connection string for local metadata storage"

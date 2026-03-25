@@ -280,6 +280,7 @@ class TestDeploymentConfigSchema:
     def test_sync_disabled_in_local_dev(self):
         dep = load_deployment_config(CONFIGS / "deployments" / "local-dev.yaml")
         assert dep.enabled_services.sync is False
+        assert dep.infrastructure.metadata_backend.value == "json"
         assert dep.runtime.required_backend == InferenceBackend.onnx
         assert dep.runtime.target_runtime == "onnxruntime"
         assert dep.storage_pressure.warning_free_space_gb == pytest.approx(5.0)
@@ -303,6 +304,7 @@ class TestDeploymentConfigSchema:
         dep = load_deployment_config(CONFIGS / "deployments" / "jetson-orin-edge.yaml")
         assert dep.target_hardware == TargetHardware.jetson_orin
         assert dep.enabled_services.sync is True
+        assert dep.infrastructure.metadata_backend.value == "postgres"
         assert dep.performance.frame_queue_depth == 16
         assert dep.storage_pressure.warning_free_space_gb == pytest.approx(8.0)
         assert dep.storage_pressure.minimum_free_space_gb == pytest.approx(4.0)

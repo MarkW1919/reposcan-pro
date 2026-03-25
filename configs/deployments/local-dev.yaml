@@ -21,6 +21,7 @@ enabled_services:
   sync: false   # disable remote sync during local dev
 
 infrastructure:
+  metadata_backend: json
   postgres_url: "postgresql://reposcan:reposcan@localhost:5432/reposcan"
   media_root: "./media"
   api_host: "127.0.0.1"

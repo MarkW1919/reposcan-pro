@@ -20,6 +20,7 @@ enabled_services:
   sync: true
 
 infrastructure:
+  metadata_backend: postgres
   postgres_url: "postgresql://reposcan:reposcan@localhost:5432/reposcan"
   media_root: "./media"
   api_host: "0.0.0.0"
