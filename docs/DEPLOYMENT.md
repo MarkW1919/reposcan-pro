@@ -65,6 +65,24 @@ When using the Postgres backend, initialize the schema with:
 
 The Postgres adapter expects `psycopg` support in the environment, which is declared in the repo's `postgres` optional dependency group.
 
+## Remote Sync And Alert Delivery
+
+Deployment profiles can also describe optional outbound delivery integrations:
+
+- `remote_sync` controls detection replay to an upstream HTTP endpoint
+- `alert_delivery` controls optional webhook fan-out for alerts beyond the local UI
+
+The current edge-style profile uses HTTP placeholder endpoints for this transport shape:
+
+- `http://127.0.0.1:8081/sync/detections`
+- `http://127.0.0.1:8081/alerts/webhook`
+
+Refresh the repo-tracked evidence for these integrations with:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\generate_sync_remote_evidence.py --output-root .\services\sync\fixtures --overwrite
+```
+
 ## Runtime Bundle Validation
 
 Before an external promoted bundle is treated as deployment-ready, validate it against the intended deployment profile:

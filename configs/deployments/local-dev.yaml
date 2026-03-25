@@ -39,6 +39,14 @@ storage_pressure:
   warning_free_space_gb: 5.0
   minimum_free_space_gb: 2.0
 
+remote_sync:
+  enabled: false
+  timeout_seconds: 5.0
+
+alert_delivery:
+  enabled: false
+  timeout_seconds: 5.0
+
 performance:
   inference_batch_size: 1
   max_worker_threads: 4

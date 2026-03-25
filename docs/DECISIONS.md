@@ -237,3 +237,10 @@ Maintenance rule:
 - Status: Accepted
 - Decision: Add a deployment-selectable metadata backend so local-dev can stay json-backed while edge-style profiles can use the Postgres/PostGIS repository.
 - Rationale: The repo needs a real database-backed storage path without destabilizing the no-hardware demo baseline. Backend selection by deployment profile lets the database adapter land now while preserving the lightweight local development flow.
+
+## ADR-034 Section 7 Remote Delivery Uses HTTP With Idempotent Replay
+
+- Date: 2026-03-25
+- Status: Accepted
+- Decision: Implement remote detection sync and optional alert fan-out with HTTP transports that send explicit idempotency keys and treat replay conflicts as successful delivery.
+- Rationale: Remote delivery must remain outside the mission-critical path, but it also needs a real transport and replay semantics that are testable against a live endpoint. HTTP plus idempotency keys gives the repo a portable baseline for upstream sync and webhook integrations without forcing the local-first pipeline to depend on upstream availability.

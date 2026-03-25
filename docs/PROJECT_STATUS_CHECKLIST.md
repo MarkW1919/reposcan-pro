@@ -95,10 +95,10 @@ Last reviewed against repo state: `2026-03-24`
 - [x] ~~Alert thresholding exists through the pipeline configuration path.~~
 - [x] ~~Durable local alert history exists.~~
 - [x] ~~Local sync queue skeleton exists with retry/backoff behavior and `sync_status` updates.~~
-- [ ] Production remote transport is implemented.
-- [ ] Remote sync replay is validated against a real endpoint.
-- [ ] Sync conflict handling and idempotency behavior are defined and tested.
-- [ ] Optional alert delivery integrations beyond the local UI are implemented where required.
+- [x] ~~Production remote transport is implemented.~~
+- [x] ~~Remote sync replay is validated against a real endpoint.~~
+- [x] ~~Sync conflict handling and idempotency behavior are defined and tested.~~
+- [x] ~~Optional alert delivery integrations beyond the local UI are implemented where required.~~
 
 ## 8. API Application
 

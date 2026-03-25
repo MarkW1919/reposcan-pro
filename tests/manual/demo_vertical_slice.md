@@ -111,6 +111,21 @@ Confirm that the seeded local API and the cab-first UI behave like a usable repo
 5. Confirm the export zip path is returned
 6. Confirm the zip contains `manifest.json` and any available evidence files
 
+## Remote Sync And Alert Delivery Evidence
+
+1. In a new terminal, run `.\.venv\Scripts\python.exe .\scripts\generate_sync_remote_evidence.py --output-root .\services\sync\fixtures --overwrite`
+2. Confirm the script reports:
+   - `first_run_failed=1`
+   - `retry_run_synced=1`
+   - `idempotent_replay_synced=1`
+3. Open `services/sync/fixtures/reports/remote-sync-validation.json`
+4. Confirm:
+   - `remote_unique_detections = 1`
+   - `remote_sync_posts = 3`
+   - `final_sync_status = synced`
+   - `remote_unique_alerts = 1`
+   - `remote_alert_posts = 2`
+
 ## Validation Commands
 
 - `.\.venv\Scripts\python.exe -m pytest -q`

@@ -285,6 +285,8 @@ class TestDeploymentConfigSchema:
         assert dep.runtime.target_runtime == "onnxruntime"
         assert dep.storage_pressure.warning_free_space_gb == pytest.approx(5.0)
         assert dep.storage_pressure.minimum_free_space_gb == pytest.approx(2.0)
+        assert dep.remote_sync.enabled is False
+        assert dep.alert_delivery.enabled is False
 
     def test_all_core_services_enabled(self):
         dep = load_deployment_config(CONFIGS / "deployments" / "local-dev.yaml")
@@ -308,6 +310,10 @@ class TestDeploymentConfigSchema:
         assert dep.performance.frame_queue_depth == 16
         assert dep.storage_pressure.warning_free_space_gb == pytest.approx(8.0)
         assert dep.storage_pressure.minimum_free_space_gb == pytest.approx(4.0)
+        assert dep.remote_sync.enabled is True
+        assert dep.remote_sync.endpoint_url == "http://127.0.0.1:8081/sync/detections"
+        assert dep.alert_delivery.enabled is True
+        assert dep.alert_delivery.webhook_url == "http://127.0.0.1:8081/alerts/webhook"
         assert dep.runtime.required_backend == InferenceBackend.tensorrt
         assert dep.runtime.required_path_base == ArtifactPathBase.config_dir
         assert dep.runtime.required_cuda_version == "12.2"

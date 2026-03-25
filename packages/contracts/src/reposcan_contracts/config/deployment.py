@@ -8,7 +8,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from .model import ArtifactPathBase, InferenceBackend
 
@@ -76,6 +76,32 @@ class StoragePressureConfig(BaseModel):
     minimum_free_space_gb: float = Field(2.0, ge=0.0)
 
 
+class RemoteSyncConfig(BaseModel):
+    enabled: bool = False
+    endpoint_url: str | None = None
+    api_key: str | None = None
+    timeout_seconds: float = Field(5.0, gt=0.0)
+
+    @model_validator(mode="after")
+    def validate_remote_sync_requirements(self) -> "RemoteSyncConfig":
+        if self.enabled and not self.endpoint_url:
+            raise ValueError("endpoint_url is required when remote sync is enabled")
+        return self
+
+
+class AlertDeliveryConfig(BaseModel):
+    enabled: bool = False
+    webhook_url: str | None = None
+    api_key: str | None = None
+    timeout_seconds: float = Field(5.0, gt=0.0)
+
+    @model_validator(mode="after")
+    def validate_alert_delivery_requirements(self) -> "AlertDeliveryConfig":
+        if self.enabled and not self.webhook_url:
+            raise ValueError("webhook_url is required when alert delivery is enabled")
+        return self
+
+
 class PerformanceConfig(BaseModel):
     inference_batch_size: int = Field(1, ge=1, description="Frames per inference batch")
     max_worker_threads: int = Field(4, ge=1)
@@ -111,5 +137,7 @@ class DeploymentConfig(BaseModel):
     infrastructure: InfrastructureConfig = Field(default_factory=InfrastructureConfig)
     media_retention: MediaRetentionConfig = Field(default_factory=MediaRetentionConfig)
     storage_pressure: StoragePressureConfig = Field(default_factory=StoragePressureConfig)
+    remote_sync: RemoteSyncConfig = Field(default_factory=RemoteSyncConfig)
+    alert_delivery: AlertDeliveryConfig = Field(default_factory=AlertDeliveryConfig)
     performance: PerformanceConfig = Field(default_factory=PerformanceConfig)
     runtime: RuntimeCompatibilityConfig = Field(default_factory=RuntimeCompatibilityConfig)

@@ -12,7 +12,14 @@ from reposcan_storage.service import StorageService, create_development_storage_
 
 from .models import SyncQueueItem, SyncRunResult
 from .queue import JsonSyncQueue
-from .transports import MemorySyncTransport, SyncTransport
+from .transports import (
+    HttpSyncTransport,
+    IdempotentSyncConflict,
+    MemorySyncTransport,
+    PermanentSyncTransportError,
+    RetryableSyncTransportError,
+    SyncTransport,
+)
 
 
 def _utcnow() -> str:
@@ -95,6 +102,48 @@ class SyncService:
 
             try:
                 self.transport.send_detection(detection)
+            except IdempotentSyncConflict:
+                synced_detection = detection.model_copy(
+                    update={
+                        "sync_status": SyncStatus.synced,
+                        "local_only_flag": False,
+                    }
+                )
+                self.storage_service.store_detection(synced_detection)
+                self.queue.remove(item.queue_id)
+                result.synced += 1
+                continue
+            except PermanentSyncTransportError:
+                failed_detection = detection.model_copy(
+                    update={
+                        "sync_status": SyncStatus.failed,
+                        "local_only_flag": True,
+                    }
+                )
+                self.storage_service.store_detection(failed_detection)
+                self.queue.remove(item.queue_id)
+                result.failed += 1
+                continue
+            except RetryableSyncTransportError as exc:
+                failed_detection = detection.model_copy(
+                    update={
+                        "sync_status": SyncStatus.failed,
+                        "local_only_flag": True,
+                    }
+                )
+                self.storage_service.store_detection(failed_detection)
+                retry_at = now + timedelta(seconds=min(self.retry_base_seconds * (2 ** item.attempts), self.retry_max_seconds))
+                self.queue.upsert(
+                    item.model_copy(
+                        update={
+                            "attempts": item.attempts + 1,
+                            "available_at_utc": _format_utc(retry_at),
+                            "last_error": str(exc),
+                        }
+                    )
+                )
+                result.failed += 1
+                continue
             except Exception as exc:
                 failed_detection = detection.model_copy(
                     update={
@@ -138,9 +187,19 @@ def create_development_sync_service(
 ) -> SyncService:
     deployment = load_deployment_config(deployment_config_path)
     queue = JsonSyncQueue(queue_path)
+    resolved_transport = transport
+    if resolved_transport is None:
+        if deployment.enabled_services.sync and deployment.remote_sync.enabled and deployment.remote_sync.endpoint_url:
+            resolved_transport = HttpSyncTransport(
+                endpoint_url=deployment.remote_sync.endpoint_url,
+                api_key=deployment.remote_sync.api_key,
+                timeout_seconds=deployment.remote_sync.timeout_seconds,
+            )
+        else:
+            resolved_transport = MemorySyncTransport()
     return SyncService(
         storage_service=storage_service or create_development_storage_service(deployment_config_path=deployment_config_path),
-        transport=transport or MemorySyncTransport(),
+        transport=resolved_transport,
         queue=queue,
         retry_base_seconds=5 if deployment.target_hardware.value == "cpu" else 3,
         retry_max_seconds=300,

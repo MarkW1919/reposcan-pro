@@ -16,6 +16,7 @@ This repository currently contains:
 - tracker-strategy benchmarking and duplicate-suppression evidence for crowded scenes, camera motion, and repeated passes
 - deployment-aware storage maintenance, evidence export packaging, and JSON recovery hardening
 - a deployment-selectable Postgres/PostGIS metadata backend while local-dev remains json-backed by default
+- HTTP remote sync replay and alert webhook delivery validated against a real local fixture endpoint
 - bootstrap, build, and validation scripts for the current integrated slice
 
 The design-first scaffold has already been turned into a working implementation foundation.
@@ -55,6 +56,7 @@ The canonical mission and rules live in [CLAUDE.md](CLAUDE.md).
 - [Inference Runtime Evidence](docs/INFERENCE_RUNTIME_EVIDENCE.md)
 - [Tracking Fusion Evidence](docs/TRACKING_FUSION_EVIDENCE.md)
 - [Storage Media Workflows](docs/STORAGE_MEDIA_WORKFLOWS.md)
+- [Sync Remote Evidence](docs/SYNC_REMOTE_EVIDENCE.md)
 - [Model Promotion Workflow](docs/MODEL_PROMOTION_WORKFLOW.md)
 - [Promoted Model Benchmarks](docs/PROMOTED_MODEL_BENCHMARKS.md)
 - [Preprocessing Benchmark](docs/PREPROCESSING_BENCHMARK.md)
@@ -213,6 +215,7 @@ Run storage maintenance and export a detection evidence package with:
 .\.venv\Scripts\python.exe .\scripts\run_storage_maintenance.py --deployment-config .\configs\deployments\local-dev.yaml --json
 .\.venv\Scripts\python.exe .\scripts\export_detection_package.py --detection-id det_20260320_010001 --json
 .\.venv\Scripts\python.exe .\scripts\bootstrap_postgres_storage.py --deployment-config .\configs\deployments\jetson-orin-edge.yaml
+.\.venv\Scripts\python.exe .\scripts\generate_sync_remote_evidence.py --output-root .\services\sync\fixtures --overwrite
 ```
 
 Register a validated promoted bundle into an external release registry with:

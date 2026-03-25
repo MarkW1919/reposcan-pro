@@ -38,6 +38,16 @@ storage_pressure:
   warning_free_space_gb: 8.0
   minimum_free_space_gb: 4.0
 
+remote_sync:
+  enabled: true
+  endpoint_url: "http://127.0.0.1:8081/sync/detections"
+  timeout_seconds: 5.0
+
+alert_delivery:
+  enabled: true
+  webhook_url: "http://127.0.0.1:8081/alerts/webhook"
+  timeout_seconds: 5.0
+
 performance:
   inference_batch_size: 2
   max_worker_threads: 6
