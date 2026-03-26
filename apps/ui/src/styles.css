@@ -757,6 +757,34 @@ textarea.input-control {
   isolation: isolate;
 }
 
+.leaflet-map-wrapper {
+  min-height: 420px;
+  height: 420px;
+  border-radius: 22px;
+  overflow: hidden;
+  border: 1px solid rgba(126, 155, 206, 0.18);
+}
+
+.leaflet-map-wrapper .leaflet-container {
+  background: #13294d;
+}
+
+.leaflet-marker-custom {
+  background: none !important;
+  border: none !important;
+}
+
+.leaflet-popup-content-wrapper {
+  background: rgba(17, 28, 51, 0.96);
+  color: var(--text);
+  border-radius: 14px;
+  border: 1px solid rgba(126, 155, 206, 0.18);
+}
+
+.leaflet-popup-tip {
+  background: rgba(17, 28, 51, 0.96);
+}
+
 .map-grid,
 .camera-tile__overlay {
   position: absolute;
@@ -970,6 +998,12 @@ textarea.input-control {
   gap: 8px;
 }
 
+.map-legend--standalone {
+  position: static;
+  max-width: none;
+  margin-top: 14px;
+}
+
 .map-summary-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   margin-top: 14px;
@@ -1004,6 +1038,14 @@ textarea.input-control {
 
 .camera-grid--strip {
   grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.camera-grid--dual {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.camera-grid--dual .camera-tile {
+  min-height: 260px;
 }
 
 .camera-tile {
@@ -1517,6 +1559,79 @@ textarea.input-control {
   border: 1px solid rgba(126, 155, 206, 0.14);
   background: rgba(17, 28, 51, 0.76);
   color: var(--text);
+}
+
+/* ── Crew chat ──────────────────────────────────────────────── */
+
+.crew-chat {
+  display: grid;
+  gap: 14px;
+}
+
+.crew-chat__messages {
+  display: grid;
+  gap: 8px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(17, 28, 51, 0.6);
+  border: 1px solid rgba(126, 155, 206, 0.1);
+}
+
+.crew-chat__row {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(17, 28, 51, 0.76);
+}
+
+.crew-chat__row--handoff {
+  border-left: 3px solid var(--warn);
+  background: rgba(255, 179, 71, 0.06);
+}
+
+.crew-chat__row--system {
+  border-left: 3px solid var(--blue);
+  background: rgba(74, 144, 255, 0.06);
+}
+
+.crew-chat__meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.crew-chat__meta span {
+  opacity: 0.55;
+  font-size: 0.82rem;
+}
+
+.crew-chat__row p {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+
+.crew-chat__compose {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.crew-chat__actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.crew-chat__photo-log {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 @media (max-width: 1280px) {

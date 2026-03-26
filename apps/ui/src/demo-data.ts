@@ -8,11 +8,12 @@ export type PanelId =
   | "routePlanner"
   | "statusStack"
   | "recoveryLog"
-  | "dispatchBoard";
+  | "dispatchBoard"
+  | "crewChat";
 
 export type SlotId = "railTop" | "railBottom" | "hero" | "support" | "board" | "detail";
-export type CameraMode = "quad" | "priority" | "strip";
-export type LayoutPresetId = "route" | "recovery" | "lotScan";
+export type CameraMode = "quad" | "priority" | "strip" | "dual";
+export type LayoutPresetId = "route" | "recovery" | "lotScan" | "cameraOps" | "navLpr" | "dualCamNav";
 
 export interface DashboardLayout {
   profile: string;
@@ -126,6 +127,10 @@ export const panelCatalog: Record<PanelId, { label: string; description: string 
     label: "Quick Actions",
     description: "Fast field actions for the selected target.",
   },
+  crewChat: {
+    label: "Crew Chat",
+    description: "Real-time messaging and handoff coordination between field units.",
+  },
 };
 
 export const dashboardPresets: Record<LayoutPresetId, DashboardLayout> = {
@@ -163,6 +168,42 @@ export const dashboardPresets: Record<LayoutPresetId, DashboardLayout> = {
       support: "hotlistFeed",
       board: "opsMap",
       detail: "dispatchBoard",
+    },
+  },
+  cameraOps: {
+    profile: "Camera Views",
+    cameraMode: "quad",
+    slots: {
+      railTop: "cameraMatrix",
+      railBottom: "statusStack",
+      hero: "hotlistFeed",
+      support: "selectedAlert",
+      board: "dispatchBoard",
+      detail: "recoveryLog",
+    },
+  },
+  navLpr: {
+    profile: "Nav & LPR",
+    cameraMode: "quad",
+    slots: {
+      railTop: "routePlanner",
+      railBottom: "recoveryLog",
+      hero: "opsMap",
+      support: "cameraMatrix",
+      board: "hotlistFeed",
+      detail: "statusStack",
+    },
+  },
+  dualCamNav: {
+    profile: "Dual Cam + Nav",
+    cameraMode: "dual",
+    slots: {
+      railTop: "routePlanner",
+      railBottom: "statusStack",
+      hero: "opsMap",
+      support: "cameraMatrix",
+      board: "hotlistFeed",
+      detail: "selectedAlert",
     },
   },
 };
@@ -316,6 +357,23 @@ export const recoveryLog: RecoveryLogEntry[] = [
   },
 ];
 
+export interface CrewChatMessage {
+  id: string;
+  sender: string;
+  body: string;
+  timestamp: string;
+  type: "message" | "handoff" | "system";
+}
+
+export const demoChatMessages: CrewChatMessage[] = [
+  { id: "msg-001", sender: "Unit 7", body: "Eyes on target vehicle, silver Camry north side of lot", timestamp: "04:12", type: "message" },
+  { id: "msg-002", sender: "Dispatch", body: "Copy Unit 7. Unit 3 en route for backup, ETA 4 min", timestamp: "04:13", type: "message" },
+  { id: "msg-003", sender: "System", body: "Handoff: Unit 3 assigned to assignment asg_001", timestamp: "04:14", type: "handoff" },
+  { id: "msg-004", sender: "Unit 3", body: "Confirmed, approaching from west entrance", timestamp: "04:15", type: "message" },
+  { id: "msg-005", sender: "System", body: "Hotlist match: 6BZN220 detected on cam-front-1", timestamp: "04:16", type: "system" },
+  { id: "msg-006", sender: "Unit 7", body: "Plates confirmed visual match. Ready for tow", timestamp: "04:17", type: "message" },
+];
+
 export const layoutSlotLabels: Record<SlotId, string> = {
   railTop: "Left Rail Upper",
   railBottom: "Left Rail Lower",
@@ -329,6 +387,9 @@ export const presetDescriptions: Record<LayoutPresetId, string> = {
   route: "Map-first driving layout with alerts and camera confirmation close by.",
   recovery: "Target-first layout for when you are on scene and deciding fast.",
   lotScan: "Camera-led sweep for property entrances, rows, and staged passes.",
+  cameraOps: "Quad camera grid with alerts table and target detail for visual confirmation.",
+  navLpr: "Navigation sidebar with LPR activation, cameras, and interactive map.",
+  dualCamNav: "Two camera windows alongside a live navigation map.",
 };
 
 export const scenarioLabels: Record<AlertItem["scenario"], string> = {

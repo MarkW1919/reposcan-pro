@@ -1,10 +1,14 @@
-import { startTransition, useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactElement, type ReactNode } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactElement, type ReactNode } from "react";
+import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline, useMap } from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 
 import {
   addressScanDetections,
   alerts,
   cameraFeeds,
   dashboardPresets,
+  demoChatMessages,
   detectionPopupTypeLabels,
   defaultFieldSettings,
   hotlistPopupDetections,
@@ -17,6 +21,7 @@ import {
   workspaceTabs,
   type AlertItem,
   type CameraMode,
+  type CrewChatMessage,
   type DetectionPopupEvent,
   type DashboardLayout,
   type FieldSettings,
@@ -185,7 +190,7 @@ function loadLayout(): DashboardLayout {
     return {
       profile: typeof parsed.profile === "string" && parsed.profile.trim() ? parsed.profile : preset.profile,
       cameraMode:
-        parsed.cameraMode === "priority" || parsed.cameraMode === "quad" || parsed.cameraMode === "strip"
+        parsed.cameraMode === "priority" || parsed.cameraMode === "quad" || parsed.cameraMode === "strip" || parsed.cameraMode === "dual"
           ? parsed.cameraMode
           : preset.cameraMode,
       slots: nextSlots,
@@ -658,6 +663,10 @@ function App() {
   const [plateCropPreviewUrl, setPlateCropPreviewUrl] = useState<string | null>(null);
   const [framePreviewUnavailable, setFramePreviewUnavailable] = useState(false);
   const [plateCropPreviewUnavailable, setPlateCropPreviewUnavailable] = useState(false);
+  const [chatMessages, setChatMessages] = useState<CrewChatMessage[]>(demoChatMessages);
+  const [chatDraftMessage, setChatDraftMessage] = useState("");
+  const [fieldPhotoLog, setFieldPhotoLog] = useState<Array<{ id: string; label: string; timestamp: string; note: string }>>([]);
+  const [fieldPhotoNote, setFieldPhotoNote] = useState("");
   const previousWithinArrivalRef = useRef(false);
   const queuedLivePopupIdsRef = useRef<Set<string>>(new Set());
   const previousAlertActionTargetRef = useRef<string | null>(null);
@@ -749,6 +758,9 @@ function App() {
     new Set((liveOverview?.detections ?? []).map((record) => record.camera_id)),
   ).sort((left, right) => left.localeCompare(right));
   const selectedWorkflowNotes = selectedAssignment?.notes ?? selectedFollowUp?.notes ?? selectedDisplayNotes;
+  const selectedIsHotlistMatch = selectedLiveAlert
+    ? !!selectedLiveAlert.hotlist_entry_id
+    : selectedAlert.severity === "critical";
   const selectedFramePreviewUrl = liveDataSource === "live" ? framePreviewUrl : null;
   const selectedPlateCropPreviewUrl = liveDataSource === "live" ? plateCropPreviewUrl : null;
   const withinArrivalRadius = navigationActive && currentDistanceFeet <= fieldSettings.arrivalTriggerDistance;
@@ -979,6 +991,50 @@ function App() {
     x: `${12 + routeProgressPercent * 0.55}%`,
     y: `${74 - routeProgressPercent * 0.34}%`,
   };
+
+  // Geo-coordinates for Leaflet: map percentages → lat/lng offsets around demo center
+  const geoCenter = defaultMapCenter;
+  const geoSpan = 0.015; // ~1 mile spread
+  function pctToGeo(xPct: number, yPct: number): { lat: number; lng: number } {
+    return {
+      lat: geoCenter[0] + geoSpan * (0.5 - yPct / 100),
+      lng: geoCenter[1] + geoSpan * (xPct / 100 - 0.5),
+    };
+  }
+  const geoUnitPosition = pctToGeo(
+    12 + routeProgressPercent * 0.55,
+    74 - routeProgressPercent * 0.34,
+  );
+  const geoAlertMarkers = mapAlertMarkers.map((marker) => ({
+    id: marker.alert.id,
+    lat: pctToGeo(marker.x, marker.y).lat,
+    lng: pctToGeo(marker.x, marker.y).lng,
+    plate: marker.alert.plate,
+    severity: marker.alert.severity,
+    isHotlist: marker.isHotlistMatch,
+    onSelect: () => {
+      setSelectedAlertId(marker.alert.id);
+      setFocusedDetectionId(marker.alert.detectionId ?? null);
+    },
+  }));
+  const geoCameraNodes = mapCameraNodes.map((cam) => ({
+    id: cam.id,
+    lat: pctToGeo(cam.x, cam.y).lat,
+    lng: pctToGeo(cam.x, cam.y).lng,
+    zone: cam.zone,
+  }));
+  const geoSessionNodes = mapSessionNodes.map((sess) => ({
+    id: sess.session.session_id,
+    lat: pctToGeo(sess.x, sess.y).lat,
+    lng: pctToGeo(sess.x, sess.y).lng,
+    label: `${sess.session.display_name ?? sess.session.principal_id} — ${sess.session.workspace}`,
+  }));
+  const geoRoutePath: [number, number][] = [
+    [pctToGeo(12, 74).lat, pctToGeo(12, 74).lng],
+    [pctToGeo(35, 55).lat, pctToGeo(35, 55).lng],
+    [pctToGeo(55, 38).lat, pctToGeo(55, 38).lng],
+    [pctToGeo(67, 40).lat, pctToGeo(67, 40).lng],
+  ];
 
   async function refreshOverview(signal?: AbortSignal): Promise<void> {
     try {
@@ -1508,8 +1564,18 @@ function App() {
       setLayout((current) =>
         current.profile === dashboardPresets.route.profile ? cloneLayout(dashboardPresets.recovery) : current,
       );
+      setChatMessages((current) => [
+        ...current,
+        {
+          id: `sys-arrival-${Date.now()}`,
+          sender: "System",
+          body: `Geofence triggered — entered arrival radius (${fieldSettings.arrivalTriggerDistance} ft). Scan mode active.`,
+          timestamp: new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }),
+          type: "system",
+        },
+      ]);
     });
-  }, [withinArrivalRadius]);
+  }, [withinArrivalRadius, fieldSettings.arrivalTriggerDistance]);
 
   useEffect(() => {
     if (!liveOverview) {
@@ -2178,77 +2244,27 @@ function App() {
                 <span>{activeScanMode ? "Active scan live" : fieldSettings.routeTrafficOverlay ? "Traffic overlay on" : "Traffic overlay off"}</span>
               </div>
             </div>
-            <div className="map-canvas">
-              <div className="map-grid" />
-              <div className="map-route map-route--one" />
-              <div className="map-route map-route--two" />
-              <div className={`map-arrival-ring ${withinArrivalRadius ? "is-live" : ""}`}>
-                <span className="map-arrival-ring__label">
-                  {withinArrivalRadius ? "Scan live" : `${fieldSettings.arrivalTriggerDistance} ft`}
+            <OpsMapLeaflet
+              unitPosition={geoUnitPosition}
+              alertMarkers={geoAlertMarkers}
+              cameraNodes={geoCameraNodes}
+              sessionNodes={geoSessionNodes}
+              arrivalRadius={fieldSettings.arrivalTriggerDistance}
+              withinArrival={withinArrivalRadius}
+              routePath={geoRoutePath}
+            />
+            <div className="map-legend map-legend--standalone">
+              <span className="panel-label">Current mission call</span>
+              <strong>{currentRouteStage.label}</strong>
+              <p>{selectedAlert.bestApproach}</p>
+              <div className="mode-pills">
+                <span className={`badge ${activeScanMode ? "badge--scan-live" : navigationActive ? "badge--scan-bg" : "badge--outlined"}`}>
+                  {activeScanMode ? "Scan live" : navigationActive ? "Transit" : "Idle"}
                 </span>
-              </div>
-              <div
-                className={`map-unit-marker ${activeScanMode ? "is-scanning" : navigationActive ? "is-live" : ""}`}
-                style={{ "--x": mapUnitPosition.x, "--y": mapUnitPosition.y } as CSSProperties}
-              >
-                <span>{routeUnitLabel}</span>
-                <strong>{activeScanMode ? "Scanning" : routeEtaLabel}</strong>
-              </div>
-              {mapCameraNodes.map((camera) => (
-                <div
-                  key={camera.id}
-                  className={`map-node map-node--camera ${camera.id === selectedCamera.id ? "is-active" : ""}`}
-                  style={{ "--x": `${camera.x}%`, "--y": `${camera.y}%` } as CSSProperties}
-                >
-                  <span>{camera.id}</span>
-                  <strong>{camera.zone}</strong>
-                </div>
-              ))}
-              {mapSessionNodes.map(({ session, x, y }) => (
-                <div
-                  key={session.session_id}
-                  className="map-node map-node--session"
-                  style={{ "--x": `${x}%`, "--y": `${y}%` } as CSSProperties}
-                >
-                  <span>{operatorDisplayName(session)}</span>
-                  <strong>{workspaceLabel(session.workspace)}</strong>
-                </div>
-              ))}
-              {mapAlertMarkers.map(({ alert, x, y, hasAssignment, hasFollowUp, isHotlistMatch }, index) => (
-                <button
-                  key={alert.id}
-                  className={`map-marker ${isHotlistMatch ? "map-marker--hotlist" : `map-marker--${severityTone(alert.severity)}`} ${
-                    alert.id === selectedAlert.id ? "is-active" : ""
-                  }`}
-                  style={{ "--x": `${x}%`, "--y": `${y}%` } as CSSProperties}
-                  type="button"
-                  onClick={() => {
-                    setSelectedAlertId(alert.id);
-                    setFocusedDetectionId(alert.detectionId ?? null);
-                  }}
-                >
-                  <span className="map-marker__label">{alert.plate}</span>
-                  <strong>{index + 1}</strong>
-                  <div className="map-marker__meta">
-                    {isHotlistMatch ? <span className="map-marker__flag map-marker__flag--hotlist">Hotlist</span> : null}
-                    {hasFollowUp ? <span className="map-marker__flag">Pin</span> : null}
-                    {hasAssignment ? <span className="map-marker__flag">Unit</span> : null}
-                  </div>
-                </button>
-              ))}
-              <div className="map-legend">
-                <span className="panel-label">Current mission call</span>
-                <strong>{currentRouteStage.label}</strong>
-                <p>{selectedAlert.bestApproach}</p>
-                <div className="mode-pills">
-                  <span className={`badge ${activeScanMode ? "badge--scan-live" : navigationActive ? "badge--scan-bg" : "badge--outlined"}`}>
-                    {activeScanMode ? "Scan live" : navigationActive ? "Transit" : "Idle"}
-                  </span>
-                  <span className="badge badge--hotlist-always">Hotlist on</span>
-                  {hotlistAlertCount > 0 ? (
-                    <span className="badge badge--critical">{hotlistAlertCount} hotlist</span>
-                  ) : null}
-                </div>
+                <span className="badge badge--hotlist-always">Hotlist on</span>
+                {hotlistAlertCount > 0 ? (
+                  <span className="badge badge--critical">{hotlistAlertCount} hotlist</span>
+                ) : null}
               </div>
             </div>
             <div className="map-summary-grid">
@@ -2313,21 +2329,21 @@ function App() {
             panelId={panelId}
             actions={
               <div className="view-toggle">
-                {(["priority", "quad", "strip"] as CameraMode[]).map((mode) => (
+                {(["priority", "quad", "strip", "dual"] as CameraMode[]).map((mode) => (
                   <button
                     key={mode}
                     className={`toggle-chip ${layout.cameraMode === mode ? "is-active" : ""}`}
                     type="button"
                     onClick={() => setCameraMode(mode)}
                   >
-                    {mode === "priority" ? "Priority" : mode === "quad" ? "Quad" : "Strip"}
+                    {mode === "priority" ? "Priority" : mode === "quad" ? "Quad" : mode === "dual" ? "Dual" : "Strip"}
                   </button>
                 ))}
               </div>
             }
           >
             <div className={`camera-grid camera-grid--${layout.cameraMode}`}>
-              {cameraFeeds.map((camera) => (
+              {(layout.cameraMode === "dual" ? cameraFeeds.slice(0, 2) : cameraFeeds).map((camera) => (
                 <button
                   key={camera.id}
                   className={`camera-tile ${camera.id === selectedCamera.id ? "is-selected" : ""}`}
@@ -2473,6 +2489,9 @@ function App() {
                   </div>
                 </div>
                 <div className="target-keyline">
+                  {selectedIsHotlistMatch ? (
+                    <span className="badge badge--hotlist-always">Hotlist match</span>
+                  ) : null}
                   <span className={`badge ${selectedAlertMatchesDetection ? `badge--${severityTone(selectedAlert.severity)}` : "badge--priority"}`}>
                     {selectedDisplayPrimaryBadge}
                   </span>
@@ -3237,6 +3256,126 @@ function App() {
             </div>
           </PanelFrame>
         );
+      case "crewChat":
+        return (
+          <PanelFrame panelId={panelId}>
+            <div className="crew-chat">
+              <div className="crew-chat__messages">
+                {chatMessages.map((msg) => (
+                  <div key={msg.id} className={`crew-chat__row crew-chat__row--${msg.type}`}>
+                    <div className="crew-chat__meta">
+                      <strong>{msg.sender}</strong>
+                      <span>{msg.timestamp}</span>
+                    </div>
+                    <p>{msg.body}</p>
+                  </div>
+                ))}
+              </div>
+              <form
+                className="crew-chat__compose"
+                onSubmit={(event: FormEvent) => {
+                  event.preventDefault();
+                  const body = chatDraftMessage.trim();
+                  if (!body) return;
+                  setChatMessages((current) => [
+                    ...current,
+                    {
+                      id: `msg-${Date.now()}`,
+                      sender: currentOperator.display_name ?? currentOperator.principal_id,
+                      body,
+                      timestamp: new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }),
+                      type: "message",
+                    },
+                  ]);
+                  setChatDraftMessage("");
+                }}
+              >
+                <input
+                  className="input-control"
+                  placeholder="Message crew..."
+                  type="text"
+                  value={chatDraftMessage}
+                  onChange={(event) => setChatDraftMessage(event.target.value)}
+                />
+                <button className="button button--primary" type="submit">Send</button>
+              </form>
+              <div className="crew-chat__actions">
+                <button
+                  className="button"
+                  type="button"
+                  onClick={() => {
+                    setChatMessages((current) => [
+                      ...current,
+                      {
+                        id: `handoff-${Date.now()}`,
+                        sender: "System",
+                        body: `Handoff initiated by ${currentOperator.display_name ?? currentOperator.principal_id} for ${selectedAlert.plate} — ${selectedAlert.vehicle}`,
+                        timestamp: new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }),
+                        type: "handoff",
+                      },
+                    ]);
+                  }}
+                >
+                  Handoff current target
+                </button>
+                <button
+                  className="button"
+                  type="button"
+                  onClick={() => {
+                    const photoId = `photo-${Date.now()}`;
+                    const timestamp = new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
+                    setFieldPhotoLog((current) => [
+                      ...current,
+                      { id: photoId, label: `Evidence ${current.length + 1}`, timestamp, note: fieldPhotoNote.trim() || "No annotation" },
+                    ]);
+                    setChatMessages((current) => [
+                      ...current,
+                      {
+                        id: `photo-msg-${Date.now()}`,
+                        sender: "System",
+                        body: `Field photo captured — ${fieldPhotoNote.trim() || "No annotation"}`,
+                        timestamp,
+                        type: "system",
+                      },
+                    ]);
+                    setFieldPhotoNote("");
+                  }}
+                >
+                  Capture field photo
+                </button>
+              </div>
+              {fieldPhotoNote !== undefined ? (
+                <label className="field-group">
+                  <span>Photo annotation</span>
+                  <input
+                    className="input-control"
+                    placeholder="Describe what you see before capture"
+                    type="text"
+                    value={fieldPhotoNote}
+                    onChange={(event) => setFieldPhotoNote(event.target.value)}
+                  />
+                </label>
+              ) : null}
+              {fieldPhotoLog.length > 0 ? (
+                <div className="crew-chat__photo-log">
+                  <div className="live-activity__header">
+                    <strong>Evidence log</strong>
+                    <span>{fieldPhotoLog.length} captured</span>
+                  </div>
+                  {fieldPhotoLog.map((photo) => (
+                    <div key={photo.id} className="crew-chat__row crew-chat__row--system">
+                      <div className="crew-chat__meta">
+                        <strong>{photo.label}</strong>
+                        <span>{photo.timestamp}</span>
+                      </div>
+                      <p>{photo.note}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </PanelFrame>
+        );
       default:
         return (
           <PanelFrame panelId={panelId}>
@@ -3259,7 +3398,7 @@ function App() {
           </div>
           <div className="workspace-card__actions">
             <div className="preset-switcher">
-              {(["route", "recovery", "lotScan"] as LayoutPresetId[]).map((presetId) => (
+              {(["route", "recovery", "lotScan", "cameraOps", "navLpr", "dualCamNav"] as LayoutPresetId[]).map((presetId) => (
                 <button
                   key={presetId}
                   className={`toggle-chip ${
@@ -3707,7 +3846,7 @@ function App() {
             <PanelFrame panelId="routePlanner" titleOverride="Dashboard Layout">
               <div className="settings-section">
                 <div className="preset-list">
-                  {(["route", "recovery", "lotScan"] as LayoutPresetId[]).map((presetId) => (
+                  {(["route", "recovery", "lotScan", "cameraOps", "navLpr", "dualCamNav"] as LayoutPresetId[]).map((presetId) => (
                     <button key={presetId} className="preset-card" type="button" onClick={() => applyPreset(presetId)}>
                       <strong>{dashboardPresets[presetId].profile}</strong>
                       <p>{presetDescriptions[presetId]}</p>
@@ -4151,6 +4290,140 @@ function App() {
       ) : null}
 
       <main>{renderWorkspace()}</main>
+    </div>
+  );
+}
+
+/* ── Leaflet helpers ───────────────────────────────────────────── */
+
+const defaultMapCenter: [number, number] = [33.749, -84.388]; // Atlanta demo coords
+const defaultMapZoom = 14;
+
+function makeIcon(color: string, size: number = 12): L.DivIcon {
+  return L.divIcon({
+    className: "leaflet-marker-custom",
+    html: `<span style="display:block;width:${size}px;height:${size}px;border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 0 6px ${color}"></span>`,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+}
+
+const unitIcon = makeIcon("#4a90ff", 16);
+const alertIconCritical = makeIcon("#ff4d6a", 14);
+const alertIconPriority = makeIcon("#ffb347", 12);
+const alertIconWatch = makeIcon("#7eb8ff", 10);
+const cameraIcon = makeIcon("#53d6a0", 10);
+const sessionIcon = makeIcon("#c084fc", 10);
+
+function alertMarkerIcon(severity: string, isHotlist: boolean): L.DivIcon {
+  if (isHotlist) return alertIconCritical;
+  if (severity === "critical") return alertIconCritical;
+  if (severity === "priority") return alertIconPriority;
+  return alertIconWatch;
+}
+
+function MapAutoFit(props: { center: [number, number]; zoom: number }): null {
+  const map = useMap();
+  useEffect(() => {
+    map.setView(props.center, props.zoom, { animate: true });
+  }, [map, props.center, props.zoom]);
+  return null;
+}
+
+interface OpsMapLeafletProps {
+  unitPosition: { lat: number; lng: number };
+  alertMarkers: Array<{
+    id: string;
+    lat: number;
+    lng: number;
+    plate: string;
+    severity: string;
+    isHotlist: boolean;
+    onSelect: () => void;
+  }>;
+  cameraNodes: Array<{ id: string; lat: number; lng: number; zone: string }>;
+  sessionNodes: Array<{ id: string; lat: number; lng: number; label: string }>;
+  arrivalRadius: number;
+  withinArrival: boolean;
+  routePath: [number, number][];
+}
+
+function OpsMapLeaflet(props: OpsMapLeafletProps): ReactElement {
+  return (
+    <div className="leaflet-map-wrapper">
+      <MapContainer
+        center={[props.unitPosition.lat, props.unitPosition.lng]}
+        zoom={defaultMapZoom}
+        scrollWheelZoom={true}
+        style={{ height: "100%", width: "100%", borderRadius: "22px" }}
+        zoomControl={true}
+      >
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+        <MapAutoFit center={[props.unitPosition.lat, props.unitPosition.lng]} zoom={defaultMapZoom} />
+
+        {/* Unit marker */}
+        <Marker position={[props.unitPosition.lat, props.unitPosition.lng]} icon={unitIcon}>
+          <Popup>
+            <strong>Recovery unit</strong>
+          </Popup>
+        </Marker>
+
+        {/* Arrival ring */}
+        <Circle
+          center={[props.unitPosition.lat, props.unitPosition.lng]}
+          radius={props.arrivalRadius * 0.3048}
+          pathOptions={{
+            color: props.withinArrival ? "#53d6a0" : "#4a90ff",
+            fillColor: props.withinArrival ? "rgba(83,214,160,0.12)" : "rgba(74,144,255,0.08)",
+            fillOpacity: 0.3,
+            weight: 2,
+            dashArray: props.withinArrival ? undefined : "6 4",
+          }}
+        />
+
+        {/* Route path */}
+        {props.routePath.length > 1 ? (
+          <Polyline
+            positions={props.routePath}
+            pathOptions={{ color: "#78b0ff", weight: 3, opacity: 0.75 }}
+          />
+        ) : null}
+
+        {/* Alert markers */}
+        {props.alertMarkers.map((marker) => (
+          <Marker
+            key={marker.id}
+            position={[marker.lat, marker.lng]}
+            icon={alertMarkerIcon(marker.severity, marker.isHotlist)}
+            eventHandlers={{ click: marker.onSelect }}
+          >
+            <Popup>
+              <strong>{marker.plate}</strong>
+              <br />
+              {marker.isHotlist ? "Hotlist match" : marker.severity}
+            </Popup>
+          </Marker>
+        ))}
+
+        {/* Camera nodes */}
+        {props.cameraNodes.map((cam) => (
+          <Marker key={cam.id} position={[cam.lat, cam.lng]} icon={cameraIcon}>
+            <Popup>
+              {cam.id} — {cam.zone}
+            </Popup>
+          </Marker>
+        ))}
+
+        {/* Session nodes */}
+        {props.sessionNodes.map((sess) => (
+          <Marker key={sess.id} position={[sess.lat, sess.lng]} icon={sessionIcon}>
+            <Popup>{sess.label}</Popup>
+          </Marker>
+        ))}
+      </MapContainer>
     </div>
   );
 }
