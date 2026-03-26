@@ -110,6 +110,15 @@ interface SearchFormState {
   alertStatus: DashboardAlert["status"] | "";
 }
 
+type RouteStageState = "done" | "active" | "queued";
+
+interface RouteStageItem {
+  id: string;
+  label: string;
+  detail: string;
+  state: RouteStageState;
+}
+
 function loadStoredString(key: string, fallback = ""): string {
   if (typeof window === "undefined") {
     return fallback;
@@ -342,6 +351,28 @@ function operatorDisplayName(record: Pick<OperatorPrincipal, "display_name" | "p
 
 function workspaceLabel(workspaceId: string): string {
   return workspaceTabs.find((tab) => tab.id === workspaceId)?.label ?? titleCaseLabel(workspaceId) ?? workspaceId;
+}
+
+function routeStageTone(state: RouteStageState): string {
+  switch (state) {
+    case "done":
+      return "badge--good";
+    case "active":
+      return "badge--priority";
+    case "queued":
+      return "badge--muted";
+  }
+}
+
+function formatEtaFromFeet(feet: number, navigationActive: boolean): string {
+  if (!navigationActive) {
+    return "Standby";
+  }
+  if (feet <= 150) {
+    return "<1 min";
+  }
+  const estimatedMinutes = Math.max(1, Math.round(feet / 850));
+  return `${estimatedMinutes} min`;
 }
 
 function formatDistance(feet: number): string {
@@ -730,6 +761,11 @@ function App() {
     : addressDetectionEnabled
       ? "General popups suppressed"
       : "Address popups disabled";
+  const radiusDetectionSummary = generalPopupsLive
+    ? `All vehicles inside the ${fieldSettings.arrivalTriggerDistance} ft address radius are surfacing live.`
+    : addressDetectionEnabled
+      ? "Vehicles are still being classified in the background until the cab enters the arrival ring."
+      : "Address-radius detection is paused by the operator. Hotlist alerts remain live.";
   const alertActionsAvailable = liveDataSource === "live" && selectedLiveAlert !== null;
   const alertActionsEnabled = alertActionsAvailable && currentOperator.capabilities.can_update_alerts;
   const reviewsEnabled = liveDataSource === "live" && selectedDetectionId !== null;
@@ -756,6 +792,193 @@ function App() {
     !demoSubmitting &&
     demoFramesDirectory.trim().length > 0 &&
     demoRuntimeStatus?.state !== "running";
+  const routeProgressPercent = Math.min(100, (Math.max(0, 1760 - currentDistanceFeet) / 1760) * 100);
+  const routeEtaLabel = formatEtaFromFeet(currentDistanceFeet, navigationActive);
+  const routeLeadLabel =
+    selectedAssignment?.assigned_operator_id ??
+    selectedFollowUp?.assigned_operator_id ??
+    (alertActionOperatorId.trim() || reviewOperatorId.trim() || operatorDisplayName(currentOperator));
+  const routeUnitLabel = selectedAssignment?.assigned_unit_label ?? "Cab console";
+  const routeStages: RouteStageItem[] = [
+    {
+      id: "pin",
+      label: "Pin",
+      detail: selectedFollowUp
+        ? `${followUpStatusLabel(selectedFollowUp.status)} / ${titleCaseLabel(selectedFollowUp.priority)}`
+        : "Create a follow-up if this detection needs a second pass.",
+      state: selectedFollowUp ? "done" : selectedDetectionId ? "active" : "queued",
+    },
+    {
+      id: "dispatch",
+      label: "Dispatch",
+      detail: selectedAssignment
+        ? `${assignmentStatusLabel(selectedAssignment.status)} / ${selectedAssignment.assigned_unit_label ?? "Unit pending"}`
+        : "Assign a unit and operator before the approach.",
+      state:
+        selectedAssignment?.status === "completed"
+          ? "done"
+          : selectedAssignment
+            ? "active"
+            : selectedDetectionId
+              ? "queued"
+              : "queued",
+    },
+    {
+      id: "transit",
+      label: "Transit",
+      detail: navigationActive ? `${routeEtaLabel} to ${activeDestination}` : "Route not started.",
+      state: navigationActive ? (withinArrivalRadius ? "done" : "active") : "queued",
+    },
+    {
+      id: "arrival",
+      label: "Arrival ring",
+      detail: withinArrivalRadius
+        ? "Inside the trigger distance. General popups are live."
+        : `${fieldSettings.arrivalTriggerDistance} ft trigger distance.`,
+      state: withinArrivalRadius ? "active" : navigationActive ? "queued" : "queued",
+    },
+    {
+      id: "confirm",
+      label: "Confirm",
+      detail:
+        selectedAssignment?.status === "onsite"
+          ? "Crew is on scene. Confirm the plate and lane approach."
+          : selectedAlert.status === "onsite"
+            ? "On-scene confirmation is in progress."
+            : "Use cameras and evidence to verify before engagement.",
+      state:
+        selectedAssignment?.status === "completed"
+          ? "done"
+          : selectedAssignment?.status === "onsite" || selectedAlert.status === "onsite"
+            ? "active"
+            : "queued",
+    },
+  ];
+  const currentRouteStage =
+    routeStages.find((stage) => stage.state === "active") ??
+    [...routeStages].reverse().find((stage) => stage.state === "done") ??
+    routeStages[0];
+  const routeCommandCards = [
+    {
+      label: "Next move",
+      value: selectedAssignment?.summary ?? selectedAlert.routeAction,
+      tone: currentRouteStage.state === "active" ? "badge--priority" : "badge--outlined",
+    },
+    {
+      label: "Unit",
+      value: routeUnitLabel,
+      tone: selectedAssignment ? "badge--good" : "badge--outlined",
+    },
+    {
+      label: "Lead",
+      value: routeLeadLabel,
+      tone: "badge--good",
+    },
+    {
+      label: "ETA",
+      value: routeEtaLabel,
+      tone: withinArrivalRadius ? "badge--good" : navigationActive ? "badge--priority" : "badge--muted",
+    },
+    {
+      label: "Scan gate",
+      value: generalPopupsLive ? "General + hotlist" : "Hotlist only",
+      tone: generalPopupsLive ? "badge--good" : "badge--outlined",
+    },
+  ] as const;
+  const routeFocusItems = [
+    selectedDisplayBestApproach,
+    selectedWorkflowNotes,
+    radiusDetectionSummary,
+    selectedFollowUp?.due_at_utc
+      ? `Pinned follow-up due ${formatHotlistTimestamp(selectedFollowUp.due_at_utc)}.`
+      : "No due time is set on the current follow-up.",
+  ];
+  const hotlistAlertCount = liveOverview
+    ? liveOverview.alerts.filter((alert) => alert.hotlist_entry_id && alert.status === "active").length
+    : operatorAlerts.filter((alert) => alert.severity === "critical").length;
+  const glanceTiles = [
+    {
+      label: "Primary target",
+      value: selectedDisplayPlate,
+      sublabel: selectedDisplayVehicle,
+    },
+    {
+      label: "Hotlist alerts",
+      value: `${hotlistAlertCount} active`,
+      sublabel: hotlistAlertCount > 0 ? "Unsuppressed. Requires immediate response." : "No active hotlist matches right now.",
+    },
+    {
+      label: "Route window",
+      value: routeEtaLabel,
+      sublabel: generalPopupsLive
+        ? `${currentDistanceLabel} to ${activeDestination} / radius alerts live`
+        : `${currentDistanceLabel} to ${activeDestination} / background classify only`,
+    },
+    {
+      label: "Mission stage",
+      value: currentRouteStage.label,
+      sublabel: currentRouteStage.detail,
+    },
+    {
+      label: "Dispatch",
+      value: selectedAssignment ? assignmentStatusLabel(selectedAssignment.status) : "Unassigned",
+      sublabel: selectedAssignment?.assigned_unit_label ?? "No unit committed yet",
+    },
+    {
+      label: "Follow-up",
+      value: selectedFollowUp ? followUpStatusLabel(selectedFollowUp.status) : "Not pinned",
+      sublabel: selectedFollowUp?.summary ?? "Pin the detection if it needs a second pass.",
+    },
+    {
+      label: "Crew",
+      value: `${activeSessionCount} live`,
+      sublabel:
+        liveDataSource === "live"
+          ? `${operatorDisplayName(currentOperator)} + ${Math.max(0, activeSessionCount - 1)} other operators`
+          : operatorDisplayName(currentOperator),
+    },
+    {
+      label: "Cameras",
+      value: `${onlineCameraCount}/4 online`,
+      sublabel: `${selectedCamera.label} priority feed`,
+    },
+  ];
+  const liveAlertsByAlertId = new Map((liveOverview?.alerts ?? []).map((record) => [record.alert_id, record]));
+  const mapAlertMarkers = operatorAlerts.map((alert, index) => {
+    const hasAssignment = !!liveAssignments.find(
+      (record) =>
+        record.detection_id === alert.detectionId &&
+        record.status !== "completed" &&
+        record.status !== "cancelled",
+    );
+    const hasFollowUp = !!liveFollowUps.find(
+      (record) => record.detection_id === alert.detectionId && record.status !== "resolved",
+    );
+    const liveAlert = liveAlertsByAlertId.get(alert.id);
+    const isHotlistMatch = liveAlert ? !!liveAlert.hotlist_entry_id : alert.severity === "critical";
+    return {
+      alert,
+      x: 18 + index * 19,
+      y: 20 + (index % 3) * 18,
+      hasAssignment,
+      hasFollowUp,
+      isHotlistMatch,
+    };
+  });
+  const mapCameraNodes = cameraFeeds.map((camera, index) => ({
+    ...camera,
+    x: 14 + (index % 2) * 18,
+    y: 18 + Math.floor(index / 2) * 40,
+  }));
+  const mapSessionNodes = otherActiveSessions.slice(0, 4).map((session, index) => ({
+    session,
+    x: 24 + index * 12,
+    y: 78 - (index % 2) * 12,
+  }));
+  const mapUnitPosition = {
+    x: `${12 + routeProgressPercent * 0.55}%`,
+    y: `${74 - routeProgressPercent * 0.34}%`,
+  };
 
   async function refreshOverview(signal?: AbortSignal): Promise<void> {
     try {
@@ -1794,13 +2017,16 @@ function App() {
                 <span>{navigationActive ? "Navigation active" : "Ready to route"}</span>
               </div>
               <div className="mode-pills">
-                <span className={`badge ${activeScanMode ? "badge--good" : navigationActive ? "badge--priority" : "badge--muted"}`}>
-                  {navigationModeLabel}
+                <span className={`badge ${activeScanMode ? "badge--scan-live" : navigationActive ? "badge--scan-bg" : "badge--muted"}`}>
+                  {activeScanMode ? "Scan live" : navigationActive ? "Transit" : "Idle"}
                 </span>
                 <span className={`badge ${addressDetectionEnabled ? "badge--good" : "badge--muted"}`}>
-                  Address alerts {addressDetectionEnabled ? "on" : "off"}
+                  Address {addressDetectionEnabled ? "on" : "off"}
                 </span>
-                <span className="badge badge--critical">Hotlist always on</span>
+                <span className="badge badge--hotlist-always">Hotlist always on</span>
+                {hotlistAlertCount > 0 ? (
+                  <span className="badge badge--critical">{hotlistAlertCount} hotlist alert{hotlistAlertCount === 1 ? "" : "s"}</span>
+                ) : null}
               </div>
               <div className="route-meta-grid">
                 <StatusLine label="Current range" value={currentDistanceLabel} />
@@ -1827,11 +2053,56 @@ function App() {
                   Crossing the arrival ring automatically flips the system into active scan mode.
                 </p>
               </div>
-              <div className="trigger-meter">
+              <div className={`trigger-meter ${withinArrivalRadius || routeProgressPercent > 80 ? "trigger-meter--near" : ""}`}>
                 <div
                   className="trigger-meter__fill"
-                  style={{ "--fill": `${Math.min(100, (Math.max(0, 1760 - currentDistanceFeet) / 1760) * 100)}%` } as CSSProperties}
+                  style={{ "--fill": `${routeProgressPercent}%` } as CSSProperties}
                 />
+              </div>
+              <div className="route-stage-strip" aria-label="Mission stage strip">
+                {routeStages.map((stage) => (
+                  <article
+                    key={stage.id}
+                    className={`route-stage-card route-stage-card--${stage.state} ${
+                      currentRouteStage.id === stage.id ? "is-current" : ""
+                    }`}
+                  >
+                    <div className="route-stage-card__header">
+                      <span className="panel-label">{stage.label}</span>
+                      <span className={`badge ${routeStageTone(stage.state)}`}>{titleCaseLabel(stage.state)}</span>
+                    </div>
+                    <p>{stage.detail}</p>
+                  </article>
+                ))}
+              </div>
+              <div className="route-command-grid" aria-label="Route command cards">
+                {routeCommandCards.map((card) => (
+                  <div key={card.label} className="route-command-card">
+                    <span>{card.label}</span>
+                    <strong>{card.value}</strong>
+                    <em className={`badge ${card.tone}`}>{card.label}</em>
+                  </div>
+                ))}
+              </div>
+              <div className="route-focus-board">
+                <div className="route-focus-board__header">
+                  <div>
+                    <span className="panel-label">Crew focus</span>
+                    <strong>{currentRouteStage.label}</strong>
+                  </div>
+                  <span className={`badge ${routeStageTone(currentRouteStage.state)}`}>
+                    {routeProgressPercent.toFixed(0)}% route progress
+                  </span>
+                </div>
+                <div className="route-focus-board__grid">
+                  <StatusLine label="Assigned unit" value={routeUnitLabel} />
+                  <StatusLine label="Lead operator" value={routeLeadLabel} />
+                </div>
+                <ul className="route-focus-list">
+                  {routeFocusItems.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
               </div>
               <div className="panel-actions">
                 <button className="button button--primary" type="button" onClick={handleNavigationToggle}>
@@ -1911,25 +2182,127 @@ function App() {
               <div className="map-grid" />
               <div className="map-route map-route--one" />
               <div className="map-route map-route--two" />
-              <div className="map-arrival-ring" />
-              {operatorAlerts.map((alert, index) => (
+              <div className={`map-arrival-ring ${withinArrivalRadius ? "is-live" : ""}`}>
+                <span className="map-arrival-ring__label">
+                  {withinArrivalRadius ? "Scan live" : `${fieldSettings.arrivalTriggerDistance} ft`}
+                </span>
+              </div>
+              <div
+                className={`map-unit-marker ${activeScanMode ? "is-scanning" : navigationActive ? "is-live" : ""}`}
+                style={{ "--x": mapUnitPosition.x, "--y": mapUnitPosition.y } as CSSProperties}
+              >
+                <span>{routeUnitLabel}</span>
+                <strong>{activeScanMode ? "Scanning" : routeEtaLabel}</strong>
+              </div>
+              {mapCameraNodes.map((camera) => (
+                <div
+                  key={camera.id}
+                  className={`map-node map-node--camera ${camera.id === selectedCamera.id ? "is-active" : ""}`}
+                  style={{ "--x": `${camera.x}%`, "--y": `${camera.y}%` } as CSSProperties}
+                >
+                  <span>{camera.id}</span>
+                  <strong>{camera.zone}</strong>
+                </div>
+              ))}
+              {mapSessionNodes.map(({ session, x, y }) => (
+                <div
+                  key={session.session_id}
+                  className="map-node map-node--session"
+                  style={{ "--x": `${x}%`, "--y": `${y}%` } as CSSProperties}
+                >
+                  <span>{operatorDisplayName(session)}</span>
+                  <strong>{workspaceLabel(session.workspace)}</strong>
+                </div>
+              ))}
+              {mapAlertMarkers.map(({ alert, x, y, hasAssignment, hasFollowUp, isHotlistMatch }, index) => (
                 <button
                   key={alert.id}
-                  className={`map-marker map-marker--${severityTone(alert.severity)} ${
+                  className={`map-marker ${isHotlistMatch ? "map-marker--hotlist" : `map-marker--${severityTone(alert.severity)}`} ${
                     alert.id === selectedAlert.id ? "is-active" : ""
                   }`}
-                  style={{ "--x": `${18 + index * 19}%`, "--y": `${20 + (index % 3) * 18}%` } as CSSProperties}
+                  style={{ "--x": `${x}%`, "--y": `${y}%` } as CSSProperties}
                   type="button"
                   onClick={() => {
                     setSelectedAlertId(alert.id);
                     setFocusedDetectionId(alert.detectionId ?? null);
                   }}
                 >
-                  {index + 1}
+                  <span className="map-marker__label">{alert.plate}</span>
+                  <strong>{index + 1}</strong>
+                  <div className="map-marker__meta">
+                    {isHotlistMatch ? <span className="map-marker__flag map-marker__flag--hotlist">Hotlist</span> : null}
+                    {hasFollowUp ? <span className="map-marker__flag">Pin</span> : null}
+                    {hasAssignment ? <span className="map-marker__flag">Unit</span> : null}
+                  </div>
                 </button>
               ))}
               <div className="map-legend">
-                <span>{selectedAlert.bestApproach}</span>
+                <span className="panel-label">Current mission call</span>
+                <strong>{currentRouteStage.label}</strong>
+                <p>{selectedAlert.bestApproach}</p>
+                <div className="mode-pills">
+                  <span className={`badge ${activeScanMode ? "badge--scan-live" : navigationActive ? "badge--scan-bg" : "badge--outlined"}`}>
+                    {activeScanMode ? "Scan live" : navigationActive ? "Transit" : "Idle"}
+                  </span>
+                  <span className="badge badge--hotlist-always">Hotlist on</span>
+                  {hotlistAlertCount > 0 ? (
+                    <span className="badge badge--critical">{hotlistAlertCount} hotlist</span>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+            <div className="map-summary-grid">
+              <div className="map-summary-card">
+                <span className="panel-label">Route HUD</span>
+                <strong>{routeUnitLabel}</strong>
+                <div className="map-summary-card__grid">
+                  <StatusLine label="ETA" value={routeEtaLabel} />
+                  <StatusLine label="Lead" value={routeLeadLabel} />
+                  <StatusLine label="Progress" value={`${routeProgressPercent.toFixed(0)}%`} />
+                  <StatusLine
+                    label="Scan mode"
+                    value={activeScanMode ? "Live scan" : navigationActive ? "Transit / classify" : "Idle"}
+                  />
+                  <StatusLine label="Scan gate" value={generalPopupsLive ? "General + hotlist" : "Hotlist only"} />
+                  <StatusLine label="Hotlist" value={hotlistAlertCount > 0 ? `${hotlistAlertCount} active` : "Clear"} />
+                </div>
+              </div>
+              <div className="map-summary-card">
+                <span className="panel-label">Mission stages</span>
+                <div className="map-stage-list">
+                  {routeStages.map((stage) => (
+                    <article
+                      key={stage.id}
+                      className={`map-stage-row map-stage-row--${stage.state} ${
+                        currentRouteStage.id === stage.id ? "is-current" : ""
+                      }`}
+                    >
+                      <div className="map-stage-row__meta">
+                        <strong>{stage.label}</strong>
+                        <span className={`badge ${routeStageTone(stage.state)}`}>{titleCaseLabel(stage.state)}</span>
+                      </div>
+                      <p>{stage.detail}</p>
+                    </article>
+                  ))}
+                </div>
+              </div>
+              <div className="map-summary-card">
+                <span className="panel-label">Crew and field status</span>
+                <div className="map-summary-card__grid">
+                  <StatusLine label="Crew live" value={`${activeSessionCount} sessions`} />
+                  <StatusLine label="Cameras" value={`${mapCameraNodes.length} mapped`} />
+                  <StatusLine label="Hotlist alerts" value={hotlistAlertCount > 0 ? `${hotlistAlertCount} active` : "Clear"} />
+                  <StatusLine label="Pinned work" value={selectedFollowUp ? followUpStatusLabel(selectedFollowUp.status) : "None"} />
+                  <StatusLine
+                    label="Dispatch"
+                    value={selectedAssignment ? assignmentStatusLabel(selectedAssignment.status) : "Pending"}
+                  />
+                </div>
+                <ul className="route-focus-list route-focus-list--compact">
+                  {routeFocusItems.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
               </div>
             </div>
           </PanelFrame>
@@ -1993,31 +2366,42 @@ function App() {
                 <span>Location</span>
                 <span>Action</span>
               </div>
-              {operatorAlerts.map((alert) => (
-                <button
-                  key={alert.id}
-                  className={`alert-row ${alert.id === selectedAlert.id ? "is-selected" : ""}`}
-                  type="button"
-                  onClick={() => {
-                    setSelectedAlertId(alert.id);
-                    setFocusedDetectionId(alert.detectionId ?? null);
-                  }}
-                >
-                  <span>{alert.time}</span>
-                  <span>
-                    <strong>{alert.plate}</strong>
-                    <em className={`badge badge--${severityTone(alert.severity)}`}>{alert.severity}</em>
-                  </span>
-                  <span>{scenarioLabels[alert.scenario]}</span>
-                  <span>{alert.location}</span>
-                  <span>{alert.routeAction}</span>
-                </button>
-              ))}
+              {operatorAlerts.map((alert) => {
+                const rowLiveAlert = liveAlertsByAlertId.get(alert.id);
+                const rowIsHotlist = rowLiveAlert ? !!rowLiveAlert.hotlist_entry_id : alert.severity === "critical";
+                return (
+                  <button
+                    key={alert.id}
+                    className={`alert-row ${alert.id === selectedAlert.id ? "is-selected" : ""}`}
+                    type="button"
+                    onClick={() => {
+                      setSelectedAlertId(alert.id);
+                      setFocusedDetectionId(alert.detectionId ?? null);
+                    }}
+                  >
+                    <span>{alert.time}</span>
+                    <span>
+                      <strong>{alert.plate}</strong>
+                      {rowIsHotlist ? (
+                        <em className="badge badge--critical">Hotlist</em>
+                      ) : (
+                        <em className={`badge badge--${severityTone(alert.severity)}`}>{alert.severity}</em>
+                      )}
+                    </span>
+                    <span>{scenarioLabels[alert.scenario]}</span>
+                    <span>{alert.location}</span>
+                    <span>{alert.routeAction}</span>
+                  </button>
+                );
+              })}
             </div>
             <div className="live-activity">
               <div className="live-activity__header">
                 <strong>Live popup activity</strong>
-                <span>{generalPopupsLive ? "Address scan and hotlist popups are flowing." : "Only hotlist popups are unsuppressed."}</span>
+                <span>
+                  {generalPopupsLive ? "General + hotlist popups live." : "Hotlist only. General popups suppressed."}
+                  {hotlistAlertCount > 0 ? ` ${hotlistAlertCount} hotlist alert${hotlistAlertCount === 1 ? "" : "s"} active.` : ""}
+                </span>
               </div>
               {popupHistory.length === 0 ? (
                 <div className="live-activity__row">
@@ -2340,22 +2724,42 @@ function App() {
         return (
           <PanelFrame panelId={panelId}>
             <div className="log-list">
-              {recoveryLogEntries.map((entry) => (
-                <div key={entry.id} className="log-row">
-                  <span
-                    className={`badge badge--${
-                      entry.status === "active" ? "good" : entry.status === "watch" ? "priority" : "muted"
-                    }`}
-                  >
-                    {entry.status}
-                  </span>
-                  <div>
-                    <strong>{entry.title}</strong>
-                    <p>{entry.plate}</p>
+              {recoveryLogEntries.map((entry) => {
+                const entryLiveAlert = liveOverview?.alerts.find((alert) => alert.alert_id === entry.id);
+                const entryIsHotlist = entryLiveAlert ? !!entryLiveAlert.hotlist_entry_id : entry.status === "active";
+                const entryFollowUp = liveFollowUps.find(
+                  (record) => record.detection_id === entryLiveAlert?.detection_id && record.status !== "resolved",
+                );
+                const entryAssignment = liveAssignments.find(
+                  (record) =>
+                    record.detection_id === entryLiveAlert?.detection_id &&
+                    record.status !== "completed" &&
+                    record.status !== "cancelled",
+                );
+                return (
+                  <div key={entry.id} className="log-row">
+                    <span
+                      className={`badge badge--${
+                        entry.status === "active" ? "good" : entry.status === "watch" ? "priority" : "muted"
+                      }`}
+                    >
+                      {entry.status}
+                    </span>
+                    <div>
+                      <strong>
+                        {entry.title}
+                        {entryIsHotlist ? " [Hotlist]" : ""}
+                      </strong>
+                      <p>
+                        {entry.plate}
+                        {entryFollowUp ? ` / Pinned ${followUpStatusLabel(entryFollowUp.status)}` : ""}
+                        {entryAssignment ? ` / ${assignmentStatusLabel(entryAssignment.status)}` : ""}
+                      </p>
+                    </div>
+                    <span>{entry.updatedAt}</span>
                   </div>
-                  <span>{entry.updatedAt}</span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </PanelFrame>
         );
@@ -3670,35 +4074,37 @@ function App() {
       </header>
 
       <section className="glance-strip" aria-label="Current cab summary">
-        <GlanceTile label="Primary target" value={selectedAlert.plate} sublabel={selectedAlert.vehicle} />
-        <GlanceTile label="Distance" value={currentDistanceLabel} sublabel={activeDestination} />
-        <GlanceTile label="Scan mode" value={navigationModeLabel} sublabel={addressDetectionEnabled ? "Address alerts armed" : "Address alerts off"} />
-        <GlanceTile label="Cameras" value={`${onlineCameraCount}/4`} sublabel={`${selectedCamera.label} selected`} />
-        <GlanceTile label="Alert policy" value="Hotlist always on" sublabel={generalPopupsLive ? "General popups live" : addressDetectionEnabled ? "Suppressed until arrival" : "Disabled by operator"} />
+        {glanceTiles.map((tile) => (
+          <GlanceTile key={tile.label} label={tile.label} value={tile.value} sublabel={tile.sublabel} />
+        ))}
       </section>
 
       <section className="mode-banner">
-        <span className={`badge ${liveDataSource === "live" ? "badge--good" : "badge--outlined"}`}>
-          {liveDataSource === "live" ? "Live API connected" : liveDataSource === "fallback" ? "Demo fallback" : "Demo data only"}
-        </span>
-        <span>Profile: {layout.profile}</span>
-        <span>API health: {liveHealthState}</span>
-        <span>Operator: {operatorDisplayName(currentOperator)}</span>
-        <span>Roles: {currentOperator.roles.map((role) => operatorRoleLabel(role)).join(", ") || "Local"}</span>
-        <span>
-          Active alerts: {activeAlertCount} / Active hotlists: {liveOverview ? activeHotlistCount : "demo"}
-        </span>
-        <span>
-          Follow-ups: {openFollowUpCount} / Dispatch: {activeAssignmentCount} / Crew: {activeSessionCount}
-        </span>
+        <div className="mode-banner__group">
+          <span className={`badge ${liveDataSource === "live" ? "badge--good" : "badge--outlined"}`}>
+            {liveDataSource === "live" ? "Live API" : liveDataSource === "fallback" ? "Demo fallback" : "Demo only"}
+          </span>
+          <span className={`badge ${activeScanMode ? "badge--scan-live" : navigationActive ? "badge--scan-bg" : "badge--outlined"}`}>
+            {activeScanMode ? "Scan live" : navigationActive ? "Transit" : "Idle"}
+          </span>
+          <span className="badge badge--hotlist-always">Hotlist always on</span>
+        </div>
+        <div className="mode-banner__divider" />
+        <div className="mode-banner__group">
+          <span>{operatorDisplayName(currentOperator)}</span>
+          <span>Alerts: {activeAlertCount}</span>
+          <span>Pins: {openFollowUpCount}</span>
+          <span>Dispatch: {activeAssignmentCount}</span>
+          <span>Crew: {activeSessionCount}</span>
+        </div>
+        <div className="mode-banner__divider" />
         <span>
           {generalPopupsLive
-            ? "Inside the destination radius. Address-based detections are surfacing as popup alerts."
+            ? "Inside radius. General + hotlist popups live."
             : !addressDetectionEnabled
-              ? "Address-based popup detection is disabled by the operator. Hotlist matches remain unsuppressed."
-              : "Outside the destination radius. General detections stay in the background until the operator enters the arrival ring."}
+              ? "Address popups off. Hotlist unsuppressed."
+              : "Outside radius. Background classify. Hotlist unsuppressed."}
         </span>
-        <span>Hotlist matches remain high-priority and never suppressed.</span>
         {liveError ? <span>{liveError}</span> : null}
         {operatorSessionError ? <span>{operatorSessionError}</span> : null}
       </section>
