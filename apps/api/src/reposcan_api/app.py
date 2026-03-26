@@ -6,11 +6,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException, Query, status
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.responses import FileResponse
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from reposcan_contracts.alert import AlertRecord, AlertStatus
+from reposcan_contracts.config.deployment import DeploymentConfig
+from reposcan_contracts.config.loader import load_deployment_config
 from reposcan_contracts.detection import DetectionRecord
 from reposcan_contracts.health import HealthResponse, HealthState
 from reposcan_contracts.hotlist import HotlistEntry
@@ -27,14 +31,24 @@ from reposcan_storage.service import (
 
 from .models import (
     AlertUpdateSubmission,
+    AlertSearchResponse,
+    ApiAuditEvent,
+    ApiVersionInfo,
+    AuditEventResponse,
+    AuditOutcome,
     DashboardCounts,
     DashboardOverview,
+    DetectionSearchResponse,
     DemoRunSubmission,
     DemoRunSummary,
     DemoRuntimeStatus,
     HotlistSubmission,
     ReviewSubmission,
+    SearchPageInfo,
+    SearchPlateMatchMode,
 )
+from .audit import ApiAuditLogger
+from .security import ApiAccessController, ApiPrincipalContext, principal_details
 
 
 def _utcnow() -> str:
@@ -173,15 +187,27 @@ def _build_demo_runtime_status(status: RuntimeDemoRunStatus) -> DemoRuntimeStatu
 def create_app(
     storage_service: StorageService | None = None,
     demo_run_manager: HeadlessDemoRunManager | None = None,
+    deployment_config: DeploymentConfig | None = None,
 ) -> FastAPI:
     service = storage_service or create_development_storage_service()
+    deployment = deployment_config or service.deployment_config or load_deployment_config("configs/deployments/local-dev.yaml")
     demo_manager = demo_run_manager or HeadlessDemoRunManager(storage_service=service)
+    audit_logger = ApiAuditLogger(
+        deployment.api.audit.log_root,
+        enabled=deployment.api.audit.enabled,
+        max_read_limit=deployment.api.audit.max_read_limit,
+    )
+    access_controller = ApiAccessController(deployment.api, audit_logger=audit_logger)
 
     app = FastAPI(
         title="RepoScan Pro API",
         version="0.1.0",
-        description="Edge-first API for health, detections, reviews, alerts, hotlists, and dashboard overview.",
+        description="Edge-first API for health, detections, alerts, reviews, hotlists, search, audit, and dashboard overview.",
+        docs_url="/docs" if deployment.api.hardening.expose_docs else None,
+        redoc_url="/redoc" if deployment.api.hardening.expose_docs else None,
+        openapi_url="/openapi.json" if deployment.api.hardening.expose_docs else None,
     )
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=deployment.api.hardening.trusted_hosts)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
@@ -194,6 +220,35 @@ def create_app(
     )
     app.state.storage_service = service
     app.state.demo_run_manager = demo_manager
+    app.state.deployment_config = deployment
+    app.state.audit_logger = audit_logger
+    app.state.access_controller = access_controller
+
+    @app.middleware("http")
+    async def request_context_middleware(request: Request, call_next):
+        request_id = request.headers.get("X-Request-Id") or f"req_{uuid4().hex[:12]}"
+        request.state.request_id = request_id
+        request.state.utcnow = _utcnow
+        try:
+            response = await call_next(request)
+        except Exception:
+            response = JSONResponse(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                content={"detail": "Internal server error", "request_id": request_id},
+            )
+        response.headers["X-Request-Id"] = request_id
+        response.headers["X-Api-Version"] = deployment.api.versioning.current_version
+        if deployment.api.hardening.add_security_headers:
+            response.headers["Cache-Control"] = "no-store"
+            response.headers["Referrer-Policy"] = "no-referrer"
+            response.headers["X-Content-Type-Options"] = "nosniff"
+            response.headers["X-Frame-Options"] = "DENY"
+        rate_limit_limit = getattr(request.state, "rate_limit_limit", None)
+        rate_limit_remaining = getattr(request.state, "rate_limit_remaining", None)
+        if rate_limit_limit is not None and rate_limit_remaining is not None:
+            response.headers["X-RateLimit-Limit"] = str(rate_limit_limit)
+            response.headers["X-RateLimit-Remaining"] = str(rate_limit_remaining)
+        return response
 
     def build_health_response() -> HealthResponse:
         dependencies = service.dependency_health()
@@ -206,12 +261,62 @@ def create_app(
             dependencies=dependencies,
         )
 
-    @app.get("/health", response_model=HealthResponse)
-    def get_health() -> HealthResponse:
+    def build_version_info() -> ApiVersionInfo:
+        return ApiVersionInfo(
+            service="api",
+            package_version=app.version,
+            api_version=deployment.api.versioning.current_version,
+            canonical_prefix=deployment.api.versioning.canonical_prefix,
+            legacy_routes_enabled=deployment.api.versioning.enable_legacy_routes,
+            auth_enabled=deployment.api.security.enabled,
+            rate_limit_enabled=deployment.api.rate_limit.enabled,
+        )
+
+    def record_audit(
+        request: Request,
+        *,
+        principal: ApiPrincipalContext | None,
+        action: str,
+        outcome: AuditOutcome,
+        target_type: str | None = None,
+        target_id: str | None = None,
+        details: dict[str, object] | None = None,
+    ) -> None:
+        if not deployment.api.audit.enabled:
+            return
+        principal_id, principal_roles = principal_details(principal)
+        audit_logger.record(
+            ApiAuditEvent(
+                event_id=f"audit_{uuid4().hex[:12]}",
+                occurred_at_utc=_utcnow(),
+                request_id=request.state.request_id,
+                principal_id=principal_id,
+                principal_roles=principal_roles,
+                action=action,
+                outcome=outcome,
+                method=request.method,
+                path=request.url.path,
+                target_type=target_type,
+                target_id=target_id,
+                details=details or {},
+            )
+        )
+
+    api_router = APIRouter()
+
+    @api_router.get("/health", response_model=HealthResponse)
+    def get_health(_principal: ApiPrincipalContext = Depends(access_controller.health_access)) -> HealthResponse:
         return build_health_response()
 
-    @app.get("/dashboard/overview", response_model=DashboardOverview)
-    def get_dashboard_overview(limit: int = Query(default=20, ge=1, le=100)) -> DashboardOverview:
+    @api_router.get("/version", response_model=ApiVersionInfo)
+    def get_version_info(_principal: ApiPrincipalContext = Depends(access_controller.version_access)) -> ApiVersionInfo:
+        return build_version_info()
+
+    @api_router.get("/dashboard/overview", response_model=DashboardOverview)
+    def get_dashboard_overview(
+        limit: int = Query(default=20, ge=1, le=100),
+        _principal: ApiPrincipalContext = Depends(access_controller.viewer_access),
+    ) -> DashboardOverview:
         detections = service.list_detections(limit=limit)
         alerts = service.list_alerts(limit=limit)
         hotlists = service.list_hotlists(limit=limit)
@@ -232,12 +337,114 @@ def create_app(
             popup_activity=popup_activity,
         )
 
-    @app.get("/demo/runtime", response_model=DemoRuntimeStatus)
-    def get_demo_runtime_status() -> DemoRuntimeStatus:
+    @api_router.get("/search/detections", response_model=DetectionSearchResponse)
+    def search_detections(
+        request: Request,
+        plate: str | None = Query(default=None),
+        plate_match: SearchPlateMatchMode = Query(default=SearchPlateMatchMode.contains),
+        start_utc: str | None = Query(default=None),
+        end_utc: str | None = Query(default=None),
+        camera_id: str | None = Query(default=None),
+        min_latitude: float | None = Query(default=None),
+        max_latitude: float | None = Query(default=None),
+        min_longitude: float | None = Query(default=None),
+        max_longitude: float | None = Query(default=None),
+        vehicle_color: str | None = Query(default=None),
+        vehicle_make: str | None = Query(default=None),
+        vehicle_model: str | None = Query(default=None),
+        vehicle_year: str | None = Query(default=None),
+        alert_status: AlertStatus | None = Query(default=None),
+        limit: int = Query(default=100, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
+        principal: ApiPrincipalContext = Depends(access_controller.viewer_access),
+    ) -> DetectionSearchResponse:
+        results, total = service.search_detections(
+            plate_query=plate,
+            plate_match_mode=plate_match.value,
+            start_timestamp_utc=start_utc,
+            end_timestamp_utc=end_utc,
+            camera_id=camera_id,
+            min_latitude=min_latitude,
+            max_latitude=max_latitude,
+            min_longitude=min_longitude,
+            max_longitude=max_longitude,
+            vehicle_color=vehicle_color,
+            vehicle_make=vehicle_make,
+            vehicle_model=vehicle_model,
+            vehicle_year=vehicle_year,
+            alert_status=alert_status,
+            limit=limit,
+            offset=offset,
+        )
+        record_audit(
+            request,
+            principal=principal,
+            action="search.detections",
+            outcome=AuditOutcome.success,
+            details={"plate": plate, "camera_id": camera_id, "limit": limit, "offset": offset, "total_results": total},
+        )
+        return DetectionSearchResponse(page=SearchPageInfo(total_results=total, limit=limit, offset=offset), results=results)
+
+    @api_router.get("/search/alerts", response_model=AlertSearchResponse)
+    def search_alerts(
+        request: Request,
+        plate: str | None = Query(default=None),
+        plate_match: SearchPlateMatchMode = Query(default=SearchPlateMatchMode.contains),
+        start_utc: str | None = Query(default=None),
+        end_utc: str | None = Query(default=None),
+        camera_id: str | None = Query(default=None),
+        min_latitude: float | None = Query(default=None),
+        max_latitude: float | None = Query(default=None),
+        min_longitude: float | None = Query(default=None),
+        max_longitude: float | None = Query(default=None),
+        vehicle_color: str | None = Query(default=None),
+        vehicle_make: str | None = Query(default=None),
+        vehicle_model: str | None = Query(default=None),
+        vehicle_year: str | None = Query(default=None),
+        status_filter: AlertStatus | None = Query(default=None, alias="status"),
+        limit: int = Query(default=100, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
+        principal: ApiPrincipalContext = Depends(access_controller.viewer_access),
+    ) -> AlertSearchResponse:
+        results, total = service.search_alerts(
+            plate_query=plate,
+            plate_match_mode=plate_match.value,
+            start_timestamp_utc=start_utc,
+            end_timestamp_utc=end_utc,
+            camera_id=camera_id,
+            min_latitude=min_latitude,
+            max_latitude=max_latitude,
+            min_longitude=min_longitude,
+            max_longitude=max_longitude,
+            vehicle_color=vehicle_color,
+            vehicle_make=vehicle_make,
+            vehicle_model=vehicle_model,
+            vehicle_year=vehicle_year,
+            alert_status=status_filter,
+            limit=limit,
+            offset=offset,
+        )
+        record_audit(
+            request,
+            principal=principal,
+            action="search.alerts",
+            outcome=AuditOutcome.success,
+            details={"plate": plate, "camera_id": camera_id, "limit": limit, "offset": offset, "total_results": total},
+        )
+        return AlertSearchResponse(page=SearchPageInfo(total_results=total, limit=limit, offset=offset), results=results)
+
+    @api_router.get("/demo/runtime", response_model=DemoRuntimeStatus)
+    def get_demo_runtime_status(
+        _principal: ApiPrincipalContext = Depends(access_controller.viewer_access),
+    ) -> DemoRuntimeStatus:
         return _build_demo_runtime_status(demo_manager.status())
 
-    @app.post("/demo/runs", response_model=DemoRuntimeStatus, status_code=status.HTTP_202_ACCEPTED)
-    def start_demo_run(submission: DemoRunSubmission) -> DemoRuntimeStatus:
+    @api_router.post("/demo/runs", response_model=DemoRuntimeStatus, status_code=status.HTTP_202_ACCEPTED)
+    def start_demo_run(
+        request: Request,
+        submission: DemoRunSubmission,
+        principal: ApiPrincipalContext = Depends(access_controller.operator_access),
+    ) -> DemoRuntimeStatus:
         try:
             run_status = demo_manager.start_run(
                 frames_directory=submission.frames_directory,
@@ -249,91 +456,141 @@ def create_app(
                 plate_text=submission.plate_text,
             )
         except DemoRunInProgressError as exc:
+            record_audit(request, principal=principal, action="demo.run.start", outcome=AuditOutcome.rejected, details={"detail": str(exc)})
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        record_audit(
+            request,
+            principal=principal,
+            action="demo.run.start",
+            outcome=AuditOutcome.success,
+            details={"frames_directory": submission.frames_directory, "sequence_id": submission.sequence_id},
+        )
         return _build_demo_runtime_status(run_status)
 
-    @app.get("/detections", response_model=list[DetectionRecord])
+    @api_router.get("/detections", response_model=list[DetectionRecord])
     def list_detections(
         camera_id: str | None = Query(default=None),
         limit: int = Query(default=100, ge=1, le=500),
+        _principal: ApiPrincipalContext = Depends(access_controller.viewer_access),
     ) -> list[DetectionRecord]:
         return service.list_detections(camera_id=camera_id, limit=limit)
 
-    @app.get("/detections/{detection_id}", response_model=DetectionRecord)
-    def get_detection(detection_id: str) -> DetectionRecord:
+    @api_router.get("/detections/{detection_id}", response_model=DetectionRecord)
+    def get_detection(
+        detection_id: str,
+        _principal: ApiPrincipalContext = Depends(access_controller.viewer_access),
+    ) -> DetectionRecord:
         detection = service.get_detection(detection_id)
         if detection is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Detection not found")
         return detection
 
-    @app.get("/detections/{detection_id}/frame")
-    def get_detection_frame(detection_id: str) -> FileResponse:
+    @api_router.get("/detections/{detection_id}/frame")
+    def get_detection_frame(
+        detection_id: str,
+        _principal: ApiPrincipalContext = Depends(access_controller.viewer_access),
+    ) -> FileResponse:
         detection = service.get_detection(detection_id)
         if detection is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Detection not found")
-
         media_path = _resolve_media_path(detection.image_path, service.media_layout.root)
         if media_path is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Frame image not found")
-
         return FileResponse(media_path)
 
-    @app.get("/detections/{detection_id}/plate-crop")
-    def get_detection_plate_crop(detection_id: str) -> FileResponse:
+    @api_router.get("/detections/{detection_id}/plate-crop")
+    def get_detection_plate_crop(
+        detection_id: str,
+        _principal: ApiPrincipalContext = Depends(access_controller.viewer_access),
+    ) -> FileResponse:
         detection = service.get_detection(detection_id)
         if detection is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Detection not found")
-
         media_path = _resolve_media_path(detection.plate_crop_path, service.media_layout.root)
         if media_path is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plate crop not found")
-
         return FileResponse(media_path)
 
-    @app.post("/reviews/{detection_id}", response_model=ReviewRecord, status_code=status.HTTP_201_CREATED)
-    def create_review(detection_id: str, submission: ReviewSubmission) -> ReviewRecord:
+    @api_router.post("/reviews/{detection_id}", response_model=ReviewRecord, status_code=status.HTTP_201_CREATED)
+    def create_review(
+        request: Request,
+        detection_id: str,
+        submission: ReviewSubmission,
+        principal: ApiPrincipalContext = Depends(access_controller.operator_access),
+    ) -> ReviewRecord:
         review = ReviewRecord(
             review_id=f"rev_{uuid4().hex[:12]}",
             detection_id=detection_id,
             action=submission.action,
-            operator_id=submission.operator_id,
+            operator_id=submission.operator_id or principal.principal_id,
             corrected_plate_text=submission.corrected_plate_text,
             notes=submission.notes,
             reviewed_at_utc=submission.reviewed_at_utc,
         )
         try:
-            return service.create_review(review)
+            created = service.create_review(review)
         except DetectionNotFoundError as exc:
+            record_audit(
+                request,
+                principal=principal,
+                action="review.create",
+                outcome=AuditOutcome.rejected,
+                target_type="detection",
+                target_id=detection_id,
+                details={"detail": "Detection not found"},
+            )
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Detection not found") from exc
+        record_audit(
+            request,
+            principal=principal,
+            action="review.create",
+            outcome=AuditOutcome.success,
+            target_type="detection",
+            target_id=detection_id,
+            details={"review_id": created.review_id, "action": created.action.value},
+        )
+        return created
 
-    @app.get("/reviews/{detection_id}", response_model=list[ReviewRecord])
-    def list_reviews(detection_id: str) -> list[ReviewRecord]:
+    @api_router.get("/reviews/{detection_id}", response_model=list[ReviewRecord])
+    def list_reviews(
+        detection_id: str,
+        _principal: ApiPrincipalContext = Depends(access_controller.viewer_access),
+    ) -> list[ReviewRecord]:
         detection = service.get_detection(detection_id)
         if detection is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Detection not found")
         return service.list_reviews(detection_id)
 
-    @app.get("/alerts", response_model=list[AlertRecord])
+    @api_router.get("/alerts", response_model=list[AlertRecord])
     def list_alerts(
         camera_id: str | None = Query(default=None),
         status_filter: AlertStatus | None = Query(default=None, alias="status"),
         limit: int = Query(default=100, ge=1, le=500),
+        _principal: ApiPrincipalContext = Depends(access_controller.viewer_access),
     ) -> list[AlertRecord]:
         return service.list_alerts(camera_id=camera_id, status=status_filter, limit=limit)
 
-    @app.get("/alerts/{alert_id}", response_model=AlertRecord)
-    def get_alert(alert_id: str) -> AlertRecord:
+    @api_router.get("/alerts/{alert_id}", response_model=AlertRecord)
+    def get_alert(
+        alert_id: str,
+        _principal: ApiPrincipalContext = Depends(access_controller.viewer_access),
+    ) -> AlertRecord:
         alert = service.get_alert(alert_id)
         if alert is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alert not found")
         return alert
 
-    @app.put("/alerts/{alert_id}", response_model=AlertRecord)
-    def update_alert(alert_id: str, submission: AlertUpdateSubmission) -> AlertRecord:
+    @api_router.put("/alerts/{alert_id}", response_model=AlertRecord)
+    def update_alert(
+        request: Request,
+        alert_id: str,
+        submission: AlertUpdateSubmission,
+        principal: ApiPrincipalContext = Depends(access_controller.operator_access),
+    ) -> AlertRecord:
         existing = service.get_alert(alert_id)
         if existing is None:
+            record_audit(request, principal=principal, action="alert.update", outcome=AuditOutcome.rejected, target_type="alert", target_id=alert_id, details={"detail": "Alert not found"})
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alert not found")
-
         alert = AlertRecord(
             alert_id=existing.alert_id,
             detection_id=existing.detection_id,
@@ -345,7 +602,7 @@ def create_app(
             match_type=existing.match_type,
             hotlist_label=existing.hotlist_label,
             notes=existing.notes,
-            response_operator_id=submission.operator_id,
+            response_operator_id=submission.operator_id or principal.principal_id,
             response_notes=submission.response_notes,
             updated_at_utc=_utcnow(),
             status=submission.status,
@@ -353,19 +610,34 @@ def create_app(
             gps_longitude=existing.gps_longitude,
         )
         try:
-            return service.update_alert(alert)
+            updated = service.update_alert(alert)
         except AlertNotFoundError as exc:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alert not found") from exc
+        record_audit(
+            request,
+            principal=principal,
+            action="alert.update",
+            outcome=AuditOutcome.success,
+            target_type="alert",
+            target_id=alert_id,
+            details={"status": updated.status.value, "response_operator_id": updated.response_operator_id},
+        )
+        return updated
 
-    @app.get("/hotlists", response_model=list[HotlistEntry])
+    @api_router.get("/hotlists", response_model=list[HotlistEntry])
     def list_hotlists(
         active_only: bool = Query(default=False),
         limit: int = Query(default=100, ge=1, le=500),
+        _principal: ApiPrincipalContext = Depends(access_controller.viewer_access),
     ) -> list[HotlistEntry]:
         return service.list_hotlists(active_only=active_only, limit=limit)
 
-    @app.post("/hotlists", response_model=HotlistEntry, status_code=status.HTTP_201_CREATED)
-    def create_hotlist(submission: HotlistSubmission) -> HotlistEntry:
+    @api_router.post("/hotlists", response_model=HotlistEntry, status_code=status.HTTP_201_CREATED)
+    def create_hotlist(
+        request: Request,
+        submission: HotlistSubmission,
+        principal: ApiPrincipalContext = Depends(access_controller.admin_access),
+    ) -> HotlistEntry:
         now = _utcnow()
         entry = HotlistEntry(
             entry_id=f"hl_{uuid4().hex[:12]}",
@@ -376,14 +648,21 @@ def create_app(
             created_at_utc=now,
             updated_at_utc=now,
         )
-        return service.create_hotlist(entry)
+        created = service.create_hotlist(entry)
+        record_audit(request, principal=principal, action="hotlist.create", outcome=AuditOutcome.success, target_type="hotlist", target_id=created.entry_id, details={"plate_text": created.plate_text, "active": created.active})
+        return created
 
-    @app.put("/hotlists/{entry_id}", response_model=HotlistEntry)
-    def update_hotlist(entry_id: str, submission: HotlistSubmission) -> HotlistEntry:
+    @api_router.put("/hotlists/{entry_id}", response_model=HotlistEntry)
+    def update_hotlist(
+        request: Request,
+        entry_id: str,
+        submission: HotlistSubmission,
+        principal: ApiPrincipalContext = Depends(access_controller.admin_access),
+    ) -> HotlistEntry:
         existing = service.get_hotlist(entry_id)
         if existing is None:
+            record_audit(request, principal=principal, action="hotlist.update", outcome=AuditOutcome.rejected, target_type="hotlist", target_id=entry_id, details={"detail": "Hotlist entry not found"})
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Hotlist entry not found")
-
         entry = HotlistEntry(
             entry_id=entry_id,
             plate_text=submission.plate_text,
@@ -394,8 +673,32 @@ def create_app(
             updated_at_utc=_utcnow(),
         )
         try:
-            return service.update_hotlist(entry)
+            updated = service.update_hotlist(entry)
         except HotlistNotFoundError as exc:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Hotlist entry not found") from exc
+        record_audit(request, principal=principal, action="hotlist.update", outcome=AuditOutcome.success, target_type="hotlist", target_id=entry_id, details={"active": updated.active, "label": updated.label})
+        return updated
 
+    @api_router.get("/audit/events", response_model=AuditEventResponse)
+    def list_audit_events(
+        limit: int = Query(default=100, ge=1, le=500),
+        principal_id: str | None = Query(default=None),
+        action_prefix: str | None = Query(default=None),
+        outcome: AuditOutcome | None = Query(default=None),
+        target_id: str | None = Query(default=None),
+        _principal: ApiPrincipalContext = Depends(access_controller.audit_access),
+    ) -> AuditEventResponse:
+        events = audit_logger.list_events(
+            limit=limit,
+            principal_id=principal_id,
+            action_prefix=action_prefix,
+            outcome=outcome.value if outcome is not None else None,
+            target_id=target_id,
+        )
+        return AuditEventResponse(events=events)
+
+    canonical_prefix = deployment.api.versioning.canonical_prefix.rstrip("/")
+    app.include_router(api_router, prefix=canonical_prefix)
+    if deployment.api.versioning.enable_legacy_routes:
+        app.include_router(api_router, include_in_schema=False)
     return app

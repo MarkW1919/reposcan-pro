@@ -32,6 +32,13 @@ class MetadataBackend(str, Enum):
     postgres = "postgres"
 
 
+class ApiRole(str, Enum):
+    viewer = "viewer"
+    operator = "operator"
+    admin = "admin"
+    integrator = "integrator"
+
+
 class EnabledServices(BaseModel):
     capture: bool = True
     preprocessing: bool = True
@@ -127,6 +134,61 @@ class RuntimeCompatibilityConfig(BaseModel):
     required_compute_capability: str | None = None
 
 
+class ApiSecurityPrincipal(BaseModel):
+    principal_id: str = Field(..., min_length=1)
+    api_key: str = Field(..., min_length=8)
+    roles: list[ApiRole] = Field(default_factory=lambda: [ApiRole.viewer])
+    display_name: str | None = None
+
+
+class ApiSecurityConfig(BaseModel):
+    enabled: bool = False
+    api_key_header: str = Field("X-RepoScan-Api-Key", min_length=1)
+    allow_unauthenticated_health: bool = True
+    allow_unauthenticated_version: bool = True
+    principals: list[ApiSecurityPrincipal] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_security_requirements(self) -> "ApiSecurityConfig":
+        if self.enabled and not self.principals:
+            raise ValueError("principals are required when API security is enabled")
+        return self
+
+
+class ApiAuditConfig(BaseModel):
+    enabled: bool = True
+    log_root: str = Field("./runtime/api-audit", min_length=1)
+    max_read_limit: int = Field(500, ge=1, le=5000)
+
+
+class ApiRateLimitConfig(BaseModel):
+    enabled: bool = True
+    requests_per_minute: int = Field(240, ge=1, le=100000)
+
+
+class ApiHardeningConfig(BaseModel):
+    trusted_hosts: list[str] = Field(
+        default_factory=lambda: ["127.0.0.1", "localhost", "testserver"],
+        min_length=1,
+    )
+    add_security_headers: bool = True
+    expose_docs: bool = True
+
+
+class ApiVersioningConfig(BaseModel):
+    current_version: str = Field("v1", min_length=1)
+    canonical_prefix: str = Field("/api/v1", min_length=1)
+    enable_legacy_routes: bool = True
+
+
+class ApiConfig(BaseModel):
+    security: ApiSecurityConfig = Field(default_factory=ApiSecurityConfig)
+    audit: ApiAuditConfig = Field(default_factory=ApiAuditConfig)
+    rate_limit: ApiRateLimitConfig = Field(default_factory=ApiRateLimitConfig)
+    hardening: ApiHardeningConfig = Field(default_factory=ApiHardeningConfig)
+    versioning: ApiVersioningConfig = Field(default_factory=ApiVersioningConfig)
+
+
 class DeploymentConfig(BaseModel):
     """Complete deployment profile loaded from configs/deployments/*.yaml."""
 
@@ -141,3 +203,4 @@ class DeploymentConfig(BaseModel):
     alert_delivery: AlertDeliveryConfig = Field(default_factory=AlertDeliveryConfig)
     performance: PerformanceConfig = Field(default_factory=PerformanceConfig)
     runtime: RuntimeCompatibilityConfig = Field(default_factory=RuntimeCompatibilityConfig)
+    api: ApiConfig = Field(default_factory=ApiConfig)

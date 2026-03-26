@@ -36,7 +36,7 @@ from reposcan_contracts.dataset import (
 from reposcan_contracts.training import DatasetAdapter, TrainingFramework
 from reposcan_contracts.config.model import ArtifactPathBase, ModelStackConfig, InferenceBackend
 from reposcan_contracts.config.pipeline import PipelineConfig, PlateDetectionStrategy, PreprocessingBackend
-from reposcan_contracts.config.deployment import DeploymentConfig, TargetHardware
+from reposcan_contracts.config.deployment import ApiRole, DeploymentConfig, TargetHardware
 
 
 CONFIGS = Path(__file__).parent.parent.parent / "configs"
@@ -287,6 +287,10 @@ class TestDeploymentConfigSchema:
         assert dep.storage_pressure.minimum_free_space_gb == pytest.approx(2.0)
         assert dep.remote_sync.enabled is False
         assert dep.alert_delivery.enabled is False
+        assert dep.api.security.enabled is False
+        assert dep.api.audit.enabled is True
+        assert dep.api.rate_limit.requests_per_minute == 240
+        assert dep.api.versioning.canonical_prefix == "/api/v1"
 
     def test_all_core_services_enabled(self):
         dep = load_deployment_config(CONFIGS / "deployments" / "local-dev.yaml")
@@ -319,6 +323,22 @@ class TestDeploymentConfigSchema:
         assert dep.runtime.required_cuda_version == "12.2"
         assert dep.runtime.required_tensorrt_version == "10.0.1"
         assert dep.runtime.required_compute_capability == "8.7"
+        assert dep.api.hardening.expose_docs is False
+        assert dep.api.rate_limit.requests_per_minute == 600
+
+    def test_secure_api_example_profile_parses(self):
+        dep = load_deployment_config(CONFIGS / "deployments" / "local-secure-api-example.yaml")
+        assert dep.api.security.enabled is True
+        assert dep.api.security.api_key_header == "X-RepoScan-Api-Key"
+        assert len(dep.api.security.principals) == 3
+        assert dep.api.security.principals[0].roles == [ApiRole.viewer]
+        assert dep.api.security.principals[2].roles == [
+            ApiRole.viewer,
+            ApiRole.operator,
+            ApiRole.admin,
+            ApiRole.integrator,
+        ]
+        assert dep.api.hardening.expose_docs is False
 
     def test_invalid_port_rejected(self):
         with pytest.raises(ValidationError):
@@ -326,6 +346,22 @@ class TestDeploymentConfigSchema:
                 "deployment_name": "bad",
                 "infrastructure": {"api_port": 99999},
             })
+
+    def test_enabled_api_security_requires_principals(self, tmp_path):
+        bad = tmp_path / "bad-secure.yaml"
+        bad.write_text(
+            "\n".join(
+                [
+                    "deployment_name: bad-secure",
+                    "api:",
+                    "  security:",
+                    "    enabled: true",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        with pytest.raises(ConfigLoadError):
+            load_deployment_config(bad)
 
     def test_non_mapping_yaml_raises_config_load_error(self, tmp_path):
         bad = tmp_path / "dep.yaml"

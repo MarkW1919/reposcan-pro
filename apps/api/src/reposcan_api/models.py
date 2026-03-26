@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from enum import Enum
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -94,3 +95,62 @@ class DashboardOverview(BaseModel):
     alerts: list[AlertRecord]
     hotlists: list[HotlistEntry]
     popup_activity: list[PopupActivityEvent]
+
+
+class SearchPlateMatchMode(str, Enum):
+    contains = "contains"
+    exact = "exact"
+    prefix = "prefix"
+    suffix = "suffix"
+
+
+class SearchPageInfo(BaseModel):
+    total_results: int = Field(..., ge=0)
+    limit: int = Field(..., ge=1)
+    offset: int = Field(..., ge=0)
+
+
+class DetectionSearchResponse(BaseModel):
+    page: SearchPageInfo
+    results: list[DetectionRecord]
+
+
+class AlertSearchResponse(BaseModel):
+    page: SearchPageInfo
+    results: list[AlertRecord]
+
+
+class ApiVersionInfo(BaseModel):
+    service: str = Field(..., description="Logical service identifier")
+    package_version: str = Field(..., description="Application package version")
+    api_version: str = Field(..., description="Current external API version label")
+    canonical_prefix: str = Field(..., description="Canonical route prefix for supported endpoints")
+    legacy_routes_enabled: bool = Field(..., description="Whether unversioned compatibility aliases are active")
+    auth_enabled: bool = Field(..., description="Whether API authentication is required for non-public routes")
+    rate_limit_enabled: bool = Field(..., description="Whether request throttling is active")
+
+
+class AuditOutcome(str, Enum):
+    success = "success"
+    denied = "denied"
+    rejected = "rejected"
+    error = "error"
+
+
+class ApiAuditEvent(BaseModel):
+    event_id: str = Field(..., min_length=1)
+    occurred_at_utc: UtcTimestamp
+    request_id: str = Field(..., min_length=1)
+    principal_id: str | None = None
+    principal_roles: list[str] = Field(default_factory=list)
+    action: str = Field(..., min_length=1)
+    outcome: AuditOutcome
+    method: str = Field(..., min_length=1)
+    path: str = Field(..., min_length=1)
+    target_type: str | None = None
+    target_id: str | None = None
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class AuditEventResponse(BaseModel):
+    events: list[ApiAuditEvent]

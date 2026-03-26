@@ -61,3 +61,27 @@ runtime:
   required_cuda_version: "12.2"
   required_tensorrt_version: "10.0.1"
   required_compute_capability: "8.7"
+
+api:
+  security:
+    enabled: false
+    allow_unauthenticated_health: true
+    allow_unauthenticated_version: true
+  audit:
+    enabled: true
+    log_root: "./runtime/api-audit"
+    max_read_limit: 1000
+  rate_limit:
+    enabled: true
+    requests_per_minute: 600
+  hardening:
+    trusted_hosts:
+      - "127.0.0.1"
+      - "localhost"
+      - "testserver"
+    add_security_headers: true
+    expose_docs: false
+  versioning:
+    current_version: "v1"
+    canonical_prefix: "/api/v1"
+    enable_legacy_routes: true

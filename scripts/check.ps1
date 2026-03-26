@@ -33,6 +33,7 @@ $requiredFiles = @(
     "docs/PROMOTED_MODEL_BENCHMARKS.md",
     "docs/DEPLOYMENT.md",
     "docs/API_CONTRACTS.md",
+    "docs/API_INTEGRATION_GUIDE.md",
     "docs/UI_WORKFLOWS.md",
     "docs/DECISIONS.md"
 )

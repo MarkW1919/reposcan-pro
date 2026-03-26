@@ -8,6 +8,7 @@ import zipfile
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import TypeVar
 
 from reposcan_contracts.alert import AlertRecord, AlertStatus
 from reposcan_contracts.config.deployment import (
@@ -52,6 +53,70 @@ def _utcnow() -> str:
 
 def _parse_utc(timestamp_utc: str) -> datetime:
     return datetime.fromisoformat(timestamp_utc.replace("Z", "+00:00")).astimezone(timezone.utc)
+
+
+def _normalize_search_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip().upper()
+    return normalized or None
+
+
+def _matches_plate_query(plate_text: str | None, query: str | None, *, mode: str) -> bool:
+    normalized_query = _normalize_search_text(query)
+    if normalized_query is None:
+        return True
+    normalized_plate = _normalize_search_text(plate_text)
+    if normalized_plate is None:
+        return False
+    if mode == "exact":
+        return normalized_plate == normalized_query
+    if mode == "prefix":
+        return normalized_plate.startswith(normalized_query)
+    if mode == "suffix":
+        return normalized_plate.endswith(normalized_query)
+    return normalized_query in normalized_plate
+
+
+def _matches_timestamp_window(timestamp_utc: str, start_utc: str | None, end_utc: str | None) -> bool:
+    parsed = _parse_utc(timestamp_utc)
+    if start_utc is not None and parsed < _parse_utc(start_utc):
+        return False
+    if end_utc is not None and parsed > _parse_utc(end_utc):
+        return False
+    return True
+
+
+def _matches_gps_bounds(
+    latitude: float | None,
+    longitude: float | None,
+    *,
+    min_latitude: float | None,
+    max_latitude: float | None,
+    min_longitude: float | None,
+    max_longitude: float | None,
+) -> bool:
+    bounds_active = any(value is not None for value in (min_latitude, max_latitude, min_longitude, max_longitude))
+    if not bounds_active:
+        return True
+    if latitude is None or longitude is None:
+        return False
+    if min_latitude is not None and latitude < min_latitude:
+        return False
+    if max_latitude is not None and latitude > max_latitude:
+        return False
+    if min_longitude is not None and longitude < min_longitude:
+        return False
+    if max_longitude is not None and longitude > max_longitude:
+        return False
+    return True
+
+
+PaginatedT = TypeVar("PaginatedT")
+
+
+def _paginate(items: list[PaginatedT], *, limit: int, offset: int) -> list[PaginatedT]:
+    return items[offset : offset + limit]
 
 
 @dataclass(frozen=True)
@@ -181,6 +246,138 @@ class StorageService:
         if self.repository.get_hotlist(entry.entry_id) is None:
             raise HotlistNotFoundError(entry.entry_id)
         return self.repository.upsert_hotlist(entry)
+
+    def search_detections(
+        self,
+        *,
+        plate_query: str | None = None,
+        plate_match_mode: str = "contains",
+        start_timestamp_utc: str | None = None,
+        end_timestamp_utc: str | None = None,
+        camera_id: str | None = None,
+        min_latitude: float | None = None,
+        max_latitude: float | None = None,
+        min_longitude: float | None = None,
+        max_longitude: float | None = None,
+        vehicle_color: str | None = None,
+        vehicle_make: str | None = None,
+        vehicle_model: str | None = None,
+        vehicle_year: str | None = None,
+        alert_status: AlertStatus | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[list[DetectionRecord], int]:
+        detections = self.repository.list_detections(limit=100_000)
+        matching_alert_detection_ids: set[str] | None = None
+        if alert_status is not None:
+            matching_alert_detection_ids = {
+                alert.detection_id
+                for alert in self.repository.list_alerts(status=alert_status, limit=100_000)
+            }
+
+        normalized_color = _normalize_search_text(vehicle_color)
+        normalized_make = _normalize_search_text(vehicle_make)
+        normalized_model = _normalize_search_text(vehicle_model)
+        normalized_year = _normalize_search_text(vehicle_year)
+
+        matches: list[DetectionRecord] = []
+        for detection in detections:
+            if camera_id is not None and detection.camera_id != camera_id:
+                continue
+            if matching_alert_detection_ids is not None and detection.detection_id not in matching_alert_detection_ids:
+                continue
+            if not _matches_plate_query(detection.plate_text, plate_query, mode=plate_match_mode):
+                continue
+            if not _matches_timestamp_window(detection.timestamp_utc, start_timestamp_utc, end_timestamp_utc):
+                continue
+            if not _matches_gps_bounds(
+                detection.gps_latitude,
+                detection.gps_longitude,
+                min_latitude=min_latitude,
+                max_latitude=max_latitude,
+                min_longitude=min_longitude,
+                max_longitude=max_longitude,
+            ):
+                continue
+            if normalized_color is not None and _normalize_search_text(detection.vehicle_color) != normalized_color:
+                continue
+            if normalized_make is not None and _normalize_search_text(detection.vehicle_make) != normalized_make:
+                continue
+            if normalized_model is not None and _normalize_search_text(detection.vehicle_model) != normalized_model:
+                continue
+            if normalized_year is not None and _normalize_search_text(detection.optional_vehicle_year) != normalized_year:
+                continue
+            matches.append(detection)
+
+        return _paginate(matches, limit=limit, offset=offset), len(matches)
+
+    def search_alerts(
+        self,
+        *,
+        plate_query: str | None = None,
+        plate_match_mode: str = "contains",
+        start_timestamp_utc: str | None = None,
+        end_timestamp_utc: str | None = None,
+        camera_id: str | None = None,
+        min_latitude: float | None = None,
+        max_latitude: float | None = None,
+        min_longitude: float | None = None,
+        max_longitude: float | None = None,
+        vehicle_color: str | None = None,
+        vehicle_make: str | None = None,
+        vehicle_model: str | None = None,
+        vehicle_year: str | None = None,
+        alert_status: AlertStatus | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[list[AlertRecord], int]:
+        alerts = self.repository.list_alerts(limit=100_000)
+        detections_by_id = {
+            detection.detection_id: detection
+            for detection in self.repository.list_detections(limit=100_000)
+        }
+
+        normalized_color = _normalize_search_text(vehicle_color)
+        normalized_make = _normalize_search_text(vehicle_make)
+        normalized_model = _normalize_search_text(vehicle_model)
+        normalized_year = _normalize_search_text(vehicle_year)
+
+        matches: list[AlertRecord] = []
+        for alert in alerts:
+            if camera_id is not None and alert.camera_id != camera_id:
+                continue
+            if alert_status is not None and alert.status != alert_status:
+                continue
+            if not _matches_plate_query(alert.matched_plate_text, plate_query, mode=plate_match_mode):
+                continue
+            if not _matches_timestamp_window(alert.timestamp_utc, start_timestamp_utc, end_timestamp_utc):
+                continue
+
+            detection = detections_by_id.get(alert.detection_id)
+            latitude = alert.gps_latitude if alert.gps_latitude is not None else detection.gps_latitude if detection else None
+            longitude = (
+                alert.gps_longitude if alert.gps_longitude is not None else detection.gps_longitude if detection else None
+            )
+            if not _matches_gps_bounds(
+                latitude,
+                longitude,
+                min_latitude=min_latitude,
+                max_latitude=max_latitude,
+                min_longitude=min_longitude,
+                max_longitude=max_longitude,
+            ):
+                continue
+            if normalized_color is not None and _normalize_search_text(detection.vehicle_color if detection else None) != normalized_color:
+                continue
+            if normalized_make is not None and _normalize_search_text(detection.vehicle_make if detection else None) != normalized_make:
+                continue
+            if normalized_model is not None and _normalize_search_text(detection.vehicle_model if detection else None) != normalized_model:
+                continue
+            if normalized_year is not None and _normalize_search_text(detection.optional_vehicle_year if detection else None) != normalized_year:
+                continue
+            matches.append(alert)
+
+        return _paginate(matches, limit=limit, offset=offset), len(matches)
 
     def _retention_config(self) -> MediaRetentionConfig:
         if self.deployment_config is not None:

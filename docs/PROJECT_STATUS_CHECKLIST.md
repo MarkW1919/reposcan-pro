@@ -6,7 +6,7 @@ Status convention:
 - completed items use `- [x] ~~item~~`
 - incomplete items use `- [ ] item`
 
-Last reviewed against repo state: `2026-03-24`
+Last reviewed against repo state: `2026-03-25`
 
 ## 1. Program Foundations
 
@@ -112,11 +112,11 @@ Last reviewed against repo state: `2026-03-24`
 - [x] ~~Alert list, detail, and update endpoints exist.~~
 - [x] ~~Hotlist list, create, and update endpoints exist.~~
 - [x] ~~Demo runtime start and status endpoints exist.~~
-- [ ] Search endpoints exist for plate, date, camera, GPS region, vehicle attributes, and alert state.
-- [ ] Authentication and authorization are implemented.
-- [ ] Audit logging surfaces are implemented.
-- [ ] API rate limiting and production hardening are implemented.
-- [ ] API versioning and external integration guidance are finalized.
+- [x] ~~Search endpoints exist for plate, date, camera, GPS region, vehicle attributes, and alert state.~~
+- [x] ~~Authentication and authorization are implemented.~~
+- [x] ~~Audit logging surfaces are implemented.~~
+- [x] ~~API rate limiting and production hardening are implemented.~~
+- [x] ~~API versioning and external integration guidance are finalized.~~
 
 ## 9. UI Application And Operator Workflows
 

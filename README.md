@@ -17,6 +17,7 @@ This repository currently contains:
 - deployment-aware storage maintenance, evidence export packaging, and JSON recovery hardening
 - a deployment-selectable Postgres/PostGIS metadata backend while local-dev remains json-backed by default
 - HTTP remote sync replay and alert webhook delivery validated against a real local fixture endpoint
+- versioned API search, auth, audit, and rate-limit hardening for external integrations
 - bootstrap, build, and validation scripts for the current integrated slice
 
 The design-first scaffold has already been turned into a working implementation foundation.
@@ -62,6 +63,7 @@ The canonical mission and rules live in [CLAUDE.md](CLAUDE.md).
 - [Preprocessing Benchmark](docs/PREPROCESSING_BENCHMARK.md)
 - [Deployment](docs/DEPLOYMENT.md)
 - [API Contracts](docs/API_CONTRACTS.md)
+- [API Integration Guide](docs/API_INTEGRATION_GUIDE.md)
 - [UI Workflows](docs/UI_WORKFLOWS.md)
 - [Operations And Logging](docs/OPERATIONS_AND_LOGGING.md)
 - [Project Status Checklist](docs/PROJECT_STATUS_CHECKLIST.md)

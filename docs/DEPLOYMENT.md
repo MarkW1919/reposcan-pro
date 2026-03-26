@@ -83,6 +83,18 @@ Refresh the repo-tracked evidence for these integrations with:
 .\.venv\Scripts\python.exe .\scripts\generate_sync_remote_evidence.py --output-root .\services\sync\fixtures --overwrite
 ```
 
+## API Security And Hardening
+
+Deployment profiles now describe API-specific integration behavior under `api`:
+
+- `api.versioning` sets the canonical external prefix such as `/api/v1`
+- `api.security` controls optional API-key authentication and role mapping
+- `api.audit` controls the append-only audit log root and readback limits
+- `api.rate_limit` controls request throttling
+- `api.hardening` controls trusted hosts, security headers, and docs exposure
+
+The repository keeps `local-dev` open for the existing UI and demo workflows, and ships `configs/deployments/local-secure-api-example.yaml` as an example-only secured profile for integration testing. Replace those example tokens in a private deployment copy before exposing the API outside a local workstation.
+
 ## Runtime Bundle Validation
 
 Before an external promoted bundle is treated as deployment-ready, validate it against the intended deployment profile:

@@ -6,6 +6,8 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from reposcan_contracts.alert import AlertRecord
+from reposcan_contracts.config.deployment import DeploymentConfig
+from reposcan_contracts.config.loader import load_deployment_config
 from reposcan_contracts.detection import DetectionRecord
 from reposcan_contracts.hotlist import HotlistEntry
 from reposcan_api import create_app
@@ -29,6 +31,46 @@ def _seeded_client(tmp_path) -> tuple[TestClient, StorageService]:
         )
     )
     return TestClient(create_app(storage_service=service)), service
+
+
+def _secure_deployment(tmp_path, *, requests_per_minute: int = 120) -> DeploymentConfig:
+    deployment = load_deployment_config("configs/deployments/local-secure-api-example.yaml")
+    payload = deployment.model_dump(mode="json")
+    payload["api"]["audit"]["log_root"] = str(tmp_path / "api-audit")
+    payload["api"]["rate_limit"]["requests_per_minute"] = requests_per_minute
+    return DeploymentConfig.model_validate(payload)
+
+
+def _secure_seeded_client(tmp_path, *, requests_per_minute: int = 120) -> tuple[TestClient, StorageService]:
+    repository = InMemoryStorageRepository()
+    deployment = _secure_deployment(tmp_path, requests_per_minute=requests_per_minute)
+    service = StorageService(
+        repository=repository,
+        media_root=tmp_path / "media",
+        deployment_config=deployment,
+    )
+    service.store_detection(
+        DetectionRecord.model_validate(
+            {
+                "detection_id": "det_20260320_000001",
+                "timestamp_utc": "2026-03-20T04:10:00Z",
+                "camera_id": "cam_north_gate_01",
+                "gps_latitude": 37.42052,
+                "gps_longitude": -122.08091,
+                "plate_text": "6BZN220",
+                "plate_confidence": 0.95,
+                "vehicle_color": "white",
+                "vehicle_make": "toyota",
+                "vehicle_model": "camry",
+                "optional_vehicle_year": "2019",
+                "vehicle_bbox": {"x": 412, "y": 220, "w": 301, "h": 184},
+                "image_path": "media/frames/cam_north_gate_01/frame_000542.jpg",
+                "frame_number": 542,
+            }
+        )
+    )
+    client = TestClient(create_app(storage_service=service, deployment_config=deployment))
+    return client, service
 
 
 def _write_demo_image(path, *, color: tuple[int, int, int]) -> None:
@@ -509,3 +551,197 @@ def test_demo_runtime_reports_failures_for_missing_frame_folder(tmp_path):
     completed = _wait_for_demo_run_completion(client)
     assert completed["state"] == "failed"
     assert "No frame files found" in completed["error_message"]
+
+
+def test_versioned_routes_and_security_headers_work_with_legacy_aliases(tmp_path):
+    client, _ = _seeded_client(tmp_path)
+
+    legacy = client.get("/health")
+    versioned = client.get("/api/v1/health")
+    version_info = client.get("/api/v1/version")
+
+    assert legacy.status_code == 200
+    assert versioned.status_code == 200
+    assert version_info.status_code == 200
+    assert versioned.headers["x-api-version"] == "v1"
+    assert "x-request-id" in {key.lower() for key in versioned.headers.keys()}
+    assert versioned.headers["cache-control"] == "no-store"
+    assert version_info.json()["canonical_prefix"] == "/api/v1"
+    assert version_info.json()["legacy_routes_enabled"] is True
+
+
+def test_versioned_detection_search_supports_plate_time_gps_vehicle_and_alert_filters(tmp_path):
+    client, service = _seeded_client(tmp_path)
+    service.store_detection(
+        DetectionRecord.model_validate(
+            {
+                "detection_id": "det_search_match",
+                "timestamp_utc": "2026-03-20T04:11:00Z",
+                "camera_id": "cam_north_gate_01",
+                "gps_latitude": 37.42055,
+                "gps_longitude": -122.08095,
+                "plate_text": "6BZN220",
+                "plate_confidence": 0.94,
+                "vehicle_color": "white",
+                "vehicle_make": "toyota",
+                "vehicle_model": "camry",
+                "optional_vehicle_year": "2019",
+                "vehicle_bbox": {"x": 412, "y": 220, "w": 301, "h": 184},
+                "image_path": "media/frames/cam_north_gate_01/frame_000543.jpg",
+                "frame_number": 543,
+            }
+        )
+    )
+    service.store_detection(
+        DetectionRecord.model_validate(
+            {
+                "detection_id": "det_search_other",
+                "timestamp_utc": "2026-03-20T04:12:00Z",
+                "camera_id": "cam_lot_east_03",
+                "gps_latitude": 35.10000,
+                "gps_longitude": -120.20000,
+                "plate_text": "8XYZ999",
+                "plate_confidence": 0.74,
+                "vehicle_color": "black",
+                "vehicle_make": "ford",
+                "vehicle_model": "focus",
+                "optional_vehicle_year": "2015",
+                "vehicle_bbox": {"x": 404, "y": 218, "w": 314, "h": 186},
+                "image_path": "media/frames/cam_lot_east_03/frame_000644.jpg",
+                "frame_number": 644,
+            }
+        )
+    )
+    service.create_hotlist(
+        HotlistEntry.model_validate(
+            {
+                "entry_id": "hl_search",
+                "plate_text": "6BZN220",
+                "label": "Search target",
+                "created_at_utc": "2026-03-20T04:00:00Z",
+                "updated_at_utc": "2026-03-20T04:00:00Z",
+            }
+        )
+    )
+    service.store_alert(
+        AlertRecord.model_validate(
+            {
+                "alert_id": "alert_search",
+                "detection_id": "det_search_match",
+                "hotlist_entry_id": "hl_search",
+                "timestamp_utc": "2026-03-20T04:11:30Z",
+                "camera_id": "cam_north_gate_01",
+                "matched_plate_text": "6BZN220",
+                "match_confidence": 0.95,
+                "match_type": "exact",
+                "hotlist_label": "Search target",
+                "status": "acknowledged",
+                "response_operator_id": "search_operator",
+                "updated_at_utc": "2026-03-20T04:12:00Z",
+            }
+        )
+    )
+
+    detection_response = client.get(
+        "/api/v1/search/detections",
+        params={
+            "plate": "BZN",
+            "plate_match": "contains",
+            "start_utc": "2026-03-20T04:10:30Z",
+            "end_utc": "2026-03-20T04:11:30Z",
+            "camera_id": "cam_north_gate_01",
+            "min_latitude": 37.42,
+            "max_latitude": 37.43,
+            "min_longitude": -122.09,
+            "max_longitude": -122.07,
+            "vehicle_color": "white",
+            "vehicle_make": "toyota",
+            "vehicle_model": "camry",
+            "vehicle_year": "2019",
+            "alert_status": "acknowledged",
+        },
+    )
+    alert_response = client.get(
+        "/api/v1/search/alerts",
+        params={
+            "plate": "6BZN",
+            "plate_match": "prefix",
+            "status": "acknowledged",
+            "vehicle_make": "toyota",
+            "camera_id": "cam_north_gate_01",
+        },
+    )
+
+    assert detection_response.status_code == 200
+    detection_payload = detection_response.json()
+    assert detection_payload["page"]["total_results"] == 1
+    assert detection_payload["results"][0]["detection_id"] == "det_search_match"
+
+    assert alert_response.status_code == 200
+    alert_payload = alert_response.json()
+    assert alert_payload["page"]["total_results"] == 1
+    assert alert_payload["results"][0]["alert_id"] == "alert_search"
+
+
+def test_secure_api_requires_credentials_and_enforces_roles(tmp_path):
+    client, _ = _secure_seeded_client(tmp_path)
+
+    unauthenticated = client.get("/api/v1/detections")
+    viewer_read = client.get("/api/v1/detections", headers={"X-RepoScan-Api-Key": "viewer-demo-token"})
+    viewer_hotlist_create = client.post(
+        "/api/v1/hotlists",
+        headers={"X-RepoScan-Api-Key": "viewer-demo-token"},
+        json={"plate_text": "8ABC123", "label": "Nope", "active": True},
+    )
+    operator_review = client.post(
+        "/api/v1/reviews/det_20260320_000001",
+        headers={"X-RepoScan-Api-Key": "operator-demo-token"},
+        json={"action": "confirm", "reviewed_at_utc": "2026-03-20T04:15:00Z"},
+    )
+    public_health = client.get("/api/v1/health")
+
+    assert unauthenticated.status_code == 401
+    assert viewer_read.status_code == 200
+    assert viewer_hotlist_create.status_code == 403
+    assert operator_review.status_code == 201
+    assert public_health.status_code == 200
+
+
+def test_secure_api_writes_audit_events_and_exposes_audit_surface(tmp_path):
+    client, _ = _secure_seeded_client(tmp_path)
+    viewer_headers = {"X-RepoScan-Api-Key": "viewer-demo-token"}
+    admin_headers = {"X-RepoScan-Api-Key": "admin-demo-token"}
+
+    search_response = client.get("/api/v1/search/detections", headers=viewer_headers, params={"plate": "6BZN"})
+    hotlist_response = client.post(
+        "/api/v1/hotlists",
+        headers=admin_headers,
+        json={"plate_text": "8ABC123", "label": "Case 42", "notes": "Audit test", "active": True},
+    )
+    audit_response = client.get("/api/v1/audit/events", headers=admin_headers)
+
+    assert search_response.status_code == 200
+    assert hotlist_response.status_code == 201
+    assert audit_response.status_code == 200
+    events = audit_response.json()["events"]
+    actions = [event["action"] for event in events]
+    assert "hotlist.create" in actions
+    assert "search.detections" in actions
+    hotlist_event = next(event for event in events if event["action"] == "hotlist.create")
+    assert hotlist_event["principal_id"] == "admin_demo"
+    assert hotlist_event["target_type"] == "hotlist"
+
+
+def test_secure_api_rate_limits_repeated_requests(tmp_path):
+    client, _ = _secure_seeded_client(tmp_path, requests_per_minute=2)
+    headers = {"X-RepoScan-Api-Key": "viewer-demo-token"}
+
+    first = client.get("/api/v1/detections", headers=headers)
+    second = client.get("/api/v1/detections", headers=headers)
+    third = client.get("/api/v1/detections", headers=headers)
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert third.status_code == 429
+    assert third.json()["detail"] == "Rate limit exceeded"
+    assert int(third.headers["retry-after"]) >= 1

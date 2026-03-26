@@ -1,6 +1,6 @@
 # API_CONTRACTS.md
 
-This document defines the initial contract direction for detections, alerts, and local-first persistence behavior.
+This document defines the canonical API contract direction for detections, alerts, search, and local-first persistence behavior.
 
 ## Contract Principles
 
@@ -39,14 +39,42 @@ This document defines the initial contract direction for detections, alerts, and
 | `local_only_flag` | boolean | True until sync policy clears it |
 | `sync_status` | string | Pending, synced, failed, or skipped |
 
-## Initial API Surface
+## Canonical Versioning
 
-- `GET /health` for service health and dependency summaries
-- `GET /detections` for filtered retrieval of detection records
-- `GET /detections/{id}` for full detection detail
-- `POST /reviews/{id}` for operator review or OCR correction actions
-- `GET /alerts` for recent or active hotlist alerts
-- `POST /hotlists` and `PUT /hotlists/{id}` for local hotlist management
+The canonical external API surface is versioned under:
+
+- `/api/v1`
+
+Compatibility aliases without the version prefix may remain enabled for local clients, but new integrations should treat `/api/v1` as authoritative.
+
+Use:
+
+- `GET /api/v1/version`
+
+to discover the active package version, API version, canonical prefix, and whether auth and rate limiting are enabled.
+
+## Current API Surface
+
+- `GET /api/v1/health` for service health and dependency summaries
+- `GET /api/v1/dashboard/overview` for the operator summary surface
+- `GET /api/v1/detections` for detection retrieval
+- `GET /api/v1/detections/{id}` for full detection detail
+- `GET /api/v1/detections/{id}/frame` and `GET /api/v1/detections/{id}/plate-crop` for evidence media
+- `GET /api/v1/search/detections` for plate, date, camera, GPS-region, vehicle-attribute, and related alert-state filtering
+- `GET /api/v1/search/alerts` for alert-state and joined detection-attribute filtering
+- `POST /api/v1/reviews/{id}` and `GET /api/v1/reviews/{id}` for operator review workflows
+- `GET /api/v1/alerts`, `GET /api/v1/alerts/{id}`, and `PUT /api/v1/alerts/{id}` for alert lifecycle management
+- `GET /api/v1/hotlists`, `POST /api/v1/hotlists`, and `PUT /api/v1/hotlists/{id}` for hotlist management
+- `GET /api/v1/demo/runtime` and `POST /api/v1/demo/runs` for app-driven headless ingest control
+- `GET /api/v1/audit/events` for audit visibility over secured searches and operator mutations
+
+## Auth, Audit, And Hardening
+
+- authentication can be enabled per deployment profile
+- authorization is role-based at the API boundary
+- operator-visible mutations and secured search actions are audit logged
+- request throttling and security headers are deployment-configurable
+- trusted hosts and OpenAPI exposure are deployment-configurable
 
 ## Local-First Semantics
 
@@ -92,5 +120,6 @@ This document defines the initial contract direction for detections, alerts, and
 ## Related Documents
 
 - [Architecture](ARCHITECTURE.md)
+- [API Integration Guide](API_INTEGRATION_GUIDE.md)
 - [UI Workflows](UI_WORKFLOWS.md)
 - [Requirements](REQUIREMENTS.md)

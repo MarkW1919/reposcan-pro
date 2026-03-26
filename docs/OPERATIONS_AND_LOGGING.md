@@ -141,11 +141,14 @@ Operational notes:
 Required log events:
 - service startup and dependency health summary
 - request handling failures with route and error type
+- versioned-route, auth, and rate-limit rejection events when enabled
 - operator mutation events for reviews, hotlists, alerts, and demo runtime control
+- secured search actions and audit-log reads when they matter for traceability
 - media-endpoint misses for frame and crop retrieval
 
 Operational notes:
 - the API is the audit boundary for operator-visible mutations
+- preserve `request_id` so API logs, audit events, and client-visible failures can be correlated quickly
 - logs should make it possible to trace a user action to the affected record identifiers
 
 ## UI

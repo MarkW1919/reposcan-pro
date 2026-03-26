@@ -244,3 +244,10 @@ Maintenance rule:
 - Status: Accepted
 - Decision: Implement remote detection sync and optional alert fan-out with HTTP transports that send explicit idempotency keys and treat replay conflicts as successful delivery.
 - Rationale: Remote delivery must remain outside the mission-critical path, but it also needs a real transport and replay semantics that are testable against a live endpoint. HTTP plus idempotency keys gives the repo a portable baseline for upstream sync and webhook integrations without forcing the local-first pipeline to depend on upstream availability.
+
+## ADR-035 Section 8 API Uses Versioned Routes With Deployment-Driven Security
+
+- Date: 2026-03-25
+- Status: Accepted
+- Decision: Treat `/api/v1` as the canonical external API surface, while allowing optional unversioned compatibility aliases, deployment-driven API-key auth, coarse role checks, request throttling, and append-only audit logging at the API boundary.
+- Rationale: The API now serves both the local UI and external integrators. Versioning keeps the contract explicit, deployment-driven security keeps the local demo path flexible, and the API boundary is the right place to enforce role-aware mutations and preserve audit history for operator-visible actions.
