@@ -5,7 +5,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from reposcan_contracts.alert import AlertRecord
+from reposcan_contracts.dispatch import DispatchAssignmentRecord
 from reposcan_contracts.detection import DetectionRecord
+from reposcan_contracts.followup import FollowUpRecord
 from reposcan_contracts.hotlist import HotlistEntry
 from reposcan_contracts.review import ReviewRecord
 
@@ -171,6 +173,47 @@ def seed_development_operator_data(service: "StorageService") -> None:
         )
     ]
 
+    follow_ups = [
+        FollowUpRecord.model_validate(
+            {
+                "follow_up_id": "fu_20260320_000001",
+                "detection_id": "det_20260320_010001",
+                "alert_id": "alert_20260320_000001",
+                "plate_text": "6BZN220",
+                "priority": "critical",
+                "status": "open",
+                "created_by_operator_id": "cab_demo_01",
+                "assigned_operator_id": "tow_lead_02",
+                "summary": "Pin marina Camry until tow truck is staged.",
+                "notes": "Hold visual until the south lane is clear.",
+                "due_at_utc": "2026-03-20T01:30:00Z",
+                "created_at_utc": "2026-03-20T01:15:05Z",
+                "updated_at_utc": "2026-03-20T01:15:05Z",
+            }
+        )
+    ]
+
+    assignments = [
+        DispatchAssignmentRecord.model_validate(
+            {
+                "assignment_id": "asg_20260320_000001",
+                "detection_id": "det_20260320_010001",
+                "alert_id": "alert_20260320_000001",
+                "plate_text": "6BZN220",
+                "priority": "critical",
+                "status": "en_route",
+                "created_by_operator_id": "cab_demo_01",
+                "assigned_operator_id": "tow_lead_02",
+                "assigned_unit_label": "Truck 4",
+                "destination_label": "Shoreline Marina south lot",
+                "summary": "Tow team rolling toward the pinned Camry.",
+                "notes": "Approach from the south lane and keep cameras on the passenger side.",
+                "created_at_utc": "2026-03-20T01:15:10Z",
+                "updated_at_utc": "2026-03-20T01:18:00Z",
+            }
+        )
+    ]
+
     for detection in detections:
         service.store_detection(detection)
 
@@ -182,3 +225,9 @@ def seed_development_operator_data(service: "StorageService") -> None:
 
     for review in reviews:
         service.create_review(review)
+
+    for follow_up in follow_ups:
+        service.create_follow_up(follow_up)
+
+    for assignment in assignments:
+        service.create_assignment(assignment)

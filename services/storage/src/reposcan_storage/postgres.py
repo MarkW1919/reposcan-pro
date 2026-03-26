@@ -10,8 +10,11 @@ from typing import Any, Literal, TypeVar
 from pydantic import BaseModel
 
 from reposcan_contracts.alert import AlertRecord, AlertStatus
+from reposcan_contracts.dispatch import DispatchAssignmentRecord
 from reposcan_contracts.detection import DetectionRecord
+from reposcan_contracts.followup import FollowUpRecord, FollowUpStatus
 from reposcan_contracts.hotlist import HotlistEntry
+from reposcan_contracts.operator import OperatorSessionRecord
 from reposcan_contracts.review import ReviewRecord
 
 
@@ -114,6 +117,23 @@ class PostgresStorageRepository:
                 ON reviews (detection_id, reviewed_at_utc DESC);
                 """,
                 f"""
+                CREATE TABLE IF NOT EXISTS follow_ups (
+                    follow_up_id TEXT PRIMARY KEY,
+                    detection_id TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    updated_at_utc TEXT NOT NULL,
+                    payload_json {payload_type} NOT NULL
+                );
+                """,
+                """
+                CREATE INDEX IF NOT EXISTS idx_follow_ups_detection_updated
+                ON follow_ups (detection_id, updated_at_utc DESC);
+                """,
+                """
+                CREATE INDEX IF NOT EXISTS idx_follow_ups_status_updated
+                ON follow_ups (status, updated_at_utc DESC);
+                """,
+                f"""
                 CREATE TABLE IF NOT EXISTS alerts (
                     alert_id TEXT PRIMARY KEY,
                     detection_id TEXT NOT NULL,
@@ -132,6 +152,18 @@ class PostgresStorageRepository:
                 ON alerts (status, timestamp_utc DESC);
                 """,
                 f"""
+                CREATE TABLE IF NOT EXISTS assignments (
+                    assignment_id TEXT PRIMARY KEY,
+                    detection_id TEXT NOT NULL,
+                    updated_at_utc TEXT NOT NULL,
+                    payload_json {payload_type} NOT NULL
+                );
+                """,
+                """
+                CREATE INDEX IF NOT EXISTS idx_assignments_detection_updated
+                ON assignments (detection_id, updated_at_utc DESC);
+                """,
+                f"""
                 CREATE TABLE IF NOT EXISTS hotlists (
                     entry_id TEXT PRIMARY KEY,
                     active INTEGER NOT NULL,
@@ -142,6 +174,18 @@ class PostgresStorageRepository:
                 """
                 CREATE INDEX IF NOT EXISTS idx_hotlists_active_updated
                 ON hotlists (active, updated_at_utc DESC);
+                """,
+                f"""
+                CREATE TABLE IF NOT EXISTS operator_sessions (
+                    session_id TEXT PRIMARY KEY,
+                    principal_id TEXT NOT NULL,
+                    last_seen_at_utc TEXT NOT NULL,
+                    payload_json {payload_type} NOT NULL
+                );
+                """,
+                """
+                CREATE INDEX IF NOT EXISTS idx_operator_sessions_last_seen
+                ON operator_sessions (last_seen_at_utc DESC);
                 """,
             ]
         )
@@ -197,6 +241,62 @@ class PostgresStorageRepository:
             cursor.close()
         return detection
 
+    def list_follow_ups(
+        self,
+        *,
+        detection_id: str | None = None,
+        status: FollowUpStatus | None = None,
+        limit: int = 100,
+    ) -> list[FollowUpRecord]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if detection_id is not None:
+            clauses.append("detection_id = %s")
+            params.append(detection_id)
+        if status is not None:
+            clauses.append("status = %s")
+            params.append(status.value if isinstance(status, FollowUpStatus) else status)
+        where_clause = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.append(limit)
+        query = f"SELECT payload_json FROM follow_ups {where_clause} ORDER BY updated_at_utc DESC LIMIT %s"
+        with self._lock:
+            rows = self._fetchall(query, tuple(params))
+        return [self._deserialize(FollowUpRecord, row[0]) for row in rows]
+
+    def get_follow_up(self, follow_up_id: str) -> FollowUpRecord | None:
+        with self._lock:
+            row = self._fetchone(
+                "SELECT payload_json FROM follow_ups WHERE follow_up_id = %s",
+                (follow_up_id,),
+            )
+        if row is None:
+            return None
+        return self._deserialize(FollowUpRecord, row[0])
+
+    def upsert_follow_up(self, follow_up: FollowUpRecord) -> FollowUpRecord:
+        payload = json.dumps(follow_up.model_dump(mode="json"))
+        with self._lock:
+            cursor = self._execute(
+                """
+                INSERT INTO follow_ups (follow_up_id, detection_id, status, updated_at_utc, payload_json)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT(follow_up_id) DO UPDATE SET
+                    detection_id = excluded.detection_id,
+                    status = excluded.status,
+                    updated_at_utc = excluded.updated_at_utc,
+                    payload_json = excluded.payload_json
+                """,
+                (
+                    follow_up.follow_up_id,
+                    follow_up.detection_id,
+                    follow_up.status.value if isinstance(follow_up.status, FollowUpStatus) else follow_up.status,
+                    follow_up.updated_at_utc,
+                    payload,
+                ),
+            )
+            cursor.close()
+        return follow_up
+
     def create_review(self, review: ReviewRecord) -> ReviewRecord:
         payload = json.dumps(review.model_dump(mode="json"))
         with self._lock:
@@ -221,6 +321,52 @@ class PostgresStorageRepository:
                 (detection_id,),
             )
         return [self._deserialize(ReviewRecord, row[0]) for row in rows]
+
+    def list_assignments(
+        self,
+        *,
+        detection_id: str | None = None,
+        limit: int = 100,
+    ) -> list[DispatchAssignmentRecord]:
+        with self._lock:
+            if detection_id is None:
+                rows = self._fetchall(
+                    "SELECT payload_json FROM assignments ORDER BY updated_at_utc DESC LIMIT %s",
+                    (limit,),
+                )
+            else:
+                rows = self._fetchall(
+                    "SELECT payload_json FROM assignments WHERE detection_id = %s ORDER BY updated_at_utc DESC LIMIT %s",
+                    (detection_id, limit),
+                )
+        return [self._deserialize(DispatchAssignmentRecord, row[0]) for row in rows]
+
+    def get_assignment(self, assignment_id: str) -> DispatchAssignmentRecord | None:
+        with self._lock:
+            row = self._fetchone(
+                "SELECT payload_json FROM assignments WHERE assignment_id = %s",
+                (assignment_id,),
+            )
+        if row is None:
+            return None
+        return self._deserialize(DispatchAssignmentRecord, row[0])
+
+    def upsert_assignment(self, assignment: DispatchAssignmentRecord) -> DispatchAssignmentRecord:
+        payload = json.dumps(assignment.model_dump(mode="json"))
+        with self._lock:
+            cursor = self._execute(
+                """
+                INSERT INTO assignments (assignment_id, detection_id, updated_at_utc, payload_json)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT(assignment_id) DO UPDATE SET
+                    detection_id = excluded.detection_id,
+                    updated_at_utc = excluded.updated_at_utc,
+                    payload_json = excluded.payload_json
+                """,
+                (assignment.assignment_id, assignment.detection_id, assignment.updated_at_utc, payload),
+            )
+            cursor.close()
+        return assignment
 
     def list_alerts(
         self,
@@ -321,3 +467,28 @@ class PostgresStorageRepository:
             )
             cursor.close()
         return entry
+
+    def list_operator_sessions(self, *, limit: int = 100) -> list[OperatorSessionRecord]:
+        with self._lock:
+            rows = self._fetchall(
+                "SELECT payload_json FROM operator_sessions ORDER BY last_seen_at_utc DESC LIMIT %s",
+                (limit,),
+            )
+        return [self._deserialize(OperatorSessionRecord, row[0]) for row in rows]
+
+    def upsert_operator_session(self, session: OperatorSessionRecord) -> OperatorSessionRecord:
+        payload = json.dumps(session.model_dump(mode="json"))
+        with self._lock:
+            cursor = self._execute(
+                """
+                INSERT INTO operator_sessions (session_id, principal_id, last_seen_at_utc, payload_json)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT(session_id) DO UPDATE SET
+                    principal_id = excluded.principal_id,
+                    last_seen_at_utc = excluded.last_seen_at_utc,
+                    payload_json = excluded.payload_json
+                """,
+                (session.session_id, session.principal_id, session.last_seen_at_utc, payload),
+            )
+            cursor.close()
+        return session

@@ -10,10 +10,13 @@ Current preview slice:
 - selected-alert evidence preview that shows a live frame and plate crop when local media is available through the API
 - live detection search with full or partial plate lookup plus date, camera, GPS region, attribute, and alert-state filters
 - selected-target detail view with alternate OCR candidates and stored confidence breakdowns from live detections
+- selected-target follow-up pin workflow with persisted owner, priority, status, and due-time context
+- dispatch assignment workflow that persists unit/operator ownership and status beyond the alert lifecycle controls
 - field-settings hotlist manager for creating, editing, pausing, and seeding local hotlist entries from the selected alert
 - quick-actions alert response controls for acknowledge, stand down, and reopen state changes when the live API is available
 - selected-alert review history and local review submission when the live API is available
 - quick-actions demo runtime controls for launching headless ingest runs from a local frame folder when the live API is available
+- live operator session panel with API-key sign-in, role-aware UI permissions, and active multi-user presence
 - always-on hotlist popup behavior that stays active regardless of navigation or address-scan state
 - live API overview integration with graceful fallback to local demo data when the backend is offline
 - demo-friendly repo workflows while backend and hardware integration continue

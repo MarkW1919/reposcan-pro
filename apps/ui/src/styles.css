@@ -969,6 +969,17 @@ textarea.input-control {
   gap: 10px;
 }
 
+.settings-section,
+.badge-group {
+  display: grid;
+  gap: 12px;
+}
+
+.badge-group {
+  display: flex;
+  flex-wrap: wrap;
+}
+
 .detection-insights,
 .candidate-list,
 .search-results,

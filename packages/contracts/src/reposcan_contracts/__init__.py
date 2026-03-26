@@ -30,6 +30,7 @@ from .dataset import (
     LightingCondition,
     TrainingDatasetManifest,
 )
+from .dispatch import DispatchAssignmentPriority, DispatchAssignmentRecord, DispatchAssignmentStatus
 from .detection import BoundingBox, DetectionRecord, PlateCandidate, SyncStatus
 from .field_eval import (
     FieldEvalCoveragePolicy,
@@ -37,11 +38,13 @@ from .field_eval import (
     FieldEvalQualificationReport,
     FieldEvalSubsetSummary,
 )
+from .followup import FollowUpPriority, FollowUpRecord, FollowUpStatus
 from .frame import CameraProfile, FrameEnvelope, GpsSnapshot, PreparedFrame, PreprocessingMetadata, SourceType
 from .health import DependencyHealth, HealthResponse, HealthState
 from .hotlist import HotlistEntry, HotlistMatchResult
 from .inference import AttributePredictions, InferenceCandidate, ModelVersions, PlateDetection, VehicleDetection
 from .model_artifact import ModelArtifactManifest
+from .operator import OperatorCapabilities, OperatorPrincipal, OperatorSessionRecord
 from .popup import PopupActivityEvent, PopupEventType
 from .release import (
     ModelReleaseChannel,
@@ -101,6 +104,12 @@ __all__ = [
     "DatasetSplitSource",
     "DatasetSplitAssignment",
     "DatasetSplitManifest",
+    "DispatchAssignmentPriority",
+    "DispatchAssignmentRecord",
+    "DispatchAssignmentStatus",
+    "FollowUpPriority",
+    "FollowUpRecord",
+    "FollowUpStatus",
     "HotlistEntry",
     "HotlistMatchResult",
     "ReviewRecord",
@@ -120,6 +129,9 @@ __all__ = [
     "AttributePredictions",
     "ModelVersions",
     "ModelArtifactManifest",
+    "OperatorCapabilities",
+    "OperatorPrincipal",
+    "OperatorSessionRecord",
     "TrackedDetection",
     "ConfidenceSummary",
     "EvidenceRefs",

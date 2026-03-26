@@ -474,14 +474,105 @@ def test_dashboard_overview_returns_operator_summary(tmp_path):
     assert payload["counts"]["recent_detections"] == 2
     assert payload["counts"]["active_alerts"] == 1
     assert payload["counts"]["active_hotlists"] == 1
+    assert payload["counts"]["open_follow_ups"] == 0
+    assert payload["counts"]["active_assignments"] == 0
+    assert payload["counts"]["active_sessions"] == 0
     assert payload["health"]["service"] == "api"
     assert payload["alerts"][0]["alert_id"] == "alert_002"
     assert payload["detections"][0]["detection_id"] == "det_20260320_000002"
     assert payload["hotlists"][0]["entry_id"] == "hl_002"
+    assert payload["current_principal"]["principal_id"] == "local_dev"
+    assert payload["current_principal"]["capabilities"]["can_manage_dispatch"] is True
+    assert payload["follow_ups"] == []
+    assert payload["assignments"] == []
+    assert payload["active_sessions"] == []
     assert payload["popup_activity"][0]["event_type"] == "address"
     assert payload["popup_activity"][0]["source_record_id"] == "det_20260320_000002"
     assert payload["popup_activity"][1]["event_type"] == "hotlist"
     assert payload["popup_activity"][1]["source_record_id"] == "alert_002"
+
+
+def test_follow_up_assignment_and_operator_presence_surface_in_dashboard(tmp_path):
+    client, service = _seeded_client(tmp_path)
+    service.create_hotlist(
+        HotlistEntry.model_validate(
+            {
+                "entry_id": "hl_follow_up",
+                "plate_text": "6BZN220",
+                "label": "Pinned target",
+                "created_at_utc": "2026-03-20T04:00:00Z",
+                "updated_at_utc": "2026-03-20T04:00:00Z",
+            }
+        )
+    )
+    service.store_alert(
+        AlertRecord.model_validate(
+            {
+                "alert_id": "alert_follow_up",
+                "detection_id": "det_20260320_000001",
+                "hotlist_entry_id": "hl_follow_up",
+                "timestamp_utc": "2026-03-20T04:20:00Z",
+                "camera_id": "cam_north_gate_01",
+                "matched_plate_text": "6BZN220",
+                "match_confidence": 0.95,
+                "match_type": "exact",
+                "hotlist_label": "Pinned target",
+            }
+        )
+    )
+
+    session_response = client.post(
+        "/operator/sessions/heartbeat",
+        json={
+            "session_id": "session_001",
+            "client_label": "cab_console_01",
+            "workspace": "alerts",
+            "selected_detection_id": "det_20260320_000001",
+            "selected_alert_id": "alert_follow_up",
+            "navigation_active": True,
+        },
+    )
+    follow_up_response = client.post(
+        "/follow-ups",
+        json={
+            "detection_id": "det_20260320_000001",
+            "alert_id": "alert_follow_up",
+            "plate_text": "6BZN220",
+            "priority": "critical",
+            "status": "open",
+            "assigned_operator_id": "tow_lead_02",
+            "summary": "Pin the target until the tow team is on scene.",
+        },
+    )
+    assignment_response = client.post(
+        "/assignments",
+        json={
+            "detection_id": "det_20260320_000001",
+            "alert_id": "alert_follow_up",
+            "plate_text": "6BZN220",
+            "priority": "critical",
+            "status": "en_route",
+            "assigned_operator_id": "tow_lead_02",
+            "assigned_unit_label": "Truck 4",
+            "destination_label": "Shoreline Marina south lot",
+            "summary": "Dispatch tow team toward the pinned Camry.",
+        },
+    )
+
+    overview = client.get("/dashboard/overview")
+
+    assert session_response.status_code == 200
+    assert follow_up_response.status_code == 201
+    assert assignment_response.status_code == 201
+    assert overview.status_code == 200
+    payload = overview.json()
+    assert payload["counts"]["open_follow_ups"] == 1
+    assert payload["counts"]["active_assignments"] == 1
+    assert payload["counts"]["active_sessions"] == 1
+    assert payload["follow_ups"][0]["summary"] == "Pin the target until the tow team is on scene."
+    assert payload["assignments"][0]["assigned_unit_label"] == "Truck 4"
+    assert payload["active_sessions"][0]["workspace"] == "alerts"
+    assert service.list_operator_sessions(limit=10)[0].session_id == "session_001"
 
 
 def test_demo_runtime_endpoints_run_headless_ingest_and_update_dashboard(tmp_path):
@@ -698,12 +789,24 @@ def test_secure_api_requires_credentials_and_enforces_roles(tmp_path):
         headers={"X-RepoScan-Api-Key": "operator-demo-token"},
         json={"action": "confirm", "reviewed_at_utc": "2026-03-20T04:15:00Z"},
     )
+    viewer_follow_up_create = client.post(
+        "/api/v1/follow-ups",
+        headers={"X-RepoScan-Api-Key": "viewer-demo-token"},
+        json={"detection_id": "det_20260320_000001", "status": "open", "priority": "priority"},
+    )
+    operator_assignment_create = client.post(
+        "/api/v1/assignments",
+        headers={"X-RepoScan-Api-Key": "operator-demo-token"},
+        json={"detection_id": "det_20260320_000001", "status": "queued", "priority": "priority"},
+    )
     public_health = client.get("/api/v1/health")
 
     assert unauthenticated.status_code == 401
     assert viewer_read.status_code == 200
     assert viewer_hotlist_create.status_code == 403
     assert operator_review.status_code == 201
+    assert viewer_follow_up_create.status_code == 403
+    assert operator_assignment_create.status_code == 201
     assert public_health.status_code == 200
 
 

@@ -5,8 +5,11 @@ from __future__ import annotations
 from typing import Protocol
 
 from reposcan_contracts.alert import AlertRecord, AlertStatus
+from reposcan_contracts.dispatch import DispatchAssignmentRecord
 from reposcan_contracts.detection import DetectionRecord
+from reposcan_contracts.followup import FollowUpRecord, FollowUpStatus
 from reposcan_contracts.hotlist import HotlistEntry
+from reposcan_contracts.operator import OperatorSessionRecord
 from reposcan_contracts.review import ReviewRecord
 
 
@@ -18,6 +21,35 @@ class StorageRepository(Protocol):
         ...
 
     def upsert_detection(self, detection: DetectionRecord) -> DetectionRecord:
+        ...
+
+    def list_follow_ups(
+        self,
+        *,
+        detection_id: str | None = None,
+        status: FollowUpStatus | None = None,
+        limit: int = 100,
+    ) -> list[FollowUpRecord]:
+        ...
+
+    def get_follow_up(self, follow_up_id: str) -> FollowUpRecord | None:
+        ...
+
+    def upsert_follow_up(self, follow_up: FollowUpRecord) -> FollowUpRecord:
+        ...
+
+    def list_assignments(
+        self,
+        *,
+        detection_id: str | None = None,
+        limit: int = 100,
+    ) -> list[DispatchAssignmentRecord]:
+        ...
+
+    def get_assignment(self, assignment_id: str) -> DispatchAssignmentRecord | None:
+        ...
+
+    def upsert_assignment(self, assignment: DispatchAssignmentRecord) -> DispatchAssignmentRecord:
         ...
 
     def create_review(self, review: ReviewRecord) -> ReviewRecord:
@@ -48,4 +80,10 @@ class StorageRepository(Protocol):
         ...
 
     def upsert_hotlist(self, entry: HotlistEntry) -> HotlistEntry:
+        ...
+
+    def list_operator_sessions(self, *, limit: int = 100) -> list[OperatorSessionRecord]:
+        ...
+
+    def upsert_operator_session(self, session: OperatorSessionRecord) -> OperatorSessionRecord:
         ...

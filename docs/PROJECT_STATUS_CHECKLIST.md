@@ -132,10 +132,10 @@ Last reviewed against repo state: `2026-03-25`
 - [x] ~~Recovery log can reflect live alert status changes.~~
 - [x] ~~Search workflow UI exists for full and partial plate search.~~
 - [x] ~~Rich detection detail view exists for alternate OCR candidates and confidence breakdowns.~~
-- [ ] Pin / follow-up workflow exists for high-value detections.
-- [ ] Dispatch / assignment workflow exists beyond the current alert lifecycle controls.
-- [ ] Multi-user session awareness exists.
-- [ ] Role-based permissions exist.
+- [x] ~~Pin / follow-up workflow exists for high-value detections.~~
+- [x] ~~Dispatch / assignment workflow exists beyond the current alert lifecycle controls.~~
+- [x] ~~Multi-user session awareness exists.~~
+- [x] ~~Role-based permissions exist.~~
 
 ## 10. Datasets And Training
 

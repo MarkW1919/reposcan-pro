@@ -16,6 +16,10 @@ export interface HealthResponse {
 
 export type ReviewAction = "confirm" | "correct" | "flag" | "dismiss";
 export type DashboardAlertStatus = "active" | "acknowledged" | "dismissed";
+export type FollowUpPriority = "routine" | "priority" | "critical";
+export type FollowUpStatus = "open" | "monitoring" | "resolved";
+export type DispatchAssignmentPriority = "watch" | "priority" | "critical";
+export type DispatchAssignmentStatus = "queued" | "assigned" | "en_route" | "onsite" | "completed" | "cancelled";
 
 export interface ReviewRecord {
   review_id: string;
@@ -116,6 +120,107 @@ export interface AlertUpdateSubmission {
   response_notes?: string;
 }
 
+export interface FollowUpRecord {
+  follow_up_id: string;
+  detection_id: string;
+  alert_id: string | null;
+  plate_text: string | null;
+  priority: FollowUpPriority;
+  status: FollowUpStatus;
+  created_by_operator_id: string | null;
+  assigned_operator_id: string | null;
+  summary: string | null;
+  notes: string | null;
+  due_at_utc: string | null;
+  created_at_utc: string;
+  updated_at_utc: string;
+}
+
+export interface FollowUpSubmission {
+  detection_id: string;
+  alert_id?: string;
+  plate_text?: string;
+  priority: FollowUpPriority;
+  status: FollowUpStatus;
+  assigned_operator_id?: string;
+  summary?: string;
+  notes?: string;
+  due_at_utc?: string;
+}
+
+export interface DispatchAssignmentRecord {
+  assignment_id: string;
+  detection_id: string;
+  alert_id: string | null;
+  plate_text: string | null;
+  priority: DispatchAssignmentPriority;
+  status: DispatchAssignmentStatus;
+  created_by_operator_id: string | null;
+  assigned_operator_id: string | null;
+  assigned_unit_label: string | null;
+  destination_label: string | null;
+  summary: string | null;
+  notes: string | null;
+  created_at_utc: string;
+  updated_at_utc: string;
+}
+
+export interface DispatchAssignmentSubmission {
+  detection_id: string;
+  alert_id?: string;
+  plate_text?: string;
+  priority: DispatchAssignmentPriority;
+  status: DispatchAssignmentStatus;
+  assigned_operator_id?: string;
+  assigned_unit_label?: string;
+  destination_label?: string;
+  summary?: string;
+  notes?: string;
+}
+
+export interface OperatorCapabilities {
+  can_submit_reviews: boolean;
+  can_update_alerts: boolean;
+  can_manage_hotlists: boolean;
+  can_manage_follow_ups: boolean;
+  can_manage_dispatch: boolean;
+  can_start_demo_runs: boolean;
+  can_view_audit: boolean;
+}
+
+export type ApiRole = "viewer" | "operator" | "admin" | "integrator";
+
+export interface OperatorPrincipal {
+  principal_id: string;
+  display_name: string | null;
+  authenticated: boolean;
+  roles: ApiRole[];
+  capabilities: OperatorCapabilities;
+}
+
+export interface OperatorSessionRecord {
+  session_id: string;
+  principal_id: string;
+  display_name: string | null;
+  authenticated: boolean;
+  roles: ApiRole[];
+  client_label: string | null;
+  workspace: string;
+  selected_detection_id: string | null;
+  selected_alert_id: string | null;
+  navigation_active: boolean;
+  last_seen_at_utc: string;
+}
+
+export interface OperatorSessionHeartbeatSubmission {
+  session_id: string;
+  client_label?: string;
+  workspace: string;
+  selected_detection_id?: string;
+  selected_alert_id?: string;
+  navigation_active: boolean;
+}
+
 export interface DashboardPopupActivityEvent {
   event_id: string;
   event_type: "address" | "hotlist";
@@ -173,11 +278,18 @@ export interface DashboardOverviewResponse {
     active_alerts: number;
     recent_detections: number;
     active_hotlists: number;
+    open_follow_ups: number;
+    active_assignments: number;
+    active_sessions: number;
   };
   detections: DashboardDetection[];
   alerts: DashboardAlert[];
+  follow_ups: FollowUpRecord[];
+  assignments: DispatchAssignmentRecord[];
   hotlists: DashboardHotlist[];
   popup_activity: DashboardPopupActivityEvent[];
+  current_principal: OperatorPrincipal;
+  active_sessions: OperatorSessionRecord[];
 }
 
 export type SearchPlateMatchMode = "contains" | "exact" | "prefix" | "suffix";
@@ -212,6 +324,14 @@ export interface DetectionSearchResult {
   results: DashboardDetection[];
 }
 
+interface ApiClientConfig {
+  apiKey: string;
+}
+
+const apiClientConfig: ApiClientConfig = {
+  apiKey: ((import.meta.env.VITE_API_KEY as string | undefined) ?? "").trim(),
+};
+
 function configuredApiBaseUrl(): string {
   return (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ?? "http://127.0.0.1:8000";
 }
@@ -230,6 +350,16 @@ function apiUrl(path: string): string {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   const rootUrl = baseUrl.endsWith(prefix) ? baseUrl.slice(0, -prefix.length) : baseUrl;
   return `${rootUrl}${prefix}${normalizedPath}`;
+}
+
+export function setApiClientConfig(config: Partial<ApiClientConfig>): void {
+  if (typeof config.apiKey === "string") {
+    apiClientConfig.apiKey = config.apiKey.trim();
+  }
+}
+
+function authHeaders(): HeadersInit {
+  return apiClientConfig.apiKey ? { "X-RepoScan-Api-Key": apiClientConfig.apiKey } : {};
 }
 
 function mediaUrl(path: string): string {
@@ -346,9 +476,9 @@ function recoveryLogStatus(status: DashboardAlert["status"]): RecoveryLogEntry["
 }
 
 export async function fetchDashboardOverview(signal?: AbortSignal): Promise<DashboardOverviewResponse> {
-  const response = await fetch(apiUrl("/dashboard/overview"), { signal });
+  const response = await fetch(apiUrl("/dashboard/overview"), { signal, headers: authHeaders() });
   if (!response.ok) {
-    throw new Error(`Failed to load dashboard overview (${response.status})`);
+    throw new Error(await responseErrorMessage(response, `Failed to load dashboard overview (${response.status})`));
   }
   return (await response.json()) as DashboardOverviewResponse;
 }
@@ -361,10 +491,27 @@ export function buildDetectionPlateCropUrl(detectionId: string): string {
   return mediaUrl(`/detections/${encodeURIComponent(detectionId)}/plate-crop`);
 }
 
-export async function fetchDemoRuntimeStatus(signal?: AbortSignal): Promise<DemoRuntimeStatus> {
-  const response = await fetch(apiUrl("/demo/runtime"), { signal });
+async function fetchMediaObjectUrl(path: string, signal?: AbortSignal): Promise<string> {
+  const response = await fetch(apiUrl(path), { signal, headers: authHeaders() });
   if (!response.ok) {
-    throw new Error(`Failed to load demo runtime status (${response.status})`);
+    throw new Error(await responseErrorMessage(response, `Failed to load media (${response.status})`));
+  }
+  const blob = await response.blob();
+  return URL.createObjectURL(blob);
+}
+
+export async function fetchDetectionFrameObjectUrl(detectionId: string, signal?: AbortSignal): Promise<string> {
+  return fetchMediaObjectUrl(`/detections/${encodeURIComponent(detectionId)}/frame`, signal);
+}
+
+export async function fetchDetectionPlateCropObjectUrl(detectionId: string, signal?: AbortSignal): Promise<string> {
+  return fetchMediaObjectUrl(`/detections/${encodeURIComponent(detectionId)}/plate-crop`, signal);
+}
+
+export async function fetchDemoRuntimeStatus(signal?: AbortSignal): Promise<DemoRuntimeStatus> {
+  const response = await fetch(apiUrl("/demo/runtime"), { signal, headers: authHeaders() });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, `Failed to load demo runtime status (${response.status})`));
   }
   return (await response.json()) as DemoRuntimeStatus;
 }
@@ -374,6 +521,7 @@ export async function startDemoRun(submission: DemoRunSubmission): Promise<DemoR
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders(),
     },
     body: JSON.stringify(submission),
   });
@@ -384,9 +532,9 @@ export async function startDemoRun(submission: DemoRunSubmission): Promise<DemoR
 }
 
 export async function fetchHotlists(signal?: AbortSignal): Promise<DashboardHotlist[]> {
-  const response = await fetch(apiUrl("/hotlists?limit=100"), { signal });
+  const response = await fetch(apiUrl("/hotlists?limit=100"), { signal, headers: authHeaders() });
   if (!response.ok) {
-    throw new Error(`Failed to load hotlists (${response.status})`);
+    throw new Error(await responseErrorMessage(response, `Failed to load hotlists (${response.status})`));
   }
   return (await response.json()) as DashboardHotlist[];
 }
@@ -396,6 +544,7 @@ export async function createHotlist(submission: HotlistSubmission): Promise<Dash
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders(),
     },
     body: JSON.stringify(submission),
   });
@@ -410,6 +559,7 @@ export async function updateHotlist(entryId: string, submission: HotlistSubmissi
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders(),
     },
     body: JSON.stringify(submission),
   });
@@ -424,6 +574,7 @@ export async function updateAlert(entryId: string, submission: AlertUpdateSubmis
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders(),
     },
     body: JSON.stringify(submission),
   });
@@ -434,9 +585,9 @@ export async function updateAlert(entryId: string, submission: AlertUpdateSubmis
 }
 
 export async function fetchReviews(detectionId: string, signal?: AbortSignal): Promise<ReviewRecord[]> {
-  const response = await fetch(apiUrl(`/reviews/${encodeURIComponent(detectionId)}`), { signal });
+  const response = await fetch(apiUrl(`/reviews/${encodeURIComponent(detectionId)}`), { signal, headers: authHeaders() });
   if (!response.ok) {
-    throw new Error(`Failed to load reviews (${response.status})`);
+    throw new Error(await responseErrorMessage(response, `Failed to load reviews (${response.status})`));
   }
   return (await response.json()) as ReviewRecord[];
 }
@@ -446,13 +597,98 @@ export async function createReview(detectionId: string, submission: ReviewSubmis
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders(),
     },
     body: JSON.stringify(submission),
   });
   if (!response.ok) {
-    throw new Error(`Failed to save review (${response.status})`);
+    throw new Error(await responseErrorMessage(response, `Failed to save review (${response.status})`));
   }
   return (await response.json()) as ReviewRecord;
+}
+
+export async function createFollowUp(submission: FollowUpSubmission): Promise<FollowUpRecord> {
+  const response = await fetch(apiUrl("/follow-ups"), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders(),
+    },
+    body: JSON.stringify(submission),
+  });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, `Failed to save follow-up (${response.status})`));
+  }
+  return (await response.json()) as FollowUpRecord;
+}
+
+export async function updateFollowUp(followUpId: string, submission: FollowUpSubmission): Promise<FollowUpRecord> {
+  const response = await fetch(apiUrl(`/follow-ups/${encodeURIComponent(followUpId)}`), {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders(),
+    },
+    body: JSON.stringify(submission),
+  });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, `Failed to update follow-up (${response.status})`));
+  }
+  return (await response.json()) as FollowUpRecord;
+}
+
+export async function createDispatchAssignment(
+  submission: DispatchAssignmentSubmission,
+): Promise<DispatchAssignmentRecord> {
+  const response = await fetch(apiUrl("/assignments"), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders(),
+    },
+    body: JSON.stringify(submission),
+  });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, `Failed to save assignment (${response.status})`));
+  }
+  return (await response.json()) as DispatchAssignmentRecord;
+}
+
+export async function updateDispatchAssignment(
+  assignmentId: string,
+  submission: DispatchAssignmentSubmission,
+): Promise<DispatchAssignmentRecord> {
+  const response = await fetch(apiUrl(`/assignments/${encodeURIComponent(assignmentId)}`), {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders(),
+    },
+    body: JSON.stringify(submission),
+  });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, `Failed to update assignment (${response.status})`));
+  }
+  return (await response.json()) as DispatchAssignmentRecord;
+}
+
+export async function sendOperatorSessionHeartbeat(
+  submission: OperatorSessionHeartbeatSubmission,
+  signal?: AbortSignal,
+): Promise<OperatorSessionRecord> {
+  const response = await fetch(apiUrl("/operator/sessions/heartbeat"), {
+    method: "POST",
+    signal,
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders(),
+    },
+    body: JSON.stringify(submission),
+  });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, `Failed to update operator session (${response.status})`));
+  }
+  return (await response.json()) as OperatorSessionRecord;
 }
 
 export async function searchDetections(
@@ -485,7 +721,7 @@ export async function searchDetections(
   addIfPresent("limit", filters.limit);
   addIfPresent("offset", filters.offset);
 
-  const response = await fetch(apiUrl(`/search/detections?${query.toString()}`), { signal });
+  const response = await fetch(apiUrl(`/search/detections?${query.toString()}`), { signal, headers: authHeaders() });
   if (!response.ok) {
     throw new Error(await responseErrorMessage(response, `Failed to search detections (${response.status})`));
   }

@@ -15,12 +15,14 @@ The operator experience should support fast decision-making under field conditio
 - edit OCR results when operator review is required
 - mark false positives and preserve audit history
 - pin high-value detections for follow-up
+- keep follow-up owner, status, due time, and notes visible on the selected target
 
 ## Search Workflow
 
 - search by full or partial plate
 - filter by date, camera, GPS region, color, make/model, and alert state
 - jump from search results into detailed review
+- keep pinned follow-up and dispatch state visible in search results
 
 ## Alert Workflow
 
@@ -29,6 +31,13 @@ The operator experience should support fast decision-making under field conditio
 - preserve a durable record of alert acknowledgement and response
 - support acknowledge, stand down, and reopen actions without losing context on the selected target
 - suppress dismissed alerts from the live popup stream while keeping the status visible in history
+- create and update dispatch assignments that persist beyond the alert status buttons
+
+## Operator Awareness
+
+- show the current operator identity and granted roles when auth is active
+- gate mutation workflows in the UI based on role permissions instead of waiting for a failed request
+- show other active console sessions, their current workspace, and their selected target context
 
 ## Related Documents
 

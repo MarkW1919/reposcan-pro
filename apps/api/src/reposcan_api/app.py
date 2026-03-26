@@ -13,17 +13,22 @@ from fastapi.responses import FileResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from reposcan_contracts.alert import AlertRecord, AlertStatus
-from reposcan_contracts.config.deployment import DeploymentConfig
+from reposcan_contracts.config.deployment import ApiRole, DeploymentConfig
+from reposcan_contracts.dispatch import DispatchAssignmentRecord, DispatchAssignmentStatus
 from reposcan_contracts.config.loader import load_deployment_config
 from reposcan_contracts.detection import DetectionRecord
+from reposcan_contracts.followup import FollowUpRecord, FollowUpStatus
 from reposcan_contracts.health import HealthResponse, HealthState
 from reposcan_contracts.hotlist import HotlistEntry
+from reposcan_contracts.operator import OperatorCapabilities, OperatorPrincipal, OperatorSessionRecord
 from reposcan_contracts.popup import PopupActivityEvent, PopupEventType
 from reposcan_contracts.review import ReviewRecord
 from reposcan_inference import DemoRunInProgressError, DemoRunStatus as RuntimeDemoRunStatus, HeadlessDemoRunManager
 from reposcan_storage.service import (
+    AssignmentNotFoundError,
     AlertNotFoundError,
     DetectionNotFoundError,
+    FollowUpNotFoundError,
     HotlistNotFoundError,
     StorageService,
     create_development_storage_service,
@@ -39,10 +44,13 @@ from .models import (
     DashboardCounts,
     DashboardOverview,
     DetectionSearchResponse,
+    DispatchAssignmentSubmission,
     DemoRunSubmission,
     DemoRunSummary,
     DemoRuntimeStatus,
+    FollowUpSubmission,
     HotlistSubmission,
+    OperatorSessionHeartbeatSubmission,
     ReviewSubmission,
     SearchPageInfo,
     SearchPlateMatchMode,
@@ -184,6 +192,30 @@ def _build_demo_runtime_status(status: RuntimeDemoRunStatus) -> DemoRuntimeStatu
     )
 
 
+def _build_operator_capabilities(principal: ApiPrincipalContext) -> OperatorCapabilities:
+    roles = set(principal.roles)
+    can_operate = ApiRole.operator in roles or ApiRole.admin in roles
+    return OperatorCapabilities(
+        can_submit_reviews=can_operate,
+        can_update_alerts=can_operate,
+        can_manage_hotlists=ApiRole.admin in roles,
+        can_manage_follow_ups=can_operate,
+        can_manage_dispatch=can_operate,
+        can_start_demo_runs=can_operate,
+        can_view_audit=ApiRole.admin in roles or ApiRole.integrator in roles,
+    )
+
+
+def _build_operator_principal(principal: ApiPrincipalContext) -> OperatorPrincipal:
+    return OperatorPrincipal(
+        principal_id=principal.principal_id,
+        display_name=principal.display_name,
+        authenticated=principal.authenticated,
+        roles=list(principal.roles),
+        capabilities=_build_operator_capabilities(principal),
+    )
+
+
 def create_app(
     storage_service: StorageService | None = None,
     demo_run_manager: HeadlessDemoRunManager | None = None,
@@ -315,13 +347,18 @@ def create_app(
     @api_router.get("/dashboard/overview", response_model=DashboardOverview)
     def get_dashboard_overview(
         limit: int = Query(default=20, ge=1, le=100),
-        _principal: ApiPrincipalContext = Depends(access_controller.viewer_access),
+        principal: ApiPrincipalContext = Depends(access_controller.viewer_access),
     ) -> DashboardOverview:
         detections = service.list_detections(limit=limit)
         alerts = service.list_alerts(limit=limit)
+        follow_ups = service.list_follow_ups(limit=limit)
+        assignments = service.list_assignments(limit=limit)
         hotlists = service.list_hotlists(limit=limit)
         active_alerts = service.list_alerts(status=AlertStatus.active, limit=500)
         active_hotlists = service.list_hotlists(active_only=True, limit=500)
+        open_follow_ups = service.list_follow_ups(limit=500)
+        active_assignments = service.list_assignments(limit=500)
+        active_sessions = service.list_operator_sessions(limit=100)
         popup_activity = _build_popup_activity(detections=detections, alerts=alerts, limit=limit)
         return DashboardOverview(
             generated_at_utc=_utcnow(),
@@ -330,12 +367,45 @@ def create_app(
                 active_alerts=len(active_alerts),
                 recent_detections=len(detections),
                 active_hotlists=len(active_hotlists),
+                open_follow_ups=len([record for record in open_follow_ups if record.status != FollowUpStatus.resolved]),
+                active_assignments=len(
+                    [
+                        record
+                        for record in active_assignments
+                        if record.status not in {DispatchAssignmentStatus.completed, DispatchAssignmentStatus.cancelled}
+                    ]
+                ),
+                active_sessions=len(active_sessions),
             ),
             detections=detections,
             alerts=alerts,
+            follow_ups=follow_ups,
+            assignments=assignments,
             hotlists=hotlists,
             popup_activity=popup_activity,
+            current_principal=_build_operator_principal(principal),
+            active_sessions=active_sessions,
         )
+
+    @api_router.post("/operator/sessions/heartbeat", response_model=OperatorSessionRecord)
+    def heartbeat_operator_session(
+        submission: OperatorSessionHeartbeatSubmission,
+        principal: ApiPrincipalContext = Depends(access_controller.viewer_access),
+    ) -> OperatorSessionRecord:
+        session = OperatorSessionRecord(
+            session_id=submission.session_id,
+            principal_id=principal.principal_id,
+            display_name=principal.display_name,
+            authenticated=principal.authenticated,
+            roles=list(principal.roles),
+            client_label=submission.client_label,
+            workspace=submission.workspace,
+            selected_detection_id=submission.selected_detection_id,
+            selected_alert_id=submission.selected_alert_id,
+            navigation_active=submission.navigation_active,
+            last_seen_at_utc=_utcnow(),
+        )
+        return service.touch_operator_session(session)
 
     @api_router.get("/search/detections", response_model=DetectionSearchResponse)
     def search_detections(
@@ -466,6 +536,206 @@ def create_app(
             details={"frames_directory": submission.frames_directory, "sequence_id": submission.sequence_id},
         )
         return _build_demo_runtime_status(run_status)
+
+    @api_router.post("/follow-ups", response_model=FollowUpRecord, status_code=status.HTTP_201_CREATED)
+    def create_follow_up(
+        request: Request,
+        submission: FollowUpSubmission,
+        principal: ApiPrincipalContext = Depends(access_controller.operator_access),
+    ) -> FollowUpRecord:
+        now = _utcnow()
+        follow_up = FollowUpRecord(
+            follow_up_id=f"fu_{uuid4().hex[:12]}",
+            detection_id=submission.detection_id,
+            alert_id=submission.alert_id,
+            plate_text=submission.plate_text,
+            priority=submission.priority,
+            status=submission.status,
+            created_by_operator_id=principal.principal_id,
+            assigned_operator_id=submission.assigned_operator_id,
+            summary=submission.summary,
+            notes=submission.notes,
+            due_at_utc=submission.due_at_utc,
+            created_at_utc=now,
+            updated_at_utc=now,
+        )
+        try:
+            created = service.create_follow_up(follow_up)
+        except DetectionNotFoundError as exc:
+            record_audit(
+                request,
+                principal=principal,
+                action="follow_up.create",
+                outcome=AuditOutcome.rejected,
+                target_type="detection",
+                target_id=submission.detection_id,
+                details={"detail": "Detection not found"},
+            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Detection not found") from exc
+        record_audit(
+            request,
+            principal=principal,
+            action="follow_up.create",
+            outcome=AuditOutcome.success,
+            target_type="follow_up",
+            target_id=created.follow_up_id,
+            details={"detection_id": created.detection_id, "status": created.status.value},
+        )
+        return created
+
+    @api_router.put("/follow-ups/{follow_up_id}", response_model=FollowUpRecord)
+    def update_follow_up(
+        request: Request,
+        follow_up_id: str,
+        submission: FollowUpSubmission,
+        principal: ApiPrincipalContext = Depends(access_controller.operator_access),
+    ) -> FollowUpRecord:
+        existing = service.get_follow_up(follow_up_id)
+        if existing is None:
+            record_audit(
+                request,
+                principal=principal,
+                action="follow_up.update",
+                outcome=AuditOutcome.rejected,
+                target_type="follow_up",
+                target_id=follow_up_id,
+                details={"detail": "Follow-up not found"},
+            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Follow-up not found")
+        follow_up = FollowUpRecord(
+            follow_up_id=existing.follow_up_id,
+            detection_id=submission.detection_id,
+            alert_id=submission.alert_id,
+            plate_text=submission.plate_text,
+            priority=submission.priority,
+            status=submission.status,
+            created_by_operator_id=existing.created_by_operator_id or principal.principal_id,
+            assigned_operator_id=submission.assigned_operator_id,
+            summary=submission.summary,
+            notes=submission.notes,
+            due_at_utc=submission.due_at_utc,
+            created_at_utc=existing.created_at_utc,
+            updated_at_utc=_utcnow(),
+        )
+        try:
+            updated = service.update_follow_up(follow_up)
+        except DetectionNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Detection not found") from exc
+        except FollowUpNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Follow-up not found") from exc
+        record_audit(
+            request,
+            principal=principal,
+            action="follow_up.update",
+            outcome=AuditOutcome.success,
+            target_type="follow_up",
+            target_id=follow_up_id,
+            details={"detection_id": updated.detection_id, "status": updated.status.value},
+        )
+        return updated
+
+    @api_router.post("/assignments", response_model=DispatchAssignmentRecord, status_code=status.HTTP_201_CREATED)
+    def create_assignment(
+        request: Request,
+        submission: DispatchAssignmentSubmission,
+        principal: ApiPrincipalContext = Depends(access_controller.operator_access),
+    ) -> DispatchAssignmentRecord:
+        now = _utcnow()
+        assignment = DispatchAssignmentRecord(
+            assignment_id=f"asg_{uuid4().hex[:12]}",
+            detection_id=submission.detection_id,
+            alert_id=submission.alert_id,
+            plate_text=submission.plate_text,
+            priority=submission.priority,
+            status=submission.status,
+            created_by_operator_id=principal.principal_id,
+            assigned_operator_id=submission.assigned_operator_id,
+            assigned_unit_label=submission.assigned_unit_label,
+            destination_label=submission.destination_label,
+            summary=submission.summary,
+            notes=submission.notes,
+            created_at_utc=now,
+            updated_at_utc=now,
+        )
+        try:
+            created = service.create_assignment(assignment)
+        except DetectionNotFoundError as exc:
+            record_audit(
+                request,
+                principal=principal,
+                action="assignment.create",
+                outcome=AuditOutcome.rejected,
+                target_type="detection",
+                target_id=submission.detection_id,
+                details={"detail": "Detection not found"},
+            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Detection not found") from exc
+        except AlertNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alert not found") from exc
+        record_audit(
+            request,
+            principal=principal,
+            action="assignment.create",
+            outcome=AuditOutcome.success,
+            target_type="assignment",
+            target_id=created.assignment_id,
+            details={"detection_id": created.detection_id, "status": created.status.value},
+        )
+        return created
+
+    @api_router.put("/assignments/{assignment_id}", response_model=DispatchAssignmentRecord)
+    def update_assignment(
+        request: Request,
+        assignment_id: str,
+        submission: DispatchAssignmentSubmission,
+        principal: ApiPrincipalContext = Depends(access_controller.operator_access),
+    ) -> DispatchAssignmentRecord:
+        existing = service.get_assignment(assignment_id)
+        if existing is None:
+            record_audit(
+                request,
+                principal=principal,
+                action="assignment.update",
+                outcome=AuditOutcome.rejected,
+                target_type="assignment",
+                target_id=assignment_id,
+                details={"detail": "Assignment not found"},
+            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assignment not found")
+        assignment = DispatchAssignmentRecord(
+            assignment_id=existing.assignment_id,
+            detection_id=submission.detection_id,
+            alert_id=submission.alert_id,
+            plate_text=submission.plate_text,
+            priority=submission.priority,
+            status=submission.status,
+            created_by_operator_id=existing.created_by_operator_id or principal.principal_id,
+            assigned_operator_id=submission.assigned_operator_id,
+            assigned_unit_label=submission.assigned_unit_label,
+            destination_label=submission.destination_label,
+            summary=submission.summary,
+            notes=submission.notes,
+            created_at_utc=existing.created_at_utc,
+            updated_at_utc=_utcnow(),
+        )
+        try:
+            updated = service.update_assignment(assignment)
+        except DetectionNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Detection not found") from exc
+        except AlertNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alert not found") from exc
+        except AssignmentNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assignment not found") from exc
+        record_audit(
+            request,
+            principal=principal,
+            action="assignment.update",
+            outcome=AuditOutcome.success,
+            target_type="assignment",
+            target_id=assignment_id,
+            details={"detection_id": updated.detection_id, "status": updated.status.value},
+        )
+        return updated
 
     @api_router.get("/detections", response_model=list[DetectionRecord])
     def list_detections(

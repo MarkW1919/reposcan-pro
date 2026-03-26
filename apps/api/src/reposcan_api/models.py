@@ -8,9 +8,12 @@ from typing import Any, Optional
 from pydantic import BaseModel, Field, model_validator
 
 from reposcan_contracts.alert import AlertRecord
+from reposcan_contracts.dispatch import DispatchAssignmentPriority, DispatchAssignmentRecord, DispatchAssignmentStatus
 from reposcan_contracts.detection import DetectionRecord
+from reposcan_contracts.followup import FollowUpPriority, FollowUpRecord, FollowUpStatus
 from reposcan_contracts.health import HealthResponse
 from reposcan_contracts.hotlist import HotlistEntry
+from reposcan_contracts.operator import OperatorPrincipal, OperatorSessionRecord
 from reposcan_contracts.popup import PopupActivityEvent
 from reposcan_contracts.review import ReviewAction
 from reposcan_contracts.types import UtcTimestamp
@@ -45,6 +48,40 @@ class AlertUpdateSubmission(BaseModel):
     status: AlertStatus = Field(..., description="Next status for the alert")
     operator_id: Optional[str] = Field(None, description="Operator updating the alert")
     response_notes: Optional[str] = Field(None, description="Response or disposition notes")
+
+
+class FollowUpSubmission(BaseModel):
+    detection_id: str = Field(..., min_length=1)
+    alert_id: Optional[str] = Field(None, min_length=1)
+    plate_text: Optional[str] = Field(None, min_length=1)
+    priority: FollowUpPriority = FollowUpPriority.priority
+    status: FollowUpStatus = FollowUpStatus.open
+    assigned_operator_id: Optional[str] = Field(None, min_length=1)
+    summary: Optional[str] = None
+    notes: Optional[str] = None
+    due_at_utc: Optional[UtcTimestamp] = None
+
+
+class DispatchAssignmentSubmission(BaseModel):
+    detection_id: str = Field(..., min_length=1)
+    alert_id: Optional[str] = Field(None, min_length=1)
+    plate_text: Optional[str] = Field(None, min_length=1)
+    priority: DispatchAssignmentPriority = DispatchAssignmentPriority.priority
+    status: DispatchAssignmentStatus = DispatchAssignmentStatus.queued
+    assigned_operator_id: Optional[str] = Field(None, min_length=1)
+    assigned_unit_label: Optional[str] = None
+    destination_label: Optional[str] = None
+    summary: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class OperatorSessionHeartbeatSubmission(BaseModel):
+    session_id: str = Field(..., min_length=1)
+    client_label: Optional[str] = None
+    workspace: str = Field(..., min_length=1)
+    selected_detection_id: Optional[str] = Field(None, min_length=1)
+    selected_alert_id: Optional[str] = Field(None, min_length=1)
+    navigation_active: bool = False
 
 
 class DemoRunSubmission(BaseModel):
@@ -85,6 +122,9 @@ class DashboardCounts(BaseModel):
     active_alerts: int = Field(..., ge=0)
     recent_detections: int = Field(..., ge=0)
     active_hotlists: int = Field(..., ge=0)
+    open_follow_ups: int = Field(..., ge=0)
+    active_assignments: int = Field(..., ge=0)
+    active_sessions: int = Field(..., ge=0)
 
 
 class DashboardOverview(BaseModel):
@@ -93,8 +133,12 @@ class DashboardOverview(BaseModel):
     counts: DashboardCounts
     detections: list[DetectionRecord]
     alerts: list[AlertRecord]
+    follow_ups: list[FollowUpRecord]
+    assignments: list[DispatchAssignmentRecord]
     hotlists: list[HotlistEntry]
     popup_activity: list[PopupActivityEvent]
+    current_principal: OperatorPrincipal
+    active_sessions: list[OperatorSessionRecord]
 
 
 class SearchPlateMatchMode(str, Enum):

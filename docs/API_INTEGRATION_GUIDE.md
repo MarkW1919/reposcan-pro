@@ -52,7 +52,7 @@ Those committed tokens are for local testing only and must be replaced in privat
 The API currently uses four coarse roles:
 
 - `viewer`: read dashboard, detections, alerts, reviews, hotlists, and search
-- `operator`: submit reviews, update alert lifecycle state, and start demo runs
+- `operator`: submit reviews, manage follow-ups and dispatch assignments, update alert lifecycle state, and start demo runs
 - `admin`: create and update hotlists
 - `integrator`: read audit events
 
@@ -134,6 +134,10 @@ Current audited success actions include:
 - `search.detections`
 - `search.alerts`
 - `review.create`
+- `follow_up.create`
+- `follow_up.update`
+- `assignment.create`
+- `assignment.update`
 - `alert.update`
 - `hotlist.create`
 - `hotlist.update`

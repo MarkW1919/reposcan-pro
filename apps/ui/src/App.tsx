@@ -26,10 +26,12 @@ import {
   type WorkspaceId,
 } from "./demo-data";
 import {
-  buildDetectionFrameUrl,
-  buildDetectionPlateCropUrl,
+  createDispatchAssignment,
+  createFollowUp,
   createHotlist,
   createReview,
+  fetchDetectionFrameObjectUrl,
+  fetchDetectionPlateCropObjectUrl,
   fetchDemoRuntimeStatus,
   fetchHotlists,
   fetchReviews,
@@ -38,14 +40,27 @@ import {
   mapOverviewToPopupHistory,
   mapOverviewToRecoveryLog,
   searchDetections,
+  sendOperatorSessionHeartbeat,
+  setApiClientConfig,
   startDemoRun,
   updateAlert,
+  updateDispatchAssignment,
+  updateFollowUp,
   updateHotlist,
+  type DispatchAssignmentPriority,
+  type DispatchAssignmentRecord,
+  type DispatchAssignmentStatus,
   type DashboardAlert,
   type DashboardDetection,
   type DemoRuntimeStatus as DemoRuntimeStatusRecord,
   type DashboardHotlist,
   type DashboardOverviewResponse,
+  type FollowUpPriority,
+  type FollowUpRecord,
+  type FollowUpStatus,
+  type OperatorCapabilities,
+  type OperatorPrincipal,
+  type OperatorSessionRecord,
   type ReviewAction,
   type ReviewRecord,
   type SearchPlateMatchMode,
@@ -53,7 +68,26 @@ import {
 
 const layoutStorageKey = "reposcan.ui.dashboard-layout.v1";
 const settingsStorageKey = "reposcan.ui.field-settings.v1";
+const apiKeyStorageKey = "reposcan.ui.api-key.v1";
+const sessionLabelStorageKey = "reposcan.ui.session-label.v1";
+const operatorSessionIdStorageKey = "reposcan.ui.operator-session-id.v1";
 const defaultPopupHistory: DetectionPopupEvent[] = [hotlistPopupDetections[0], addressScanDetections[0]];
+const demoOperatorCapabilities: OperatorCapabilities = {
+  can_submit_reviews: true,
+  can_update_alerts: true,
+  can_manage_hotlists: true,
+  can_manage_follow_ups: true,
+  can_manage_dispatch: true,
+  can_start_demo_runs: true,
+  can_view_audit: true,
+};
+const demoOperatorPrincipal: OperatorPrincipal = {
+  principal_id: "local_dev",
+  display_name: "Local Development",
+  authenticated: false,
+  roles: ["viewer", "operator", "admin", "integrator"],
+  capabilities: demoOperatorCapabilities,
+};
 
 interface PopupNotification extends DetectionPopupEvent {
   instanceId: string;
@@ -74,6 +108,37 @@ interface SearchFormState {
   vehicleModel: string;
   vehicleYear: string;
   alertStatus: DashboardAlert["status"] | "";
+}
+
+function loadStoredString(key: string, fallback = ""): string {
+  if (typeof window === "undefined") {
+    return fallback;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function loadOrCreateOperatorSessionId(): string {
+  if (typeof window === "undefined") {
+    return "session_local_dev";
+  }
+
+  try {
+    const existing = window.localStorage.getItem(operatorSessionIdStorageKey);
+    if (existing && existing.trim()) {
+      return existing;
+    }
+    const created = `session_${Math.random().toString(16).slice(2, 10)}`;
+    window.localStorage.setItem(operatorSessionIdStorageKey, created);
+    return created;
+  } catch {
+    return `session_${Math.random().toString(16).slice(2, 10)}`;
+  }
 }
 
 function cloneLayout(layout: DashboardLayout): DashboardLayout {
@@ -182,6 +247,101 @@ function severityTone(value: AlertItem["severity"]): string {
     return "priority";
   }
   return "watch";
+}
+
+function followUpPriorityTone(value: FollowUpPriority): string {
+  if (value === "critical") {
+    return "critical";
+  }
+  if (value === "priority") {
+    return "priority";
+  }
+  return "muted";
+}
+
+function assignmentPriorityTone(value: DispatchAssignmentPriority): string {
+  if (value === "critical") {
+    return "critical";
+  }
+  if (value === "priority") {
+    return "priority";
+  }
+  return "muted";
+}
+
+function followUpStatusLabel(value: FollowUpStatus): string {
+  switch (value) {
+    case "open":
+      return "Open";
+    case "monitoring":
+      return "Monitoring";
+    case "resolved":
+      return "Resolved";
+  }
+}
+
+function followUpStatusTone(value: FollowUpStatus): string {
+  switch (value) {
+    case "open":
+      return "badge--critical";
+    case "monitoring":
+      return "badge--priority";
+    case "resolved":
+      return "badge--good";
+  }
+}
+
+function assignmentStatusLabel(value: DispatchAssignmentStatus): string {
+  switch (value) {
+    case "queued":
+      return "Queued";
+    case "assigned":
+      return "Assigned";
+    case "en_route":
+      return "En Route";
+    case "onsite":
+      return "On Scene";
+    case "completed":
+      return "Completed";
+    case "cancelled":
+      return "Cancelled";
+  }
+}
+
+function assignmentStatusTone(value: DispatchAssignmentStatus): string {
+  switch (value) {
+    case "completed":
+      return "badge--good";
+    case "cancelled":
+      return "badge--muted";
+    case "onsite":
+      return "badge--critical";
+    case "en_route":
+      return "badge--priority";
+    default:
+      return "badge--outlined";
+  }
+}
+
+function operatorRoleLabel(role: OperatorSessionRecord["roles"][number]): string {
+  switch (role) {
+    case "admin":
+      return "Admin";
+    case "operator":
+      return "Operator";
+    case "integrator":
+      return "Integrator";
+    default:
+      return "Viewer";
+  }
+}
+
+function operatorDisplayName(record: Pick<OperatorPrincipal, "display_name" | "principal_id">): string {
+  return record.display_name?.trim() || record.principal_id;
+}
+
+function workspaceLabel(workspaceId: string): string {
+  return workspaceTabs.find((tab) => tab.id === workspaceId)?.label ?? titleCaseLabel(workspaceId) ?? workspaceId;
 }
 
 function formatDistance(feet: number): string {
@@ -400,6 +560,9 @@ function App() {
   const [addressPopupIndex, setAddressPopupIndex] = useState(0);
   const [hotlistPopupIndex, setHotlistPopupIndex] = useState(0);
   const [liveOverview, setLiveOverview] = useState<DashboardOverviewResponse | null>(null);
+  const [apiKey, setApiKey] = useState<string>(() => loadStoredString(apiKeyStorageKey));
+  const [sessionLabel, setSessionLabel] = useState<string>(() => loadStoredString(sessionLabelStorageKey, "cab_console_01"));
+  const [operatorSessionError, setOperatorSessionError] = useState<string | null>(null);
   const [searchForm, setSearchForm] = useState<SearchFormState>(defaultSearchFormState);
   const [searchResults, setSearchResults] = useState<DashboardDetection[]>([]);
   const [searchTotalResults, setSearchTotalResults] = useState(0);
@@ -417,6 +580,25 @@ function App() {
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [reviewSuccess, setReviewSuccess] = useState<string | null>(null);
+  const [followUpPriority, setFollowUpPriority] = useState<FollowUpPriority>("priority");
+  const [followUpStatus, setFollowUpStatus] = useState<FollowUpStatus>("open");
+  const [followUpAssignedOperatorId, setFollowUpAssignedOperatorId] = useState("");
+  const [followUpSummary, setFollowUpSummary] = useState("");
+  const [followUpNotes, setFollowUpNotes] = useState("");
+  const [followUpDueAt, setFollowUpDueAt] = useState("");
+  const [followUpSubmitting, setFollowUpSubmitting] = useState(false);
+  const [followUpError, setFollowUpError] = useState<string | null>(null);
+  const [followUpSuccess, setFollowUpSuccess] = useState<string | null>(null);
+  const [assignmentPriority, setAssignmentPriority] = useState<DispatchAssignmentPriority>("priority");
+  const [assignmentStatus, setAssignmentStatus] = useState<DispatchAssignmentStatus>("queued");
+  const [assignmentOperatorId, setAssignmentOperatorId] = useState("");
+  const [assignmentUnitLabel, setAssignmentUnitLabel] = useState("");
+  const [assignmentDestination, setAssignmentDestination] = useState(alerts[0]?.location ?? "");
+  const [assignmentSummary, setAssignmentSummary] = useState("");
+  const [assignmentNotes, setAssignmentNotes] = useState("");
+  const [assignmentSubmitting, setAssignmentSubmitting] = useState(false);
+  const [assignmentError, setAssignmentError] = useState<string | null>(null);
+  const [assignmentSuccess, setAssignmentSuccess] = useState<string | null>(null);
   const [alertActionOperatorId, setAlertActionOperatorId] = useState("");
   const [alertActionNotes, setAlertActionNotes] = useState("");
   const [alertActionSubmitting, setAlertActionSubmitting] = useState(false);
@@ -441,6 +623,8 @@ function App() {
   const [demoSubmitting, setDemoSubmitting] = useState(false);
   const [demoError, setDemoError] = useState<string | null>(null);
   const [demoSuccess, setDemoSuccess] = useState<string | null>(null);
+  const [framePreviewUrl, setFramePreviewUrl] = useState<string | null>(null);
+  const [plateCropPreviewUrl, setPlateCropPreviewUrl] = useState<string | null>(null);
   const [framePreviewUnavailable, setFramePreviewUnavailable] = useState(false);
   const [plateCropPreviewUnavailable, setPlateCropPreviewUnavailable] = useState(false);
   const previousWithinArrivalRef = useRef(false);
@@ -448,6 +632,7 @@ function App() {
   const previousAlertActionTargetRef = useRef<string | null>(null);
   const previousDemoRunStateRef = useRef<DemoRuntimeStatusRecord["state"]>("idle");
   const previousDemoRunIdRef = useRef<string | null>(null);
+  const operatorSessionIdRef = useRef<string>(loadOrCreateOperatorSessionId());
 
   const operatorAlerts = liveOverview ? mapOverviewToAlertItems(liveOverview, alerts) : alerts;
   const detectionsById = new Map((liveOverview?.detections ?? []).map((record) => [record.detection_id, record]));
@@ -460,12 +645,40 @@ function App() {
     (selectedDetectionId ? liveOverview?.alerts.find((alert) => alert.detection_id === selectedDetectionId) ?? null : null) ??
     liveOverview?.alerts.find((alert) => alert.alert_id === selectedAlertId) ??
     null;
+  const liveFollowUps = liveOverview?.follow_ups ?? [];
+  const liveAssignments = liveOverview?.assignments ?? [];
+  const activeSessions = liveOverview?.active_sessions ?? [];
+  const currentOperator = liveOverview?.current_principal ?? demoOperatorPrincipal;
+  const selectedFollowUp =
+    (selectedDetectionId
+      ? liveFollowUps.find((record) => record.detection_id === selectedDetectionId && record.status !== "resolved") ??
+        liveFollowUps.find((record) => record.detection_id === selectedDetectionId) ??
+        null
+      : null) ?? null;
+  const selectedAssignment =
+    (selectedDetectionId
+      ? liveAssignments.find(
+          (record) =>
+            record.detection_id === selectedDetectionId &&
+            record.status !== "completed" &&
+            record.status !== "cancelled",
+        ) ??
+        liveAssignments.find((record) => record.detection_id === selectedDetectionId) ??
+        null
+      : null) ?? null;
+  const otherActiveSessions = activeSessions.filter((record) => record.session_id !== operatorSessionIdRef.current);
   const selectedHotlist = hotlistEntries.find((entry) => entry.entry_id === selectedHotlistId) ?? null;
   const selectedCamera = cameraFeeds.find((camera) => camera.id === selectedCameraId) ?? cameraFeeds[0];
   const onlineCameraCount = cameraFeeds.filter((camera) => camera.status === "Online").length;
   const liveHealthState = liveOverview?.health.state ?? "demo";
   const activeHotlistCount = liveOverview?.counts.active_hotlists ?? 0;
   const activeAlertCount = liveOverview?.counts.active_alerts ?? operatorAlerts.filter((alert) => alert.severity === "critical").length;
+  const openFollowUpCount =
+    liveOverview?.counts.open_follow_ups ?? liveFollowUps.filter((record) => record.status !== "resolved").length;
+  const activeAssignmentCount =
+    liveOverview?.counts.active_assignments ??
+    liveAssignments.filter((record) => record.status !== "completed" && record.status !== "cancelled").length;
+  const activeSessionCount = liveOverview?.counts.active_sessions ?? activeSessions.length;
   const recoveryLogEntries = liveOverview ? mapOverviewToRecoveryLog(liveOverview) : recoveryLog;
   const selectedAlertMatchesDetection = selectedDetectionId === null || selectedAlert?.detectionId === selectedDetectionId;
   const selectedDisplayPlate = selectedDetection?.plate_text ?? selectedLiveAlert?.matched_plate_text ?? selectedAlert?.plate ?? "Plate unavailable";
@@ -483,14 +696,18 @@ function App() {
       : "Detection review";
   const selectedDisplaySecondaryBadge = selectedAlertMatchesDetection
     ? statusLabels[selectedAlert.status]
-    : selectedLiveAlert
-      ? selectedLiveAlert.status
-      : "No alert";
+    : selectedAssignment
+      ? assignmentStatusLabel(selectedAssignment.status)
+      : selectedLiveAlert
+        ? selectedLiveAlert.status
+        : "No alert";
   const selectedDisplayBestApproach = selectedAlertMatchesDetection
     ? selectedAlert.bestApproach
-    : selectedLiveAlert
-      ? "Use the evidence frame and plate-crop confidence to confirm before escalating the live alert."
-      : "Review OCR candidates, compare the crop, and pin only detections that need follow-up.";
+    : selectedAssignment?.summary ??
+      selectedFollowUp?.summary ??
+      (selectedLiveAlert
+        ? "Use the evidence frame and plate-crop confidence to confirm before escalating the live alert."
+        : "Review OCR candidates, compare the crop, and pin only detections that need follow-up.");
   const selectedDisplayNotes = selectedAlertMatchesDetection
     ? selectedAlert.notes
     : selectedLiveAlert?.notes ??
@@ -500,10 +717,9 @@ function App() {
   const searchCameraChoices = Array.from(
     new Set((liveOverview?.detections ?? []).map((record) => record.camera_id)),
   ).sort((left, right) => left.localeCompare(right));
-  const selectedFramePreviewUrl =
-    liveDataSource === "live" && selectedDetectionId ? buildDetectionFrameUrl(selectedDetectionId) : null;
-  const selectedPlateCropPreviewUrl =
-    liveDataSource === "live" && selectedDetectionId ? buildDetectionPlateCropUrl(selectedDetectionId) : null;
+  const selectedWorkflowNotes = selectedAssignment?.notes ?? selectedFollowUp?.notes ?? selectedDisplayNotes;
+  const selectedFramePreviewUrl = liveDataSource === "live" ? framePreviewUrl : null;
+  const selectedPlateCropPreviewUrl = liveDataSource === "live" ? plateCropPreviewUrl : null;
   const withinArrivalRadius = navigationActive && currentDistanceFeet <= fieldSettings.arrivalTriggerDistance;
   const activeScanMode = withinArrivalRadius;
   const generalPopupsLive = navigationActive && addressDetectionEnabled && withinArrivalRadius;
@@ -514,18 +730,29 @@ function App() {
     : addressDetectionEnabled
       ? "General popups suppressed"
       : "Address popups disabled";
-  const alertActionsEnabled = liveDataSource === "live" && selectedLiveAlert !== null;
+  const alertActionsAvailable = liveDataSource === "live" && selectedLiveAlert !== null;
+  const alertActionsEnabled = alertActionsAvailable && currentOperator.capabilities.can_update_alerts;
   const reviewsEnabled = liveDataSource === "live" && selectedDetectionId !== null;
   const hotlistsEnabled = liveDataSource === "live";
   const demoRuntimeEnabled = liveDataSource === "live";
   const latestReview = reviewHistory[0] ?? null;
   const canSubmitReview =
     reviewsEnabled &&
+    currentOperator.capabilities.can_submit_reviews &&
     !reviewSubmitting &&
     (reviewAction !== "correct" || reviewCorrectedPlate.trim().length > 0);
-  const canSubmitHotlist = hotlistsEnabled && !hotlistSaving && hotlistPlateText.trim().length > 0;
+  const canManageFollowUps =
+    liveDataSource === "live" && currentOperator.capabilities.can_manage_follow_ups && selectedDetectionId !== null;
+  const canManageAssignments =
+    liveDataSource === "live" && currentOperator.capabilities.can_manage_dispatch && selectedDetectionId !== null;
+  const canSubmitHotlist =
+    hotlistsEnabled &&
+    currentOperator.capabilities.can_manage_hotlists &&
+    !hotlistSaving &&
+    hotlistPlateText.trim().length > 0;
   const canStartDemoRun =
     demoRuntimeEnabled &&
+    currentOperator.capabilities.can_start_demo_runs &&
     !demoSubmitting &&
     demoFramesDirectory.trim().length > 0 &&
     demoRuntimeStatus?.state !== "running";
@@ -597,6 +824,15 @@ function App() {
   }, [fieldSettings]);
 
   useEffect(() => {
+    setApiClientConfig({ apiKey });
+    window.localStorage.setItem(apiKeyStorageKey, apiKey);
+  }, [apiKey]);
+
+  useEffect(() => {
+    window.localStorage.setItem(sessionLabelStorageKey, sessionLabel);
+  }, [sessionLabel]);
+
+  useEffect(() => {
     if (operatorAlerts.some((alert) => alert.id === selectedAlertId)) {
       return;
     }
@@ -642,7 +878,46 @@ function App() {
       controller.abort();
       window.clearInterval(interval);
     };
-  }, []);
+  }, [apiKey]);
+
+  useEffect(() => {
+    if (liveDataSource !== "live") {
+      setOperatorSessionError(null);
+      return;
+    }
+
+    let disposed = false;
+
+    const sendHeartbeat = async (): Promise<void> => {
+      try {
+        await sendOperatorSessionHeartbeat({
+          session_id: operatorSessionIdRef.current,
+          client_label: sessionLabel.trim() || undefined,
+          workspace: activeWorkspace,
+          selected_detection_id: selectedDetectionId ?? undefined,
+          selected_alert_id: (selectedLiveAlert?.alert_id ?? selectedAlertId) || undefined,
+          navigation_active: navigationActive,
+        });
+        if (!disposed) {
+          setOperatorSessionError(null);
+        }
+      } catch (error) {
+        if (!disposed) {
+          setOperatorSessionError(error instanceof Error ? error.message : "Operator presence unavailable");
+        }
+      }
+    };
+
+    void sendHeartbeat();
+    const interval = window.setInterval(() => {
+      void sendHeartbeat();
+    }, 15000);
+
+    return () => {
+      disposed = true;
+      window.clearInterval(interval);
+    };
+  }, [activeWorkspace, liveDataSource, navigationActive, selectedAlertId, selectedDetectionId, selectedLiveAlert, sessionLabel]);
 
   useEffect(() => {
     setReviewAction("confirm");
@@ -651,6 +926,13 @@ function App() {
     setReviewSuccess(null);
     setReviewError(null);
   }, [selectedDetectionId, selectedDisplayPlate]);
+
+  useEffect(() => {
+    if (reviewOperatorId.trim()) {
+      return;
+    }
+    setReviewOperatorId(sessionLabel.trim() || currentOperator.principal_id);
+  }, [currentOperator.principal_id, reviewOperatorId, sessionLabel]);
 
   useEffect(() => {
     const nextAlertId = selectedLiveAlert?.alert_id ?? null;
@@ -667,6 +949,50 @@ function App() {
   }, [liveDataSource, selectedLiveAlert]);
 
   useEffect(() => {
+    setFollowUpPriority(
+      selectedFollowUp?.priority ??
+        (selectedAlert.severity === "critical" ? "critical" : selectedAlert.severity === "priority" ? "priority" : "routine"),
+    );
+    setFollowUpStatus(selectedFollowUp?.status ?? "open");
+    setFollowUpAssignedOperatorId((selectedFollowUp?.assigned_operator_id ?? sessionLabel.trim()) || currentOperator.principal_id);
+    setFollowUpSummary(selectedFollowUp?.summary ?? `Pin ${selectedDisplayPlate} for follow-up.`);
+    setFollowUpNotes(selectedFollowUp?.notes ?? selectedAlert.notes);
+    setFollowUpDueAt(selectedFollowUp?.due_at_utc ? formatLocalDateTimeInput(selectedFollowUp.due_at_utc) : "");
+    setFollowUpSuccess(null);
+    setFollowUpError(null);
+  }, [
+    currentOperator.principal_id,
+    selectedAlert.notes,
+    selectedAlert.severity,
+    selectedDetectionId,
+    selectedDisplayPlate,
+    selectedFollowUp,
+    sessionLabel,
+  ]);
+
+  useEffect(() => {
+    setAssignmentPriority(
+      selectedAssignment?.priority ??
+        (selectedAlert.severity === "critical" ? "critical" : selectedAlert.severity === "priority" ? "priority" : "watch"),
+    );
+    setAssignmentStatus(selectedAssignment?.status ?? "queued");
+    setAssignmentOperatorId((selectedAssignment?.assigned_operator_id ?? sessionLabel.trim()) || currentOperator.principal_id);
+    setAssignmentUnitLabel(selectedAssignment?.assigned_unit_label ?? "Truck 4");
+    setAssignmentDestination(selectedAssignment?.destination_label ?? selectedAlert.location);
+    setAssignmentSummary(selectedAssignment?.summary ?? `Dispatch field crew to ${selectedAlert.location}.`);
+    setAssignmentNotes(selectedAssignment?.notes ?? selectedAlert.bestApproach);
+    setAssignmentSuccess(null);
+    setAssignmentError(null);
+  }, [
+    currentOperator.principal_id,
+    selectedAlert.bestApproach,
+    selectedAlert.location,
+    selectedAlert.severity,
+    selectedAssignment,
+    sessionLabel,
+  ]);
+
+  useEffect(() => {
     if (demoPlateText.trim().length > 0) {
       return;
     }
@@ -674,9 +1000,86 @@ function App() {
   }, [demoPlateText, selectedAlert.plate]);
 
   useEffect(() => {
+    let disposed = false;
+    const controller = new AbortController();
+
     setFramePreviewUnavailable(false);
     setPlateCropPreviewUnavailable(false);
-  }, [selectedDetectionId, liveDataSource]);
+    setFramePreviewUrl((current) => {
+      if (current) {
+        URL.revokeObjectURL(current);
+      }
+      return null;
+    });
+    setPlateCropPreviewUrl((current) => {
+      if (current) {
+        URL.revokeObjectURL(current);
+      }
+      return null;
+    });
+
+    if (liveDataSource !== "live" || !selectedDetectionId) {
+      return () => {
+        disposed = true;
+        controller.abort();
+      };
+    }
+
+    fetchDetectionFrameObjectUrl(selectedDetectionId, controller.signal)
+      .then((url) => {
+        if (disposed) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        setFramePreviewUrl((current) => {
+          if (current) {
+            URL.revokeObjectURL(current);
+          }
+          return url;
+        });
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted && !disposed) {
+          setFramePreviewUnavailable(error instanceof Error);
+        }
+      });
+
+    fetchDetectionPlateCropObjectUrl(selectedDetectionId, controller.signal)
+      .then((url) => {
+        if (disposed) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        setPlateCropPreviewUrl((current) => {
+          if (current) {
+            URL.revokeObjectURL(current);
+          }
+          return url;
+        });
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted && !disposed) {
+          setPlateCropPreviewUnavailable(error instanceof Error);
+        }
+      });
+
+    return () => {
+      disposed = true;
+      controller.abort();
+      setFramePreviewUrl((current) => {
+        if (current) {
+          URL.revokeObjectURL(current);
+        }
+        return null;
+      });
+      setPlateCropPreviewUrl((current) => {
+        if (current) {
+          URL.revokeObjectURL(current);
+        }
+        return null;
+      });
+    };
+  }, [liveDataSource, selectedDetectionId]);
 
   useEffect(() => {
     if (!demoRuntimeEnabled) {
@@ -1141,6 +1544,87 @@ function App() {
     }
   }
 
+  async function handleFollowUpSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    if (!selectedDetectionId) {
+      return;
+    }
+
+    setFollowUpSubmitting(true);
+    setFollowUpError(null);
+    setFollowUpSuccess(null);
+
+    try {
+      const submission = {
+        detection_id: selectedDetectionId,
+        alert_id: selectedLiveAlert?.alert_id ?? undefined,
+        plate_text: selectedDisplayPlate !== "Plate unavailable" ? selectedDisplayPlate : undefined,
+        priority: followUpPriority,
+        status: followUpStatus,
+        assigned_operator_id: followUpAssignedOperatorId.trim() || undefined,
+        summary: followUpSummary.trim() || undefined,
+        notes: followUpNotes.trim() || undefined,
+        due_at_utc: toUtcIsoString(followUpDueAt),
+      };
+
+      const savedFollowUp = selectedFollowUp
+        ? await updateFollowUp(selectedFollowUp.follow_up_id, submission)
+        : await createFollowUp(submission);
+
+      setFollowUpSuccess(
+        selectedFollowUp
+          ? `${followUpStatusLabel(savedFollowUp.status)} follow-up saved for ${savedFollowUp.plate_text ?? selectedDisplayPlate}.`
+          : `Pinned ${savedFollowUp.plate_text ?? selectedDisplayPlate} for follow-up.`,
+      );
+      void refreshOverview();
+    } catch (error) {
+      setFollowUpError(error instanceof Error ? error.message : "Failed to save follow-up");
+    } finally {
+      setFollowUpSubmitting(false);
+    }
+  }
+
+  async function handleAssignmentSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    if (!selectedDetectionId) {
+      return;
+    }
+
+    setAssignmentSubmitting(true);
+    setAssignmentError(null);
+    setAssignmentSuccess(null);
+
+    try {
+      const submission = {
+        detection_id: selectedDetectionId,
+        alert_id: selectedLiveAlert?.alert_id ?? undefined,
+        plate_text: selectedDisplayPlate !== "Plate unavailable" ? selectedDisplayPlate : undefined,
+        priority: assignmentPriority,
+        status: assignmentStatus,
+        assigned_operator_id: assignmentOperatorId.trim() || undefined,
+        assigned_unit_label: assignmentUnitLabel.trim() || undefined,
+        destination_label: assignmentDestination.trim() || undefined,
+        summary: assignmentSummary.trim() || undefined,
+        notes: assignmentNotes.trim() || undefined,
+      };
+
+      const savedAssignment = selectedAssignment
+        ? await updateDispatchAssignment(selectedAssignment.assignment_id, submission)
+        : await createDispatchAssignment(submission);
+
+      setAssignmentSuccess(
+        selectedAssignment
+          ? `${assignmentStatusLabel(savedAssignment.status)} assignment saved for ${savedAssignment.plate_text ?? selectedDisplayPlate}.`
+          : `Dispatch assignment created for ${savedAssignment.plate_text ?? selectedDisplayPlate}.`,
+      );
+      void refreshOverview();
+    } catch (error) {
+      setAssignmentError(error instanceof Error ? error.message : "Failed to save assignment");
+    } finally {
+      setAssignmentSubmitting(false);
+    }
+  }
+
   async function handleAlertAction(nextStatus: DashboardAlert["status"]): Promise<void> {
     if (!selectedLiveAlert) {
       return;
@@ -1375,6 +1859,15 @@ function App() {
               <StatusRow label="Navigation" value={navigationModeLabel} tone={navigationActive ? "good" : "neutral"} />
               <StatusRow label="Camera bank" value={`${onlineCameraCount}/4 online`} tone="good" />
               <StatusRow
+                label="Crew"
+                value={
+                  liveDataSource === "live"
+                    ? `${activeSessionCount} active / ${operatorDisplayName(currentOperator)}`
+                    : operatorDisplayName(currentOperator)
+                }
+                tone={activeSessionCount > 1 ? "good" : "neutral"}
+              />
+              <StatusRow
                 label="Address scan"
                 value={
                   addressDetectionEnabled
@@ -1600,6 +2093,16 @@ function App() {
                     {selectedDisplayPrimaryBadge}
                   </span>
                   <span className="badge badge--outlined">{selectedDisplaySecondaryBadge}</span>
+                  {selectedFollowUp ? (
+                    <span className={`badge badge--${followUpPriorityTone(selectedFollowUp.priority)}`}>
+                      Pinned {followUpStatusLabel(selectedFollowUp.status)}
+                    </span>
+                  ) : null}
+                  {selectedAssignment ? (
+                    <span className={`badge ${assignmentStatusTone(selectedAssignment.status)}`}>
+                      {assignmentStatusLabel(selectedAssignment.status)}
+                    </span>
+                  ) : null}
                   <h3>{selectedDisplayVehicle}</h3>
                   <p>{selectedDisplayColorYear}</p>
                 </div>
@@ -1635,6 +2138,26 @@ function App() {
                           : "Live API only"
                   }
                 />
+                <StatusLine
+                  label="Follow-up"
+                  value={
+                    selectedFollowUp
+                      ? `${followUpStatusLabel(selectedFollowUp.status)} / ${titleCaseLabel(selectedFollowUp.priority)}`
+                      : liveDataSource === "live"
+                        ? "Not pinned"
+                        : "Live API only"
+                  }
+                />
+                <StatusLine
+                  label="Dispatch"
+                  value={
+                    selectedAssignment
+                      ? assignmentStatusLabel(selectedAssignment.status)
+                      : liveDataSource === "live"
+                        ? "Not assigned"
+                        : "Live API only"
+                  }
+                />
               </div>
               <div className="notes-box">
                 <label className="panel-label">Best approach</label>
@@ -1642,7 +2165,26 @@ function App() {
               </div>
               <div className="notes-box">
                 <label className="panel-label">Field notes</label>
-                <p>{selectedDisplayNotes}</p>
+                <p>{selectedWorkflowNotes}</p>
+              </div>
+              <div className="notes-box">
+                <div className="live-activity__header">
+                  <strong>Follow-up and dispatch</strong>
+                  <span>
+                    {selectedFollowUp
+                      ? `${followUpStatusLabel(selectedFollowUp.status)} follow-up`
+                      : selectedAssignment
+                        ? `${assignmentStatusLabel(selectedAssignment.status)} dispatch`
+                        : "No pinned workflow yet"}
+                  </span>
+                </div>
+                <p>
+                  {selectedAssignment?.assigned_unit_label
+                    ? `${selectedAssignment.assigned_unit_label} · `
+                    : ""}
+                  {selectedAssignment?.assigned_operator_id ?? selectedFollowUp?.assigned_operator_id ?? "Unassigned"}
+                  {selectedFollowUp?.due_at_utc ? ` · Due ${formatHotlistTimestamp(selectedFollowUp.due_at_utc)}` : ""}
+                </p>
               </div>
               {selectedDetection ? (
                 <div className="detection-insights">
@@ -1690,8 +2232,10 @@ function App() {
                 <div className="live-activity__header">
                   <strong>Operator review</strong>
                   <span>
-                    {reviewsEnabled
+                    {reviewsEnabled && currentOperator.capabilities.can_submit_reviews
                       ? "Persisted locally through the live API."
+                      : reviewsEnabled
+                        ? `${operatorDisplayName(currentOperator)} is read-only for review actions.`
                       : "Review submission unlocks when the live API is connected."}
                   </span>
                 </div>
@@ -1820,6 +2364,257 @@ function App() {
           <PanelFrame panelId={panelId}>
             <div className="runtime-shell">
               <div className="live-activity__header">
+                <strong>Follow-up pin</strong>
+                <span>
+                  {canManageFollowUps
+                    ? "Pin high-value detections and keep follow-up ownership visible."
+                    : liveDataSource === "live" && selectedDetectionId
+                      ? `${operatorDisplayName(currentOperator)} can view follow-ups but cannot edit them.`
+                      : "Connect the live API and select a detection to pin follow-up work."}
+                </span>
+              </div>
+              {liveDataSource === "live" && selectedDetectionId ? (
+                <div className="review-shell">
+                  <div className="runtime-summary">
+                    <div className="runtime-summary__grid">
+                      <StatusLine label="Selected plate" value={selectedDisplayPlate} />
+                      <StatusLine
+                        label="Follow-up state"
+                        value={selectedFollowUp ? followUpStatusLabel(selectedFollowUp.status) : "Not pinned"}
+                      />
+                      <StatusLine
+                        label="Priority"
+                        value={selectedFollowUp ? titleCaseLabel(selectedFollowUp.priority) : titleCaseLabel(followUpPriority)}
+                      />
+                      <StatusLine
+                        label="Assigned"
+                        value={(selectedFollowUp?.assigned_operator_id ?? followUpAssignedOperatorId.trim()) || "Unassigned"}
+                      />
+                    </div>
+                  </div>
+                  <form className="review-form" onSubmit={handleFollowUpSubmit}>
+                    <div className="form-grid review-form__grid">
+                      <label className="field-group">
+                        <span>Priority</span>
+                        <select
+                          value={followUpPriority}
+                          onChange={(event) => setFollowUpPriority(event.target.value as FollowUpPriority)}
+                        >
+                          <option value="routine">Routine</option>
+                          <option value="priority">Priority</option>
+                          <option value="critical">Critical</option>
+                        </select>
+                      </label>
+                      <label className="field-group">
+                        <span>Status</span>
+                        <select value={followUpStatus} onChange={(event) => setFollowUpStatus(event.target.value as FollowUpStatus)}>
+                          <option value="open">Open</option>
+                          <option value="monitoring">Monitoring</option>
+                          <option value="resolved">Resolved</option>
+                        </select>
+                      </label>
+                      <label className="field-group">
+                        <span>Assigned operator</span>
+                        <input
+                          className="input-control"
+                          placeholder="tow_lead_02"
+                          type="text"
+                          value={followUpAssignedOperatorId}
+                          onChange={(event) => setFollowUpAssignedOperatorId(event.target.value)}
+                        />
+                      </label>
+                      <label className="field-group">
+                        <span>Follow-up due</span>
+                        <input
+                          className="input-control"
+                          type="datetime-local"
+                          value={followUpDueAt}
+                          onChange={(event) => setFollowUpDueAt(event.target.value)}
+                        />
+                      </label>
+                    </div>
+                    <label className="field-group">
+                      <span>Pin summary</span>
+                      <input
+                        className="input-control"
+                        placeholder="Pin this read until the field crew is staged."
+                        type="text"
+                        value={followUpSummary}
+                        onChange={(event) => setFollowUpSummary(event.target.value)}
+                      />
+                    </label>
+                    <label className="field-group">
+                      <span>Follow-up notes</span>
+                      <textarea
+                        className="input-control input-control--multiline"
+                        placeholder="Capture the reason this detection stays pinned and what the next operator should do."
+                        value={followUpNotes}
+                        onChange={(event) => setFollowUpNotes(event.target.value)}
+                      />
+                    </label>
+                    {followUpError ? <div className="review-feedback review-feedback--error">{followUpError}</div> : null}
+                    {followUpSuccess ? <div className="review-feedback review-feedback--good">{followUpSuccess}</div> : null}
+                    <div className="panel-actions">
+                      <button className="button button--primary" disabled={!canManageFollowUps || followUpSubmitting} type="submit">
+                        {followUpSubmitting ? "Saving follow-up..." : selectedFollowUp ? "Update follow-up" : "Pin detection"}
+                      </button>
+                      <span className="panel-label">
+                        {openFollowUpCount} open follow-up{openFollowUpCount === 1 ? "" : "s"} across the dashboard
+                      </span>
+                    </div>
+                  </form>
+                </div>
+              ) : (
+                <div className="review-empty">Connect the live API to pin detections for follow-up.</div>
+              )}
+
+              <div className="live-activity__header">
+                <strong>Dispatch assignment</strong>
+                <span>
+                  {canManageAssignments
+                    ? "Create a field assignment that survives beyond the alert lifecycle buttons."
+                    : liveDataSource === "live" && selectedDetectionId
+                      ? `${operatorDisplayName(currentOperator)} can view assignments but cannot dispatch them.`
+                      : "Connect the live API and select a detection to create dispatch work."}
+                </span>
+              </div>
+              {liveDataSource === "live" && selectedDetectionId ? (
+                <div className="review-shell">
+                  <div className="runtime-summary">
+                    <div className="runtime-summary__grid">
+                      <StatusLine label="Assignment" value={selectedAssignment ? assignmentStatusLabel(selectedAssignment.status) : "None"} />
+                      <StatusLine
+                        label="Priority"
+                        value={selectedAssignment ? titleCaseLabel(selectedAssignment.priority) : titleCaseLabel(assignmentPriority)}
+                      />
+                      <StatusLine
+                        label="Assigned unit"
+                        value={(selectedAssignment?.assigned_unit_label ?? assignmentUnitLabel.trim()) || "Unset"}
+                      />
+                      <StatusLine
+                        label="Destination"
+                        value={(selectedAssignment?.destination_label ?? assignmentDestination.trim()) || "Unset"}
+                      />
+                    </div>
+                  </div>
+                  <form className="review-form" onSubmit={handleAssignmentSubmit}>
+                    <div className="form-grid review-form__grid">
+                      <label className="field-group">
+                        <span>Priority</span>
+                        <select
+                          value={assignmentPriority}
+                          onChange={(event) => setAssignmentPriority(event.target.value as DispatchAssignmentPriority)}
+                        >
+                          <option value="watch">Watch</option>
+                          <option value="priority">Priority</option>
+                          <option value="critical">Critical</option>
+                        </select>
+                      </label>
+                      <label className="field-group">
+                        <span>Status</span>
+                        <select
+                          value={assignmentStatus}
+                          onChange={(event) => setAssignmentStatus(event.target.value as DispatchAssignmentStatus)}
+                        >
+                          <option value="queued">Queued</option>
+                          <option value="assigned">Assigned</option>
+                          <option value="en_route">En Route</option>
+                          <option value="onsite">On Scene</option>
+                          <option value="completed">Completed</option>
+                          <option value="cancelled">Cancelled</option>
+                        </select>
+                      </label>
+                      <label className="field-group">
+                        <span>Assigned operator</span>
+                        <input
+                          className="input-control"
+                          placeholder="tow_lead_02"
+                          type="text"
+                          value={assignmentOperatorId}
+                          onChange={(event) => setAssignmentOperatorId(event.target.value)}
+                        />
+                      </label>
+                      <label className="field-group">
+                        <span>Assigned unit</span>
+                        <input
+                          className="input-control"
+                          placeholder="Truck 4"
+                          type="text"
+                          value={assignmentUnitLabel}
+                          onChange={(event) => setAssignmentUnitLabel(event.target.value)}
+                        />
+                      </label>
+                    </div>
+                    <div className="form-grid review-form__grid">
+                      <label className="field-group">
+                        <span>Destination</span>
+                        <input
+                          className="input-control"
+                          placeholder="Shoreline Marina south lot"
+                          type="text"
+                          value={assignmentDestination}
+                          onChange={(event) => setAssignmentDestination(event.target.value)}
+                        />
+                      </label>
+                      <label className="field-group">
+                        <span>Assignment brief</span>
+                        <input
+                          className="input-control"
+                          placeholder="Tow team rolling to the pinned target."
+                          type="text"
+                          value={assignmentSummary}
+                          onChange={(event) => setAssignmentSummary(event.target.value)}
+                        />
+                      </label>
+                    </div>
+                    <label className="field-group">
+                      <span>Dispatch notes</span>
+                      <textarea
+                        className="input-control input-control--multiline"
+                        placeholder="Record approach instructions, staging notes, and scene handoff details."
+                        value={assignmentNotes}
+                        onChange={(event) => setAssignmentNotes(event.target.value)}
+                      />
+                    </label>
+                    {assignmentError ? <div className="review-feedback review-feedback--error">{assignmentError}</div> : null}
+                    {assignmentSuccess ? <div className="review-feedback review-feedback--good">{assignmentSuccess}</div> : null}
+                    <div className="panel-actions">
+                      <button className="button button--primary" disabled={!canManageAssignments || assignmentSubmitting} type="submit">
+                        {assignmentSubmitting ? "Saving assignment..." : selectedAssignment ? "Update assignment" : "Create assignment"}
+                      </button>
+                      <span className="panel-label">
+                        {activeAssignmentCount} active assignment{activeAssignmentCount === 1 ? "" : "s"} on the board
+                      </span>
+                    </div>
+                  </form>
+                  {liveAssignments.length > 0 ? (
+                    <div className="review-history">
+                      <div className="live-activity__header">
+                        <strong>Active dispatch board</strong>
+                        <span>Recent assignments across the live dashboard.</span>
+                      </div>
+                      {liveAssignments.slice(0, 4).map((assignment) => (
+                        <div key={assignment.assignment_id} className="review-row">
+                          <div className="review-row__header">
+                            <span className={`badge ${assignmentStatusTone(assignment.status)}`}>
+                              {assignmentStatusLabel(assignment.status)}
+                            </span>
+                            <span>{formatHotlistTimestamp(assignment.updated_at_utc)}</span>
+                          </div>
+                          <strong>{assignment.plate_text ?? "Plate unavailable"}</strong>
+                          <p>
+                            {(assignment.assigned_unit_label ?? "No unit") + " · " + (assignment.assigned_operator_id ?? "No operator")}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="review-empty">Connect the live API to create and track dispatch assignments.</div>
+              )}
+
+              <div className="live-activity__header">
                 <strong>Demo runtime</strong>
                 <span className={`badge ${demoRuntimeBadgeTone(demoRuntimeStatus?.state)}`}>
                   {demoRuntimeLabel(demoRuntimeStatus?.state)}
@@ -1942,10 +2737,12 @@ function App() {
                 <span>
                   {alertActionsEnabled
                     ? "Persisted locally through the live API."
+                    : alertActionsAvailable
+                      ? `${operatorDisplayName(currentOperator)} can view alert response history but cannot change status.`
                     : "Connect the live API to acknowledge, stand down, or reopen alerts."}
                 </span>
               </div>
-              {alertActionsEnabled && selectedLiveAlert ? (
+              {alertActionsAvailable && selectedLiveAlert ? (
                 <div className="review-shell">
                   <div className="runtime-summary">
                     <div className="runtime-summary__grid">
@@ -1997,7 +2794,7 @@ function App() {
                     <div className="action-grid">
                       <button
                         className={`button ${selectedLiveAlert.status === "active" ? "button--primary" : ""}`}
-                        disabled={alertActionSubmitting || selectedLiveAlert.status === "acknowledged"}
+                        disabled={!alertActionsEnabled || alertActionSubmitting || selectedLiveAlert.status === "acknowledged"}
                         type="button"
                         onClick={() => {
                           void handleAlertAction("acknowledged");
@@ -2007,7 +2804,7 @@ function App() {
                       </button>
                       <button
                         className={`button ${selectedLiveAlert.status === "acknowledged" ? "button--primary" : ""}`}
-                        disabled={alertActionSubmitting || selectedLiveAlert.status === "dismissed"}
+                        disabled={!alertActionsEnabled || alertActionSubmitting || selectedLiveAlert.status === "dismissed"}
                         type="button"
                         onClick={() => {
                           void handleAlertAction("dismissed");
@@ -2017,7 +2814,7 @@ function App() {
                       </button>
                       <button
                         className={`button ${selectedLiveAlert.status === "dismissed" ? "button--primary" : ""}`}
-                        disabled={alertActionSubmitting || selectedLiveAlert.status === "active"}
+                        disabled={!alertActionsEnabled || alertActionSubmitting || selectedLiveAlert.status === "active"}
                         type="button"
                         onClick={() => {
                           void handleAlertAction("active");
@@ -2392,6 +3189,19 @@ function App() {
                       <div className="search-results__list">
                         {searchResults.map((result) => {
                           const matchingAlert = liveOverview?.alerts.find((alert) => alert.detection_id === result.detection_id) ?? null;
+                          const matchingFollowUp =
+                            liveFollowUps.find((record) => record.detection_id === result.detection_id && record.status !== "resolved") ??
+                            liveFollowUps.find((record) => record.detection_id === result.detection_id) ??
+                            null;
+                          const matchingAssignment =
+                            liveAssignments.find(
+                              (record) =>
+                                record.detection_id === result.detection_id &&
+                                record.status !== "completed" &&
+                                record.status !== "cancelled",
+                            ) ??
+                            liveAssignments.find((record) => record.detection_id === result.detection_id) ??
+                            null;
                           return (
                             <button
                               key={result.detection_id}
@@ -2412,6 +3222,16 @@ function App() {
                                   ) : (
                                     <span className="badge badge--outlined">No alert</span>
                                   )}
+                                  {matchingFollowUp ? (
+                                    <span className={`badge badge--${followUpPriorityTone(matchingFollowUp.priority)}`}>
+                                      {followUpStatusLabel(matchingFollowUp.status)}
+                                    </span>
+                                  ) : null}
+                                  {matchingAssignment ? (
+                                    <span className={`badge ${assignmentStatusTone(matchingAssignment.status)}`}>
+                                      {assignmentStatusLabel(matchingAssignment.status)}
+                                    </span>
+                                  ) : null}
                                   <span className="badge badge--outlined">{formatOptionalConfidence(result.plate_confidence)}</span>
                                 </div>
                               </div>
@@ -2598,13 +3418,118 @@ function App() {
                 </label>
               </div>
             </PanelFrame>
+            <PanelFrame panelId="dispatchBoard" titleOverride="Operator Session">
+              <div className="settings-section">
+                <div className="live-activity__header">
+                  <strong>Live identity and permissions</strong>
+                  <span>
+                    {liveDataSource === "live"
+                      ? `Heartbeat active for ${operatorDisplayName(currentOperator)}.`
+                      : "Paste an API key here when the deployment requires authenticated access."}
+                  </span>
+                </div>
+                <form
+                  className="review-form"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    setApiClientConfig({ apiKey });
+                    void refreshOverview();
+                  }}
+                >
+                  <div className="form-grid review-form__grid">
+                    <label className="field-group">
+                      <span>API key</span>
+                      <input
+                        autoComplete="off"
+                        className="input-control"
+                        placeholder="viewer-demo-token / operator-demo-token / admin-demo-token"
+                        type="password"
+                        value={apiKey}
+                        onChange={(event) => setApiKey(event.target.value)}
+                      />
+                    </label>
+                    <label className="field-group">
+                      <span>Session label</span>
+                      <input
+                        className="input-control"
+                        placeholder="cab_console_01"
+                        type="text"
+                        value={sessionLabel}
+                        onChange={(event) => setSessionLabel(event.target.value)}
+                      />
+                    </label>
+                  </div>
+                  <div className="panel-actions">
+                    <button className="button button--primary" type="submit">
+                      Reconnect live API
+                    </button>
+                    <button
+                      className="button"
+                      type="button"
+                      onClick={() => {
+                        setApiClientConfig({ apiKey: "" });
+                        setApiKey("");
+                        void refreshOverview();
+                      }}
+                    >
+                      Clear key
+                    </button>
+                  </div>
+                </form>
+                <div className="notes-box">
+                  <div className="live-activity__header">
+                    <strong>{operatorDisplayName(currentOperator)}</strong>
+                    <span>{currentOperator.authenticated ? "Authenticated" : "Local development mode"}</span>
+                  </div>
+                  <div className="badge-group">
+                    {currentOperator.roles.map((role) => (
+                      <span key={role} className="badge badge--outlined">
+                        {operatorRoleLabel(role)}
+                      </span>
+                    ))}
+                    {!currentOperator.capabilities.can_manage_hotlists ? (
+                      <span className="badge badge--muted">Hotlist read-only</span>
+                    ) : null}
+                    {!currentOperator.capabilities.can_manage_dispatch ? (
+                      <span className="badge badge--muted">Dispatch read-only</span>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="review-history">
+                  <div className="live-activity__header">
+                    <strong>Active crew sessions</strong>
+                    <span>{activeSessionCount} active session{activeSessionCount === 1 ? "" : "s"} on the live console.</span>
+                  </div>
+                  {liveDataSource !== "live" ? (
+                    <div className="review-empty">Connect the live API to see other operator sessions and workspaces.</div>
+                  ) : otherActiveSessions.length === 0 ? (
+                    <div className="review-empty">No other live sessions are active right now.</div>
+                  ) : (
+                    otherActiveSessions.slice(0, 6).map((session) => (
+                      <div key={session.session_id} className="review-row">
+                        <div className="review-row__header">
+                          <span className="badge badge--outlined">{workspaceLabel(session.workspace)}</span>
+                          <span>{formatHotlistTimestamp(session.last_seen_at_utc)}</span>
+                        </div>
+                        <strong>{session.client_label ?? operatorDisplayName(session)}</strong>
+                        <p>
+                          {operatorDisplayName(session)} · {session.selected_detection_id ?? session.selected_alert_id ?? "No active target"}
+                        </p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </PanelFrame>
             <PanelFrame panelId="hotlistFeed" titleOverride="Hotlist Manager">
               <div className="hotlist-manager">
                 <div className="live-activity__header">
                   <strong>Local hotlist control</strong>
                   <span>
-                    {hotlistsEnabled
+                    {hotlistsEnabled && currentOperator.capabilities.can_manage_hotlists
                       ? `${hotlistEntries.length} hotlist entr${hotlistEntries.length === 1 ? "y" : "ies"} loaded from the live API.`
+                      : hotlistsEnabled
+                        ? `${operatorDisplayName(currentOperator)} can view hotlists but cannot edit them.`
                       : "Connect the live API to create and update local hotlist entries."}
                   </span>
                 </div>
@@ -2758,8 +3683,13 @@ function App() {
         </span>
         <span>Profile: {layout.profile}</span>
         <span>API health: {liveHealthState}</span>
+        <span>Operator: {operatorDisplayName(currentOperator)}</span>
+        <span>Roles: {currentOperator.roles.map((role) => operatorRoleLabel(role)).join(", ") || "Local"}</span>
         <span>
           Active alerts: {activeAlertCount} / Active hotlists: {liveOverview ? activeHotlistCount : "demo"}
+        </span>
+        <span>
+          Follow-ups: {openFollowUpCount} / Dispatch: {activeAssignmentCount} / Crew: {activeSessionCount}
         </span>
         <span>
           {generalPopupsLive
@@ -2770,6 +3700,7 @@ function App() {
         </span>
         <span>Hotlist matches remain high-priority and never suppressed.</span>
         {liveError ? <span>{liveError}</span> : null}
+        {operatorSessionError ? <span>{operatorSessionError}</span> : null}
       </section>
 
       {popupStack.length > 0 ? (

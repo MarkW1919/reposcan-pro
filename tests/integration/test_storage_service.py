@@ -3,13 +3,22 @@ from __future__ import annotations
 import pytest
 
 from reposcan_contracts.alert import AlertRecord
+from reposcan_contracts.dispatch import DispatchAssignmentRecord
 from reposcan_contracts.detection import DetectionRecord
+from reposcan_contracts.followup import FollowUpRecord
 from reposcan_contracts.hotlist import HotlistEntry
+from reposcan_contracts.operator import OperatorSessionRecord
 from reposcan_contracts.review import ReviewRecord
 from reposcan_contracts.tracking import TrackedDetection
 from reposcan_storage.json_store import JsonFileStorageRepository
 from reposcan_storage.memory import InMemoryStorageRepository
-from reposcan_storage.service import AlertNotFoundError, DetectionNotFoundError, StorageService
+from reposcan_storage.service import (
+    AlertNotFoundError,
+    AssignmentNotFoundError,
+    DetectionNotFoundError,
+    FollowUpNotFoundError,
+    StorageService,
+)
 from reposcan_storage.dev_seed import seed_development_operator_data
 
 
@@ -56,6 +65,60 @@ def _hotlist_entry() -> HotlistEntry:
             "label": "Case 42",
             "created_at_utc": "2026-03-20T04:00:00Z",
             "updated_at_utc": "2026-03-20T04:00:00Z",
+        }
+    )
+
+
+def _follow_up_record() -> FollowUpRecord:
+    return FollowUpRecord.model_validate(
+        {
+            "follow_up_id": "fu_001",
+            "detection_id": "det_20260320_000001",
+            "alert_id": "alert_001",
+            "plate_text": "8ABC123",
+            "priority": "critical",
+            "status": "open",
+            "created_by_operator_id": "cab_demo_01",
+            "assigned_operator_id": "tow_lead_02",
+            "summary": "Pin this target for the field team.",
+            "created_at_utc": "2026-03-20T04:18:00Z",
+            "updated_at_utc": "2026-03-20T04:18:00Z",
+        }
+    )
+
+
+def _assignment_record() -> DispatchAssignmentRecord:
+    return DispatchAssignmentRecord.model_validate(
+        {
+            "assignment_id": "asg_001",
+            "detection_id": "det_20260320_000001",
+            "alert_id": "alert_001",
+            "plate_text": "8ABC123",
+            "priority": "critical",
+            "status": "assigned",
+            "created_by_operator_id": "cab_demo_01",
+            "assigned_operator_id": "tow_lead_02",
+            "assigned_unit_label": "Truck 4",
+            "destination_label": "Shoreline Marina south lot",
+            "summary": "Tow crew staged for pickup.",
+            "created_at_utc": "2026-03-20T04:19:00Z",
+            "updated_at_utc": "2026-03-20T04:19:00Z",
+        }
+    )
+
+
+def _session_record() -> OperatorSessionRecord:
+    return OperatorSessionRecord.model_validate(
+        {
+            "session_id": "session_001",
+            "principal_id": "operator_demo",
+            "display_name": "Operator Demo",
+            "authenticated": True,
+            "roles": ["viewer", "operator"],
+            "client_label": "cab_console_01",
+            "workspace": "dashboard",
+            "selected_detection_id": "det_20260320_000001",
+            "last_seen_at_utc": "2026-03-20T04:20:00Z",
         }
     )
 
@@ -123,19 +186,28 @@ def test_storage_service_ensures_media_layout(tmp_path):
 def test_json_repository_roundtrip(tmp_path):
     repository = JsonFileStorageRepository(tmp_path / "metadata")
     detection = _detection_record()
+    follow_up = _follow_up_record()
+    assignment = _assignment_record()
     review = _review_record()
     hotlist = _hotlist_entry()
     alert = _alert_record()
+    session = _session_record()
 
     repository.upsert_detection(detection)
+    repository.upsert_follow_up(follow_up)
+    repository.upsert_assignment(assignment)
     repository.create_review(review)
     repository.upsert_hotlist(hotlist)
     repository.create_alert(alert)
+    repository.upsert_operator_session(session)
 
     assert repository.get_detection(detection.detection_id) == detection
+    assert repository.get_follow_up(follow_up.follow_up_id) == follow_up
+    assert repository.get_assignment(assignment.assignment_id) == assignment
     assert repository.list_reviews(detection.detection_id) == [review]
     assert repository.get_hotlist(hotlist.entry_id) == hotlist
     assert repository.get_alert(alert.alert_id) == alert
+    assert repository.list_operator_sessions() == [session]
 
 
 def test_review_history_is_returned_newest_first(tmp_path):
@@ -184,6 +256,76 @@ def test_storage_service_updates_alert_state(tmp_path):
     assert updated.response_notes == "Operator marked the vehicle as on scene."
     assert updated.updated_at_utc == "2026-03-20T04:21:00Z"
     assert service.get_alert(updated.alert_id) == updated
+
+
+def test_storage_service_creates_and_updates_follow_up_and_assignment(tmp_path):
+    service = StorageService(
+        repository=InMemoryStorageRepository(),
+        media_root=tmp_path / "media",
+    )
+    service.store_detection(_detection_record())
+    service.store_alert(_alert_record())
+
+    created_follow_up = service.create_follow_up(_follow_up_record())
+    created_assignment = service.create_assignment(_assignment_record())
+
+    updated_follow_up = service.update_follow_up(
+        created_follow_up.model_copy(
+            update={
+                "status": "monitoring",
+                "updated_at_utc": "2026-03-20T04:19:00Z",
+            }
+        )
+    )
+    updated_assignment = service.update_assignment(
+        created_assignment.model_copy(
+            update={
+                "status": "en_route",
+                "updated_at_utc": "2026-03-20T04:20:00Z",
+            }
+        )
+    )
+
+    assert updated_follow_up.status == "monitoring"
+    assert updated_assignment.status == "en_route"
+    assert service.list_follow_ups(limit=10)[0].follow_up_id == created_follow_up.follow_up_id
+    assert service.list_assignments(limit=10)[0].assignment_id == created_assignment.assignment_id
+
+
+def test_storage_service_rejects_missing_follow_up_and_assignment_updates(tmp_path):
+    service = StorageService(
+        repository=InMemoryStorageRepository(),
+        media_root=tmp_path / "media",
+    )
+    service.store_detection(_detection_record())
+
+    with pytest.raises(FollowUpNotFoundError):
+        service.update_follow_up(_follow_up_record())
+
+    with pytest.raises(AssignmentNotFoundError):
+        service.update_assignment(_assignment_record())
+
+
+def test_storage_service_tracks_active_operator_sessions(tmp_path):
+    service = StorageService(
+        repository=InMemoryStorageRepository(),
+        media_root=tmp_path / "media",
+    )
+
+    active = service.touch_operator_session(_session_record())
+    stale = service.touch_operator_session(
+        _session_record().model_copy(
+            update={
+                "session_id": "session_stale",
+                "last_seen_at_utc": "2026-03-20T04:00:00Z",
+            }
+        )
+    )
+
+    assert active.session_id == "session_001"
+    assert stale.session_id == "session_stale"
+    sessions = service.list_operator_sessions(limit=10, max_age_seconds=1_000_000)
+    assert {session.session_id for session in sessions} == {"session_001", "session_stale"}
 
 
 def test_storage_service_rejects_update_for_missing_alert(tmp_path):

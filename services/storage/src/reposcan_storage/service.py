@@ -17,10 +17,13 @@ from reposcan_contracts.config.deployment import (
     MetadataBackend,
     StoragePressureConfig,
 )
+from reposcan_contracts.dispatch import DispatchAssignmentRecord, DispatchAssignmentStatus
 from reposcan_contracts.config.loader import load_deployment_config
 from reposcan_contracts.detection import DetectionRecord
+from reposcan_contracts.followup import FollowUpRecord, FollowUpStatus
 from reposcan_contracts.health import DependencyHealth, HealthState
 from reposcan_contracts.hotlist import HotlistEntry
+from reposcan_contracts.operator import OperatorSessionRecord
 from reposcan_contracts.review import ReviewRecord
 from reposcan_contracts.tracking import TrackedDetection
 
@@ -40,6 +43,14 @@ class AlertNotFoundError(KeyError):
 
 
 class HotlistNotFoundError(KeyError):
+    pass
+
+
+class FollowUpNotFoundError(KeyError):
+    pass
+
+
+class AssignmentNotFoundError(KeyError):
     pass
 
 
@@ -165,6 +176,57 @@ class StorageService:
     def store_detection(self, detection: DetectionRecord) -> DetectionRecord:
         return self.repository.upsert_detection(detection)
 
+    def list_follow_ups(
+        self,
+        *,
+        detection_id: str | None = None,
+        status: FollowUpStatus | None = None,
+        limit: int = 100,
+    ) -> list[FollowUpRecord]:
+        return self.repository.list_follow_ups(detection_id=detection_id, status=status, limit=limit)
+
+    def get_follow_up(self, follow_up_id: str) -> FollowUpRecord | None:
+        return self.repository.get_follow_up(follow_up_id)
+
+    def create_follow_up(self, follow_up: FollowUpRecord) -> FollowUpRecord:
+        if self.repository.get_detection(follow_up.detection_id) is None:
+            raise DetectionNotFoundError(follow_up.detection_id)
+        return self.repository.upsert_follow_up(follow_up)
+
+    def update_follow_up(self, follow_up: FollowUpRecord) -> FollowUpRecord:
+        if self.repository.get_follow_up(follow_up.follow_up_id) is None:
+            raise FollowUpNotFoundError(follow_up.follow_up_id)
+        if self.repository.get_detection(follow_up.detection_id) is None:
+            raise DetectionNotFoundError(follow_up.detection_id)
+        return self.repository.upsert_follow_up(follow_up)
+
+    def list_assignments(
+        self,
+        *,
+        detection_id: str | None = None,
+        limit: int = 100,
+    ) -> list[DispatchAssignmentRecord]:
+        return self.repository.list_assignments(detection_id=detection_id, limit=limit)
+
+    def get_assignment(self, assignment_id: str) -> DispatchAssignmentRecord | None:
+        return self.repository.get_assignment(assignment_id)
+
+    def create_assignment(self, assignment: DispatchAssignmentRecord) -> DispatchAssignmentRecord:
+        if self.repository.get_detection(assignment.detection_id) is None:
+            raise DetectionNotFoundError(assignment.detection_id)
+        if assignment.alert_id is not None and self.repository.get_alert(assignment.alert_id) is None:
+            raise AlertNotFoundError(assignment.alert_id)
+        return self.repository.upsert_assignment(assignment)
+
+    def update_assignment(self, assignment: DispatchAssignmentRecord) -> DispatchAssignmentRecord:
+        if self.repository.get_assignment(assignment.assignment_id) is None:
+            raise AssignmentNotFoundError(assignment.assignment_id)
+        if self.repository.get_detection(assignment.detection_id) is None:
+            raise DetectionNotFoundError(assignment.detection_id)
+        if assignment.alert_id is not None and self.repository.get_alert(assignment.alert_id) is None:
+            raise AlertNotFoundError(assignment.alert_id)
+        return self.repository.upsert_assignment(assignment)
+
     def store_tracked_detection(self, tracked_detection: TrackedDetection) -> DetectionRecord:
         image_path = tracked_detection.evidence_refs.best_frame_path
         if not image_path:
@@ -246,6 +308,17 @@ class StorageService:
         if self.repository.get_hotlist(entry.entry_id) is None:
             raise HotlistNotFoundError(entry.entry_id)
         return self.repository.upsert_hotlist(entry)
+
+    def touch_operator_session(self, session: OperatorSessionRecord) -> OperatorSessionRecord:
+        return self.repository.upsert_operator_session(session)
+
+    def list_operator_sessions(self, *, limit: int = 100, max_age_seconds: int = 90) -> list[OperatorSessionRecord]:
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=max_age_seconds)
+        sessions = self.repository.list_operator_sessions(limit=max(limit * 4, 100))
+        active_sessions = [
+            session for session in sessions if _parse_utc(session.last_seen_at_utc) >= cutoff
+        ]
+        return active_sessions[:limit]
 
     def search_detections(
         self,

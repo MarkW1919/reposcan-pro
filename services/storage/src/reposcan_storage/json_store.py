@@ -15,8 +15,11 @@ from typing import TypeVar
 from pydantic import BaseModel
 
 from reposcan_contracts.alert import AlertRecord, AlertStatus
+from reposcan_contracts.dispatch import DispatchAssignmentRecord
 from reposcan_contracts.detection import DetectionRecord
+from reposcan_contracts.followup import FollowUpRecord, FollowUpStatus
 from reposcan_contracts.hotlist import HotlistEntry
+from reposcan_contracts.operator import OperatorSessionRecord
 from reposcan_contracts.review import ReviewRecord
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
@@ -27,14 +30,20 @@ class JsonFileStorageRepository:
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
         self._detections_path = self.root / "detections.json"
+        self._follow_ups_path = self.root / "follow_ups.json"
+        self._assignments_path = self.root / "assignments.json"
         self._reviews_path = self.root / "reviews.json"
         self._alerts_path = self.root / "alerts.json"
         self._hotlists_path = self.root / "hotlists.json"
+        self._sessions_path = self.root / "sessions.json"
         self._lock = RLock()
         self._ensure_file(self._detections_path)
+        self._ensure_file(self._follow_ups_path)
+        self._ensure_file(self._assignments_path)
         self._ensure_file(self._reviews_path)
         self._ensure_file(self._alerts_path)
         self._ensure_file(self._hotlists_path)
+        self._ensure_file(self._sessions_path)
 
     def _backup_path(self, path: Path) -> Path:
         return path.with_suffix(f"{path.suffix}.bak")
@@ -112,6 +121,69 @@ class JsonFileStorageRepository:
             self._write_records(self._detections_path, ordered)
         return detection
 
+    def list_follow_ups(
+        self,
+        *,
+        detection_id: str | None = None,
+        status: FollowUpStatus | None = None,
+        limit: int = 100,
+    ) -> list[FollowUpRecord]:
+        with self._lock:
+            follow_ups = self._read_records(self._follow_ups_path, FollowUpRecord)
+        follow_ups = sorted(follow_ups, key=lambda record: record.updated_at_utc, reverse=True)
+        if detection_id is not None:
+            follow_ups = [record for record in follow_ups if record.detection_id == detection_id]
+        if status is not None:
+            follow_ups = [record for record in follow_ups if record.status == status]
+        return follow_ups[:limit]
+
+    def get_follow_up(self, follow_up_id: str) -> FollowUpRecord | None:
+        with self._lock:
+            follow_ups = self._read_records(self._follow_ups_path, FollowUpRecord)
+        for follow_up in follow_ups:
+            if follow_up.follow_up_id == follow_up_id:
+                return follow_up
+        return None
+
+    def upsert_follow_up(self, follow_up: FollowUpRecord) -> FollowUpRecord:
+        with self._lock:
+            follow_ups = self._read_records(self._follow_ups_path, FollowUpRecord)
+            by_id = {record.follow_up_id: record for record in follow_ups}
+            by_id[follow_up.follow_up_id] = follow_up
+            ordered = sorted(by_id.values(), key=lambda record: record.updated_at_utc, reverse=True)
+            self._write_records(self._follow_ups_path, ordered)
+        return follow_up
+
+    def list_assignments(
+        self,
+        *,
+        detection_id: str | None = None,
+        limit: int = 100,
+    ) -> list[DispatchAssignmentRecord]:
+        with self._lock:
+            assignments = self._read_records(self._assignments_path, DispatchAssignmentRecord)
+        assignments = sorted(assignments, key=lambda record: record.updated_at_utc, reverse=True)
+        if detection_id is not None:
+            assignments = [record for record in assignments if record.detection_id == detection_id]
+        return assignments[:limit]
+
+    def get_assignment(self, assignment_id: str) -> DispatchAssignmentRecord | None:
+        with self._lock:
+            assignments = self._read_records(self._assignments_path, DispatchAssignmentRecord)
+        for assignment in assignments:
+            if assignment.assignment_id == assignment_id:
+                return assignment
+        return None
+
+    def upsert_assignment(self, assignment: DispatchAssignmentRecord) -> DispatchAssignmentRecord:
+        with self._lock:
+            assignments = self._read_records(self._assignments_path, DispatchAssignmentRecord)
+            by_id = {record.assignment_id: record for record in assignments}
+            by_id[assignment.assignment_id] = assignment
+            ordered = sorted(by_id.values(), key=lambda record: record.updated_at_utc, reverse=True)
+            self._write_records(self._assignments_path, ordered)
+        return assignment
+
     def create_review(self, review: ReviewRecord) -> ReviewRecord:
         with self._lock:
             reviews = self._read_records(self._reviews_path, ReviewRecord)
@@ -185,3 +257,18 @@ class JsonFileStorageRepository:
             ordered = sorted(by_id.values(), key=lambda record: record.updated_at_utc, reverse=True)
             self._write_records(self._hotlists_path, ordered)
         return entry
+
+    def list_operator_sessions(self, *, limit: int = 100) -> list[OperatorSessionRecord]:
+        with self._lock:
+            sessions = self._read_records(self._sessions_path, OperatorSessionRecord)
+        sessions = sorted(sessions, key=lambda record: record.last_seen_at_utc, reverse=True)
+        return sessions[:limit]
+
+    def upsert_operator_session(self, session: OperatorSessionRecord) -> OperatorSessionRecord:
+        with self._lock:
+            sessions = self._read_records(self._sessions_path, OperatorSessionRecord)
+            by_id = {record.session_id: record for record in sessions}
+            by_id[session.session_id] = session
+            ordered = sorted(by_id.values(), key=lambda record: record.last_seen_at_utc, reverse=True)
+            self._write_records(self._sessions_path, ordered)
+        return session
