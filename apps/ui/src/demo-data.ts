@@ -1,4 +1,4 @@
-export type WorkspaceId = "dashboard" | "navigation" | "alerts" | "cameras" | "settings";
+export type WorkspaceId = "dashboard" | "navigation" | "alerts" | "search" | "cameras" | "settings";
 
 export type PanelId =
   | "opsMap"
@@ -88,6 +88,7 @@ export const workspaceTabs: Array<{ id: WorkspaceId; label: string }> = [
   { id: "dashboard", label: "Recovery Dashboard" },
   { id: "navigation", label: "Route HUD" },
   { id: "alerts", label: "Recovery Alerts" },
+  { id: "search", label: "Search" },
   { id: "cameras", label: "Camera Views" },
   { id: "settings", label: "Field Settings" },
 ];

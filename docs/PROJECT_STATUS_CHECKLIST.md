@@ -130,8 +130,8 @@ Last reviewed against repo state: `2026-03-25`
 - [x] ~~Alert response workflow exists with acknowledge, stand down, reopen, and persisted response notes.~~
 - [x] ~~App-driven headless demo runtime controls exist in the UI.~~
 - [x] ~~Recovery log can reflect live alert status changes.~~
-- [ ] Search workflow UI exists for full and partial plate search.
-- [ ] Rich detection detail view exists for alternate OCR candidates and confidence breakdowns.
+- [x] ~~Search workflow UI exists for full and partial plate search.~~
+- [x] ~~Rich detection detail view exists for alternate OCR candidates and confidence breakdowns.~~
 - [ ] Pin / follow-up workflow exists for high-value detections.
 - [ ] Dispatch / assignment workflow exists beyond the current alert lifecycle controls.
 - [ ] Multi-user session awareness exists.

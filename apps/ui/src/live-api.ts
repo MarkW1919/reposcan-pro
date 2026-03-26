@@ -35,6 +35,18 @@ export interface ReviewSubmission {
   reviewed_at_utc: string;
 }
 
+export interface BoundingBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface PlateCandidate {
+  text: string;
+  confidence: number;
+}
+
 export interface DashboardDetection {
   detection_id: string;
   timestamp_utc: string;
@@ -43,10 +55,24 @@ export interface DashboardDetection {
   gps_longitude: number | null;
   plate_text: string | null;
   plate_confidence: number | null;
+  plate_candidates: PlateCandidate[];
+  vehicle_bbox: BoundingBox;
+  plate_bbox: BoundingBox | null;
   vehicle_color: string | null;
+  vehicle_color_confidence: number | null;
   vehicle_make: string | null;
+  vehicle_make_confidence: number | null;
   vehicle_model: string | null;
+  vehicle_model_confidence: number | null;
   optional_vehicle_year: string | null;
+  optional_year_confidence: number | null;
+  tracker_id: string | null;
+  image_path: string;
+  plate_crop_path: string | null;
+  source_video_path: string | null;
+  frame_number: number;
+  local_only_flag: boolean;
+  sync_status: string;
 }
 
 export interface DashboardAlert {
@@ -154,12 +180,60 @@ export interface DashboardOverviewResponse {
   popup_activity: DashboardPopupActivityEvent[];
 }
 
-function apiBaseUrl(): string {
+export type SearchPlateMatchMode = "contains" | "exact" | "prefix" | "suffix";
+
+export interface SearchPageInfo {
+  total_results: number;
+  limit: number;
+  offset: number;
+}
+
+export interface DetectionSearchFilters {
+  plate?: string;
+  plate_match?: SearchPlateMatchMode;
+  start_utc?: string;
+  end_utc?: string;
+  camera_id?: string;
+  min_latitude?: number;
+  max_latitude?: number;
+  min_longitude?: number;
+  max_longitude?: number;
+  vehicle_color?: string;
+  vehicle_make?: string;
+  vehicle_model?: string;
+  vehicle_year?: string;
+  alert_status?: DashboardAlertStatus;
+  limit?: number;
+  offset?: number;
+}
+
+export interface DetectionSearchResult {
+  page: SearchPageInfo;
+  results: DashboardDetection[];
+}
+
+function configuredApiBaseUrl(): string {
   return (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ?? "http://127.0.0.1:8000";
 }
 
+function apiPrefix(): string {
+  const configured = (import.meta.env.VITE_API_PREFIX as string | undefined)?.trim();
+  if (!configured) {
+    return "/api/v1";
+  }
+  return configured.startsWith("/") ? configured.replace(/\/$/, "") : `/${configured.replace(/\/$/, "")}`;
+}
+
+function apiUrl(path: string): string {
+  const baseUrl = configuredApiBaseUrl();
+  const prefix = apiPrefix();
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  const rootUrl = baseUrl.endsWith(prefix) ? baseUrl.slice(0, -prefix.length) : baseUrl;
+  return `${rootUrl}${prefix}${normalizedPath}`;
+}
+
 function mediaUrl(path: string): string {
-  return `${apiBaseUrl()}${path}`;
+  return apiUrl(path);
 }
 
 async function responseErrorMessage(response: Response, fallback: string): Promise<string> {
@@ -272,7 +346,7 @@ function recoveryLogStatus(status: DashboardAlert["status"]): RecoveryLogEntry["
 }
 
 export async function fetchDashboardOverview(signal?: AbortSignal): Promise<DashboardOverviewResponse> {
-  const response = await fetch(`${apiBaseUrl()}/dashboard/overview`, { signal });
+  const response = await fetch(apiUrl("/dashboard/overview"), { signal });
   if (!response.ok) {
     throw new Error(`Failed to load dashboard overview (${response.status})`);
   }
@@ -288,7 +362,7 @@ export function buildDetectionPlateCropUrl(detectionId: string): string {
 }
 
 export async function fetchDemoRuntimeStatus(signal?: AbortSignal): Promise<DemoRuntimeStatus> {
-  const response = await fetch(`${apiBaseUrl()}/demo/runtime`, { signal });
+  const response = await fetch(apiUrl("/demo/runtime"), { signal });
   if (!response.ok) {
     throw new Error(`Failed to load demo runtime status (${response.status})`);
   }
@@ -296,7 +370,7 @@ export async function fetchDemoRuntimeStatus(signal?: AbortSignal): Promise<Demo
 }
 
 export async function startDemoRun(submission: DemoRunSubmission): Promise<DemoRuntimeStatus> {
-  const response = await fetch(`${apiBaseUrl()}/demo/runs`, {
+  const response = await fetch(apiUrl("/demo/runs"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -310,7 +384,7 @@ export async function startDemoRun(submission: DemoRunSubmission): Promise<DemoR
 }
 
 export async function fetchHotlists(signal?: AbortSignal): Promise<DashboardHotlist[]> {
-  const response = await fetch(`${apiBaseUrl()}/hotlists?limit=100`, { signal });
+  const response = await fetch(apiUrl("/hotlists?limit=100"), { signal });
   if (!response.ok) {
     throw new Error(`Failed to load hotlists (${response.status})`);
   }
@@ -318,7 +392,7 @@ export async function fetchHotlists(signal?: AbortSignal): Promise<DashboardHotl
 }
 
 export async function createHotlist(submission: HotlistSubmission): Promise<DashboardHotlist> {
-  const response = await fetch(`${apiBaseUrl()}/hotlists`, {
+  const response = await fetch(apiUrl("/hotlists"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -332,7 +406,7 @@ export async function createHotlist(submission: HotlistSubmission): Promise<Dash
 }
 
 export async function updateHotlist(entryId: string, submission: HotlistSubmission): Promise<DashboardHotlist> {
-  const response = await fetch(`${apiBaseUrl()}/hotlists/${encodeURIComponent(entryId)}`, {
+  const response = await fetch(apiUrl(`/hotlists/${encodeURIComponent(entryId)}`), {
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
@@ -346,7 +420,7 @@ export async function updateHotlist(entryId: string, submission: HotlistSubmissi
 }
 
 export async function updateAlert(entryId: string, submission: AlertUpdateSubmission): Promise<DashboardAlert> {
-  const response = await fetch(`${apiBaseUrl()}/alerts/${encodeURIComponent(entryId)}`, {
+  const response = await fetch(apiUrl(`/alerts/${encodeURIComponent(entryId)}`), {
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
@@ -360,7 +434,7 @@ export async function updateAlert(entryId: string, submission: AlertUpdateSubmis
 }
 
 export async function fetchReviews(detectionId: string, signal?: AbortSignal): Promise<ReviewRecord[]> {
-  const response = await fetch(`${apiBaseUrl()}/reviews/${encodeURIComponent(detectionId)}`, { signal });
+  const response = await fetch(apiUrl(`/reviews/${encodeURIComponent(detectionId)}`), { signal });
   if (!response.ok) {
     throw new Error(`Failed to load reviews (${response.status})`);
   }
@@ -368,7 +442,7 @@ export async function fetchReviews(detectionId: string, signal?: AbortSignal): P
 }
 
 export async function createReview(detectionId: string, submission: ReviewSubmission): Promise<ReviewRecord> {
-  const response = await fetch(`${apiBaseUrl()}/reviews/${encodeURIComponent(detectionId)}`, {
+  const response = await fetch(apiUrl(`/reviews/${encodeURIComponent(detectionId)}`), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -379,6 +453,43 @@ export async function createReview(detectionId: string, submission: ReviewSubmis
     throw new Error(`Failed to save review (${response.status})`);
   }
   return (await response.json()) as ReviewRecord;
+}
+
+export async function searchDetections(
+  filters: DetectionSearchFilters,
+  signal?: AbortSignal,
+): Promise<DetectionSearchResult> {
+  const query = new URLSearchParams();
+
+  const addIfPresent = (key: string, value: string | number | null | undefined): void => {
+    if (value === null || value === undefined || value === "") {
+      return;
+    }
+    query.set(key, String(value));
+  };
+
+  addIfPresent("plate", filters.plate?.trim());
+  addIfPresent("plate_match", filters.plate_match);
+  addIfPresent("start_utc", filters.start_utc);
+  addIfPresent("end_utc", filters.end_utc);
+  addIfPresent("camera_id", filters.camera_id);
+  addIfPresent("min_latitude", filters.min_latitude);
+  addIfPresent("max_latitude", filters.max_latitude);
+  addIfPresent("min_longitude", filters.min_longitude);
+  addIfPresent("max_longitude", filters.max_longitude);
+  addIfPresent("vehicle_color", filters.vehicle_color?.trim());
+  addIfPresent("vehicle_make", filters.vehicle_make?.trim());
+  addIfPresent("vehicle_model", filters.vehicle_model?.trim());
+  addIfPresent("vehicle_year", filters.vehicle_year?.trim());
+  addIfPresent("alert_status", filters.alert_status);
+  addIfPresent("limit", filters.limit);
+  addIfPresent("offset", filters.offset);
+
+  const response = await fetch(apiUrl(`/search/detections?${query.toString()}`), { signal });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, `Failed to search detections (${response.status})`));
+  }
+  return (await response.json()) as DetectionSearchResult;
 }
 
 export function mapOverviewToAlertItems(

@@ -11,6 +11,7 @@ The operator experience should support fast decision-making under field conditio
 ## Review Workflow
 
 - inspect the source frame and the plate crop side by side
+- inspect alternate OCR candidates and stored confidence breakdowns before escalating a hit
 - edit OCR results when operator review is required
 - mark false positives and preserve audit history
 - pin high-value detections for follow-up

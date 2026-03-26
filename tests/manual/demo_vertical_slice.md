@@ -102,6 +102,16 @@ Confirm that the seeded local API and the cab-first UI behave like a usable repo
 5. Confirm the success message appears and the new review is inserted at the top of the review history
 6. Refresh the page and confirm the saved review remains visible from the live API
 
+## Search And Detailed Review
+
+1. Open `Search`
+2. Enter a full or partial plate, or combine camera, date, GPS, vehicle, and alert-state filters
+3. Click `Run search`
+4. Confirm the results list shows live detections from the API
+5. Select a result and confirm the detail card updates without leaving the workspace
+6. Confirm the detail card shows alternate OCR candidates and the stored confidence breakdown
+7. If the result is tied to an alert, confirm the detail card preserves the linked alert context
+
 ## Evidence Export And Maintenance
 
 1. In a new terminal, run `.\.venv\Scripts\python.exe .\scripts\run_storage_maintenance.py --deployment-config .\configs\deployments\local-dev.yaml --json`

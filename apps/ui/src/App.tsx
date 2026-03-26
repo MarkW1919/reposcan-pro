@@ -37,15 +37,18 @@ import {
   mapOverviewToAlertItems,
   mapOverviewToPopupHistory,
   mapOverviewToRecoveryLog,
+  searchDetections,
   startDemoRun,
   updateAlert,
   updateHotlist,
   type DashboardAlert,
+  type DashboardDetection,
   type DemoRuntimeStatus as DemoRuntimeStatusRecord,
   type DashboardHotlist,
   type DashboardOverviewResponse,
   type ReviewAction,
   type ReviewRecord,
+  type SearchPlateMatchMode,
 } from "./live-api";
 
 const layoutStorageKey = "reposcan.ui.dashboard-layout.v1";
@@ -54,6 +57,23 @@ const defaultPopupHistory: DetectionPopupEvent[] = [hotlistPopupDetections[0], a
 
 interface PopupNotification extends DetectionPopupEvent {
   instanceId: string;
+}
+
+interface SearchFormState {
+  plate: string;
+  plateMatch: SearchPlateMatchMode;
+  startUtc: string;
+  endUtc: string;
+  cameraId: string;
+  minLatitude: string;
+  maxLatitude: string;
+  minLongitude: string;
+  maxLongitude: string;
+  vehicleColor: string;
+  vehicleMake: string;
+  vehicleModel: string;
+  vehicleYear: string;
+  alertStatus: DashboardAlert["status"] | "";
 }
 
 function cloneLayout(layout: DashboardLayout): DashboardLayout {
@@ -254,12 +274,121 @@ function demoRuntimeBadgeTone(state: DemoRuntimeStatusRecord["state"] | undefine
   }
 }
 
+function formatCameraLabel(cameraId: string | null | undefined): string {
+  if (!cameraId) {
+    return "Camera unavailable";
+  }
+
+  return cameraId
+    .replace(/^cam_/, "")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function formatGpsLabel(latitude: number | null | undefined, longitude: number | null | undefined): string {
+  if (typeof latitude !== "number" || typeof longitude !== "number") {
+    return "GPS unavailable";
+  }
+
+  return `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+}
+
+function titleCaseLabel(value: string | null | undefined): string {
+  if (!value) {
+    return "";
+  }
+
+  return value
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+    .map((segment) => segment[0].toUpperCase() + segment.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function buildDetectionVehicleLabel(detection: DashboardDetection | null | undefined, fallback: string): string {
+  if (!detection) {
+    return fallback;
+  }
+
+  const parts = [titleCaseLabel(detection.vehicle_color), titleCaseLabel(detection.vehicle_make), titleCaseLabel(detection.vehicle_model)].filter(
+    Boolean,
+  );
+  return parts.join(" ") || fallback;
+}
+
+function buildDetectionColorYearLabel(detection: DashboardDetection | null | undefined, fallback: string): string {
+  if (!detection) {
+    return fallback;
+  }
+
+  const color = titleCaseLabel(detection.vehicle_color) || "Unknown";
+  const year = detection.optional_vehicle_year ?? "Unknown";
+  return `${color} / ${year}`;
+}
+
+function formatOptionalConfidence(value: number | null | undefined): string {
+  return typeof value === "number" ? confidenceLabel(value) : "Unavailable";
+}
+
+function formatLocalDateTimeInput(value: string): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.valueOf())) {
+    return "";
+  }
+
+  const offset = parsed.getTimezoneOffset();
+  const local = new Date(parsed.getTime() - offset * 60_000);
+  return local.toISOString().slice(0, 16);
+}
+
+function toUtcIsoString(value: string): string | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.valueOf())) {
+    return undefined;
+  }
+
+  return parsed.toISOString();
+}
+
+function parseOptionalNumber(value: string): number | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+const defaultSearchFormState: SearchFormState = {
+  plate: "",
+  plateMatch: "contains",
+  startUtc: "",
+  endUtc: "",
+  cameraId: "",
+  minLatitude: "",
+  maxLatitude: "",
+  minLongitude: "",
+  maxLongitude: "",
+  vehicleColor: "",
+  vehicleMake: "",
+  vehicleModel: "",
+  vehicleYear: "",
+  alertStatus: "",
+};
+
 function App() {
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceId>("dashboard");
   const [layoutEditorOpen, setLayoutEditorOpen] = useState(false);
   const [layout, setLayout] = useState<DashboardLayout>(() => loadLayout());
   const [fieldSettings, setFieldSettings] = useState<FieldSettings>(() => loadFieldSettings());
   const [selectedAlertId, setSelectedAlertId] = useState<string>(alerts[0]?.id ?? "");
+  const [focusedDetectionId, setFocusedDetectionId] = useState<string | null>(null);
   const [selectedCameraId, setSelectedCameraId] = useState<string>(cameraFeeds[0]?.id ?? "");
   const [destinationInput, setDestinationInput] = useState<string>(alerts[0]?.location ?? "");
   const [activeDestination, setActiveDestination] = useState<string>(alerts[0]?.location ?? "");
@@ -271,6 +400,12 @@ function App() {
   const [addressPopupIndex, setAddressPopupIndex] = useState(0);
   const [hotlistPopupIndex, setHotlistPopupIndex] = useState(0);
   const [liveOverview, setLiveOverview] = useState<DashboardOverviewResponse | null>(null);
+  const [searchForm, setSearchForm] = useState<SearchFormState>(defaultSearchFormState);
+  const [searchResults, setSearchResults] = useState<DashboardDetection[]>([]);
+  const [searchTotalResults, setSearchTotalResults] = useState(0);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchExecuted, setSearchExecuted] = useState(false);
   const [liveDataSource, setLiveDataSource] = useState<"demo" | "live" | "fallback">("demo");
   const [liveError, setLiveError] = useState<string | null>(null);
   const [reviewHistory, setReviewHistory] = useState<ReviewRecord[]>([]);
@@ -315,9 +450,16 @@ function App() {
   const previousDemoRunIdRef = useRef<string | null>(null);
 
   const operatorAlerts = liveOverview ? mapOverviewToAlertItems(liveOverview, alerts) : alerts;
+  const detectionsById = new Map((liveOverview?.detections ?? []).map((record) => [record.detection_id, record]));
+  const searchResultsById = new Map(searchResults.map((record) => [record.detection_id, record]));
   const selectedAlert = operatorAlerts.find((alert) => alert.id === selectedAlertId) ?? operatorAlerts[0];
-  const selectedLiveAlert = liveOverview?.alerts.find((alert) => alert.alert_id === selectedAlertId) ?? null;
-  const selectedDetectionId = selectedAlert?.detectionId ?? null;
+  const selectedDetectionId = focusedDetectionId ?? selectedAlert?.detectionId ?? null;
+  const selectedDetection =
+    (selectedDetectionId ? searchResultsById.get(selectedDetectionId) ?? detectionsById.get(selectedDetectionId) : null) ?? null;
+  const selectedLiveAlert =
+    (selectedDetectionId ? liveOverview?.alerts.find((alert) => alert.detection_id === selectedDetectionId) ?? null : null) ??
+    liveOverview?.alerts.find((alert) => alert.alert_id === selectedAlertId) ??
+    null;
   const selectedHotlist = hotlistEntries.find((entry) => entry.entry_id === selectedHotlistId) ?? null;
   const selectedCamera = cameraFeeds.find((camera) => camera.id === selectedCameraId) ?? cameraFeeds[0];
   const onlineCameraCount = cameraFeeds.filter((camera) => camera.status === "Online").length;
@@ -325,6 +467,39 @@ function App() {
   const activeHotlistCount = liveOverview?.counts.active_hotlists ?? 0;
   const activeAlertCount = liveOverview?.counts.active_alerts ?? operatorAlerts.filter((alert) => alert.severity === "critical").length;
   const recoveryLogEntries = liveOverview ? mapOverviewToRecoveryLog(liveOverview) : recoveryLog;
+  const selectedAlertMatchesDetection = selectedDetectionId === null || selectedAlert?.detectionId === selectedDetectionId;
+  const selectedDisplayPlate = selectedDetection?.plate_text ?? selectedLiveAlert?.matched_plate_text ?? selectedAlert?.plate ?? "Plate unavailable";
+  const selectedDisplayVehicle = buildDetectionVehicleLabel(selectedDetection, selectedAlert?.vehicle ?? "Live vehicle");
+  const selectedDisplayColorYear = buildDetectionColorYearLabel(selectedDetection, selectedAlert?.colorYear ?? "Unknown / Unknown");
+  const selectedDisplayCamera = selectedDetection ? formatCameraLabel(selectedDetection.camera_id) : selectedAlert.camera;
+  const selectedDisplayGps = selectedDetection
+    ? formatGpsLabel(selectedDetection.gps_latitude, selectedDetection.gps_longitude)
+    : selectedAlert.gps;
+  const selectedDisplayConfidence = selectedDetection?.plate_confidence ?? selectedLiveAlert?.match_confidence ?? selectedAlert.confidence;
+  const selectedDisplayPrimaryBadge = selectedAlertMatchesDetection
+    ? scenarioLabels[selectedAlert.scenario]
+    : selectedLiveAlert
+      ? "Hotlist hit"
+      : "Detection review";
+  const selectedDisplaySecondaryBadge = selectedAlertMatchesDetection
+    ? statusLabels[selectedAlert.status]
+    : selectedLiveAlert
+      ? selectedLiveAlert.status
+      : "No alert";
+  const selectedDisplayBestApproach = selectedAlertMatchesDetection
+    ? selectedAlert.bestApproach
+    : selectedLiveAlert
+      ? "Use the evidence frame and plate-crop confidence to confirm before escalating the live alert."
+      : "Review OCR candidates, compare the crop, and pin only detections that need follow-up.";
+  const selectedDisplayNotes = selectedAlertMatchesDetection
+    ? selectedAlert.notes
+    : selectedLiveAlert?.notes ??
+      (selectedDetection
+        ? `Frame ${selectedDetection.frame_number} · Sync status ${selectedDetection.sync_status}`
+        : "Select a live detection to inspect OCR candidates and attribute confidence.");
+  const searchCameraChoices = Array.from(
+    new Set((liveOverview?.detections ?? []).map((record) => record.camera_id)),
+  ).sort((left, right) => left.localeCompare(right));
   const selectedFramePreviewUrl =
     liveDataSource === "live" && selectedDetectionId ? buildDetectionFrameUrl(selectedDetectionId) : null;
   const selectedPlateCropPreviewUrl =
@@ -430,6 +605,33 @@ function App() {
   }, [operatorAlerts, selectedAlertId]);
 
   useEffect(() => {
+    if (liveDataSource === "live") {
+      return;
+    }
+
+    setSearchResults([]);
+    setSearchTotalResults(0);
+    setSearchLoading(false);
+    setSearchError(null);
+    setSearchExecuted(false);
+  }, [liveDataSource]);
+
+  useEffect(() => {
+    if (!focusedDetectionId) {
+      return;
+    }
+
+    const existsInOverview = detectionsById.has(focusedDetectionId);
+    const existsInSearch = searchResultsById.has(focusedDetectionId);
+    const existsInAlerts = operatorAlerts.some((alert) => alert.detectionId === focusedDetectionId);
+    if (existsInOverview || existsInSearch || existsInAlerts) {
+      return;
+    }
+
+    setFocusedDetectionId(null);
+  }, [detectionsById, focusedDetectionId, operatorAlerts, searchResultsById]);
+
+  useEffect(() => {
     const controller = new AbortController();
     void refreshOverview(controller.signal);
     const interval = window.setInterval(() => {
@@ -444,11 +646,11 @@ function App() {
 
   useEffect(() => {
     setReviewAction("confirm");
-    setReviewCorrectedPlate(selectedAlert.plate);
+    setReviewCorrectedPlate(selectedDisplayPlate);
     setReviewNotes("");
     setReviewSuccess(null);
     setReviewError(null);
-  }, [selectedAlert.id, selectedAlert.plate]);
+  }, [selectedDetectionId, selectedDisplayPlate]);
 
   useEffect(() => {
     const nextAlertId = selectedLiveAlert?.alert_id ?? null;
@@ -767,6 +969,29 @@ function App() {
     });
   }
 
+  function updateSearchField<K extends keyof SearchFormState>(key: K, value: SearchFormState[K]): void {
+    setSearchForm((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  }
+
+  function resetSearchFilters(): void {
+    setSearchForm(defaultSearchFormState);
+    setSearchResults([]);
+    setSearchTotalResults(0);
+    setSearchError(null);
+    setSearchExecuted(false);
+    setFocusedDetectionId(selectedAlert?.detectionId ?? null);
+  }
+
+  function focusDetection(detectionId: string, alertId?: string | null): void {
+    setFocusedDetectionId(detectionId);
+    if (alertId) {
+      setSelectedAlertId(alertId);
+    }
+  }
+
   function applyPreset(presetId: LayoutPresetId): void {
     startTransition(() => {
       setLayout(cloneLayout(dashboardPresets[presetId]));
@@ -822,6 +1047,55 @@ function App() {
         current.profile === dashboardPresets.recovery.profile ? cloneLayout(dashboardPresets.route) : current,
       );
     });
+  }
+
+  async function handleSearchSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    if (liveDataSource !== "live") {
+      setSearchError("Connect the live API before running operator search.");
+      return;
+    }
+
+    setSearchLoading(true);
+    setSearchError(null);
+
+    try {
+      const response = await searchDetections({
+        plate: searchForm.plate,
+        plate_match: searchForm.plateMatch,
+        start_utc: toUtcIsoString(searchForm.startUtc),
+        end_utc: toUtcIsoString(searchForm.endUtc),
+        camera_id: searchForm.cameraId || undefined,
+        min_latitude: parseOptionalNumber(searchForm.minLatitude),
+        max_latitude: parseOptionalNumber(searchForm.maxLatitude),
+        min_longitude: parseOptionalNumber(searchForm.minLongitude),
+        max_longitude: parseOptionalNumber(searchForm.maxLongitude),
+        vehicle_color: searchForm.vehicleColor,
+        vehicle_make: searchForm.vehicleMake,
+        vehicle_model: searchForm.vehicleModel,
+        vehicle_year: searchForm.vehicleYear,
+        alert_status: searchForm.alertStatus || undefined,
+        limit: 50,
+        offset: 0,
+      });
+
+      setSearchResults(response.results);
+      setSearchTotalResults(response.page.total_results);
+      setSearchExecuted(true);
+
+      if (response.results.length > 0) {
+        const firstDetection = response.results[0];
+        const matchingAlert = liveOverview?.alerts.find((alert) => alert.detection_id === firstDetection.detection_id) ?? null;
+        focusDetection(firstDetection.detection_id, matchingAlert?.alert_id);
+      }
+    } catch (error) {
+      setSearchResults([]);
+      setSearchTotalResults(0);
+      setSearchExecuted(true);
+      setSearchError(error instanceof Error ? error.message : "Failed to run search");
+    } finally {
+      setSearchLoading(false);
+    }
   }
 
   async function handleReviewSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
@@ -1153,7 +1427,10 @@ function App() {
                   }`}
                   style={{ "--x": `${18 + index * 19}%`, "--y": `${20 + (index % 3) * 18}%` } as CSSProperties}
                   type="button"
-                  onClick={() => setSelectedAlertId(alert.id)}
+                  onClick={() => {
+                    setSelectedAlertId(alert.id);
+                    setFocusedDetectionId(alert.detectionId ?? null);
+                  }}
                 >
                   {index + 1}
                 </button>
@@ -1228,7 +1505,10 @@ function App() {
                   key={alert.id}
                   className={`alert-row ${alert.id === selectedAlert.id ? "is-selected" : ""}`}
                   type="button"
-                  onClick={() => setSelectedAlertId(alert.id)}
+                  onClick={() => {
+                    setSelectedAlertId(alert.id);
+                    setFocusedDetectionId(alert.detectionId ?? null);
+                  }}
                 >
                   <span>{alert.time}</span>
                   <span>
@@ -1283,7 +1563,7 @@ function App() {
                   <div className="target-photo">
                     {selectedFramePreviewUrl && !framePreviewUnavailable ? (
                       <img
-                        alt={`Evidence frame for ${selectedAlert.plate}`}
+                        alt={`Evidence frame for ${selectedDisplayPlate}`}
                         className="target-photo__image"
                         src={selectedFramePreviewUrl}
                         onError={() => setFramePreviewUnavailable(true)}
@@ -1291,18 +1571,18 @@ function App() {
                     ) : (
                       <div className="target-photo__placeholder">
                         <span>{liveDataSource === "live" ? "Evidence frame unavailable" : "Target photo"}</span>
-                        <strong>{selectedAlert.plate}</strong>
+                        <strong>{selectedDisplayPlate}</strong>
                       </div>
                     )}
                     <div className="target-photo__overlay">
                       <span>{selectedFramePreviewUrl && !framePreviewUnavailable ? "Live evidence frame" : "Target photo"}</span>
-                      <strong>{selectedAlert.plate}</strong>
+                      <strong>{selectedDisplayPlate}</strong>
                     </div>
                   </div>
                   <div className="target-crop">
                     {selectedPlateCropPreviewUrl && !plateCropPreviewUnavailable ? (
                       <img
-                        alt={`Plate crop for ${selectedAlert.plate}`}
+                        alt={`Plate crop for ${selectedDisplayPlate}`}
                         className="target-crop__image"
                         src={selectedPlateCropPreviewUrl}
                         onError={() => setPlateCropPreviewUnavailable(true)}
@@ -1316,19 +1596,19 @@ function App() {
                   </div>
                 </div>
                 <div className="target-keyline">
-                  <span className={`badge badge--${severityTone(selectedAlert.severity)}`}>
-                    {scenarioLabels[selectedAlert.scenario]}
+                  <span className={`badge ${selectedAlertMatchesDetection ? `badge--${severityTone(selectedAlert.severity)}` : "badge--priority"}`}>
+                    {selectedDisplayPrimaryBadge}
                   </span>
-                  <span className="badge badge--outlined">{statusLabels[selectedAlert.status]}</span>
-                  <h3>{selectedAlert.vehicle}</h3>
-                  <p>{selectedAlert.colorYear}</p>
+                  <span className="badge badge--outlined">{selectedDisplaySecondaryBadge}</span>
+                  <h3>{selectedDisplayVehicle}</h3>
+                  <p>{selectedDisplayColorYear}</p>
                 </div>
               </div>
               <div className="target-details">
-                <StatusLine label="Camera" value={selectedAlert.camera} />
-                <StatusLine label="Confidence" value={confidenceLabel(selectedAlert.confidence)} />
-                <StatusLine label="GPS" value={selectedAlert.gps} />
-                <StatusLine label="Distance" value={currentDistanceLabel} />
+                <StatusLine label="Camera" value={selectedDisplayCamera} />
+                <StatusLine label="Confidence" value={formatOptionalConfidence(selectedDisplayConfidence)} />
+                <StatusLine label="GPS" value={selectedDisplayGps} />
+                <StatusLine label={selectedDetection ? "Frame" : "Distance"} value={selectedDetection ? `#${selectedDetection.frame_number}` : currentDistanceLabel} />
                 <StatusLine
                   label="Evidence"
                   value={
@@ -1338,6 +1618,10 @@ function App() {
                         ? "Waiting on local media"
                         : "Live API only"
                   }
+                />
+                <StatusLine
+                  label="Sync"
+                  value={selectedDetection ? selectedDetection.sync_status : liveDataSource === "live" ? "Live API" : "Demo data"}
                 />
                 <StatusLine
                   label="Latest review"
@@ -1354,12 +1638,54 @@ function App() {
               </div>
               <div className="notes-box">
                 <label className="panel-label">Best approach</label>
-                <p>{selectedAlert.bestApproach}</p>
+                <p>{selectedDisplayBestApproach}</p>
               </div>
               <div className="notes-box">
                 <label className="panel-label">Field notes</label>
-                <p>{selectedAlert.notes}</p>
+                <p>{selectedDisplayNotes}</p>
               </div>
+              {selectedDetection ? (
+                <div className="detection-insights">
+                  <div className="notes-box">
+                    <div className="live-activity__header">
+                      <strong>OCR candidates</strong>
+                      <span>
+                        {selectedDetection.plate_candidates.length} candidate
+                        {selectedDetection.plate_candidates.length === 1 ? "" : "s"}
+                      </span>
+                    </div>
+                    {selectedDetection.plate_candidates.length === 0 ? (
+                      <p>No alternate OCR candidates were retained for this detection.</p>
+                    ) : (
+                      <div className="candidate-list">
+                        {selectedDetection.plate_candidates.slice(0, 5).map((candidate, index) => (
+                          <div
+                            key={`${candidate.text}-${index}`}
+                            className={`candidate-row ${candidate.text === selectedDetection.plate_text ? "is-primary" : ""}`}
+                          >
+                            <strong>{candidate.text}</strong>
+                            <span>{confidenceLabel(candidate.confidence)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="notes-box">
+                    <div className="live-activity__header">
+                      <strong>Confidence breakdown</strong>
+                      <span>Stored with the detection record</span>
+                    </div>
+                    <div className="confidence-grid">
+                      <StatusLine label="OCR" value={formatOptionalConfidence(selectedDetection.plate_confidence)} />
+                      <StatusLine label="Color" value={formatOptionalConfidence(selectedDetection.vehicle_color_confidence)} />
+                      <StatusLine label="Make" value={formatOptionalConfidence(selectedDetection.vehicle_make_confidence)} />
+                      <StatusLine label="Model" value={formatOptionalConfidence(selectedDetection.vehicle_model_confidence)} />
+                      <StatusLine label="Year" value={formatOptionalConfidence(selectedDetection.optional_year_confidence)} />
+                      <StatusLine label="Tracker" value={selectedDetection.tracker_id ?? "Untracked"} />
+                    </div>
+                  </div>
+                </div>
+              ) : null}
               <div className="review-shell">
                 <div className="live-activity__header">
                   <strong>Operator review</strong>
@@ -1447,7 +1773,7 @@ function App() {
                               </span>
                               <span>{formatReviewTimestamp(review.reviewed_at_utc)}</span>
                             </div>
-                            <strong>{review.corrected_plate_text ?? selectedAlert.plate}</strong>
+                            <strong>{review.corrected_plate_text ?? selectedDisplayPlate}</strong>
                             <p>
                               {review.operator_id ? `${review.operator_id} · ` : ""}
                               {review.notes ?? "No operator notes recorded."}
@@ -1846,6 +2172,268 @@ function App() {
               {renderPanel("dispatchBoard")}
             </div>
           </div>
+        </section>
+      );
+    }
+
+    if (activeWorkspace === "search") {
+      return (
+        <section className="workspace-card">
+          <div className="workspace-card__header">
+            <div>
+              <div className="eyebrow">Lookup and review</div>
+              <h2>Detection search</h2>
+              <p>Search full or partial plates, tighten with field filters, and jump straight into detailed review.</p>
+            </div>
+            <div className="workspace-card__actions">
+              <button
+                className="button"
+                type="button"
+                onClick={() =>
+                  setSearchForm((current) => ({
+                    ...current,
+                    plate: selectedDisplayPlate,
+                    plateMatch: "exact",
+                  }))
+                }
+              >
+                Use selected plate
+              </button>
+              <button className="button" type="button" onClick={resetSearchFilters}>
+                Reset filters
+              </button>
+            </div>
+          </div>
+          {liveDataSource !== "live" ? (
+            <div className="review-empty search-empty">
+              Connect the live API to search live detections by plate, date, camera, GPS region, and vehicle attributes.
+            </div>
+          ) : (
+            <div className="search-shell">
+              <aside className="search-shell__filters">
+                <PanelFrame panelId="routePlanner" titleOverride="Search Filters">
+                  <form className="review-form" onSubmit={handleSearchSubmit}>
+                    <div className="form-grid search-filter-grid">
+                      <label className="field-group">
+                        <span>Plate</span>
+                        <input
+                          className="input-control"
+                          placeholder="6BZN220 or partial"
+                          type="text"
+                          value={searchForm.plate}
+                          onChange={(event) => updateSearchField("plate", event.target.value.toUpperCase())}
+                        />
+                      </label>
+                      <label className="field-group">
+                        <span>Match mode</span>
+                        <select value={searchForm.plateMatch} onChange={(event) => updateSearchField("plateMatch", event.target.value as SearchPlateMatchMode)}>
+                          <option value="contains">Contains</option>
+                          <option value="exact">Exact</option>
+                          <option value="prefix">Prefix</option>
+                          <option value="suffix">Suffix</option>
+                        </select>
+                      </label>
+                      <label className="field-group">
+                        <span>Camera</span>
+                        <select value={searchForm.cameraId} onChange={(event) => updateSearchField("cameraId", event.target.value)}>
+                          <option value="">All cameras</option>
+                          {searchCameraChoices.map((cameraId) => (
+                            <option key={cameraId} value={cameraId}>
+                              {formatCameraLabel(cameraId)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="field-group">
+                        <span>Alert state</span>
+                        <select value={searchForm.alertStatus} onChange={(event) => updateSearchField("alertStatus", event.target.value as SearchFormState["alertStatus"])}>
+                          <option value="">Any status</option>
+                          <option value="active">Active</option>
+                          <option value="acknowledged">Acknowledged</option>
+                          <option value="dismissed">Dismissed</option>
+                        </select>
+                      </label>
+                      <label className="field-group">
+                        <span>Start UTC</span>
+                        <input
+                          className="input-control"
+                          type="datetime-local"
+                          value={searchForm.startUtc}
+                          onChange={(event) => updateSearchField("startUtc", event.target.value)}
+                        />
+                      </label>
+                      <label className="field-group">
+                        <span>End UTC</span>
+                        <input
+                          className="input-control"
+                          type="datetime-local"
+                          value={searchForm.endUtc}
+                          onChange={(event) => updateSearchField("endUtc", event.target.value)}
+                        />
+                      </label>
+                      <label className="field-group">
+                        <span>Min latitude</span>
+                        <input
+                          className="input-control"
+                          placeholder="37.4200"
+                          type="text"
+                          value={searchForm.minLatitude}
+                          onChange={(event) => updateSearchField("minLatitude", event.target.value)}
+                        />
+                      </label>
+                      <label className="field-group">
+                        <span>Max latitude</span>
+                        <input
+                          className="input-control"
+                          placeholder="37.4300"
+                          type="text"
+                          value={searchForm.maxLatitude}
+                          onChange={(event) => updateSearchField("maxLatitude", event.target.value)}
+                        />
+                      </label>
+                      <label className="field-group">
+                        <span>Min longitude</span>
+                        <input
+                          className="input-control"
+                          placeholder="-122.0900"
+                          type="text"
+                          value={searchForm.minLongitude}
+                          onChange={(event) => updateSearchField("minLongitude", event.target.value)}
+                        />
+                      </label>
+                      <label className="field-group">
+                        <span>Max longitude</span>
+                        <input
+                          className="input-control"
+                          placeholder="-122.0700"
+                          type="text"
+                          value={searchForm.maxLongitude}
+                          onChange={(event) => updateSearchField("maxLongitude", event.target.value)}
+                        />
+                      </label>
+                      <label className="field-group">
+                        <span>Vehicle color</span>
+                        <input
+                          className="input-control"
+                          placeholder="white"
+                          type="text"
+                          value={searchForm.vehicleColor}
+                          onChange={(event) => updateSearchField("vehicleColor", event.target.value)}
+                        />
+                      </label>
+                      <label className="field-group">
+                        <span>Vehicle make</span>
+                        <input
+                          className="input-control"
+                          placeholder="toyota"
+                          type="text"
+                          value={searchForm.vehicleMake}
+                          onChange={(event) => updateSearchField("vehicleMake", event.target.value)}
+                        />
+                      </label>
+                      <label className="field-group">
+                        <span>Vehicle model</span>
+                        <input
+                          className="input-control"
+                          placeholder="camry"
+                          type="text"
+                          value={searchForm.vehicleModel}
+                          onChange={(event) => updateSearchField("vehicleModel", event.target.value)}
+                        />
+                      </label>
+                      <label className="field-group">
+                        <span>Vehicle year</span>
+                        <input
+                          className="input-control"
+                          placeholder="2019"
+                          type="text"
+                          value={searchForm.vehicleYear}
+                          onChange={(event) => updateSearchField("vehicleYear", event.target.value)}
+                        />
+                      </label>
+                    </div>
+                    {searchError ? <div className="review-feedback review-feedback--error">{searchError}</div> : null}
+                    <div className="panel-actions">
+                      <button className="button button--primary" disabled={searchLoading} type="submit">
+                        {searchLoading ? "Searching..." : "Run search"}
+                      </button>
+                      <button
+                        className="button"
+                        type="button"
+                        onClick={() =>
+                          setSearchForm((current) => ({
+                            ...current,
+                            startUtc: liveOverview?.generated_at_utc ? formatLocalDateTimeInput(liveOverview.generated_at_utc) : current.startUtc,
+                          }))
+                        }
+                      >
+                        Use current time
+                      </button>
+                    </div>
+                  </form>
+                </PanelFrame>
+              </aside>
+              <div className="search-shell__content">
+                <PanelFrame panelId="hotlistFeed" titleOverride="Search Results">
+                  <div className="search-results">
+                    <div className="live-activity__header">
+                      <strong>{searchExecuted ? `${searchTotalResults} result${searchTotalResults === 1 ? "" : "s"}` : "Awaiting search"}</strong>
+                      <span>
+                        {searchLoading
+                          ? "Querying the live API..."
+                          : searchExecuted
+                            ? "Select a result to open detailed review."
+                            : "Search by full or partial plate and refine by field filters."}
+                      </span>
+                    </div>
+                    {searchExecuted && searchResults.length === 0 ? (
+                      <div className="review-empty">No detections matched the current search filters.</div>
+                    ) : (
+                      <div className="search-results__list">
+                        {searchResults.map((result) => {
+                          const matchingAlert = liveOverview?.alerts.find((alert) => alert.detection_id === result.detection_id) ?? null;
+                          return (
+                            <button
+                              key={result.detection_id}
+                              className={`search-result-card ${result.detection_id === selectedDetectionId ? "is-selected" : ""}`}
+                              type="button"
+                              onClick={() => focusDetection(result.detection_id, matchingAlert?.alert_id)}
+                            >
+                              <div className="search-result-card__header">
+                                <div>
+                                  <strong>{result.plate_text ?? "Plate unavailable"}</strong>
+                                  <p>{buildDetectionVehicleLabel(result, "Live vehicle")}</p>
+                                </div>
+                                <div className="search-result-card__badges">
+                                  {matchingAlert ? (
+                                    <span className={`badge ${matchingAlert.status === "active" ? "badge--critical" : matchingAlert.status === "acknowledged" ? "badge--priority" : "badge--muted"}`}>
+                                      {matchingAlert.status}
+                                    </span>
+                                  ) : (
+                                    <span className="badge badge--outlined">No alert</span>
+                                  )}
+                                  <span className="badge badge--outlined">{formatOptionalConfidence(result.plate_confidence)}</span>
+                                </div>
+                              </div>
+                              <div className="search-result-card__meta">
+                                <span>{formatCameraLabel(result.camera_id)}</span>
+                                <span>{formatReviewTimestamp(result.timestamp_utc)}</span>
+                              </div>
+                              <div className="search-result-card__meta">
+                                <span>{buildDetectionColorYearLabel(result, "Unknown / Unknown")}</span>
+                                <span>{formatGpsLabel(result.gps_latitude, result.gps_longitude)}</span>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </PanelFrame>
+                <div className="search-shell__detail">{renderPanel("selectedAlert")}</div>
+              </div>
+            </div>
+          )}
         </section>
       );
     }
