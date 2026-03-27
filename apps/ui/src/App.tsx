@@ -123,6 +123,7 @@ interface RouteStageItem {
 
 type QueueViewId = "hotlist" | "radius" | "popups";
 type TargetPanelTabId = "overview" | "workflow" | "reviews";
+type PrimaryWorkspaceId = Exclude<WorkspaceId, "dashboard">;
 
 const queueViewOptions: Array<{ id: QueueViewId; label: string }> = [
   { id: "hotlist", label: "Hotlist" },
@@ -134,6 +135,14 @@ const targetPanelTabs: Array<{ id: TargetPanelTabId; label: string }> = [
   { id: "overview", label: "Overview" },
   { id: "workflow", label: "Workflow" },
   { id: "reviews", label: "Reviews" },
+];
+
+const mobilePrimaryTabs: Array<{ id: PrimaryWorkspaceId; label: string }> = [
+  { id: "navigation", label: "Drive" },
+  { id: "alerts", label: "Targets" },
+  { id: "search", label: "Search" },
+  { id: "cameras", label: "Camera" },
+  { id: "settings", label: "Settings" },
 ];
 
 function loadStoredString(key: string, fallback = ""): string {
@@ -591,7 +600,7 @@ const defaultSearchFormState: SearchFormState = {
 };
 
 function App() {
-  const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceId>("dashboard");
+  const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceId>("navigation");
   const [layout, setLayout] = useState<DashboardLayout>(() => loadLayout());
   const [fieldSettings, setFieldSettings] = useState<FieldSettings>(() => loadFieldSettings());
   const [queueView, setQueueView] = useState<QueueViewId>("hotlist");
@@ -1080,6 +1089,44 @@ function App() {
     searchTotalResults === 0
       ? "No results yet"
       : `Showing ${Math.min(searchOffset + 1, searchTotalResults)}-${Math.min(searchOffset + searchResults.length, searchTotalResults)} of ${searchTotalResults}`;
+  const activePrimaryWorkspace: PrimaryWorkspaceId = activeWorkspace === "dashboard" ? "navigation" : activeWorkspace;
+  const mobileHeaderEyebrow =
+    activeWorkspace === "dashboard"
+      ? "Arrival active scan"
+      : activeWorkspace === "navigation"
+        ? "Driver route view"
+        : activeWorkspace === "alerts"
+          ? "Priority target queue"
+          : activeWorkspace === "search"
+            ? "Search and history"
+            : activeWorkspace === "cameras"
+              ? "Manual camera review"
+              : "Mobile controls";
+  const mobileHeaderTitle = activeWorkspace === "dashboard" ? "Arrival Scan" : workspaceLabel(activeWorkspace);
+  const mobileHeaderSubtitle =
+    activeWorkspace === "dashboard"
+      ? withinArrivalRadius
+        ? `Within ${fieldSettings.arrivalTriggerDistance} ft of ${activeDestination}. Local detections and hotlist alerts are live.`
+        : `Waiting to enter the ${fieldSettings.arrivalTriggerDistance} ft arrival radius for ${activeDestination}.`
+      : activeWorkspace === "navigation"
+        ? `${activeDestination} • ${routeEtaLabel} • ${generalPopupsLive ? "General + hotlist live" : "Transit monitor"}`
+        : activeWorkspace === "alerts"
+          ? "Work the live queue, open the current target, and keep hotlist interrupts ahead of routine review."
+          : activeWorkspace === "search"
+            ? "Find plates, address activity, and field evidence without leaving the cab workflow."
+            : activeWorkspace === "cameras"
+              ? `Best used while parked or staged. ${selectedCamera.label} is the current priority feed.`
+              : "Tune arrival scan, alerts, camera behavior, and local workflow defaults for this device.";
+  const mobileStatusItems = [
+    { label: "GPS", value: "LOCK" },
+    { label: "CAM", value: `${onlineCameraCount}/4` },
+    { label: "AI", value: liveHealthState === "healthy" ? "READY" : titleCaseLabel(liveHealthState).toUpperCase() },
+    { label: "SYNC", value: liveDataSource === "live" ? "LIVE" : liveDataSource === "fallback" ? "FBK" : "DEMO" },
+    { label: "HOT", value: hotlistAlertCount > 0 ? String(hotlistAlertCount) : "CLR" },
+  ] as const;
+  const mobileGlanceTiles = (activeWorkspace === "dashboard" ? priorityGlanceTiles : glanceTiles).slice(0, 4);
+  const hotlistTakeoverPopup = popupStack.find((popup) => popup.type === "hotlist") ?? null;
+  const passivePopupStack = popupStack.filter((popup) => popup.instanceId !== hotlistTakeoverPopup?.instanceId);
 
   // Geo-coordinates for Leaflet: map percentages to lat/lng offsets around the demo center.
   const geoCenter = defaultMapCenter;
@@ -1761,6 +1808,23 @@ function App() {
     startTransition(() => {
       setActiveWorkspace(nextWorkspace);
       setTargetPanelTab(nextWorkspace === "search" ? "reviews" : nextWorkspace === "alerts" ? "workflow" : "overview");
+    });
+  }
+
+  function focusPopupTarget(popup: PopupNotification, nextWorkspace: WorkspaceId, nextTab: TargetPanelTabId): void {
+    const matchedAlert =
+      operatorAlerts.find((alert) => alert.plate === (popup.plate ?? "") && alert.time === popup.timestamp) ??
+      operatorAlerts.find((alert) => popup.plate && alert.plate === popup.plate) ??
+      operatorAlerts.find((alert) => alert.location === popup.location && alert.camera === popup.camera) ??
+      null;
+
+    startTransition(() => {
+      if (matchedAlert) {
+        setSelectedAlertId(matchedAlert.id);
+        setFocusedDetectionId(matchedAlert.detectionId ?? null);
+      }
+      setActiveWorkspace(nextWorkspace);
+      setTargetPanelTab(nextTab);
     });
   }
 
@@ -3564,16 +3628,16 @@ function App() {
       <section className="workspace-card">
         <div className="workspace-card__header">
           <div>
-            <div className="eyebrow">Priority board</div>
-            <h2>Dashboard</h2>
+            <div className="eyebrow">Arrival active scan</div>
+            <h2>Within Radius</h2>
             <p>
-              Keep only the critical repo items in view here: hotlist targets, active route, dispatch ownership, and
-              pinned follow-up state. Use the other tabs when you need the full toolset.
+              Use this contextual screen once the truck enters the arrival ring. Keep only the live target, address
+              detections, and immediate workflow actions visible while on scene.
             </p>
           </div>
           <div className="workspace-card__actions">
             <button className="button" type="button" onClick={() => selectWorkspace("navigation")}>
-              Open drive screen
+              Return to drive
             </button>
             <button
               className="button"
@@ -3732,10 +3796,66 @@ function App() {
         <section className="workspace-card">
           <div className="workspace-card__header">
             <div>
-              <div className="eyebrow">Driving screen</div>
+              <div className="eyebrow">Main dashboard driver view</div>
               <h2>Drive</h2>
-              <p>Keep the next move, target radius, and latest target changes visible while the truck is rolling.</p>
+              <p>Stay route-first while rolling. Arrival scan, target review, and camera detail stay one tap away.</p>
             </div>
+          </div>
+          <div className="quick-action-grid" aria-label="Drive quick actions">
+            <button className="quick-action-button quick-action-button--primary" type="button" onClick={handleNavigationToggle}>
+              <span>Navigation</span>
+              <strong>{navigationActive ? "Stop route" : "Start route"}</strong>
+              <small>{activeDestination}</small>
+            </button>
+            <button
+              className={`quick-action-button ${addressDetectionEnabled ? "is-active" : ""}`}
+              type="button"
+              onClick={() => setAddressDetectionEnabled((current) => !current)}
+            >
+              <span>Arrival scan</span>
+              <strong>{addressDetectionEnabled ? "Armed" : "Off"}</strong>
+              <small>{generalPopupsLive ? "General + hotlist live" : "Hotlist always remains live"}</small>
+            </button>
+            <button
+              className={`quick-action-button ${withinArrivalRadius ? "quick-action-button--critical" : ""}`}
+              type="button"
+              onClick={() => {
+                if (withinArrivalRadius) {
+                  selectWorkspace("dashboard");
+                  return;
+                }
+                setCurrentDistanceFeet(fieldSettings.arrivalTriggerDistance);
+              }}
+            >
+              <span>{withinArrivalRadius ? "Scan mode" : "Arrival ring"}</span>
+              <strong>{withinArrivalRadius ? "Open live scan" : "Jump to ring"}</strong>
+              <small>
+                {withinArrivalRadius ? "Local detections are scoped to this address." : `${fieldSettings.arrivalTriggerDistance} ft trigger distance`}
+              </small>
+            </button>
+            <button
+              className="quick-action-button"
+              type="button"
+              onClick={() => {
+                setQueueView("hotlist");
+                setTargetPanelTab("workflow");
+                selectWorkspace("alerts");
+              }}
+            >
+              <span>Hotlist</span>
+              <strong>{hotlistAlertCount > 0 ? `${hotlistAlertCount} active` : "Open queue"}</strong>
+              <small>Priority targets, radius detections, and popup history.</small>
+            </button>
+            <button className="quick-action-button" type="button" onClick={() => selectWorkspace("search")}>
+              <span>Search</span>
+              <strong>Evidence</strong>
+              <small>Plate, address, and time filters for field review.</small>
+            </button>
+            <button className="quick-action-button" type="button" onClick={() => selectWorkspace("cameras")}>
+              <span>Camera</span>
+              <strong>{selectedCamera.label}</strong>
+              <small>Manual parked review and overlay checks.</small>
+            </button>
           </div>
           <div className="navigation-shell">
             <aside className="navigation-rail">
@@ -4482,68 +4602,110 @@ function App() {
   }
 
   return (
-    <div className="app-shell">
-      <header className="topbar">
+    <div className="app-shell app-shell--mobile">
+      <section className="mobile-statusbar" aria-label="System status">
+        {mobileStatusItems.map((item) => (
+          <div key={item.label} className="mobile-statusbar__item">
+            <span>{item.label}</span>
+            <strong>{item.value}</strong>
+          </div>
+        ))}
+      </section>
+
+      <header className="mobile-header">
         <div className="brand-lockup">
-          <div className="brand-eyebrow">RepoScan Pro</div>
-          <h1>Recovery Ops Console</h1>
-          <p>Cab-first repo workflow for Windows 11 field laptops.</p>
+          <div className="brand-eyebrow">RepoScan Pro Mobile</div>
+          <h1>{mobileHeaderTitle}</h1>
+          <p>{mobileHeaderSubtitle}</p>
         </div>
-        <nav className="tabbar" aria-label="Primary workspace">
-          {workspaceTabs.map((tab) => (
-            <button
-              key={tab.id}
-              className={`tabbar__button ${tab.id === activeWorkspace ? "is-active" : ""}`}
-              type="button"
-              onClick={() => selectWorkspace(tab.id)}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </nav>
+        <div className="mobile-header__chips">
+          <span className={`badge ${withinArrivalRadius ? "badge--good" : navigationActive ? "badge--priority" : "badge--outlined"}`}>
+            {withinArrivalRadius ? "Within radius" : navigationActive ? routeEtaLabel : "Route idle"}
+          </span>
+          <span className={`badge ${generalPopupsLive ? "badge--scan-live" : addressDetectionEnabled ? "badge--scan-bg" : "badge--muted"}`}>
+            {generalPopupsLive ? "Arrival scan live" : addressDetectionEnabled ? "Arrival scan armed" : "Arrival scan off"}
+          </span>
+          <span className="badge badge--hotlist-always">Hotlist always on</span>
+        </div>
       </header>
 
-      <section className={`glance-strip ${activeWorkspace === "dashboard" ? "glance-strip--priority" : ""}`} aria-label="Current cab summary">
-        {(activeWorkspace === "dashboard" ? priorityGlanceTiles : glanceTiles).map((tile) => (
+      <section className="glance-strip glance-strip--mobile" aria-label="Current cab summary">
+        {mobileGlanceTiles.map((tile) => (
           <GlanceTile key={tile.label} label={tile.label} value={tile.value} sublabel={tile.sublabel} />
         ))}
       </section>
 
-      {activeWorkspace !== "dashboard" ? (
-        <section className="mode-banner">
-          <div className="mode-banner__group">
-            <span className={`badge ${liveDataSource === "live" ? "badge--good" : "badge--outlined"}`}>
-              {liveDataSource === "live" ? "Live API" : liveDataSource === "fallback" ? "Demo fallback" : "Demo only"}
-            </span>
-            <span className={`badge ${activeScanMode ? "badge--scan-live" : navigationActive ? "badge--scan-bg" : "badge--outlined"}`}>
-              {activeScanMode ? "Scan live" : navigationActive ? "Transit" : "Idle"}
-            </span>
-            <span className="badge badge--hotlist-always">Hotlist always on</span>
-          </div>
-          <div className="mode-banner__divider" />
-          <div className="mode-banner__group">
-            <span>{operatorDisplayName(currentOperator)}</span>
-            <span>Alerts: {activeAlertCount}</span>
-            <span>Pins: {openFollowUpCount}</span>
-            <span>Dispatch: {activeAssignmentCount}</span>
-            <span>Crew: {activeSessionCount}</span>
-          </div>
-          <div className="mode-banner__divider" />
-          <span>
-            {generalPopupsLive
-              ? "Inside radius. General + hotlist popups live."
-              : !addressDetectionEnabled
-                ? "Address popups off. Hotlist unsuppressed."
-                : "Outside radius. Background classify. Hotlist unsuppressed."}
-          </span>
-          {liveError ? <span>{liveError}</span> : null}
-          {operatorSessionError ? <span>{operatorSessionError}</span> : null}
-        </section>
+      <section className="mode-banner mode-banner--mobile" aria-label="Current route mode">
+        <div className="mode-banner__group">
+          <span className="panel-label">{mobileHeaderEyebrow}</span>
+          <span>{operatorDisplayName(currentOperator)}</span>
+          <span>{currentDistanceLabel}</span>
+        </div>
+        <div className="mode-banner__divider" />
+        <div className="mode-banner__group">
+          <span>Alerts {activeAlertCount}</span>
+          <span>Pins {openFollowUpCount}</span>
+          <span>Dispatch {activeAssignmentCount}</span>
+          <span>Crew {activeSessionCount}</span>
+        </div>
+        {liveError ? <span>{liveError}</span> : null}
+        {operatorSessionError ? <span>{operatorSessionError}</span> : null}
+      </section>
+
+      {hotlistTakeoverPopup ? (
+        <aside aria-live="assertive" className="hotlist-takeover" role="alertdialog">
+          <article className="hotlist-takeover__card">
+            <div className="hotlist-takeover__header">
+              <div>
+                <span className="panel-label">Critical alert</span>
+                <h2>Hotlist Match</h2>
+              </div>
+              <span className="badge badge--critical">{fieldSettings.silentShiftMode ? "Visual priority" : "Audio + visual"}</span>
+            </div>
+            <div className="hotlist-takeover__snapshot">
+              <span>{hotlistTakeoverPopup.imageLabel}</span>
+              <strong>{hotlistTakeoverPopup.plate ?? "Plate unavailable"}</strong>
+              <p>{hotlistTakeoverPopup.vehicle}</p>
+            </div>
+            <div className="hotlist-takeover__meta">
+              <StatusLine label="Time" value={hotlistTakeoverPopup.timestamp} />
+              <StatusLine label="Camera" value={hotlistTakeoverPopup.camera} />
+              <StatusLine label="Location" value={hotlistTakeoverPopup.location} />
+              <StatusLine label="GPS" value={hotlistTakeoverPopup.gps} />
+            </div>
+            <p className="hotlist-takeover__note">{hotlistTakeoverPopup.note}</p>
+            <div className="hotlist-takeover__actions">
+              <button
+                className="button button--primary"
+                type="button"
+                onClick={() => {
+                  focusPopupTarget(hotlistTakeoverPopup, "navigation", "overview");
+                  dismissPopup(hotlistTakeoverPopup.instanceId);
+                }}
+              >
+                Navigate
+              </button>
+              <button
+                className="button"
+                type="button"
+                onClick={() => {
+                  focusPopupTarget(hotlistTakeoverPopup, "alerts", "overview");
+                  dismissPopup(hotlistTakeoverPopup.instanceId);
+                }}
+              >
+                View record
+              </button>
+              <button className="button" type="button" onClick={() => dismissPopup(hotlistTakeoverPopup.instanceId)}>
+                Dismiss
+              </button>
+            </div>
+          </article>
+        </aside>
       ) : null}
 
-      {popupStack.length > 0 ? (
+      {passivePopupStack.length > 0 ? (
         <aside className="popup-stack" aria-live="polite">
-          {popupStack.map((popup) => (
+          {passivePopupStack.map((popup) => (
             <article key={popup.instanceId} className={`popup-card popup-card--${popup.type}`}>
               <div className="popup-card__media">
                 <span>{popup.imageLabel}</span>
@@ -4582,7 +4744,20 @@ function App() {
         </aside>
       ) : null}
 
-      <main>{renderWorkspace()}</main>
+      <main className="mobile-main">{renderWorkspace()}</main>
+
+      <nav className="mobile-bottom-nav" aria-label="Primary navigation">
+        {mobilePrimaryTabs.map((tab) => (
+          <button
+            key={tab.id}
+            className={`mobile-bottom-nav__button ${tab.id === activePrimaryWorkspace ? "is-active" : ""}`}
+            type="button"
+            onClick={() => selectWorkspace(tab.id)}
+          >
+            <span>{tab.label}</span>
+          </button>
+        ))}
+      </nav>
     </div>
   );
 }

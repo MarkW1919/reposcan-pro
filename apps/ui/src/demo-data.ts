@@ -86,11 +86,11 @@ export interface DetectionPopupEvent {
 }
 
 export const workspaceTabs: Array<{ id: WorkspaceId; label: string }> = [
-  { id: "dashboard", label: "Mission Console" },
+  { id: "dashboard", label: "Arrival Scan" },
   { id: "navigation", label: "Drive" },
   { id: "alerts", label: "Targets" },
-  { id: "search", label: "Review" },
-  { id: "cameras", label: "Cameras" },
+  { id: "search", label: "Search" },
+  { id: "cameras", label: "Camera" },
   { id: "settings", label: "Settings" },
 ];
 
