@@ -116,8 +116,7 @@ input:focus-visible {
 .panel-frame__header p,
 .mode-banner,
 .status-ticker,
-.notes-box p,
-.preset-card p {
+.notes-box p {
   margin: 0;
   color: var(--muted);
 }
@@ -132,8 +131,7 @@ input:focus-visible {
 
 .tabbar__button,
 .toggle-chip,
-.button,
-.preset-card {
+.button {
   border: 1px solid var(--line);
   border-radius: 14px;
   color: var(--text);
@@ -150,7 +148,6 @@ input:focus-visible {
 .tabbar__button:hover,
 .toggle-chip:hover,
 .button:hover,
-.preset-card:hover,
 .camera-tile:hover {
   border-color: var(--line-strong);
   background: rgba(24, 38, 71, 0.96);
@@ -291,7 +288,6 @@ main {
 }
 
 .workspace-card__header,
-.layout-editor__header,
 .panel-frame__header {
   display: flex;
   justify-content: space-between;
@@ -312,19 +308,12 @@ main {
   gap: 12px;
 }
 
-.layout-editor,
 .panel-frame {
   border: 1px solid var(--line);
   border-radius: 22px;
   background: var(--panel-strong);
 }
 
-.layout-editor {
-  margin-top: 18px;
-  padding: 18px;
-}
-
-.layout-editor__grid,
 .form-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -527,7 +516,6 @@ textarea.input-control {
 .notes-box,
 .status-ticker,
 .camera-footnote,
-.preset-card,
 .target-photo,
 .map-legend {
   border: 1px solid rgba(126, 155, 206, 0.14);
@@ -1349,8 +1337,7 @@ textarea.input-control {
 }
 
 .log-list,
-.action-grid,
-.preset-list {
+.action-grid {
   display: grid;
   gap: 12px;
 }
@@ -1392,11 +1379,6 @@ textarea.input-control {
 
 .action-grid {
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-}
-
-.preset-card {
-  padding: 16px;
-  text-align: left;
 }
 
 .popup-stack {
@@ -1530,7 +1512,6 @@ textarea.input-control {
 @media (max-width: 1280px) {
   .topbar,
   .workspace-card__header,
-  .layout-editor__header,
   .panel-frame__header {
     flex-direction: column;
   }

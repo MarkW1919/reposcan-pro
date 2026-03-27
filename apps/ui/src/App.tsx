@@ -12,9 +12,7 @@ import {
   detectionPopupTypeLabels,
   defaultFieldSettings,
   hotlistPopupDetections,
-  layoutSlotLabels,
   panelCatalog,
-  presetDescriptions,
   recoveryLog,
   scenarioLabels,
   statusLabels,
@@ -25,7 +23,6 @@ import {
   type DetectionPopupEvent,
   type DashboardLayout,
   type FieldSettings,
-  type LayoutPresetId,
   type PanelId,
   type SlotId,
   type WorkspaceId,
@@ -76,6 +73,7 @@ const settingsStorageKey = "reposcan.ui.field-settings.v1";
 const apiKeyStorageKey = "reposcan.ui.api-key.v1";
 const sessionLabelStorageKey = "reposcan.ui.session-label.v1";
 const operatorSessionIdStorageKey = "reposcan.ui.operator-session-id.v1";
+const dashboardDefaultScreenStorageKey = "reposcan.ui.dashboard-default-screen.v1";
 const defaultPopupHistory: DetectionPopupEvent[] = [hotlistPopupDetections[0], addressScanDetections[0]];
 const demoOperatorCapabilities: OperatorCapabilities = {
   can_submit_reviews: true,
@@ -176,6 +174,11 @@ function loadOrCreateOperatorSessionId(): string {
   } catch {
     return `session_${Math.random().toString(16).slice(2, 10)}`;
   }
+}
+
+function loadDashboardDefaultScreen(): DashboardScreenId {
+  const raw = loadStoredString(dashboardDefaultScreenStorageKey, "drive");
+  return raw === "queue" || raw === "recover" || raw === "crew" ? raw : "drive";
 }
 
 function cloneLayout(layout: DashboardLayout): DashboardLayout {
@@ -605,7 +608,8 @@ function App() {
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceId>("dashboard");
   const [layout, setLayout] = useState<DashboardLayout>(() => loadLayout());
   const [fieldSettings, setFieldSettings] = useState<FieldSettings>(() => loadFieldSettings());
-  const [dashboardScreen, setDashboardScreen] = useState<DashboardScreenId>("drive");
+  const [dashboardDefaultScreen, setDashboardDefaultScreen] = useState<DashboardScreenId>(() => loadDashboardDefaultScreen());
+  const [dashboardScreen, setDashboardScreen] = useState<DashboardScreenId>(() => loadDashboardDefaultScreen());
   const [queueView, setQueueView] = useState<QueueViewId>("hotlist");
   const [queuePage, setQueuePage] = useState(0);
   const [targetPanelTab, setTargetPanelTab] = useState<TargetPanelTabId>("overview");
@@ -1179,6 +1183,10 @@ function App() {
   }, [fieldSettings]);
 
   useEffect(() => {
+    window.localStorage.setItem(dashboardDefaultScreenStorageKey, dashboardDefaultScreen);
+  }, [dashboardDefaultScreen]);
+
+  useEffect(() => {
     setQueuePage(0);
   }, [queueView]);
 
@@ -1648,9 +1656,8 @@ function App() {
 
     startTransition(() => {
       setActiveWorkspace("dashboard");
-      setLayout((current) =>
-        current.profile === dashboardPresets.route.profile ? cloneLayout(dashboardPresets.recovery) : current,
-      );
+      setDashboardScreen("recover");
+      setTargetPanelTab("workflow");
       setChatMessages((current) => [
         ...current,
         {
@@ -1747,7 +1754,7 @@ function App() {
       setActiveWorkspace(nextWorkspace);
       setTargetPanelTab(nextWorkspace === "search" ? "reviews" : nextWorkspace === "alerts" ? "workflow" : "overview");
       if (nextWorkspace === "dashboard") {
-        setDashboardScreen("drive");
+        setDashboardScreen(dashboardDefaultScreen);
       }
     });
   }
@@ -1777,36 +1784,11 @@ function App() {
     }
   }
 
-  function applyPreset(presetId: LayoutPresetId): void {
-    startTransition(() => {
-      setLayout(cloneLayout(dashboardPresets[presetId]));
-    });
-  }
-
   function setCameraMode(cameraMode: CameraMode): void {
     setLayout((current) => ({
       ...current,
       cameraMode,
     }));
-  }
-
-  function movePanelToSlot(slot: SlotId, nextPanel: PanelId): void {
-    setLayout((current) => {
-      const nextSlots = { ...current.slots };
-      const existingSlot = (Object.keys(nextSlots) as SlotId[]).find((candidate) => nextSlots[candidate] === nextPanel);
-      const displacedPanel = nextSlots[slot];
-
-      nextSlots[slot] = nextPanel;
-      if (existingSlot && existingSlot !== slot) {
-        nextSlots[existingSlot] = displacedPanel;
-      }
-
-      return {
-        ...current,
-        profile: "Custom Layout",
-        slots: nextSlots,
-      };
-    });
   }
 
   function updateFieldSetting<K extends keyof FieldSettings>(key: K, value: FieldSettings[K]): void {
@@ -1828,9 +1810,7 @@ function App() {
     startTransition(() => {
       setNavigationActive(true);
       setActiveWorkspace("navigation");
-      setLayout((current) =>
-        current.profile === dashboardPresets.recovery.profile ? cloneLayout(dashboardPresets.route) : current,
-      );
+      setDashboardScreen("drive");
     });
   }
 
@@ -4035,7 +4015,15 @@ function App() {
               </p>
             </div>
             <div className="workspace-card__actions">
-              <button className="button" type="button" onClick={() => setLayout(cloneLayout(dashboardPresets.route))}>
+              <button
+                className="button"
+                type="button"
+                onClick={() => {
+                  setLayout(cloneLayout(dashboardPresets.route));
+                  setDashboardDefaultScreen("drive");
+                  setDashboardScreen("drive");
+                }}
+              >
                 Restore default screens
               </button>
               <button className="button" type="button" onClick={() => setFieldSettings({ ...defaultFieldSettings })}>
@@ -4044,29 +4032,36 @@ function App() {
             </div>
           </div>
           <div className="settings-grid">
-            <PanelFrame panelId="routePlanner" titleOverride="Screen presets">
+            <PanelFrame panelId="routePlanner" titleOverride="Screen behavior">
               <div className="settings-section">
-                <div className="preset-list">
-                  {(["route", "recovery", "streetSweep", "cameraOps", "navLpr", "dualCamNav"] as LayoutPresetId[]).map((presetId) => (
-                    <button key={presetId} className="preset-card" type="button" onClick={() => applyPreset(presetId)}>
-                      <strong>{dashboardPresets[presetId].profile}</strong>
-                      <p>{presetDescriptions[presetId]}</p>
-                    </button>
-                  ))}
+                <div className="runtime-summary">
+                  <div className="live-activity__header">
+                    <strong>Mission screens stay fixed</strong>
+                    <span>Drive, Queue, Recover, and Crew keep a consistent layout so the cab workflow does not drift.</span>
+                  </div>
+                  <div className="runtime-summary__grid">
+                    <StatusLine
+                      label="Dashboard landing"
+                      value={dashboardScreenOptions.find((screen) => screen.id === dashboardDefaultScreen)?.label ?? "Drive"}
+                    />
+                    <StatusLine label="Arrival transition" value="Recover screen" />
+                    <StatusLine label="Camera mode" value={titleCaseLabel(layout.cameraMode)} />
+                  </div>
                 </div>
-                <div className="layout-editor__grid">
-                  {(Object.keys(layout.slots) as SlotId[]).map((slot) => (
-                    <label key={slot} className="field-group">
-                      <span>{layoutSlotLabels[slot]}</span>
-                      <select value={layout.slots[slot]} onChange={(event) => movePanelToSlot(slot, event.target.value as PanelId)}>
-                        {(Object.keys(panelCatalog) as PanelId[]).map((panelId) => (
-                          <option key={panelId} value={panelId}>
-                            {panelCatalog[panelId].label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  ))}
+                <div className="form-grid">
+                  <label className="field-group">
+                    <span>Dashboard landing screen</span>
+                    <select
+                      value={dashboardDefaultScreen}
+                      onChange={(event) => setDashboardDefaultScreen(event.target.value as DashboardScreenId)}
+                    >
+                      {dashboardScreenOptions.map((screen) => (
+                        <option key={screen.id} value={screen.id}>
+                          {screen.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                   <label className="field-group">
                     <span>Camera mode</span>
                     <select value={layout.cameraMode} onChange={(event) => setCameraMode(event.target.value as CameraMode)}>
@@ -4076,6 +4071,18 @@ function App() {
                       <option value="dual">Dual</option>
                     </select>
                   </label>
+                </div>
+                <div className="panel-actions">
+                  <button
+                    className="button"
+                    type="button"
+                    onClick={() => {
+                      setActiveWorkspace("dashboard");
+                      setDashboardScreen(dashboardDefaultScreen);
+                    }}
+                  >
+                    Open dashboard landing screen
+                  </button>
                 </div>
               </div>
             </PanelFrame>
