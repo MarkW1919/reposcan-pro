@@ -302,12 +302,6 @@ main {
   gap: 10px;
 }
 
-.workspace-card__actions--stacked {
-  display: grid;
-  justify-items: end;
-  gap: 12px;
-}
-
 .panel-frame {
   border: 1px solid var(--line);
   border-radius: 22px;
@@ -389,68 +383,51 @@ main {
   gap: 18px;
 }
 
-.mission-switcher {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 10px;
-}
-
-.mission-select {
-  min-width: min(260px, 100%);
-}
-
-.mission-select select {
-  min-width: 220px;
-}
-
-.mission-summary-card {
+.priority-dashboard {
   display: grid;
-  gap: 8px;
+  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+  gap: 18px;
   margin-top: 22px;
-  padding: 18px;
-  border-radius: 20px;
-  border: 1px solid rgba(126, 155, 206, 0.16);
-  background:
-    linear-gradient(135deg, rgba(35, 55, 92, 0.82), rgba(18, 30, 56, 0.88)),
-    rgba(18, 30, 56, 0.7);
 }
 
-.mission-summary-card strong {
-  font-size: 1.18rem;
-}
-
-.mission-summary-card p {
-  margin: 0;
-  color: var(--muted);
-}
-
-.mission-board {
+.priority-dashboard__hero,
+.priority-dashboard__aside,
+.priority-dashboard__full,
+.priority-hero,
+.priority-hero__grid {
   display: grid;
-  gap: 18px;
-  margin-top: 18px;
-}
-
-.mission-board--drive,
-.mission-board--recover,
-.mission-board--crew {
-  grid-template-columns: minmax(0, 1.1fr) minmax(340px, 0.9fr);
-}
-
-.mission-board--queue {
-  grid-template-columns: minmax(0, 1.05fr) minmax(380px, 0.95fr);
-}
-
-.mission-board__hero,
-.mission-board__aside,
-.mission-board__full {
-  display: grid;
-  gap: 18px;
+  gap: 16px;
   min-width: 0;
 }
 
-.mission-board__full {
+.priority-dashboard__full {
   grid-column: 1 / -1;
+}
+
+.priority-hero__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.priority-hero__header h3,
+.priority-hero__header p {
+  margin: 0;
+}
+
+.priority-hero__header p {
+  margin-top: 6px;
+  color: var(--muted);
+}
+
+.priority-hero__grid,
+.glance-strip--priority {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.glance-strip--priority .glance-tile {
+  min-height: 112px;
 }
 
 .search-empty {
@@ -1521,10 +1498,7 @@ textarea.input-control {
   .alerts-shell,
   .search-shell,
   .camera-shell,
-  .mission-board--drive,
-  .mission-board--queue,
-  .mission-board--recover,
-  .mission-board--crew,
+  .priority-dashboard,
   .navigation-bottom {
     grid-template-columns: 1fr;
   }
@@ -1541,6 +1515,7 @@ textarea.input-control {
   }
 
   .glance-strip,
+  .glance-strip--priority,
   .route-stage-strip,
   .route-command-grid,
   .map-summary-grid {
@@ -1572,6 +1547,7 @@ textarea.input-control {
   }
 
   .glance-strip,
+  .glance-strip--priority,
   .route-stage-strip,
   .route-command-grid,
   .route-focus-board__grid,
@@ -1596,7 +1572,7 @@ textarea.input-control {
     grid-template-columns: 1fr;
   }
 
-  .mission-switcher,
+  .priority-hero__header,
   .queue-card__header,
   .queue-card__meta,
   .search-results__header,
@@ -1608,12 +1584,6 @@ textarea.input-control {
   .queue-pager {
     width: 100%;
     justify-content: space-between;
-  }
-
-  .mission-select,
-  .mission-select select {
-    width: 100%;
-    min-width: 0;
   }
 
   .popup-card {

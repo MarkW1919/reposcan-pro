@@ -73,7 +73,6 @@ const settingsStorageKey = "reposcan.ui.field-settings.v1";
 const apiKeyStorageKey = "reposcan.ui.api-key.v1";
 const sessionLabelStorageKey = "reposcan.ui.session-label.v1";
 const operatorSessionIdStorageKey = "reposcan.ui.operator-session-id.v1";
-const dashboardDefaultScreenStorageKey = "reposcan.ui.dashboard-default-screen.v1";
 const defaultPopupHistory: DetectionPopupEvent[] = [hotlistPopupDetections[0], addressScanDetections[0]];
 const demoOperatorCapabilities: OperatorCapabilities = {
   can_submit_reviews: true,
@@ -122,16 +121,8 @@ interface RouteStageItem {
   state: RouteStageState;
 }
 
-type DashboardScreenId = "drive" | "queue" | "recover" | "crew";
 type QueueViewId = "hotlist" | "radius" | "popups";
 type TargetPanelTabId = "overview" | "workflow" | "reviews";
-
-const dashboardScreenOptions: Array<{ id: DashboardScreenId; label: string; summary: string }> = [
-  { id: "drive", label: "Drive", summary: "Route, radius trigger, and live vehicle detection state while rolling." },
-  { id: "queue", label: "Queue", summary: "Hotlist matches and in-radius detections ready for a decision." },
-  { id: "recover", label: "Recover", summary: "Target evidence, dispatch, and on-scene recovery workflow." },
-  { id: "crew", label: "Crew", summary: "Case log, handoff notes, and field evidence captured by the team." },
-];
 
 const queueViewOptions: Array<{ id: QueueViewId; label: string }> = [
   { id: "hotlist", label: "Hotlist" },
@@ -174,11 +165,6 @@ function loadOrCreateOperatorSessionId(): string {
   } catch {
     return `session_${Math.random().toString(16).slice(2, 10)}`;
   }
-}
-
-function loadDashboardDefaultScreen(): DashboardScreenId {
-  const raw = loadStoredString(dashboardDefaultScreenStorageKey, "drive");
-  return raw === "queue" || raw === "recover" || raw === "crew" ? raw : "drive";
 }
 
 function cloneLayout(layout: DashboardLayout): DashboardLayout {
@@ -608,8 +594,6 @@ function App() {
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceId>("dashboard");
   const [layout, setLayout] = useState<DashboardLayout>(() => loadLayout());
   const [fieldSettings, setFieldSettings] = useState<FieldSettings>(() => loadFieldSettings());
-  const [dashboardDefaultScreen, setDashboardDefaultScreen] = useState<DashboardScreenId>(() => loadDashboardDefaultScreen());
-  const [dashboardScreen, setDashboardScreen] = useState<DashboardScreenId>(() => loadDashboardDefaultScreen());
   const [queueView, setQueueView] = useState<QueueViewId>("hotlist");
   const [queuePage, setQueuePage] = useState(0);
   const [targetPanelTab, setTargetPanelTab] = useState<TargetPanelTabId>("overview");
@@ -1030,7 +1014,6 @@ function App() {
   };
   const queuePageSize = 5;
   const searchPageSize = 12;
-  const dashboardScreenMeta = dashboardScreenOptions.find((screen) => screen.id === dashboardScreen) ?? dashboardScreenOptions[0];
   const alertRows = operatorAlerts.map((alert) => {
     const liveAlert = liveAlertsByAlertId.get(alert.id);
     return {
@@ -1061,6 +1044,36 @@ function App() {
     queueView === "hotlist"
       ? "No active hotlist targets in the queue."
       : "No general vehicle detections are currently surfacing inside the radius.";
+  const priorityAlertRow =
+    hotlistQueueRows.find((row) => row.alert.id === selectedAlert.id) ??
+    hotlistQueueRows[0] ??
+    alertRows.find((row) => row.alert.id === selectedAlert.id) ??
+    alertRows[0] ??
+    null;
+  const priorityAlert = priorityAlertRow?.alert ?? selectedAlert;
+  const priorityDetectionId = priorityAlert.detectionId ?? null;
+  const priorityFollowUp =
+    liveFollowUps.find((record) => record.detection_id === priorityDetectionId && record.status !== "resolved") ??
+    liveFollowUps.find((record) => record.detection_id === priorityDetectionId) ??
+    (priorityAlert.id === selectedAlert.id ? selectedFollowUp : null);
+  const priorityAssignment =
+    liveAssignments.find(
+      (record) =>
+        record.detection_id === priorityDetectionId &&
+        record.status !== "completed" &&
+        record.status !== "cancelled",
+    ) ??
+    liveAssignments.find((record) => record.detection_id === priorityDetectionId) ??
+    (priorityAlert.id === selectedAlert.id ? selectedAssignment : null);
+  const priorityWorkflowNotes = priorityAlert.id === selectedAlert.id ? selectedWorkflowNotes : priorityAlert.notes;
+  const priorityRouteAction = priorityAssignment?.summary ?? priorityAlert.routeAction;
+  const priorityLeadOperator =
+    priorityAssignment?.assigned_operator_id ?? priorityFollowUp?.assigned_operator_id ?? routeLeadLabel;
+  const priorityUnit = priorityAssignment?.assigned_unit_label ?? routeUnitLabel;
+  const priorityQueueRows = hotlistQueueRows.slice(0, 4);
+  const priorityGlanceTiles = glanceTiles.filter((tile) =>
+    ["Hotlist alerts", "Route window", "Dispatch", "Follow-up"].includes(tile.label),
+  );
   const searchPageCount = Math.max(1, Math.ceil(Math.max(searchTotalResults, 1) / searchPageSize));
   const searchPageIndex = Math.min(Math.floor(searchOffset / searchPageSize), searchPageCount - 1);
   const searchPageLabel =
@@ -1181,10 +1194,6 @@ function App() {
   useEffect(() => {
     window.localStorage.setItem(settingsStorageKey, JSON.stringify(fieldSettings));
   }, [fieldSettings]);
-
-  useEffect(() => {
-    window.localStorage.setItem(dashboardDefaultScreenStorageKey, dashboardDefaultScreen);
-  }, [dashboardDefaultScreen]);
 
   useEffect(() => {
     setQueuePage(0);
@@ -1656,7 +1665,6 @@ function App() {
 
     startTransition(() => {
       setActiveWorkspace("dashboard");
-      setDashboardScreen("recover");
       setTargetPanelTab("workflow");
       setChatMessages((current) => [
         ...current,
@@ -1753,9 +1761,6 @@ function App() {
     startTransition(() => {
       setActiveWorkspace(nextWorkspace);
       setTargetPanelTab(nextWorkspace === "search" ? "reviews" : nextWorkspace === "alerts" ? "workflow" : "overview");
-      if (nextWorkspace === "dashboard") {
-        setDashboardScreen(dashboardDefaultScreen);
-      }
     });
   }
 
@@ -1810,7 +1815,6 @@ function App() {
     startTransition(() => {
       setNavigationActive(true);
       setActiveWorkspace("navigation");
-      setDashboardScreen("drive");
     });
   }
 
@@ -3560,70 +3564,166 @@ function App() {
       <section className="workspace-card">
         <div className="workspace-card__header">
           <div>
-            <div className="eyebrow">Mission screens</div>
-            <h2>Repossession workflow</h2>
+            <div className="eyebrow">Priority board</div>
+            <h2>Dashboard</h2>
             <p>
-              Switch between drive, queue, recover, and crew screens so only the right layer of information stays in
-              view for the current recovery phase.
+              Keep only the critical repo items in view here: hotlist targets, active route, dispatch ownership, and
+              pinned follow-up state. Use the other tabs when you need the full toolset.
             </p>
           </div>
-          <div className="workspace-card__actions workspace-card__actions--stacked">
-            <div className="mission-switcher">
-              {dashboardScreenOptions.map((screen) => (
-                <button
-                  key={screen.id}
-                  className={`toggle-chip ${dashboardScreen === screen.id ? "is-active" : ""}`}
-                  type="button"
-                  onClick={() => setDashboardScreen(screen.id)}
-                >
-                  {screen.label}
+          <div className="workspace-card__actions">
+            <button className="button" type="button" onClick={() => selectWorkspace("navigation")}>
+              Open drive screen
+            </button>
+            <button
+              className="button"
+              type="button"
+              onClick={() => {
+                setQueueView("hotlist");
+                setTargetPanelTab("workflow");
+                selectWorkspace("alerts");
+              }}
+            >
+              Open target queue
+            </button>
+          </div>
+        </div>
+        <div className="priority-dashboard">
+          <div className="priority-dashboard__hero">
+            <section className="panel-frame">
+              <div className="panel-frame__header">
+                <div>
+                  <h3>Priority target</h3>
+                  <p>Current hotlist or active recovery target that needs the next operator decision.</p>
+                </div>
+              </div>
+              <div className="priority-hero">
+                <div className="priority-hero__header">
+                  <div>
+                    <span className="panel-label">{priorityAlert.time}</span>
+                    <h3>{priorityAlert.plate}</h3>
+                    <p>{priorityAlert.vehicle}</p>
+                  </div>
+                  <div className="badge-group">
+                    {priorityAlertRow?.isHotlistMatch ? <span className="badge badge--critical">Hotlist</span> : null}
+                    <span className={`badge badge--${severityTone(priorityAlert.severity)}`}>{priorityAlert.severity}</span>
+                    <span className="badge badge--outlined">{scenarioLabels[priorityAlert.scenario]}</span>
+                    <span className="badge badge--outlined">{statusLabels[priorityAlert.status]}</span>
+                  </div>
+                </div>
+                <div className="priority-hero__grid">
+                  <StatusLine label="Next move" value={priorityRouteAction} />
+                  <StatusLine label="Route stage" value={currentRouteStage.label} />
+                  <StatusLine label="ETA" value={routeEtaLabel} />
+                  <StatusLine label="Unit" value={priorityUnit} />
+                  <StatusLine label="Lead" value={priorityLeadOperator} />
+                  <StatusLine label="Alert scope" value={generalPopupsLive ? "General + hotlist" : "Hotlist only"} />
+                </div>
+                <div className="notes-box">
+                  <label className="panel-label">Best approach</label>
+                  <p>{priorityAlert.bestApproach}</p>
+                </div>
+                <div className="notes-box">
+                  <label className="panel-label">Field notes</label>
+                  <p>{priorityWorkflowNotes}</p>
+                </div>
+              </div>
+            </section>
+          </div>
+          <div className="priority-dashboard__aside">
+            <section className="panel-frame">
+              <div className="panel-frame__header">
+                <div>
+                  <h3>Priority status</h3>
+                  <p>Dispatch, follow-up, and scan state that should stay visible at a glance.</p>
+                </div>
+              </div>
+              <div className="runtime-summary">
+                <div className="runtime-summary__grid">
+                  <StatusLine label="Hotlist alerts" value={hotlistAlertCount > 0 ? `${hotlistAlertCount} active` : "Clear"} />
+                  <StatusLine
+                    label="Dispatch"
+                    value={priorityAssignment ? assignmentStatusLabel(priorityAssignment.status) : "Unassigned"}
+                  />
+                  <StatusLine
+                    label="Follow-up"
+                    value={priorityFollowUp ? followUpStatusLabel(priorityFollowUp.status) : "Not pinned"}
+                  />
+                  <StatusLine label="Radius mode" value={generalPopupsLive ? "Live scan" : "Background classify"} />
+                </div>
+              </div>
+              {liveError ? <div className="review-feedback review-feedback--error">{liveError}</div> : null}
+              {operatorSessionError ? <div className="review-feedback review-feedback--error">{operatorSessionError}</div> : null}
+              <div className="notes-box">
+                <div className="live-activity__header">
+                  <strong>Assignment ownership</strong>
+                  <span>{priorityAssignment?.assigned_unit_label ?? "No unit assigned yet"}</span>
+                </div>
+                <p>
+                  {priorityAssignment?.assigned_operator_id ?? priorityFollowUp?.assigned_operator_id ?? "No operator assigned"}
+                </p>
+              </div>
+              <div className="notes-box">
+                <div className="live-activity__header">
+                  <strong>Current route</strong>
+                  <span>{currentDistanceLabel}</span>
+                </div>
+                <p>{activeDestination}</p>
+              </div>
+              <div className="panel-actions">
+                <button className="button" type="button" onClick={() => selectWorkspace("navigation")}>
+                  Open map and route
                 </button>
-              ))}
-            </div>
-            <label className="field-group mission-select">
-              <span>Console screen</span>
-              <select value={dashboardScreen} onChange={(event) => setDashboardScreen(event.target.value as DashboardScreenId)}>
-                {dashboardScreenOptions.map((screen) => (
-                  <option key={screen.id} value={screen.id}>
-                    {screen.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+              </div>
+            </section>
+          </div>
+          <div className="priority-dashboard__full">
+            <section className="panel-frame">
+              <div className="panel-frame__header">
+                <div>
+                  <h3>Hotlist queue</h3>
+                  <p>Only the highest-priority hotlist matches stay on the dashboard. Open Targets for the full queue.</p>
+                </div>
+                <span className="badge badge--critical">{hotlistQueueRows.length} active</span>
+              </div>
+              {priorityQueueRows.length === 0 ? (
+                <div className="queue-empty">No active hotlist targets are waiting right now.</div>
+              ) : (
+                <div className="queue-list">
+                  {priorityQueueRows.map(({ alert, isHotlistMatch }) => (
+                    <button
+                      key={alert.id}
+                      className={`queue-card ${alert.id === selectedAlert.id ? "is-selected" : ""}`}
+                      type="button"
+                      onClick={() => {
+                        setSelectedAlertId(alert.id);
+                        setFocusedDetectionId(alert.detectionId ?? null);
+                        setTargetPanelTab("workflow");
+                      }}
+                    >
+                      <div className="queue-card__header">
+                        <span className={`badge ${isHotlistMatch ? "badge--critical" : `badge--${severityTone(alert.severity)}`}`}>
+                          {isHotlistMatch ? "Hotlist" : scenarioLabels[alert.scenario]}
+                        </span>
+                        <span>{alert.time}</span>
+                      </div>
+                      <strong>{alert.plate}</strong>
+                      <p>{alert.vehicle}</p>
+                      <div className="queue-card__meta">
+                        <span>{alert.location}</span>
+                        <span>{alert.distance}</span>
+                      </div>
+                      <div className="queue-card__meta">
+                        <span>{alert.camera}</span>
+                        <span>{alert.routeAction}</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </section>
           </div>
         </div>
-        <div className="mission-summary-card">
-          <span className="panel-label">{dashboardScreenMeta.label}</span>
-          <strong>{currentRouteStage.label}</strong>
-          <p>{dashboardScreenMeta.summary}</p>
-        </div>
-        {dashboardScreen === "drive" ? (
-          <div className="mission-board mission-board--drive">
-            <div className="mission-board__hero">{renderPanel("opsMap")}</div>
-            <div className="mission-board__aside">
-              {renderPanel("routePlanner")}
-              {renderPanel("statusStack")}
-            </div>
-            <div className="mission-board__full">{renderPanel("cameraMatrix")}</div>
-          </div>
-        ) : dashboardScreen === "queue" ? (
-          <div className="mission-board mission-board--queue">
-            <div className="mission-board__hero">{renderPanel("hotlistFeed")}</div>
-            <div className="mission-board__aside">{renderPanel("selectedAlert")}</div>
-          </div>
-        ) : dashboardScreen === "recover" ? (
-          <div className="mission-board mission-board--recover">
-            <div className="mission-board__hero">{renderPanel("selectedAlert")}</div>
-            <div className="mission-board__aside">{renderPanel("dispatchBoard")}</div>
-            <div className="mission-board__full">{renderPanel("cameraMatrix")}</div>
-          </div>
-        ) : (
-          <div className="mission-board mission-board--crew">
-            <div className="mission-board__hero">{renderPanel("recoveryLog")}</div>
-            <div className="mission-board__aside">{renderPanel("crewChat")}</div>
-            <div className="mission-board__full">{renderPanel("statusStack")}</div>
-          </div>
-        )}
       </section>
     );
 
@@ -4020,11 +4120,9 @@ function App() {
                 type="button"
                 onClick={() => {
                   setLayout(cloneLayout(dashboardPresets.route));
-                  setDashboardDefaultScreen("drive");
-                  setDashboardScreen("drive");
                 }}
               >
-                Restore default screens
+                Restore dashboard defaults
               </button>
               <button className="button" type="button" onClick={() => setFieldSettings({ ...defaultFieldSettings })}>
                 Reset field settings
@@ -4032,36 +4130,20 @@ function App() {
             </div>
           </div>
           <div className="settings-grid">
-            <PanelFrame panelId="routePlanner" titleOverride="Screen behavior">
+            <PanelFrame panelId="routePlanner" titleOverride="Dashboard behavior">
               <div className="settings-section">
                 <div className="runtime-summary">
                   <div className="live-activity__header">
-                    <strong>Mission screens stay fixed</strong>
-                    <span>Drive, Queue, Recover, and Crew keep a consistent layout so the cab workflow does not drift.</span>
+                    <strong>Dashboard stays priority-only</strong>
+                    <span>Use this page for the critical repo signal only, and jump into the other tabs when deeper detail is needed.</span>
                   </div>
                   <div className="runtime-summary__grid">
-                    <StatusLine
-                      label="Dashboard landing"
-                      value={dashboardScreenOptions.find((screen) => screen.id === dashboardDefaultScreen)?.label ?? "Drive"}
-                    />
-                    <StatusLine label="Arrival transition" value="Recover screen" />
+                    <StatusLine label="Dashboard view" value="Priority targets only" />
+                    <StatusLine label="Arrival transition" value="Workflow focus" />
                     <StatusLine label="Camera mode" value={titleCaseLabel(layout.cameraMode)} />
                   </div>
                 </div>
                 <div className="form-grid">
-                  <label className="field-group">
-                    <span>Dashboard landing screen</span>
-                    <select
-                      value={dashboardDefaultScreen}
-                      onChange={(event) => setDashboardDefaultScreen(event.target.value as DashboardScreenId)}
-                    >
-                      {dashboardScreenOptions.map((screen) => (
-                        <option key={screen.id} value={screen.id}>
-                          {screen.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
                   <label className="field-group">
                     <span>Camera mode</span>
                     <select value={layout.cameraMode} onChange={(event) => setCameraMode(event.target.value as CameraMode)}>
@@ -4078,10 +4160,10 @@ function App() {
                     type="button"
                     onClick={() => {
                       setActiveWorkspace("dashboard");
-                      setDashboardScreen(dashboardDefaultScreen);
+                      setTargetPanelTab("workflow");
                     }}
                   >
-                    Open dashboard landing screen
+                    Open priority dashboard
                   </button>
                 </div>
               </div>
@@ -4421,41 +4503,43 @@ function App() {
         </nav>
       </header>
 
-      <section className="glance-strip" aria-label="Current cab summary">
-        {glanceTiles.map((tile) => (
+      <section className={`glance-strip ${activeWorkspace === "dashboard" ? "glance-strip--priority" : ""}`} aria-label="Current cab summary">
+        {(activeWorkspace === "dashboard" ? priorityGlanceTiles : glanceTiles).map((tile) => (
           <GlanceTile key={tile.label} label={tile.label} value={tile.value} sublabel={tile.sublabel} />
         ))}
       </section>
 
-      <section className="mode-banner">
-        <div className="mode-banner__group">
-          <span className={`badge ${liveDataSource === "live" ? "badge--good" : "badge--outlined"}`}>
-            {liveDataSource === "live" ? "Live API" : liveDataSource === "fallback" ? "Demo fallback" : "Demo only"}
+      {activeWorkspace !== "dashboard" ? (
+        <section className="mode-banner">
+          <div className="mode-banner__group">
+            <span className={`badge ${liveDataSource === "live" ? "badge--good" : "badge--outlined"}`}>
+              {liveDataSource === "live" ? "Live API" : liveDataSource === "fallback" ? "Demo fallback" : "Demo only"}
+            </span>
+            <span className={`badge ${activeScanMode ? "badge--scan-live" : navigationActive ? "badge--scan-bg" : "badge--outlined"}`}>
+              {activeScanMode ? "Scan live" : navigationActive ? "Transit" : "Idle"}
+            </span>
+            <span className="badge badge--hotlist-always">Hotlist always on</span>
+          </div>
+          <div className="mode-banner__divider" />
+          <div className="mode-banner__group">
+            <span>{operatorDisplayName(currentOperator)}</span>
+            <span>Alerts: {activeAlertCount}</span>
+            <span>Pins: {openFollowUpCount}</span>
+            <span>Dispatch: {activeAssignmentCount}</span>
+            <span>Crew: {activeSessionCount}</span>
+          </div>
+          <div className="mode-banner__divider" />
+          <span>
+            {generalPopupsLive
+              ? "Inside radius. General + hotlist popups live."
+              : !addressDetectionEnabled
+                ? "Address popups off. Hotlist unsuppressed."
+                : "Outside radius. Background classify. Hotlist unsuppressed."}
           </span>
-          <span className={`badge ${activeScanMode ? "badge--scan-live" : navigationActive ? "badge--scan-bg" : "badge--outlined"}`}>
-            {activeScanMode ? "Scan live" : navigationActive ? "Transit" : "Idle"}
-          </span>
-          <span className="badge badge--hotlist-always">Hotlist always on</span>
-        </div>
-        <div className="mode-banner__divider" />
-        <div className="mode-banner__group">
-          <span>{operatorDisplayName(currentOperator)}</span>
-          <span>Alerts: {activeAlertCount}</span>
-          <span>Pins: {openFollowUpCount}</span>
-          <span>Dispatch: {activeAssignmentCount}</span>
-          <span>Crew: {activeSessionCount}</span>
-        </div>
-        <div className="mode-banner__divider" />
-        <span>
-          {generalPopupsLive
-            ? "Inside radius. General + hotlist popups live."
-            : !addressDetectionEnabled
-              ? "Address popups off. Hotlist unsuppressed."
-              : "Outside radius. Background classify. Hotlist unsuppressed."}
-        </span>
-        {liveError ? <span>{liveError}</span> : null}
-        {operatorSessionError ? <span>{operatorSessionError}</span> : null}
-      </section>
+          {liveError ? <span>{liveError}</span> : null}
+          {operatorSessionError ? <span>{operatorSessionError}</span> : null}
+        </section>
+      ) : null}
 
       {popupStack.length > 0 ? (
         <aside className="popup-stack" aria-live="polite">
