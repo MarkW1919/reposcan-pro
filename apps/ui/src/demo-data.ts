@@ -13,7 +13,7 @@ export type PanelId =
 
 export type SlotId = "railTop" | "railBottom" | "hero" | "support" | "board" | "detail";
 export type CameraMode = "quad" | "priority" | "strip" | "dual";
-export type LayoutPresetId = "route" | "recovery" | "lotScan" | "cameraOps" | "navLpr" | "dualCamNav";
+export type LayoutPresetId = "route" | "recovery" | "streetSweep" | "cameraOps" | "navLpr" | "dualCamNav";
 
 export interface DashboardLayout {
   profile: string;
@@ -86,56 +86,56 @@ export interface DetectionPopupEvent {
 }
 
 export const workspaceTabs: Array<{ id: WorkspaceId; label: string }> = [
-  { id: "dashboard", label: "Recovery Dashboard" },
-  { id: "navigation", label: "Route HUD" },
-  { id: "alerts", label: "Recovery Alerts" },
-  { id: "search", label: "Search" },
-  { id: "cameras", label: "Camera Views" },
-  { id: "settings", label: "Field Settings" },
+  { id: "dashboard", label: "Mission Console" },
+  { id: "navigation", label: "Drive" },
+  { id: "alerts", label: "Targets" },
+  { id: "search", label: "Review" },
+  { id: "cameras", label: "Cameras" },
+  { id: "settings", label: "Settings" },
 ];
 
 export const panelCatalog: Record<PanelId, { label: string; description: string }> = {
   opsMap: {
-    label: "Map and Approach",
-    description: "Route line, arrival ring, and nearby target activity.",
+    label: "Route and Radius",
+    description: "Drive route, target radius, and nearby detection activity.",
   },
   cameraMatrix: {
-    label: "Camera Grid",
-    description: "Truck-mounted views for fast visual confirmation.",
+    label: "Camera Confirm",
+    description: "Plate and vehicle confirmation from the truck camera bank.",
   },
   hotlistFeed: {
-    label: "Recovery Alerts",
-    description: "Recent target hits, address-scan activity, and always-on hotlist events.",
+    label: "Live Queue",
+    description: "Hotlist hits, in-radius detections, and unsuppressed popup activity.",
   },
   selectedAlert: {
-    label: "Target Card",
-    description: "Current recovery target with best approach notes.",
+    label: "Target Focus",
+    description: "Current recovery target with approach, evidence, and workflow context.",
   },
   routePlanner: {
-    label: "Route Brief",
-    description: "Destination, trigger distance, and eta context.",
+    label: "Drive Brief",
+    description: "Destination, trigger radius, and ETA context.",
   },
   statusStack: {
-    label: "Cab Status",
+    label: "Cab Readiness",
     description: "GPS, cameras, sync, and storage health at a glance.",
   },
   recoveryLog: {
-    label: "Recovery Log",
-    description: "Active assignments and recent status changes.",
+    label: "Case Log",
+    description: "Active repossession cases and recent status changes.",
   },
   dispatchBoard: {
-    label: "Quick Actions",
-    description: "Fast field actions for the selected target.",
+    label: "Repo Workflow",
+    description: "Follow-up, dispatch, and alert actions for the selected target.",
   },
   crewChat: {
-    label: "Crew Chat",
-    description: "Real-time messaging and handoff coordination between field units.",
+    label: "Crew Handoff",
+    description: "Real-time messaging, evidence notes, and crew handoff coordination.",
   },
 };
 
 export const dashboardPresets: Record<LayoutPresetId, DashboardLayout> = {
   route: {
-    profile: "Route HUD",
+    profile: "Drive Console",
     cameraMode: "priority",
     slots: {
       railTop: "routePlanner",
@@ -147,7 +147,7 @@ export const dashboardPresets: Record<LayoutPresetId, DashboardLayout> = {
     },
   },
   recovery: {
-    profile: "Active Recovery",
+    profile: "Recovery Focus",
     cameraMode: "priority",
     slots: {
       railTop: "routePlanner",
@@ -158,8 +158,8 @@ export const dashboardPresets: Record<LayoutPresetId, DashboardLayout> = {
       detail: "dispatchBoard",
     },
   },
-  lotScan: {
-    profile: "Lot Scan",
+  streetSweep: {
+    profile: "Street Sweep",
     cameraMode: "quad",
     slots: {
       railTop: "statusStack",
@@ -171,7 +171,7 @@ export const dashboardPresets: Record<LayoutPresetId, DashboardLayout> = {
     },
   },
   cameraOps: {
-    profile: "Camera Views",
+    profile: "Camera Confirm",
     cameraMode: "quad",
     slots: {
       railTop: "cameraMatrix",
@@ -183,7 +183,7 @@ export const dashboardPresets: Record<LayoutPresetId, DashboardLayout> = {
     },
   },
   navLpr: {
-    profile: "Nav & LPR",
+    profile: "Drive and Detect",
     cameraMode: "quad",
     slots: {
       railTop: "routePlanner",
@@ -195,7 +195,7 @@ export const dashboardPresets: Record<LayoutPresetId, DashboardLayout> = {
     },
   },
   dualCamNav: {
-    profile: "Dual Cam + Nav",
+    profile: "Dual Cam Drive",
     cameraMode: "dual",
     slots: {
       railTop: "routePlanner",
@@ -232,11 +232,11 @@ export const alerts: AlertItem[] = [
     severity: "critical",
     scenario: "tow_ready",
     status: "onsite",
-    routeAction: "Open Route",
-    location: "Shoreline Marina south lot",
+    routeAction: "Stage and Confirm",
+    location: "Shoreline Blvd curbside",
     distance: "0.2 mi",
-    notes: "Target is parked nose-out near the fence line. Spotter reported no wheel lock.",
-    bestApproach: "Enter from the south lane and keep passenger side hidden from the office.",
+    notes: "Target is parked curbside. Spotter reported the driver is away from the vehicle.",
+    bestApproach: "Roll past once, confirm the plate and VIN, then return from the rear with a clear hookup line.",
   },
   {
     id: "alt-3lpm771",
@@ -244,17 +244,17 @@ export const alerts: AlertItem[] = [
     vehicle: "Black Ford Explorer",
     colorYear: "Black / 2019-2023",
     time: "01:12:08",
-    camera: "Gate North",
+    camera: "Roadside LPR 2",
     confidence: 0.89,
     gps: "37.42243, -122.08229",
     severity: "priority",
     scenario: "departure_risk",
     status: "monitoring",
-    routeAction: "Route Around Block",
-    location: "North gate inbound lane",
+    routeAction: "Circle and Reacquire",
+    location: "Apartment entrance off Rengstorff Ave",
     distance: "0.6 mi",
-    notes: "Vehicle was moving five minutes ago. Keep a rolling angle and avoid direct pass.",
-    bestApproach: "Loop westbound and watch the north gate exit before committing.",
+    notes: "Vehicle moved within the last five minutes. Keep visual contact and avoid tipping the driver.",
+    bestApproach: "Circle the block and reacquire from the cross street before committing.",
   },
   {
     id: "alt-9xca441",
@@ -262,17 +262,17 @@ export const alerts: AlertItem[] = [
     vehicle: "Gray Honda Accord",
     colorYear: "Gray / 2017-2020",
     time: "01:09:44",
-    camera: "Lot East",
+    camera: "Roof Cam Rear",
     confidence: 0.86,
     gps: "37.42061, -122.08155",
     severity: "priority",
     scenario: "visual_match",
     status: "en_route",
-    routeAction: "Mark Sighted",
-    location: "Lot east row C",
+    routeAction: "Mark and Stage",
+    location: "Office frontage on Plymouth St",
     distance: "1.1 mi",
-    notes: "Photo match is strong. Confirm rear plate before engaging the row.",
-    bestApproach: "Use the service alley, then turn into row C with cameras already up.",
+    notes: "Photo match is strong. Confirm rear plate before stopping the truck.",
+    bestApproach: "Pass once for confirmation, then stage one block down for a clean return.",
   },
   {
     id: "alt-1jfd552",
@@ -280,14 +280,14 @@ export const alerts: AlertItem[] = [
     vehicle: "Blue Chevy Tahoe",
     colorYear: "Blue / 2016-2020",
     time: "01:04:57",
-    camera: "Street Cam 1",
+    camera: "Neighborhood Sweep 3",
     confidence: 0.82,
     gps: "37.41983, -122.08544",
     severity: "watch",
     scenario: "assignment",
     status: "monitoring",
-    routeAction: "Log Pass",
-    location: "Elm service road",
+    routeAction: "Watch Only",
+    location: "Elm side street curb line",
     distance: "2.5 mi",
     notes: "Keep on watch only. No confirmed park pattern yet.",
     bestApproach: "Stay mobile and use drive-by confirmation rather than stopping.",
@@ -297,39 +297,39 @@ export const alerts: AlertItem[] = [
 export const cameraFeeds: CameraFeed[] = [
   {
     id: "cam-front-1",
-    label: "Main Entry",
+    label: "Roadside LPR 1",
     zone: "Front Left",
     status: "Online",
     fps: 30,
     tempC: 61,
-    role: "Lane watch",
+    role: "Forward plate read",
   },
   {
     id: "cam-side-2",
-    label: "Gate North",
+    label: "Roadside LPR 2",
     zone: "Front Right",
     status: "Online",
     fps: 28,
     tempC: 59,
-    role: "Street sweep",
+    role: "Cross-street sweep",
   },
   {
     id: "cam-rear-3",
-    label: "Lot East",
+    label: "Roof Cam Rear",
     zone: "Rear Left",
     status: "Online",
     fps: 27,
     tempC: 60,
-    role: "Approach cover",
+    role: "Rear confirmation",
   },
   {
     id: "cam-west-4",
-    label: "Street Cam 2",
+    label: "Tow Cam Right",
     zone: "Rear Right",
     status: "Offline",
     fps: 0,
     tempC: 0,
-    role: "Tow bed check",
+    role: "Tow alignment",
   },
 ];
 
@@ -337,14 +337,14 @@ export const recoveryLog: RecoveryLogEntry[] = [
   {
     id: "rec-001",
     status: "active",
-    title: "Camry shoreline pull",
+    title: "Camry curbside recovery",
     plate: "6BZN220",
     updatedAt: "1 min ago",
   },
   {
     id: "rec-002",
     status: "watch",
-    title: "Accord lot east sweep",
+    title: "Accord roadside confirmation",
     plate: "9XCA441",
     updatedAt: "6 min ago",
   },
@@ -366,10 +366,10 @@ export interface CrewChatMessage {
 }
 
 export const demoChatMessages: CrewChatMessage[] = [
-  { id: "msg-001", sender: "Unit 7", body: "Eyes on target vehicle, silver Camry north side of lot", timestamp: "04:12", type: "message" },
+  { id: "msg-001", sender: "Unit 7", body: "Eyes on target vehicle, silver Camry curbside on Shoreline", timestamp: "04:12", type: "message" },
   { id: "msg-002", sender: "Dispatch", body: "Copy Unit 7. Unit 3 en route for backup, ETA 4 min", timestamp: "04:13", type: "message" },
   { id: "msg-003", sender: "System", body: "Handoff: Unit 3 assigned to assignment asg_001", timestamp: "04:14", type: "handoff" },
-  { id: "msg-004", sender: "Unit 3", body: "Confirmed, approaching from west entrance", timestamp: "04:15", type: "message" },
+  { id: "msg-004", sender: "Unit 3", body: "Confirmed, approaching from the westbound cross street", timestamp: "04:15", type: "message" },
   { id: "msg-005", sender: "System", body: "Hotlist match: 6BZN220 detected on cam-front-1", timestamp: "04:16", type: "system" },
   { id: "msg-006", sender: "Unit 7", body: "Plates confirmed visual match. Ready for tow", timestamp: "04:17", type: "message" },
 ];
@@ -384,12 +384,12 @@ export const layoutSlotLabels: Record<SlotId, string> = {
 };
 
 export const presetDescriptions: Record<LayoutPresetId, string> = {
-  route: "Map-first driving layout with alerts and camera confirmation close by.",
-  recovery: "Target-first layout for when you are on scene and deciding fast.",
-  lotScan: "Camera-led sweep for property entrances, rows, and staged passes.",
-  cameraOps: "Quad camera grid with alerts table and target detail for visual confirmation.",
-  navLpr: "Navigation sidebar with LPR activation, cameras, and interactive map.",
-  dualCamNav: "Two camera windows alongside a live navigation map.",
+  route: "Map-first driving layout with hotlist and radius status close by.",
+  recovery: "Target-first layout for on-scene confirmation and hookup decisions.",
+  streetSweep: "Camera-led sweep for curbside, apartment, office, and roadside searches.",
+  cameraOps: "Quad camera grid with queue and target detail for fast confirmation.",
+  navLpr: "Drive route, active radius scan state, and vehicle recognition together.",
+  dualCamNav: "Two camera windows alongside the live driving map.",
 };
 
 export const scenarioLabels: Record<AlertItem["scenario"], string> = {
@@ -420,8 +420,8 @@ export const addressScanDetections: DetectionPopupEvent[] = [
     colorYear: "Silver / 2019-2022",
     timestamp: "01:15:06",
     gps: "37.42111, -122.08494",
-    camera: "Main Entry",
-    location: "South lot drive lane",
+    camera: "Roadside LPR 1",
+    location: "Apartment curb line",
     imageLabel: "Front-left frame",
     confidence: 0.88,
     note: "General vehicle alert surfaced because the truck is inside the configured address radius.",
@@ -434,9 +434,9 @@ export const addressScanDetections: DetectionPopupEvent[] = [
     colorYear: "Red / 2018-2021",
     timestamp: "01:15:21",
     gps: "37.42088, -122.08397",
-    camera: "Gate North",
-    location: "Visitor row entrance",
-    imageLabel: "Street sweep frame",
+    camera: "Roadside LPR 2",
+    location: "Cross street approach",
+    imageLabel: "Roadside sweep frame",
     confidence: 0.74,
     note: "Vehicle classification completed, but the rear plate is partially occluded.",
   },
@@ -448,8 +448,8 @@ export const addressScanDetections: DetectionPopupEvent[] = [
     colorYear: "White / 2020-2024",
     timestamp: "01:15:43",
     gps: "37.42146, -122.08318",
-    camera: "Lot East",
-    location: "Back row near service gate",
+    camera: "Roof Cam Rear",
+    location: "Driveway across the target block",
     imageLabel: "Rear-left frame",
     confidence: 0.84,
     note: "General detection pushed to the operator because scan mode is active inside the arrival ring.",
@@ -465,8 +465,8 @@ export const hotlistPopupDetections: DetectionPopupEvent[] = [
     colorYear: "White / 2018-2021",
     timestamp: "01:16:02",
     gps: "37.42172, -122.08408",
-    camera: "Street Cam 2",
-    location: "Shoreline Marina south lot",
+    camera: "Roadside LPR 2",
+    location: "Shoreline Blvd curbside",
     imageLabel: "Tow-ready hit",
     confidence: 0.93,
     note: "Confirmed hotlist match. Popup and high-priority cab notification fire even if address scan is disabled.",
@@ -479,8 +479,8 @@ export const hotlistPopupDetections: DetectionPopupEvent[] = [
     colorYear: "Gray / 2017-2020",
     timestamp: "01:16:18",
     gps: "37.42061, -122.08155",
-    camera: "Lot East",
-    location: "Lot east row C",
+    camera: "Roof Cam Rear",
+    location: "Office frontage on Plymouth St",
     imageLabel: "Visual match frame",
     confidence: 0.9,
     note: "Hotlist recognition stays active regardless of navigation state or address-based popup suppression.",

@@ -1,4 +1,4 @@
-import { startTransition, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactElement, type ReactNode } from "react";
+import { startTransition, useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactElement, type ReactNode } from "react";
 import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -123,6 +123,29 @@ interface RouteStageItem {
   detail: string;
   state: RouteStageState;
 }
+
+type DashboardScreenId = "drive" | "queue" | "recover" | "crew";
+type QueueViewId = "hotlist" | "radius" | "popups";
+type TargetPanelTabId = "overview" | "workflow" | "reviews";
+
+const dashboardScreenOptions: Array<{ id: DashboardScreenId; label: string; summary: string }> = [
+  { id: "drive", label: "Drive", summary: "Route, radius trigger, and live vehicle detection state while rolling." },
+  { id: "queue", label: "Queue", summary: "Hotlist matches and in-radius detections ready for a decision." },
+  { id: "recover", label: "Recover", summary: "Target evidence, dispatch, and on-scene recovery workflow." },
+  { id: "crew", label: "Crew", summary: "Case log, handoff notes, and field evidence captured by the team." },
+];
+
+const queueViewOptions: Array<{ id: QueueViewId; label: string }> = [
+  { id: "hotlist", label: "Hotlist" },
+  { id: "radius", label: "Radius detections" },
+  { id: "popups", label: "Popup log" },
+];
+
+const targetPanelTabs: Array<{ id: TargetPanelTabId; label: string }> = [
+  { id: "overview", label: "Overview" },
+  { id: "workflow", label: "Workflow" },
+  { id: "reviews", label: "Reviews" },
+];
 
 function loadStoredString(key: string, fallback = ""): string {
   if (typeof window === "undefined") {
@@ -580,9 +603,12 @@ const defaultSearchFormState: SearchFormState = {
 
 function App() {
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceId>("dashboard");
-  const [layoutEditorOpen, setLayoutEditorOpen] = useState(false);
   const [layout, setLayout] = useState<DashboardLayout>(() => loadLayout());
   const [fieldSettings, setFieldSettings] = useState<FieldSettings>(() => loadFieldSettings());
+  const [dashboardScreen, setDashboardScreen] = useState<DashboardScreenId>("drive");
+  const [queueView, setQueueView] = useState<QueueViewId>("hotlist");
+  const [queuePage, setQueuePage] = useState(0);
+  const [targetPanelTab, setTargetPanelTab] = useState<TargetPanelTabId>("overview");
   const [selectedAlertId, setSelectedAlertId] = useState<string>(alerts[0]?.id ?? "");
   const [focusedDetectionId, setFocusedDetectionId] = useState<string | null>(null);
   const [selectedCameraId, setSelectedCameraId] = useState<string>(cameraFeeds[0]?.id ?? "");
@@ -602,6 +628,7 @@ function App() {
   const [searchForm, setSearchForm] = useState<SearchFormState>(defaultSearchFormState);
   const [searchResults, setSearchResults] = useState<DashboardDetection[]>([]);
   const [searchTotalResults, setSearchTotalResults] = useState(0);
+  const [searchOffset, setSearchOffset] = useState(0);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searchExecuted, setSearchExecuted] = useState(false);
@@ -752,15 +779,21 @@ function App() {
     ? selectedAlert.notes
     : selectedLiveAlert?.notes ??
       (selectedDetection
-        ? `Frame ${selectedDetection.frame_number} · Sync status ${selectedDetection.sync_status}`
+        ? `Frame ${selectedDetection.frame_number} / Sync status ${selectedDetection.sync_status}`
         : "Select a live detection to inspect OCR candidates and attribute confidence.");
   const searchCameraChoices = Array.from(
     new Set((liveOverview?.detections ?? []).map((record) => record.camera_id)),
   ).sort((left, right) => left.localeCompare(right));
+  const knownHotlistPlates = new Set(
+    [
+      ...hotlistPopupDetections.map((event) => event.plate).filter((plate): plate is string => typeof plate === "string"),
+      ...hotlistEntries.filter((entry) => entry.active).map((entry) => entry.plate_text),
+    ].map((plate) => plate.toUpperCase()),
+  );
   const selectedWorkflowNotes = selectedAssignment?.notes ?? selectedFollowUp?.notes ?? selectedDisplayNotes;
   const selectedIsHotlistMatch = selectedLiveAlert
     ? !!selectedLiveAlert.hotlist_entry_id
-    : selectedAlert.severity === "critical";
+    : knownHotlistPlates.has(selectedDisplayPlate.toUpperCase());
   const selectedFramePreviewUrl = liveDataSource === "live" ? framePreviewUrl : null;
   const selectedPlateCropPreviewUrl = liveDataSource === "live" ? plateCropPreviewUrl : null;
   const withinArrivalRadius = navigationActive && currentDistanceFeet <= fieldSettings.arrivalTriggerDistance;
@@ -854,7 +887,7 @@ function App() {
       label: "Confirm",
       detail:
         selectedAssignment?.status === "onsite"
-          ? "Crew is on scene. Confirm the plate and lane approach."
+          ? "Crew is on scene. Confirm plate, VIN, and a safe hookup position."
           : selectedAlert.status === "onsite"
             ? "On-scene confirmation is in progress."
             : "Use cameras and evidence to verify before engagement.",
@@ -892,7 +925,7 @@ function App() {
       tone: withinArrivalRadius ? "badge--good" : navigationActive ? "badge--priority" : "badge--muted",
     },
     {
-      label: "Scan gate",
+      label: "Alert scope",
       value: generalPopupsLive ? "General + hotlist" : "Hotlist only",
       tone: generalPopupsLive ? "badge--good" : "badge--outlined",
     },
@@ -967,7 +1000,7 @@ function App() {
       (record) => record.detection_id === alert.detectionId && record.status !== "resolved",
     );
     const liveAlert = liveAlertsByAlertId.get(alert.id);
-    const isHotlistMatch = liveAlert ? !!liveAlert.hotlist_entry_id : alert.severity === "critical";
+    const isHotlistMatch = liveAlert ? !!liveAlert.hotlist_entry_id : knownHotlistPlates.has(alert.plate.toUpperCase());
     return {
       alert,
       x: 18 + index * 19,
@@ -991,8 +1024,47 @@ function App() {
     x: `${12 + routeProgressPercent * 0.55}%`,
     y: `${74 - routeProgressPercent * 0.34}%`,
   };
+  const queuePageSize = 5;
+  const searchPageSize = 12;
+  const dashboardScreenMeta = dashboardScreenOptions.find((screen) => screen.id === dashboardScreen) ?? dashboardScreenOptions[0];
+  const alertRows = operatorAlerts.map((alert) => {
+    const liveAlert = liveAlertsByAlertId.get(alert.id);
+    return {
+      alert,
+      isHotlistMatch: liveAlert ? !!liveAlert.hotlist_entry_id : knownHotlistPlates.has(alert.plate.toUpperCase()),
+    };
+  });
+  const hotlistQueueRows = alertRows.filter((row) => row.isHotlistMatch);
+  const radiusQueueRows = alertRows.filter((row) => !row.isHotlistMatch);
+  const queueItemsTotal =
+    queueView === "popups" ? popupHistory.length : queueView === "hotlist" ? hotlistQueueRows.length : radiusQueueRows.length;
+  const queuePageCount = Math.max(1, Math.ceil(Math.max(queueItemsTotal, 1) / queuePageSize));
+  const queuePageIndex = Math.min(queuePage, queuePageCount - 1);
+  const queueStart = queuePageIndex * queuePageSize;
+  const visibleHotlistRows = hotlistQueueRows.slice(queueStart, queueStart + queuePageSize);
+  const visibleRadiusRows = radiusQueueRows.slice(queueStart, queueStart + queuePageSize);
+  const visiblePopupHistory = popupHistory.slice(queueStart, queueStart + queuePageSize);
+  const activeQueueRows = queueView === "hotlist" ? visibleHotlistRows : visibleRadiusRows;
+  const queueHeadline =
+    queueView === "hotlist" ? "Hotlist targets" : queueView === "radius" ? "Radius detections" : "Popup activity";
+  const queueDescription =
+    queueView === "hotlist"
+      ? "Unsuppressed hotlist targets that require immediate action."
+      : queueView === "radius"
+        ? "General vehicle detections surfacing inside the target radius."
+        : "Recent popup activity shown in the cab.";
+  const queueEmptyMessage =
+    queueView === "hotlist"
+      ? "No active hotlist targets in the queue."
+      : "No general vehicle detections are currently surfacing inside the radius.";
+  const searchPageCount = Math.max(1, Math.ceil(Math.max(searchTotalResults, 1) / searchPageSize));
+  const searchPageIndex = Math.min(Math.floor(searchOffset / searchPageSize), searchPageCount - 1);
+  const searchPageLabel =
+    searchTotalResults === 0
+      ? "No results yet"
+      : `Showing ${Math.min(searchOffset + 1, searchTotalResults)}-${Math.min(searchOffset + searchResults.length, searchTotalResults)} of ${searchTotalResults}`;
 
-  // Geo-coordinates for Leaflet: map percentages → lat/lng offsets around demo center
+  // Geo-coordinates for Leaflet: map percentages to lat/lng offsets around the demo center.
   const geoCenter = defaultMapCenter;
   const geoSpan = 0.015; // ~1 mile spread
   function pctToGeo(xPct: number, yPct: number): { lat: number; lng: number } {
@@ -1027,7 +1099,7 @@ function App() {
     id: sess.session.session_id,
     lat: pctToGeo(sess.x, sess.y).lat,
     lng: pctToGeo(sess.x, sess.y).lng,
-    label: `${sess.session.display_name ?? sess.session.principal_id} — ${sess.session.workspace}`,
+    label: `${sess.session.display_name ?? sess.session.principal_id} - ${sess.session.workspace}`,
   }));
   const geoRoutePath: [number, number][] = [
     [pctToGeo(12, 74).lat, pctToGeo(12, 74).lng],
@@ -1035,6 +1107,10 @@ function App() {
     [pctToGeo(55, 38).lat, pctToGeo(55, 38).lng],
     [pctToGeo(67, 40).lat, pctToGeo(67, 40).lng],
   ];
+  const geoDestinationPosition = {
+    lat: geoRoutePath[geoRoutePath.length - 1]?.[0] ?? geoUnitPosition.lat,
+    lng: geoRoutePath[geoRoutePath.length - 1]?.[1] ?? geoUnitPosition.lng,
+  };
 
   async function refreshOverview(signal?: AbortSignal): Promise<void> {
     try {
@@ -1101,6 +1177,17 @@ function App() {
   useEffect(() => {
     window.localStorage.setItem(settingsStorageKey, JSON.stringify(fieldSettings));
   }, [fieldSettings]);
+
+  useEffect(() => {
+    setQueuePage(0);
+  }, [queueView]);
+
+  useEffect(() => {
+    const maxPage = Math.max(0, Math.ceil(Math.max(queueItemsTotal, 1) / queuePageSize) - 1);
+    if (queuePage > maxPage) {
+      setQueuePage(maxPage);
+    }
+  }, [queueItemsTotal, queuePage, queuePageSize]);
 
   useEffect(() => {
     setApiClientConfig({ apiKey });
@@ -1569,7 +1656,7 @@ function App() {
         {
           id: `sys-arrival-${Date.now()}`,
           sender: "System",
-          body: `Geofence triggered — entered arrival radius (${fieldSettings.arrivalTriggerDistance} ft). Scan mode active.`,
+          body: `Geofence triggered - entered arrival radius (${fieldSettings.arrivalTriggerDistance} ft). Scan mode active.`,
           timestamp: new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }),
           type: "system",
         },
@@ -1658,6 +1745,10 @@ function App() {
   function selectWorkspace(nextWorkspace: WorkspaceId): void {
     startTransition(() => {
       setActiveWorkspace(nextWorkspace);
+      setTargetPanelTab(nextWorkspace === "search" ? "reviews" : nextWorkspace === "alerts" ? "workflow" : "overview");
+      if (nextWorkspace === "dashboard") {
+        setDashboardScreen("drive");
+      }
     });
   }
 
@@ -1666,12 +1757,14 @@ function App() {
       ...current,
       [key]: value,
     }));
+    setSearchOffset(0);
   }
 
   function resetSearchFilters(): void {
     setSearchForm(defaultSearchFormState);
     setSearchResults([]);
     setSearchTotalResults(0);
+    setSearchOffset(0);
     setSearchError(null);
     setSearchExecuted(false);
     setFocusedDetectionId(selectedAlert?.detectionId ?? null);
@@ -1741,8 +1834,7 @@ function App() {
     });
   }
 
-  async function handleSearchSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
+  async function runDetectionSearch(offset: number, focusFirstResult: boolean): Promise<void> {
     if (liveDataSource !== "live") {
       setSearchError("Connect the live API before running operator search.");
       return;
@@ -1767,15 +1859,16 @@ function App() {
         vehicle_model: searchForm.vehicleModel,
         vehicle_year: searchForm.vehicleYear,
         alert_status: searchForm.alertStatus || undefined,
-        limit: 50,
-        offset: 0,
+        limit: searchPageSize,
+        offset,
       });
 
       setSearchResults(response.results);
       setSearchTotalResults(response.page.total_results);
+      setSearchOffset(offset);
       setSearchExecuted(true);
 
-      if (response.results.length > 0) {
+      if (focusFirstResult && response.results.length > 0) {
         const firstDetection = response.results[0];
         const matchingAlert = liveOverview?.alerts.find((alert) => alert.detection_id === firstDetection.detection_id) ?? null;
         focusDetection(firstDetection.detection_id, matchingAlert?.alert_id);
@@ -1783,11 +1876,22 @@ function App() {
     } catch (error) {
       setSearchResults([]);
       setSearchTotalResults(0);
+      setSearchOffset(offset);
       setSearchExecuted(true);
       setSearchError(error instanceof Error ? error.message : "Failed to run search");
     } finally {
       setSearchLoading(false);
     }
+  }
+
+  async function handleSearchSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    await runDetectionSearch(0, true);
+  }
+
+  function changeSearchPage(direction: -1 | 1): void {
+    const nextOffset = Math.max(0, searchOffset + direction * searchPageSize);
+    void runDetectionSearch(nextOffset, false);
   }
 
   async function handleReviewSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
@@ -2072,7 +2176,7 @@ function App() {
                 <span>Destination</span>
                 <input
                   className="input-control"
-                  placeholder="Enter repo address or lot name"
+                  placeholder="Enter target address or recovery location"
                   type="text"
                   value={destinationInput}
                   onChange={(event) => setDestinationInput(event.target.value)}
@@ -2098,7 +2202,7 @@ function App() {
                 <StatusLine label="Current range" value={currentDistanceLabel} />
                 <StatusLine label="Scenario" value={scenarioLabels[selectedAlert.scenario]} />
                 <StatusLine label="Arrival ring" value={`${fieldSettings.arrivalTriggerDistance} ft`} />
-                <StatusLine label="Popup policy" value={generalPopupsLive ? "General + hotlist" : "Hotlist only"} />
+                <StatusLine label="Alert scope" value={generalPopupsLive ? "General + hotlist" : "Hotlist only"} />
               </div>
               <div className="proximity-shell">
                 <div className="proximity-shell__header">
@@ -2205,7 +2309,7 @@ function App() {
                 tone={activeSessionCount > 1 ? "good" : "neutral"}
               />
               <StatusRow
-                label="Address scan"
+                label="Radius detection"
                 value={
                   addressDetectionEnabled
                     ? generalPopupsLive
@@ -2246,6 +2350,8 @@ function App() {
             </div>
             <OpsMapLeaflet
               unitPosition={geoUnitPosition}
+              destinationPosition={geoDestinationPosition}
+              destinationLabel={activeDestination}
               alertMarkers={geoAlertMarkers}
               cameraNodes={geoCameraNodes}
               sessionNodes={geoSessionNodes}
@@ -2269,7 +2375,7 @@ function App() {
             </div>
             <div className="map-summary-grid">
               <div className="map-summary-card">
-                <span className="panel-label">Route HUD</span>
+                <span className="panel-label">Drive screen</span>
                 <strong>{routeUnitLabel}</strong>
                 <div className="map-summary-card__grid">
                   <StatusLine label="ETA" value={routeEtaLabel} />
@@ -2279,7 +2385,7 @@ function App() {
                     label="Scan mode"
                     value={activeScanMode ? "Live scan" : navigationActive ? "Transit / classify" : "Idle"}
                   />
-                  <StatusLine label="Scan gate" value={generalPopupsLive ? "General + hotlist" : "Hotlist only"} />
+                  <StatusLine label="Alert scope" value={generalPopupsLive ? "General + hotlist" : "Hotlist only"} />
                   <StatusLine label="Hotlist" value={hotlistAlertCount > 0 ? `${hotlistAlertCount} active` : "Clear"} />
                 </div>
               </div>
@@ -2374,75 +2480,106 @@ function App() {
       case "hotlistFeed":
         return (
           <PanelFrame panelId={panelId}>
-            <div className="alert-table">
-              <div className="alert-table__header">
-                <span>Time</span>
-                <span>Plate</span>
-                <span>Scenario</span>
-                <span>Location</span>
-                <span>Action</span>
-              </div>
-              {operatorAlerts.map((alert) => {
-                const rowLiveAlert = liveAlertsByAlertId.get(alert.id);
-                const rowIsHotlist = rowLiveAlert ? !!rowLiveAlert.hotlist_entry_id : alert.severity === "critical";
-                return (
-                  <button
-                    key={alert.id}
-                    className={`alert-row ${alert.id === selectedAlert.id ? "is-selected" : ""}`}
-                    type="button"
-                    onClick={() => {
-                      setSelectedAlertId(alert.id);
-                      setFocusedDetectionId(alert.detectionId ?? null);
-                    }}
-                  >
-                    <span>{alert.time}</span>
-                    <span>
-                      <strong>{alert.plate}</strong>
-                      {rowIsHotlist ? (
-                        <em className="badge badge--critical">Hotlist</em>
-                      ) : (
-                        <em className={`badge badge--${severityTone(alert.severity)}`}>{alert.severity}</em>
-                      )}
-                    </span>
-                    <span>{scenarioLabels[alert.scenario]}</span>
-                    <span>{alert.location}</span>
-                    <span>{alert.routeAction}</span>
-                  </button>
-                );
-              })}
-            </div>
-            <div className="live-activity">
-              <div className="live-activity__header">
-                <strong>Live popup activity</strong>
-                <span>
-                  {generalPopupsLive ? "General + hotlist popups live." : "Hotlist only. General popups suppressed."}
-                  {hotlistAlertCount > 0 ? ` ${hotlistAlertCount} hotlist alert${hotlistAlertCount === 1 ? "" : "s"} active.` : ""}
-                </span>
-              </div>
-              {popupHistory.length === 0 ? (
-                <div className="live-activity__row">
-                  <span className="badge badge--outlined">Idle</span>
-                  <div>
-                    <strong>No active popup events</strong>
-                    <p>Waiting for the next unsuppressed live event.</p>
-                  </div>
-                  <span>Live</span>
+            <div className="queue-shell">
+              <div className="queue-shell__header">
+                <div>
+                  <strong>{queueHeadline}</strong>
+                  <span>{queueDescription}</span>
                 </div>
+                <div className="queue-shell__controls">
+                  <div className="view-toggle">
+                    {queueViewOptions.map((option) => (
+                      <button
+                        key={option.id}
+                        className={`toggle-chip ${queueView === option.id ? "is-active" : ""}`}
+                        type="button"
+                        onClick={() => setQueueView(option.id)}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="queue-pager">
+                    <button
+                      className="button"
+                      disabled={queuePageIndex === 0}
+                      type="button"
+                      onClick={() => setQueuePage((current) => Math.max(0, current - 1))}
+                    >
+                      Back
+                    </button>
+                    <span>{queueItemsTotal === 0 ? "No items" : `Page ${queuePageIndex + 1} / ${queuePageCount}`}</span>
+                    <button
+                      className="button"
+                      disabled={queuePageIndex >= queuePageCount - 1 || queueItemsTotal === 0}
+                      type="button"
+                      onClick={() => setQueuePage((current) => Math.min(queuePageCount - 1, current + 1))}
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              </div>
+              {queueView === "popups" ? (
+                visiblePopupHistory.length === 0 ? (
+                  <div className="queue-empty">No popup events are waiting in the current log view.</div>
+                ) : (
+                  <div className="queue-list">
+                    {visiblePopupHistory.map((event) => (
+                      <article key={event.id} className="queue-card queue-card--popup">
+                        <div className="queue-card__header">
+                          <span className={`badge ${event.type === "hotlist" ? "badge--critical" : "badge--priority"}`}>
+                            {detectionPopupTypeLabels[event.type]}
+                          </span>
+                          <span>{event.timestamp}</span>
+                        </div>
+                        <strong>{event.plate ?? "Plate unavailable"}</strong>
+                        <p>{`${event.vehicle} / ${event.camera}`}</p>
+                        <div className="queue-card__meta">
+                          <span>{event.location}</span>
+                          <span>{confidenceLabel(event.confidence)}</span>
+                        </div>
+                        <p>{event.note}</p>
+                      </article>
+                    ))}
+                  </div>
+                )
               ) : (
-                popupHistory.map((event) => (
-                <div key={event.id} className="live-activity__row">
-                  <span className={`badge ${event.type === "hotlist" ? "badge--critical" : "badge--priority"}`}>
-                    {detectionPopupTypeLabels[event.type]}
-                  </span>
-                  <div>
-                    <strong>{event.plate ?? "Plate unavailable"}</strong>
-                    <p>
-                      {event.vehicle} · {event.camera}
-                    </p>
-                  </div>
-                  <span>{event.timestamp}</span>
+                <div className="queue-list">
+                  {activeQueueRows.length === 0 ? (
+                    <div className="queue-empty">{queueEmptyMessage}</div>
+                  ) : (
+                    activeQueueRows.map(({ alert, isHotlistMatch }) => (
+                      <button
+                        key={alert.id}
+                        className={`queue-card ${alert.id === selectedAlert.id ? "is-selected" : ""}`}
+                        type="button"
+                        onClick={() => {
+                          setSelectedAlertId(alert.id);
+                          setFocusedDetectionId(alert.detectionId ?? null);
+                          setTargetPanelTab("workflow");
+                        }}
+                      >
+                        <div className="queue-card__header">
+                          <span className={`badge ${isHotlistMatch ? "badge--critical" : `badge--${severityTone(alert.severity)}`}`}>
+                            {isHotlistMatch ? "Hotlist" : scenarioLabels[alert.scenario]}
+                          </span>
+                          <span>{alert.time}</span>
+                        </div>
+                        <strong>{alert.plate}</strong>
+                        <p>{alert.vehicle}</p>
+                        <div className="queue-card__meta">
+                          <span>{alert.location}</span>
+                          <span>{alert.distance}</span>
+                        </div>
+                        <div className="queue-card__meta">
+                          <span>{alert.camera}</span>
+                          <span>{alert.routeAction}</span>
+                        </div>
+                      </button>
+                    ))
+                  )}
                 </div>
-                ))
               )}
             </div>
           </PanelFrame>
@@ -2562,76 +2699,129 @@ function App() {
                   }
                 />
               </div>
-              <div className="notes-box">
-                <label className="panel-label">Best approach</label>
-                <p>{selectedDisplayBestApproach}</p>
+              <div className="target-tabs">
+                {targetPanelTabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    className={`toggle-chip ${targetPanelTab === tab.id ? "is-active" : ""}`}
+                    type="button"
+                    onClick={() => setTargetPanelTab(tab.id)}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
               </div>
-              <div className="notes-box">
-                <label className="panel-label">Field notes</label>
-                <p>{selectedWorkflowNotes}</p>
-              </div>
-              <div className="notes-box">
-                <div className="live-activity__header">
-                  <strong>Follow-up and dispatch</strong>
-                  <span>
-                    {selectedFollowUp
-                      ? `${followUpStatusLabel(selectedFollowUp.status)} follow-up`
-                      : selectedAssignment
-                        ? `${assignmentStatusLabel(selectedAssignment.status)} dispatch`
-                        : "No pinned workflow yet"}
-                  </span>
-                </div>
-                <p>
-                  {selectedAssignment?.assigned_unit_label
-                    ? `${selectedAssignment.assigned_unit_label} · `
-                    : ""}
-                  {selectedAssignment?.assigned_operator_id ?? selectedFollowUp?.assigned_operator_id ?? "Unassigned"}
-                  {selectedFollowUp?.due_at_utc ? ` · Due ${formatHotlistTimestamp(selectedFollowUp.due_at_utc)}` : ""}
-                </p>
-              </div>
-              {selectedDetection ? (
-                <div className="detection-insights">
-                  <div className="notes-box">
-                    <div className="live-activity__header">
-                      <strong>OCR candidates</strong>
-                      <span>
-                        {selectedDetection.plate_candidates.length} candidate
-                        {selectedDetection.plate_candidates.length === 1 ? "" : "s"}
-                      </span>
+              <div className="target-tab-panel">
+                {targetPanelTab === "overview" ? (
+                  <>
+                    <div className="notes-box">
+                      <label className="panel-label">Best approach</label>
+                      <p>{selectedDisplayBestApproach}</p>
                     </div>
-                    {selectedDetection.plate_candidates.length === 0 ? (
-                      <p>No alternate OCR candidates were retained for this detection.</p>
-                    ) : (
-                      <div className="candidate-list">
-                        {selectedDetection.plate_candidates.slice(0, 5).map((candidate, index) => (
-                          <div
-                            key={`${candidate.text}-${index}`}
-                            className={`candidate-row ${candidate.text === selectedDetection.plate_text ? "is-primary" : ""}`}
-                          >
-                            <strong>{candidate.text}</strong>
-                            <span>{confidenceLabel(candidate.confidence)}</span>
-                          </div>
-                        ))}
+                    <div className="notes-box">
+                      <label className="panel-label">Field notes</label>
+                      <p>{selectedWorkflowNotes}</p>
+                    </div>
+                    <div className="notes-box">
+                      <div className="live-activity__header">
+                        <strong>Follow-up and dispatch</strong>
+                        <span>
+                          {selectedFollowUp
+                            ? `${followUpStatusLabel(selectedFollowUp.status)} follow-up`
+                            : selectedAssignment
+                              ? `${assignmentStatusLabel(selectedAssignment.status)} dispatch`
+                              : "No pinned workflow yet"}
+                        </span>
                       </div>
-                    )}
-                  </div>
-                  <div className="notes-box">
-                    <div className="live-activity__header">
-                      <strong>Confidence breakdown</strong>
-                      <span>Stored with the detection record</span>
+                      <p>
+                        {selectedAssignment?.assigned_unit_label ? `${selectedAssignment.assigned_unit_label} / ` : ""}
+                        {selectedAssignment?.assigned_operator_id ?? selectedFollowUp?.assigned_operator_id ?? "Unassigned"}
+                        {selectedFollowUp?.due_at_utc ? ` / Due ${formatHotlistTimestamp(selectedFollowUp.due_at_utc)}` : ""}
+                      </p>
                     </div>
-                    <div className="confidence-grid">
-                      <StatusLine label="OCR" value={formatOptionalConfidence(selectedDetection.plate_confidence)} />
-                      <StatusLine label="Color" value={formatOptionalConfidence(selectedDetection.vehicle_color_confidence)} />
-                      <StatusLine label="Make" value={formatOptionalConfidence(selectedDetection.vehicle_make_confidence)} />
-                      <StatusLine label="Model" value={formatOptionalConfidence(selectedDetection.vehicle_model_confidence)} />
-                      <StatusLine label="Year" value={formatOptionalConfidence(selectedDetection.optional_year_confidence)} />
-                      <StatusLine label="Tracker" value={selectedDetection.tracker_id ?? "Untracked"} />
+                    {selectedDetection ? (
+                      <div className="detection-insights">
+                        <div className="notes-box">
+                          <div className="live-activity__header">
+                            <strong>OCR candidates</strong>
+                            <span>
+                              {selectedDetection.plate_candidates.length} candidate
+                              {selectedDetection.plate_candidates.length === 1 ? "" : "s"}
+                            </span>
+                          </div>
+                          {selectedDetection.plate_candidates.length === 0 ? (
+                            <p>No alternate OCR candidates were retained for this detection.</p>
+                          ) : (
+                            <div className="candidate-list">
+                              {selectedDetection.plate_candidates.slice(0, 5).map((candidate, index) => (
+                                <div
+                                  key={`${candidate.text}-${index}`}
+                                  className={`candidate-row ${candidate.text === selectedDetection.plate_text ? "is-primary" : ""}`}
+                                >
+                                  <strong>{candidate.text}</strong>
+                                  <span>{confidenceLabel(candidate.confidence)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <div className="notes-box">
+                          <div className="live-activity__header">
+                            <strong>Confidence breakdown</strong>
+                            <span>Stored with the detection record</span>
+                          </div>
+                          <div className="confidence-grid">
+                            <StatusLine label="OCR" value={formatOptionalConfidence(selectedDetection.plate_confidence)} />
+                            <StatusLine label="Color" value={formatOptionalConfidence(selectedDetection.vehicle_color_confidence)} />
+                            <StatusLine label="Make" value={formatOptionalConfidence(selectedDetection.vehicle_make_confidence)} />
+                            <StatusLine label="Model" value={formatOptionalConfidence(selectedDetection.vehicle_model_confidence)} />
+                            <StatusLine label="Year" value={formatOptionalConfidence(selectedDetection.optional_year_confidence)} />
+                            <StatusLine label="Tracker" value={selectedDetection.tracker_id ?? "Untracked"} />
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+                  </>
+                ) : targetPanelTab === "workflow" ? (
+                  <>
+                    <div className="notes-box">
+                      <label className="panel-label">Best approach</label>
+                      <p>{selectedDisplayBestApproach}</p>
                     </div>
-                  </div>
-                </div>
-              ) : null}
-              <div className="review-shell">
+                    <div className="notes-box">
+                      <div className="live-activity__header">
+                        <strong>Follow-up and dispatch</strong>
+                        <span>
+                          {selectedFollowUp
+                            ? `${followUpStatusLabel(selectedFollowUp.status)} follow-up`
+                            : selectedAssignment
+                              ? `${assignmentStatusLabel(selectedAssignment.status)} dispatch`
+                              : "No pinned workflow yet"}
+                        </span>
+                      </div>
+                      <p>
+                        {selectedAssignment?.assigned_unit_label ? `${selectedAssignment.assigned_unit_label} / ` : ""}
+                        {selectedAssignment?.assigned_operator_id ?? selectedFollowUp?.assigned_operator_id ?? "Unassigned"}
+                        {selectedFollowUp?.due_at_utc ? ` / Due ${formatHotlistTimestamp(selectedFollowUp.due_at_utc)}` : ""}
+                      </p>
+                    </div>
+                    <div className="notes-box">
+                      <label className="panel-label">Field notes</label>
+                      <p>{selectedWorkflowNotes}</p>
+                    </div>
+                    <div className="workflow-summary-grid">
+                      <StatusLine label="Follow-up owner" value={selectedFollowUp?.assigned_operator_id ?? "Unassigned"} />
+                      <StatusLine label="Dispatch unit" value={selectedAssignment?.assigned_unit_label ?? "Unset"} />
+                      <StatusLine
+                        label="Dispatch status"
+                        value={selectedAssignment ? assignmentStatusLabel(selectedAssignment.status) : "Pending"}
+                      />
+                      <StatusLine label="Queue state" value={selectedFollowUp ? followUpStatusLabel(selectedFollowUp.status) : "Not pinned"} />
+                    </div>
+                  </>
+                ) : null}
+                {targetPanelTab === "reviews" ? (
+                  <div className="review-shell">
                 <div className="live-activity__header">
                   <strong>Operator review</strong>
                   <span>
@@ -2722,7 +2912,7 @@ function App() {
                             </div>
                             <strong>{review.corrected_plate_text ?? selectedDisplayPlate}</strong>
                             <p>
-                              {review.operator_id ? `${review.operator_id} · ` : ""}
+                              {review.operator_id ? `${review.operator_id} / ` : ""}
                               {review.notes ?? "No operator notes recorded."}
                             </p>
                           </div>
@@ -2735,6 +2925,8 @@ function App() {
                     Connect the live API to load local review history and save operator review actions.
                   </div>
                 )}
+                  </div>
+                ) : null}
               </div>
             </div>
           </PanelFrame>
@@ -2973,7 +3165,7 @@ function App() {
                         <span>Destination</span>
                         <input
                           className="input-control"
-                          placeholder="Shoreline Marina south lot"
+                          placeholder="1250 Shoreline Blvd"
                           type="text"
                           value={assignmentDestination}
                           onChange={(event) => setAssignmentDestination(event.target.value)}
@@ -3026,7 +3218,7 @@ function App() {
                           </div>
                           <strong>{assignment.plate_text ?? "Plate unavailable"}</strong>
                           <p>
-                            {(assignment.assigned_unit_label ?? "No unit") + " · " + (assignment.assigned_operator_id ?? "No operator")}
+                            {(assignment.assigned_unit_label ?? "No unit") + " / " + (assignment.assigned_operator_id ?? "No operator")}
                           </p>
                         </div>
                       ))}
@@ -3196,7 +3388,7 @@ function App() {
                       </label>
                       <label className="field-group">
                         <span>Selected target</span>
-                        <input className="input-control" disabled type="text" value={`${selectedAlert.plate} · ${selectedAlert.vehicle}`} />
+                        <input className="input-control" disabled type="text" value={`${selectedAlert.plate} / ${selectedAlert.vehicle}`} />
                       </label>
                     </div>
                     <label className="field-group">
@@ -3309,7 +3501,7 @@ function App() {
                       {
                         id: `handoff-${Date.now()}`,
                         sender: "System",
-                        body: `Handoff initiated by ${currentOperator.display_name ?? currentOperator.principal_id} for ${selectedAlert.plate} — ${selectedAlert.vehicle}`,
+                        body: `Handoff initiated by ${currentOperator.display_name ?? currentOperator.principal_id} for ${selectedAlert.plate} - ${selectedAlert.vehicle}`,
                         timestamp: new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }),
                         type: "handoff",
                       },
@@ -3333,7 +3525,7 @@ function App() {
                       {
                         id: `photo-msg-${Date.now()}`,
                         sender: "System",
-                        body: `Field photo captured — ${fieldPhotoNote.trim() || "No annotation"}`,
+                        body: `Field photo captured - ${fieldPhotoNote.trim() || "No annotation"}`,
                         timestamp,
                         type: "system",
                       },
@@ -3344,18 +3536,16 @@ function App() {
                   Capture field photo
                 </button>
               </div>
-              {fieldPhotoNote !== undefined ? (
-                <label className="field-group">
-                  <span>Photo annotation</span>
-                  <input
-                    className="input-control"
-                    placeholder="Describe what you see before capture"
-                    type="text"
-                    value={fieldPhotoNote}
-                    onChange={(event) => setFieldPhotoNote(event.target.value)}
-                  />
-                </label>
-              ) : null}
+              <label className="field-group">
+                <span>Photo annotation</span>
+                <input
+                  className="input-control"
+                  placeholder="Describe what you see before capture"
+                  type="text"
+                  value={fieldPhotoNote}
+                  onChange={(event) => setFieldPhotoNote(event.target.value)}
+                />
+              </label>
               {fieldPhotoLog.length > 0 ? (
                 <div className="crew-chat__photo-log">
                   <div className="live-activity__header">
@@ -3390,80 +3580,70 @@ function App() {
       <section className="workspace-card">
         <div className="workspace-card__header">
           <div>
-            <div className="eyebrow">Custom operator layout</div>
-            <h2>Recovery dashboard</h2>
+            <div className="eyebrow">Mission screens</div>
+            <h2>Repossession workflow</h2>
             <p>
-              Move map, cameras, alerts, and target details into the positions that work best inside the cab.
+              Switch between drive, queue, recover, and crew screens so only the right layer of information stays in
+              view for the current recovery phase.
             </p>
           </div>
-          <div className="workspace-card__actions">
-            <div className="preset-switcher">
-              {(["route", "recovery", "lotScan", "cameraOps", "navLpr", "dualCamNav"] as LayoutPresetId[]).map((presetId) => (
+          <div className="workspace-card__actions workspace-card__actions--stacked">
+            <div className="mission-switcher">
+              {dashboardScreenOptions.map((screen) => (
                 <button
-                  key={presetId}
-                  className={`toggle-chip ${
-                    layout.profile === dashboardPresets[presetId].profile ? "is-active" : ""
-                  }`}
+                  key={screen.id}
+                  className={`toggle-chip ${dashboardScreen === screen.id ? "is-active" : ""}`}
                   type="button"
-                  onClick={() => applyPreset(presetId)}
+                  onClick={() => setDashboardScreen(screen.id)}
                 >
-                  {dashboardPresets[presetId].profile}
+                  {screen.label}
                 </button>
               ))}
             </div>
-            <button className="button" type="button" onClick={() => setLayoutEditorOpen((current) => !current)}>
-              {layoutEditorOpen ? "Hide layout tools" : "Customize layout"}
-            </button>
-          </div>
-        </div>
-        {layoutEditorOpen ? (
-          <div className="layout-editor">
-            <div className="layout-editor__header">
-              <div>
-                <strong>{layout.profile}</strong>
-                <p>Saved in this browser for this laptop profile.</p>
-              </div>
-              <div className="view-toggle">
-                {(["priority", "quad", "strip"] as CameraMode[]).map((mode) => (
-                  <button
-                    key={mode}
-                    className={`toggle-chip ${layout.cameraMode === mode ? "is-active" : ""}`}
-                    type="button"
-                    onClick={() => setCameraMode(mode)}
-                  >
-                    {mode}
-                  </button>
+            <label className="field-group mission-select">
+              <span>Console screen</span>
+              <select value={dashboardScreen} onChange={(event) => setDashboardScreen(event.target.value as DashboardScreenId)}>
+                {dashboardScreenOptions.map((screen) => (
+                  <option key={screen.id} value={screen.id}>
+                    {screen.label}
+                  </option>
                 ))}
-              </div>
-            </div>
-            <div className="layout-editor__grid">
-              {(Object.keys(layout.slots) as SlotId[]).map((slot) => (
-                <label key={slot} className="field-group">
-                  <span>{layoutSlotLabels[slot]}</span>
-                  <select value={layout.slots[slot]} onChange={(event) => movePanelToSlot(slot, event.target.value as PanelId)}>
-                    {(Object.keys(panelCatalog) as PanelId[]).map((panelId) => (
-                      <option key={panelId} value={panelId}>
-                        {panelCatalog[panelId].label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ))}
-            </div>
-          </div>
-        ) : null}
-        <div className="dashboard-shell">
-          <div className="dashboard-rail">
-            <div className="slot-frame">{renderPanel(layout.slots.railTop)}</div>
-            <div className="slot-frame">{renderPanel(layout.slots.railBottom)}</div>
-          </div>
-          <div className="dashboard-stage">
-            <div className="slot-frame slot-frame--hero">{renderPanel(layout.slots.hero)}</div>
-            <div className="slot-frame">{renderPanel(layout.slots.support)}</div>
-            <div className="slot-frame slot-frame--board">{renderPanel(layout.slots.board)}</div>
-            <div className="slot-frame slot-frame--detail">{renderPanel(layout.slots.detail)}</div>
+              </select>
+            </label>
           </div>
         </div>
+        <div className="mission-summary-card">
+          <span className="panel-label">{dashboardScreenMeta.label}</span>
+          <strong>{currentRouteStage.label}</strong>
+          <p>{dashboardScreenMeta.summary}</p>
+        </div>
+        {dashboardScreen === "drive" ? (
+          <div className="mission-board mission-board--drive">
+            <div className="mission-board__hero">{renderPanel("opsMap")}</div>
+            <div className="mission-board__aside">
+              {renderPanel("routePlanner")}
+              {renderPanel("statusStack")}
+            </div>
+            <div className="mission-board__full">{renderPanel("cameraMatrix")}</div>
+          </div>
+        ) : dashboardScreen === "queue" ? (
+          <div className="mission-board mission-board--queue">
+            <div className="mission-board__hero">{renderPanel("hotlistFeed")}</div>
+            <div className="mission-board__aside">{renderPanel("selectedAlert")}</div>
+          </div>
+        ) : dashboardScreen === "recover" ? (
+          <div className="mission-board mission-board--recover">
+            <div className="mission-board__hero">{renderPanel("selectedAlert")}</div>
+            <div className="mission-board__aside">{renderPanel("dispatchBoard")}</div>
+            <div className="mission-board__full">{renderPanel("cameraMatrix")}</div>
+          </div>
+        ) : (
+          <div className="mission-board mission-board--crew">
+            <div className="mission-board__hero">{renderPanel("recoveryLog")}</div>
+            <div className="mission-board__aside">{renderPanel("crewChat")}</div>
+            <div className="mission-board__full">{renderPanel("statusStack")}</div>
+          </div>
+        )}
       </section>
     );
 
@@ -3472,9 +3652,9 @@ function App() {
         <section className="workspace-card">
           <div className="workspace-card__header">
             <div>
-              <div className="eyebrow">Driving mode</div>
-              <h2>Route HUD</h2>
-              <p>Keep the next move, arrival ring, and latest target changes visible while you are rolling.</p>
+              <div className="eyebrow">Driving screen</div>
+              <h2>Drive</h2>
+              <p>Keep the next move, target radius, and latest target changes visible while the truck is rolling.</p>
             </div>
           </div>
           <div className="navigation-shell">
@@ -3500,9 +3680,9 @@ function App() {
         <section className="workspace-card">
           <div className="workspace-card__header">
             <div>
-              <div className="eyebrow">Fast triage</div>
-              <h2>Recovery alerts</h2>
-              <p>Filter to the live target that matters and push the next field action without extra clicks.</p>
+              <div className="eyebrow">Target queue</div>
+              <h2>Targets</h2>
+              <p>Work the live queue, prioritize hotlists, and push the next field action without extra clicks.</p>
             </div>
           </div>
           <div className="alerts-shell">
@@ -3521,9 +3701,9 @@ function App() {
         <section className="workspace-card">
           <div className="workspace-card__header">
             <div>
-              <div className="eyebrow">Lookup and review</div>
-              <h2>Detection search</h2>
-              <p>Search full or partial plates, tighten with field filters, and jump straight into detailed review.</p>
+              <div className="eyebrow">Evidence review</div>
+              <h2>Review</h2>
+              <p>Search full or partial plates, narrow by field filters, and jump straight into evidence review.</p>
             </div>
             <div className="workspace-card__actions">
               <button
@@ -3716,15 +3896,36 @@ function App() {
               <div className="search-shell__content">
                 <PanelFrame panelId="hotlistFeed" titleOverride="Search Results">
                   <div className="search-results">
-                    <div className="live-activity__header">
-                      <strong>{searchExecuted ? `${searchTotalResults} result${searchTotalResults === 1 ? "" : "s"}` : "Awaiting search"}</strong>
-                      <span>
-                        {searchLoading
-                          ? "Querying the live API..."
-                          : searchExecuted
-                            ? "Select a result to open detailed review."
-                            : "Search by full or partial plate and refine by field filters."}
-                      </span>
+                    <div className="search-results__header">
+                      <div className="live-activity__header">
+                        <strong>{searchExecuted ? `${searchTotalResults} result${searchTotalResults === 1 ? "" : "s"}` : "Awaiting search"}</strong>
+                        <span>
+                          {searchLoading
+                            ? "Querying the live API..."
+                            : searchExecuted
+                              ? searchPageLabel
+                              : "Search by full or partial plate and refine by field filters."}
+                        </span>
+                      </div>
+                      <div className="queue-pager">
+                        <button
+                          className="button"
+                          disabled={!searchExecuted || searchLoading || searchOffset === 0}
+                          type="button"
+                          onClick={() => changeSearchPage(-1)}
+                        >
+                          Back
+                        </button>
+                        <span>{searchExecuted ? `Page ${searchPageIndex + 1} / ${searchPageCount}` : "Page 0 / 0"}</span>
+                        <button
+                          className="button"
+                          disabled={!searchExecuted || searchLoading || searchOffset + searchResults.length >= searchTotalResults}
+                          type="button"
+                          onClick={() => changeSearchPage(1)}
+                        >
+                          Next
+                        </button>
+                      </div>
                     </div>
                     {searchExecuted && searchResults.length === 0 ? (
                       <div className="review-empty">No detections matched the current search filters.</div>
@@ -3806,9 +4007,9 @@ function App() {
         <section className="workspace-card">
           <div className="workspace-card__header">
             <div>
-              <div className="eyebrow">Visual confirmation</div>
-              <h2>Camera views</h2>
-              <p>Keep the truck camera bank clean, large, and easy to read at a glance from the driver seat.</p>
+              <div className="eyebrow">Vehicle confirmation</div>
+              <h2>Cameras</h2>
+              <p>Keep the truck camera bank clean, large, and easy to read when confirming plates and vehicles.</p>
             </div>
           </div>
           <div className="camera-shell">
@@ -3827,15 +4028,15 @@ function App() {
         <section className="workspace-card">
           <div className="workspace-card__header">
             <div>
-              <div className="eyebrow">Local laptop profile</div>
-              <h2>Field settings</h2>
+              <div className="eyebrow">Cab profile</div>
+              <h2>Settings</h2>
               <p>
-                Saved in this browser so each truck can tune the cab layout and alert behavior to the agent using it.
+                Saved in this browser so each truck can tune the repo workflow layout and alert behavior for the agent using it.
               </p>
             </div>
             <div className="workspace-card__actions">
               <button className="button" type="button" onClick={() => setLayout(cloneLayout(dashboardPresets.route))}>
-                Restore dashboard
+                Restore default screens
               </button>
               <button className="button" type="button" onClick={() => setFieldSettings({ ...defaultFieldSettings })}>
                 Reset field settings
@@ -3843,10 +4044,10 @@ function App() {
             </div>
           </div>
           <div className="settings-grid">
-            <PanelFrame panelId="routePlanner" titleOverride="Dashboard Layout">
+            <PanelFrame panelId="routePlanner" titleOverride="Screen presets">
               <div className="settings-section">
                 <div className="preset-list">
-                  {(["route", "recovery", "lotScan", "cameraOps", "navLpr", "dualCamNav"] as LayoutPresetId[]).map((presetId) => (
+                  {(["route", "recovery", "streetSweep", "cameraOps", "navLpr", "dualCamNav"] as LayoutPresetId[]).map((presetId) => (
                     <button key={presetId} className="preset-card" type="button" onClick={() => applyPreset(presetId)}>
                       <strong>{dashboardPresets[presetId].profile}</strong>
                       <p>{presetDescriptions[presetId]}</p>
@@ -3872,12 +4073,13 @@ function App() {
                       <option value="priority">Priority</option>
                       <option value="quad">Quad</option>
                       <option value="strip">Strip</option>
+                      <option value="dual">Dual</option>
                     </select>
                   </label>
                 </div>
               </div>
             </PanelFrame>
-            <PanelFrame panelId="statusStack" titleOverride="Alert and Navigation">
+            <PanelFrame panelId="statusStack" titleOverride="Drive and detection">
               <div className="form-grid">
                 <label className="field-group">
                   <span>Target refresh interval</span>
@@ -3919,7 +4121,7 @@ function App() {
                 </label>
               </div>
             </PanelFrame>
-            <PanelFrame panelId="selectedAlert" titleOverride="Detection and Workflow">
+            <PanelFrame panelId="selectedAlert" titleOverride="Detection review">
               <div className="form-grid">
                 <label className="field-group">
                   <span>OCR confidence floor</span>
@@ -3961,7 +4163,7 @@ function App() {
                 </label>
               </div>
             </PanelFrame>
-            <PanelFrame panelId="dispatchBoard" titleOverride="Operator Session">
+            <PanelFrame panelId="dispatchBoard" titleOverride="Operator Workflow">
               <div className="settings-section">
                 <div className="live-activity__header">
                   <strong>Live identity and permissions</strong>
@@ -4056,7 +4258,7 @@ function App() {
                         </div>
                         <strong>{session.client_label ?? operatorDisplayName(session)}</strong>
                         <p>
-                          {operatorDisplayName(session)} · {session.selected_detection_id ?? session.selected_alert_id ?? "No active target"}
+                          {operatorDisplayName(session)} / {session.selected_detection_id ?? session.selected_alert_id ?? "No active target"}
                         </p>
                       </div>
                     ))
@@ -4064,7 +4266,7 @@ function App() {
                 </div>
               </div>
             </PanelFrame>
-            <PanelFrame panelId="hotlistFeed" titleOverride="Hotlist Manager">
+            <PanelFrame panelId="hotlistFeed" titleOverride="Hotlist Control">
               <div className="hotlist-manager">
                 <div className="live-activity__header">
                   <strong>Local hotlist control</strong>
@@ -4194,7 +4396,7 @@ function App() {
     <div className="app-shell">
       <header className="topbar">
         <div className="brand-lockup">
-          <div className="brand-eyebrow">Seen-It-First</div>
+          <div className="brand-eyebrow">RepoScan Pro</div>
           <h1>Recovery Ops Console</h1>
           <p>Cab-first repo workflow for Windows 11 field laptops.</p>
         </div>
@@ -4294,7 +4496,7 @@ function App() {
   );
 }
 
-/* ── Leaflet helpers ───────────────────────────────────────────── */
+/* Leaflet helpers */
 
 const defaultMapCenter: [number, number] = [33.749, -84.388]; // Atlanta demo coords
 const defaultMapZoom = 14;
@@ -4314,6 +4516,7 @@ const alertIconPriority = makeIcon("#ffb347", 12);
 const alertIconWatch = makeIcon("#7eb8ff", 10);
 const cameraIcon = makeIcon("#53d6a0", 10);
 const sessionIcon = makeIcon("#c084fc", 10);
+const destinationIcon = makeIcon("#f2f6ff", 12);
 
 function alertMarkerIcon(severity: string, isHotlist: boolean): L.DivIcon {
   if (isHotlist) return alertIconCritical;
@@ -4322,16 +4525,31 @@ function alertMarkerIcon(severity: string, isHotlist: boolean): L.DivIcon {
   return alertIconWatch;
 }
 
-function MapAutoFit(props: { center: [number, number]; zoom: number }): null {
+function MapAutoFit(props: { points: [number, number][]; zoom: number }): null {
   const map = useMap();
+  const pointsKey = props.points.map(([lat, lng]) => `${lat.toFixed(6)},${lng.toFixed(6)}`).join("|");
   useEffect(() => {
-    map.setView(props.center, props.zoom, { animate: true });
-  }, [map, props.center, props.zoom]);
+    if (props.points.length === 0) {
+      return;
+    }
+
+    if (props.points.length === 1) {
+      map.setView(props.points[0], props.zoom, { animate: true });
+      return;
+    }
+
+    const bounds = L.latLngBounds(props.points);
+    if (bounds.isValid()) {
+      map.fitBounds(bounds.pad(0.16), { animate: true });
+    }
+  }, [map, pointsKey, props.zoom]);
   return null;
 }
 
 interface OpsMapLeafletProps {
   unitPosition: { lat: number; lng: number };
+  destinationPosition: { lat: number; lng: number };
+  destinationLabel: string;
   alertMarkers: Array<{
     id: string;
     lat: number;
@@ -4349,10 +4567,19 @@ interface OpsMapLeafletProps {
 }
 
 function OpsMapLeaflet(props: OpsMapLeafletProps): ReactElement {
+  const fitPoints: [number, number][] = [
+    [props.unitPosition.lat, props.unitPosition.lng],
+    [props.destinationPosition.lat, props.destinationPosition.lng],
+    ...props.routePath,
+    ...props.alertMarkers.map((marker) => [marker.lat, marker.lng] as [number, number]),
+    ...props.cameraNodes.map((camera) => [camera.lat, camera.lng] as [number, number]),
+    ...props.sessionNodes.map((session) => [session.lat, session.lng] as [number, number]),
+  ];
+
   return (
     <div className="leaflet-map-wrapper">
       <MapContainer
-        center={[props.unitPosition.lat, props.unitPosition.lng]}
+        center={[props.destinationPosition.lat, props.destinationPosition.lng]}
         zoom={defaultMapZoom}
         scrollWheelZoom={true}
         style={{ height: "100%", width: "100%", borderRadius: "22px" }}
@@ -4362,7 +4589,15 @@ function OpsMapLeaflet(props: OpsMapLeafletProps): ReactElement {
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-        <MapAutoFit center={[props.unitPosition.lat, props.unitPosition.lng]} zoom={defaultMapZoom} />
+        <MapAutoFit points={fitPoints} zoom={defaultMapZoom} />
+
+        <Marker position={[props.destinationPosition.lat, props.destinationPosition.lng]} icon={destinationIcon}>
+          <Popup>
+            <strong>{props.destinationLabel}</strong>
+            <br />
+            Arrival radius: {props.arrivalRadius} ft
+          </Popup>
+        </Marker>
 
         {/* Unit marker */}
         <Marker position={[props.unitPosition.lat, props.unitPosition.lng]} icon={unitIcon}>
@@ -4373,7 +4608,7 @@ function OpsMapLeaflet(props: OpsMapLeafletProps): ReactElement {
 
         {/* Arrival ring */}
         <Circle
-          center={[props.unitPosition.lat, props.unitPosition.lng]}
+          center={[props.destinationPosition.lat, props.destinationPosition.lng]}
           radius={props.arrivalRadius * 0.3048}
           pathOptions={{
             color: props.withinArrival ? "#53d6a0" : "#4a90ff",
@@ -4412,7 +4647,7 @@ function OpsMapLeaflet(props: OpsMapLeafletProps): ReactElement {
         {props.cameraNodes.map((cam) => (
           <Marker key={cam.id} position={[cam.lat, cam.lng]} icon={cameraIcon}>
             <Popup>
-              {cam.id} — {cam.zone}
+              {cam.id} - {cam.zone}
             </Popup>
           </Marker>
         ))}
