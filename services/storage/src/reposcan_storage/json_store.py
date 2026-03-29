@@ -258,6 +258,16 @@ class JsonFileStorageRepository:
             self._write_records(self._hotlists_path, ordered)
         return entry
 
+    def delete_hotlist(self, entry_id: str) -> bool:
+        with self._lock:
+            entries = self._read_records(self._hotlists_path, HotlistEntry)
+            remaining = [entry for entry in entries if entry.entry_id != entry_id]
+            if len(remaining) == len(entries):
+                return False
+            ordered = sorted(remaining, key=lambda record: record.updated_at_utc, reverse=True)
+            self._write_records(self._hotlists_path, ordered)
+        return True
+
     def list_operator_sessions(self, *, limit: int = 100) -> list[OperatorSessionRecord]:
         with self._lock:
             sessions = self._read_records(self._sessions_path, OperatorSessionRecord)

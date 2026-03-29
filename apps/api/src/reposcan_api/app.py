@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.responses import FileResponse
@@ -948,6 +948,39 @@ def create_app(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Hotlist entry not found") from exc
         record_audit(request, principal=principal, action="hotlist.update", outcome=AuditOutcome.success, target_type="hotlist", target_id=entry_id, details={"active": updated.active, "label": updated.label})
         return updated
+
+    @api_router.delete("/hotlists/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
+    def delete_hotlist(
+        request: Request,
+        entry_id: str,
+        principal: ApiPrincipalContext = Depends(access_controller.admin_access),
+    ) -> Response:
+        existing = service.get_hotlist(entry_id)
+        if existing is None:
+            record_audit(
+                request,
+                principal=principal,
+                action="hotlist.delete",
+                outcome=AuditOutcome.rejected,
+                target_type="hotlist",
+                target_id=entry_id,
+                details={"detail": "Hotlist entry not found"},
+            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Hotlist entry not found")
+        try:
+            service.delete_hotlist(entry_id)
+        except HotlistNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Hotlist entry not found") from exc
+        record_audit(
+            request,
+            principal=principal,
+            action="hotlist.delete",
+            outcome=AuditOutcome.success,
+            target_type="hotlist",
+            target_id=entry_id,
+            details={"plate_text": existing.plate_text},
+        )
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     @api_router.get("/audit/events", response_model=AuditEventResponse)
     def list_audit_events(

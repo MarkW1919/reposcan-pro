@@ -82,6 +82,9 @@ class StorageRepository(Protocol):
     def upsert_hotlist(self, entry: HotlistEntry) -> HotlistEntry:
         ...
 
+    def delete_hotlist(self, entry_id: str) -> bool:
+        ...
+
     def list_operator_sessions(self, *, limit: int = 100) -> list[OperatorSessionRecord]:
         ...
 

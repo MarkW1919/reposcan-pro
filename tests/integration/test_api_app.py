@@ -279,6 +279,13 @@ def test_hotlist_crud_endpoints(tmp_path):
     assert updated["label"] == "Case 42 Updated"
     assert updated["active"] is False
 
+    delete_response = client.delete(f"/hotlists/{created['entry_id']}")
+    assert delete_response.status_code == 204
+
+    deleted_list_response = client.get("/hotlists")
+    assert deleted_list_response.status_code == 200
+    assert deleted_list_response.json() == []
+
 
 def test_alert_endpoints_return_seeded_alerts(tmp_path):
     client, service = _seeded_client(tmp_path)

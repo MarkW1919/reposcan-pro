@@ -209,6 +209,9 @@ def test_json_repository_roundtrip(tmp_path):
     assert repository.get_alert(alert.alert_id) == alert
     assert repository.list_operator_sessions() == [session]
 
+    assert repository.delete_hotlist(hotlist.entry_id) is True
+    assert repository.get_hotlist(hotlist.entry_id) is None
+
 
 def test_review_history_is_returned_newest_first(tmp_path):
     repository = JsonFileStorageRepository(tmp_path / "metadata")

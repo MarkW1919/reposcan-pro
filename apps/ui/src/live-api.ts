@@ -569,6 +569,16 @@ export async function updateHotlist(entryId: string, submission: HotlistSubmissi
   return (await response.json()) as DashboardHotlist;
 }
 
+export async function deleteHotlist(entryId: string): Promise<void> {
+  const response = await fetch(apiUrl(`/hotlists/${encodeURIComponent(entryId)}`), {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, `Failed to delete hotlist (${response.status})`));
+  }
+}
+
 export async function updateAlert(entryId: string, submission: AlertUpdateSubmission): Promise<DashboardAlert> {
   const response = await fetch(apiUrl(`/alerts/${encodeURIComponent(entryId)}`), {
     method: "PUT",

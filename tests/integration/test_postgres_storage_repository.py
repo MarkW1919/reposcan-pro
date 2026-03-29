@@ -89,6 +89,8 @@ def test_postgres_storage_repository_roundtrip_in_sqlite_mode():
     assert repository.list_alerts(camera_id="cam_pg_01", limit=10)[0].alert_id == "alert_pg_001"
     assert repository.get_hotlist("hl_pg_001") is not None
     assert repository.list_hotlists(active_only=True, limit=10)[0].entry_id == "hl_pg_001"
+    assert repository.delete_hotlist("hl_pg_001") is True
+    assert repository.get_hotlist("hl_pg_001") is None
 
 
 def test_postgres_storage_repository_requests_postgis_extension():

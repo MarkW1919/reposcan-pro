@@ -150,6 +150,10 @@ class InMemoryStorageRepository:
             self._hotlists[entry.entry_id] = entry
         return entry
 
+    def delete_hotlist(self, entry_id: str) -> bool:
+        with self._lock:
+            return self._hotlists.pop(entry_id, None) is not None
+
     def list_operator_sessions(self, *, limit: int = 100) -> list[OperatorSessionRecord]:
         with self._lock:
             sessions = sorted(self._sessions.values(), key=lambda record: record.last_seen_at_utc, reverse=True)

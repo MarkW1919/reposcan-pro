@@ -13,7 +13,7 @@ Current integrated slice:
 - search endpoints at `GET /api/v1/search/detections` and `GET /api/v1/search/alerts`
 - review endpoints at `POST /api/v1/reviews/{id}` and `GET /api/v1/reviews/{id}`
 - alert endpoints at `GET /api/v1/alerts`, `GET /api/v1/alerts/{id}`, and `PUT /api/v1/alerts/{id}`
-- hotlist endpoints at `GET /api/v1/hotlists`, `POST /api/v1/hotlists`, and `PUT /api/v1/hotlists/{id}`
+- hotlist endpoints at `GET /api/v1/hotlists`, `POST /api/v1/hotlists`, `PUT /api/v1/hotlists/{id}`, and `DELETE /api/v1/hotlists/{id}`
 - demo runtime endpoints at `GET /api/v1/demo/runtime` and `POST /api/v1/demo/runs` for app-driven headless ingest
 - audit surface at `GET /api/v1/audit/events`
 - deployment-configured auth, role checks, request throttling, and trusted-host/security-header hardening

@@ -468,6 +468,16 @@ class PostgresStorageRepository:
             cursor.close()
         return entry
 
+    def delete_hotlist(self, entry_id: str) -> bool:
+        with self._lock:
+            cursor = self._execute(
+                "DELETE FROM hotlists WHERE entry_id = %s",
+                (entry_id,),
+            )
+            deleted = cursor.rowcount > 0
+            cursor.close()
+        return deleted
+
     def list_operator_sessions(self, *, limit: int = 100) -> list[OperatorSessionRecord]:
         with self._lock:
             rows = self._fetchall(

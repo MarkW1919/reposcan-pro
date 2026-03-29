@@ -1,148 +1,156 @@
-import { startTransition, useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactElement, type ReactNode } from "react";
-import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline, useMap } from "react-leaflet";
+import { startTransition, useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactElement } from "react";
+import { Circle, MapContainer, Marker, Polyline, Popup, TileLayer } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
+import { cameraFeeds, defaultFieldSettings } from "./demo-data";
 import {
-  addressScanDetections,
-  alerts,
-  cameraFeeds,
-  dashboardPresets,
-  demoChatMessages,
-  detectionPopupTypeLabels,
-  defaultFieldSettings,
-  hotlistPopupDetections,
-  panelCatalog,
-  recoveryLog,
-  scenarioLabels,
-  statusLabels,
-  workspaceTabs,
-  type AlertItem,
-  type CameraMode,
-  type CrewChatMessage,
-  type DetectionPopupEvent,
-  type DashboardLayout,
-  type FieldSettings,
-  type PanelId,
-  type SlotId,
-  type WorkspaceId,
-} from "./demo-data";
-import {
-  createDispatchAssignment,
-  createFollowUp,
   createHotlist,
-  createReview,
-  fetchDetectionFrameObjectUrl,
-  fetchDetectionPlateCropObjectUrl,
-  fetchDemoRuntimeStatus,
-  fetchHotlists,
-  fetchReviews,
+  deleteHotlist,
   fetchDashboardOverview,
-  mapOverviewToAlertItems,
-  mapOverviewToPopupHistory,
-  mapOverviewToRecoveryLog,
+  fetchDetectionFrameObjectUrl,
+  fetchHotlists,
   searchDetections,
-  sendOperatorSessionHeartbeat,
   setApiClientConfig,
-  startDemoRun,
-  updateAlert,
-  updateDispatchAssignment,
-  updateFollowUp,
   updateHotlist,
-  type DispatchAssignmentPriority,
-  type DispatchAssignmentRecord,
-  type DispatchAssignmentStatus,
-  type DashboardAlert,
   type DashboardDetection,
-  type DemoRuntimeStatus as DemoRuntimeStatusRecord,
   type DashboardHotlist,
   type DashboardOverviewResponse,
-  type FollowUpPriority,
-  type FollowUpRecord,
-  type FollowUpStatus,
-  type OperatorCapabilities,
-  type OperatorPrincipal,
-  type OperatorSessionRecord,
-  type ReviewAction,
-  type ReviewRecord,
-  type SearchPlateMatchMode,
+  type DetectionSearchFilters,
 } from "./live-api";
 
-const layoutStorageKey = "reposcan.ui.dashboard-layout.v1";
-const settingsStorageKey = "reposcan.ui.field-settings.v1";
-const apiKeyStorageKey = "reposcan.ui.api-key.v1";
-const sessionLabelStorageKey = "reposcan.ui.session-label.v1";
-const operatorSessionIdStorageKey = "reposcan.ui.operator-session-id.v1";
-const defaultPopupHistory: DetectionPopupEvent[] = [hotlistPopupDetections[0], addressScanDetections[0]];
-const demoOperatorCapabilities: OperatorCapabilities = {
-  can_submit_reviews: true,
-  can_update_alerts: true,
-  can_manage_hotlists: true,
-  can_manage_follow_ups: true,
-  can_manage_dispatch: true,
-  can_start_demo_runs: true,
-  can_view_audit: true,
-};
-const demoOperatorPrincipal: OperatorPrincipal = {
-  principal_id: "local_dev",
-  display_name: "Local Development",
-  authenticated: false,
-  roles: ["viewer", "operator", "admin", "integrator"],
-  capabilities: demoOperatorCapabilities,
-};
+type AppScreen = "console" | "search" | "hotlists" | "settings";
+type StageView = "camera" | "map";
+type SearchMode = "plate" | "camera" | "vehicle" | "time";
+type DataSource = "demo" | "live" | "fallback";
+type AlertPersistence = "until-dismissed" | "15 sec" | "60 sec";
 
-interface PopupNotification extends DetectionPopupEvent {
-  instanceId: string;
+interface UiSettings {
+  autoArrivalScan: boolean;
+  arrivalScanEnabled: boolean;
+  arrivalRadiusFeet: number;
+  duplicateSuppressionSeconds: number;
+  minConfidence: number;
+  hotlistAlerts: boolean;
+  soundEnabled: boolean;
+  vibrationEnabled: boolean;
+  alertVolume: number;
+  alertPersistence: AlertPersistence;
+  nightMode: boolean;
+  irControl: boolean;
+  exposureLock: boolean;
+  resolution: string;
+  streamQuality: string;
+  overlayLabels: boolean;
+  autoDeleteTempCaptures: boolean;
+  mapMode: string;
+  autoCenterVehicle: boolean;
+  showRadiusRing: boolean;
+  navProvider: string;
+  showTraffic: boolean;
 }
 
-interface SearchFormState {
-  plate: string;
-  plateMatch: SearchPlateMatchMode;
-  startUtc: string;
-  endUtc: string;
-  cameraId: string;
-  minLatitude: string;
-  maxLatitude: string;
-  minLongitude: string;
-  maxLongitude: string;
-  vehicleColor: string;
-  vehicleMake: string;
-  vehicleModel: string;
-  vehicleYear: string;
-  alertStatus: DashboardAlert["status"] | "";
-}
-
-type RouteStageState = "done" | "active" | "queued";
-
-interface RouteStageItem {
+interface ConsoleDetectionRow {
   id: string;
-  label: string;
-  detail: string;
-  state: RouteStageState;
+  detectionId?: string;
+  plate1: string;
+  plate2: string;
+  state: string;
+  camera: string;
+  cameraId: string;
+  conf: number;
+  time: string;
+  timestampUtc: string;
+  hotlist: boolean;
+  vehicle: string;
+  gps: string;
+  direction: string;
+  lane: string;
+  lat: number;
+  lng: number;
+  source: string;
 }
 
-type QueueViewId = "hotlist" | "radius" | "popups";
-type TargetPanelTabId = "overview" | "workflow" | "reviews";
-type PrimaryWorkspaceId = Exclude<WorkspaceId, "dashboard">;
+interface HotlistDraft {
+  plateText: string;
+  label: string;
+  notes: string;
+  active: boolean;
+}
 
-const queueViewOptions: Array<{ id: QueueViewId; label: string }> = [
-  { id: "hotlist", label: "Hotlist" },
-  { id: "radius", label: "Radius detections" },
-  { id: "popups", label: "Popup log" },
-];
+interface PlateGroup {
+  plate: string;
+  rows: ConsoleDetectionRow[];
+}
 
-const targetPanelTabs: Array<{ id: TargetPanelTabId; label: string }> = [
-  { id: "overview", label: "Overview" },
-  { id: "workflow", label: "Workflow" },
-  { id: "reviews", label: "Reviews" },
-];
+const uiSettingsStorageKey = "reposcan.ui.desktop-settings.v1";
+const apiKeyStorageKey = "reposcan.ui.api-key.v2";
+const targetAddressStorageKey = "reposcan.ui.target-address.v1";
 
-const mobilePrimaryTabs: Array<{ id: PrimaryWorkspaceId; label: string }> = [
-  { id: "navigation", label: "Drive" },
-  { id: "alerts", label: "Targets" },
-  { id: "search", label: "Search" },
-  { id: "cameras", label: "Camera" },
-  { id: "settings", label: "Settings" },
+const targetRoute = {
+  address: "4128 W Fulton St, Chicago, IL",
+  lat: 41.8862,
+  lng: -87.7282,
+};
+
+const routeStart = {
+  lat: 41.8746,
+  lng: -87.7528,
+};
+
+const defaultUiSettings: UiSettings = {
+  autoArrivalScan: true,
+  arrivalScanEnabled: true,
+  arrivalRadiusFeet: defaultFieldSettings.arrivalTriggerDistance,
+  duplicateSuppressionSeconds: 90,
+  minConfidence: Math.round(defaultFieldSettings.ocrConfidenceThreshold * 100),
+  hotlistAlerts: true,
+  soundEnabled: !defaultFieldSettings.silentShiftMode,
+  vibrationEnabled: true,
+  alertVolume: 82,
+  alertPersistence: "until-dismissed",
+  nightMode: true,
+  irControl: true,
+  exposureLock: false,
+  resolution: "1920x1080",
+  streamQuality: "High",
+  overlayLabels: true,
+  autoDeleteTempCaptures: false,
+  mapMode: "Dark route",
+  autoCenterVehicle: true,
+  showRadiusRing: true,
+  navProvider: "Internal",
+  showTraffic: defaultFieldSettings.routeTrafficOverlay,
+};
+
+const seedHotlists: DashboardHotlist[] = [
+  {
+    entry_id: "hl_demo_9kpn665",
+    plate_text: "9KPN665",
+    label: "Fulton tow-ready",
+    notes: "Confirm the rear plate before engaging. Driver reported away from the vehicle.",
+    active: true,
+    created_at_utc: "2026-03-27T21:34:00Z",
+    updated_at_utc: "2026-03-27T22:10:00Z",
+  },
+  {
+    entry_id: "hl_demo_8abc123",
+    plate_text: "8ABC123",
+    label: "High-priority recovery",
+    notes: "Escalate immediately if seen on any inbound approach camera.",
+    active: true,
+    created_at_utc: "2026-03-27T20:20:00Z",
+    updated_at_utc: "2026-03-27T22:14:08Z",
+  },
+  {
+    entry_id: "hl_demo_6ucj466",
+    plate_text: "6UCJ466",
+    label: "Manual review watch",
+    notes: "OCR confusion with 6UCI466 has been seen twice this shift.",
+    active: false,
+    created_at_utc: "2026-03-27T19:48:00Z",
+    updated_at_utc: "2026-03-27T21:56:00Z",
+  },
 ];
 
 function loadStoredString(key: string, fallback = ""): string {
@@ -151,366 +159,117 @@ function loadStoredString(key: string, fallback = ""): string {
   }
 
   try {
-    const raw = window.localStorage.getItem(key);
-    return raw ?? fallback;
+    return window.localStorage.getItem(key) ?? fallback;
   } catch {
     return fallback;
   }
 }
 
-function loadOrCreateOperatorSessionId(): string {
+function loadStoredSettings(): UiSettings {
   if (typeof window === "undefined") {
-    return "session_local_dev";
+    return defaultUiSettings;
   }
 
   try {
-    const existing = window.localStorage.getItem(operatorSessionIdStorageKey);
-    if (existing && existing.trim()) {
-      return existing;
-    }
-    const created = `session_${Math.random().toString(16).slice(2, 10)}`;
-    window.localStorage.setItem(operatorSessionIdStorageKey, created);
-    return created;
-  } catch {
-    return `session_${Math.random().toString(16).slice(2, 10)}`;
-  }
-}
-
-function cloneLayout(layout: DashboardLayout): DashboardLayout {
-  return {
-    profile: layout.profile,
-    cameraMode: layout.cameraMode,
-    slots: { ...layout.slots },
-  };
-}
-
-function loadLayout(): DashboardLayout {
-  if (typeof window === "undefined") {
-    return cloneLayout(dashboardPresets.route);
-  }
-
-  try {
-    const raw = window.localStorage.getItem(layoutStorageKey);
+    const raw = window.localStorage.getItem(uiSettingsStorageKey);
     if (!raw) {
-      return cloneLayout(dashboardPresets.route);
+      return defaultUiSettings;
     }
-
-    const parsed = JSON.parse(raw) as Partial<DashboardLayout>;
-    const preset = cloneLayout(dashboardPresets.route);
-    const nextSlots = { ...preset.slots };
-
-    if (parsed.slots && typeof parsed.slots === "object") {
-      for (const slot of Object.keys(nextSlots) as SlotId[]) {
-        const candidate = parsed.slots[slot];
-        if (candidate && candidate in panelCatalog) {
-          nextSlots[slot] = candidate as PanelId;
-        }
-      }
-    }
-
+    const parsed = JSON.parse(raw) as Partial<UiSettings>;
     return {
-      profile: typeof parsed.profile === "string" && parsed.profile.trim() ? parsed.profile : preset.profile,
-      cameraMode:
-        parsed.cameraMode === "priority" || parsed.cameraMode === "quad" || parsed.cameraMode === "strip" || parsed.cameraMode === "dual"
-          ? parsed.cameraMode
-          : preset.cameraMode,
-      slots: nextSlots,
+      ...defaultUiSettings,
+      ...parsed,
     };
   } catch {
-    return cloneLayout(dashboardPresets.route);
+    return defaultUiSettings;
   }
 }
 
-function loadFieldSettings(): FieldSettings {
-  if (typeof window === "undefined") {
-    return { ...defaultFieldSettings };
+function formatClock(timestampUtc: string): string {
+  const parsed = new Date(timestampUtc);
+  if (Number.isNaN(parsed.valueOf())) {
+    return timestampUtc;
   }
 
-  try {
-    const raw = window.localStorage.getItem(settingsStorageKey);
-    if (!raw) {
-      return { ...defaultFieldSettings };
-    }
+  return parsed.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+}
 
-    const parsed = JSON.parse(raw) as Partial<FieldSettings>;
-    return {
-      targetRefreshInterval:
-        typeof parsed.targetRefreshInterval === "string" && parsed.targetRefreshInterval.trim()
-          ? parsed.targetRefreshInterval
-          : defaultFieldSettings.targetRefreshInterval,
-      arrivalTriggerDistance:
-        typeof parsed.arrivalTriggerDistance === "number"
-          ? parsed.arrivalTriggerDistance
-          : defaultFieldSettings.arrivalTriggerDistance,
-      routeTrafficOverlay:
-        typeof parsed.routeTrafficOverlay === "boolean"
-          ? parsed.routeTrafficOverlay
-          : defaultFieldSettings.routeTrafficOverlay,
-      ocrConfidenceThreshold:
-        typeof parsed.ocrConfidenceThreshold === "number"
-          ? parsed.ocrConfidenceThreshold
-          : defaultFieldSettings.ocrConfidenceThreshold,
-      maxActiveTargets:
-        typeof parsed.maxActiveTargets === "number"
-          ? parsed.maxActiveTargets
-          : defaultFieldSettings.maxActiveTargets,
-      autoMarkOnScene:
-        typeof parsed.autoMarkOnScene === "boolean"
-          ? parsed.autoMarkOnScene
-          : defaultFieldSettings.autoMarkOnScene,
-      silentShiftMode:
-        typeof parsed.silentShiftMode === "boolean" ? parsed.silentShiftMode : defaultFieldSettings.silentShiftMode,
-      lowStorageWarning:
-        typeof parsed.lowStorageWarning === "boolean"
-          ? parsed.lowStorageWarning
-          : defaultFieldSettings.lowStorageWarning,
-    };
-  } catch {
-    return { ...defaultFieldSettings };
+function formatDateTime(timestampUtc: string): string {
+  const parsed = new Date(timestampUtc);
+  if (Number.isNaN(parsed.valueOf())) {
+    return timestampUtc;
   }
+
+  return parsed.toLocaleString([], {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+}
+
+function confidencePercent(value: number): number {
+  return value > 1 ? Math.round(value) : Math.round(value * 100);
 }
 
 function confidenceLabel(value: number): string {
-  return `${Math.round(value * 100)}%`;
-}
-
-function severityTone(value: AlertItem["severity"]): string {
-  if (value === "critical") {
-    return "critical";
-  }
-  if (value === "priority") {
-    return "priority";
-  }
-  return "watch";
-}
-
-function followUpPriorityTone(value: FollowUpPriority): string {
-  if (value === "critical") {
-    return "critical";
-  }
-  if (value === "priority") {
-    return "priority";
-  }
-  return "muted";
-}
-
-function assignmentPriorityTone(value: DispatchAssignmentPriority): string {
-  if (value === "critical") {
-    return "critical";
-  }
-  if (value === "priority") {
-    return "priority";
-  }
-  return "muted";
-}
-
-function followUpStatusLabel(value: FollowUpStatus): string {
-  switch (value) {
-    case "open":
-      return "Open";
-    case "monitoring":
-      return "Monitoring";
-    case "resolved":
-      return "Resolved";
-  }
-}
-
-function followUpStatusTone(value: FollowUpStatus): string {
-  switch (value) {
-    case "open":
-      return "badge--critical";
-    case "monitoring":
-      return "badge--priority";
-    case "resolved":
-      return "badge--good";
-  }
-}
-
-function assignmentStatusLabel(value: DispatchAssignmentStatus): string {
-  switch (value) {
-    case "queued":
-      return "Queued";
-    case "assigned":
-      return "Assigned";
-    case "en_route":
-      return "En Route";
-    case "onsite":
-      return "On Scene";
-    case "completed":
-      return "Completed";
-    case "cancelled":
-      return "Cancelled";
-  }
-}
-
-function assignmentStatusTone(value: DispatchAssignmentStatus): string {
-  switch (value) {
-    case "completed":
-      return "badge--good";
-    case "cancelled":
-      return "badge--muted";
-    case "onsite":
-      return "badge--critical";
-    case "en_route":
-      return "badge--priority";
-    default:
-      return "badge--outlined";
-  }
-}
-
-function operatorRoleLabel(role: OperatorSessionRecord["roles"][number]): string {
-  switch (role) {
-    case "admin":
-      return "Admin";
-    case "operator":
-      return "Operator";
-    case "integrator":
-      return "Integrator";
-    default:
-      return "Viewer";
-  }
-}
-
-function operatorDisplayName(record: Pick<OperatorPrincipal, "display_name" | "principal_id">): string {
-  return record.display_name?.trim() || record.principal_id;
-}
-
-function workspaceLabel(workspaceId: string): string {
-  return workspaceTabs.find((tab) => tab.id === workspaceId)?.label ?? titleCaseLabel(workspaceId) ?? workspaceId;
-}
-
-function routeStageTone(state: RouteStageState): string {
-  switch (state) {
-    case "done":
-      return "badge--good";
-    case "active":
-      return "badge--priority";
-    case "queued":
-      return "badge--muted";
-  }
-}
-
-function formatEtaFromFeet(feet: number, navigationActive: boolean): string {
-  if (!navigationActive) {
-    return "Standby";
-  }
-  if (feet <= 150) {
-    return "<1 min";
-  }
-  const estimatedMinutes = Math.max(1, Math.round(feet / 850));
-  return `${estimatedMinutes} min`;
+  return `${confidencePercent(value)}%`;
 }
 
 function formatDistance(feet: number): string {
   if (feet >= 5280) {
     return `${(feet / 5280).toFixed(1)} mi`;
   }
-
   return `${feet} ft`;
 }
 
-function formatReviewTimestamp(timestampUtc: string): string {
-  const parsed = new Date(timestampUtc);
-  if (Number.isNaN(parsed.valueOf())) {
-    return timestampUtc;
+function formatEta(feet: number, active: boolean): string {
+  if (!active) {
+    return "Standby";
   }
-
-  return parsed.toLocaleString([], {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
+  if (feet <= 150) {
+    return "<1 min";
+  }
+  return `${Math.max(1, Math.round(feet / 850))} min`;
 }
 
-function reviewActionLabel(action: ReviewAction): string {
-  switch (action) {
-    case "confirm":
-      return "Confirm";
-    case "correct":
-      return "Correct";
-    case "flag":
-      return "Flag";
-    case "dismiss":
-      return "Dismiss";
-  }
+function normalizePlate(value: string | null | undefined): string {
+  return (value ?? "").replace(/\s+/g, "").toUpperCase();
 }
 
-function reviewActionBadgeTone(action: ReviewAction): string {
-  switch (action) {
-    case "confirm":
-      return "badge--good";
-    case "correct":
-      return "badge--good";
-    case "flag":
-      return "badge--priority";
-    case "dismiss":
-      return "badge--muted";
-  }
+function matchesHotlist(plate1: string, plate2: string, hotlists: DashboardHotlist[]): boolean {
+  const candidates = new Set([normalizePlate(plate1), normalizePlate(plate2)]);
+  return hotlists.some((entry) => entry.active && candidates.has(normalizePlate(entry.plate_text)));
 }
 
-function formatHotlistTimestamp(timestampUtc: string): string {
-  const parsed = new Date(timestampUtc);
-  if (Number.isNaN(parsed.valueOf())) {
-    return timestampUtc;
-  }
-
-  return parsed.toLocaleString([], {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
+function hotlistLabelForRow(row: ConsoleDetectionRow, hotlists: DashboardHotlist[]): string | null {
+  const candidates = new Set([normalizePlate(row.plate1), normalizePlate(row.plate2)]);
+  const match = hotlists.find((entry) => entry.active && candidates.has(normalizePlate(entry.plate_text)));
+  return match?.label ?? null;
 }
 
-function demoRuntimeLabel(state: DemoRuntimeStatusRecord["state"] | undefined): string {
-  switch (state) {
-    case "running":
-      return "Running";
-    case "succeeded":
-      return "Ready";
-    case "failed":
-      return "Failed";
-    default:
-      return "Idle";
+function buildCameraShortLabel(cameraId: string): string {
+  const index = cameraFeeds.findIndex((feed) => feed.id === cameraId);
+  if (index >= 0) {
+    return `Cam ${index + 1}`;
   }
+  return cameraId.replace(/^cam_/i, "").replace(/_/g, " ").replace(/\b\w/g, (value) => value.toUpperCase());
 }
 
-function demoRuntimeBadgeTone(state: DemoRuntimeStatusRecord["state"] | undefined): string {
-  switch (state) {
-    case "running":
-      return "badge--priority";
-    case "succeeded":
-      return "badge--good";
-    case "failed":
-      return "badge--critical";
-    default:
-      return "badge--muted";
-  }
+function buildCameraDisplayName(cameraId: string): string {
+  const camera = cameraFeeds.find((feed) => feed.id === cameraId);
+  return camera?.label ?? buildCameraShortLabel(cameraId);
 }
 
-function formatCameraLabel(cameraId: string | null | undefined): string {
-  if (!cameraId) {
-    return "Camera unavailable";
-  }
-
-  return cameraId
-    .replace(/^cam_/, "")
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (character) => character.toUpperCase());
-}
-
-function formatGpsLabel(latitude: number | null | undefined, longitude: number | null | undefined): string {
-  if (typeof latitude !== "number" || typeof longitude !== "number") {
-    return "GPS unavailable";
-  }
-
-  return `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
-}
-
-function titleCaseLabel(value: string | null | undefined): string {
+function titleCase(value: string | null | undefined): string {
   if (!value) {
     return "";
   }
@@ -518,4463 +277,2190 @@ function titleCaseLabel(value: string | null | undefined): string {
   return value
     .split(/[\s_-]+/)
     .filter(Boolean)
-    .map((segment) => segment[0].toUpperCase() + segment.slice(1).toLowerCase())
+    .map((part) => part[0].toUpperCase() + part.slice(1).toLowerCase())
     .join(" ");
 }
 
-function buildDetectionVehicleLabel(detection: DashboardDetection | null | undefined, fallback: string): string {
-  if (!detection) {
-    return fallback;
-  }
-
-  const parts = [titleCaseLabel(detection.vehicle_color), titleCaseLabel(detection.vehicle_make), titleCaseLabel(detection.vehicle_model)].filter(
-    Boolean,
-  );
-  return parts.join(" ") || fallback;
+function fallbackPoint(index: number): { lat: number; lng: number } {
+  const latOffset = ((index % 4) - 1.5) * 0.0016;
+  const lngOffset = ((index % 5) - 2) * 0.0012;
+  return {
+    lat: targetRoute.lat + latOffset,
+    lng: targetRoute.lng + lngOffset,
+  };
 }
 
-function buildDetectionColorYearLabel(detection: DashboardDetection | null | undefined, fallback: string): string {
-  if (!detection) {
-    return fallback;
-  }
-
-  const color = titleCaseLabel(detection.vehicle_color) || "Unknown";
-  const year = detection.optional_vehicle_year ?? "Unknown";
-  return `${color} / ${year}`;
+function buildVehicleLabel(record: DashboardDetection): string {
+  const parts = [titleCase(record.vehicle_color), titleCase(record.vehicle_make), titleCase(record.vehicle_model)].filter(Boolean);
+  return parts.join(" ") || "Unclassified vehicle";
 }
 
-function formatOptionalConfidence(value: number | null | undefined): string {
-  return typeof value === "number" ? confidenceLabel(value) : "Unavailable";
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
 
-function formatLocalDateTimeInput(value: string): string {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.valueOf())) {
-    return "";
-  }
-
-  const offset = parsed.getTimezoneOffset();
-  const local = new Date(parsed.getTime() - offset * 60_000);
-  return local.toISOString().slice(0, 16);
+function buildBlankHotlistDraft(seedPlate = ""): HotlistDraft {
+  return {
+    plateText: normalizePlate(seedPlate),
+    label: "",
+    notes: "",
+    active: true,
+  };
 }
 
-function toUtcIsoString(value: string): string | undefined {
+function hotlistDraftFromEntry(entry: DashboardHotlist): HotlistDraft {
+  return {
+    plateText: entry.plate_text,
+    label: entry.label ?? "",
+    notes: entry.notes ?? "",
+    active: entry.active,
+  };
+}
+
+function toUtcIso(value: string): string | undefined {
   const trimmed = value.trim();
   if (!trimmed) {
     return undefined;
   }
-
   const parsed = new Date(trimmed);
   if (Number.isNaN(parsed.valueOf())) {
     return undefined;
   }
-
   return parsed.toISOString();
 }
 
-function parseOptionalNumber(value: string): number | undefined {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return undefined;
-  }
+function buildSeedRows(hotlists: DashboardHotlist[]): ConsoleDetectionRow[] {
+  const seeds = [
+    {
+      id: "seed-9kpn665",
+      plate1: "9KPN665",
+      plate2: "PN665",
+      state: "CA",
+      cameraId: "cam-rear-3",
+      conf: 95,
+      timestampUtc: "2026-03-27T22:14:08Z",
+      vehicle: "2021 Toyota Camry",
+      gps: "41.88624, -87.72819",
+      direction: "Northbound",
+      lane: "Right lane",
+      lat: 41.88624,
+      lng: -87.72819,
+      source: "Fulton curbside",
+    },
+    {
+      id: "seed-9aja734",
+      plate1: "9AJA734",
+      plate2: "9AIA734",
+      state: "CA",
+      cameraId: "cam-side-2",
+      conf: 88,
+      timestampUtc: "2026-03-27T22:12:41Z",
+      vehicle: "2019 Honda Civic",
+      gps: "41.88584, -87.73094",
+      direction: "Eastbound",
+      lane: "Center lane",
+      lat: 41.88584,
+      lng: -87.73094,
+      source: "West alley entrance",
+    },
+    {
+      id: "seed-5hcg067",
+      plate1: "5HCG067",
+      plate2: "5MCG067",
+      state: "CA",
+      cameraId: "cam-side-2",
+      conf: 82,
+      timestampUtc: "2026-03-27T22:11:16Z",
+      vehicle: "2017 Ford Fusion",
+      gps: "41.88498, -87.73182",
+      direction: "Southbound",
+      lane: "Curb lane",
+      lat: 41.88498,
+      lng: -87.73182,
+      source: "Plymouth cross street",
+    },
+    {
+      id: "seed-6ucj466",
+      plate1: "6UCJ466",
+      plate2: "6UCI466",
+      state: "CA",
+      cameraId: "cam-rear-3",
+      conf: 91,
+      timestampUtc: "2026-03-27T22:09:58Z",
+      vehicle: "2020 Nissan Altima",
+      gps: "41.88702, -87.72755",
+      direction: "Westbound",
+      lane: "Driveway exit",
+      lat: 41.88702,
+      lng: -87.72755,
+      source: "North lot exit",
+    },
+    {
+      id: "seed-8abc123",
+      plate1: "8ABC123",
+      plate2: "8A8C123",
+      state: "IL",
+      cameraId: "cam-front-1",
+      conf: 97,
+      timestampUtc: "2026-03-27T22:07:44Z",
+      vehicle: "2022 Kia Sportage",
+      gps: "41.88366, -87.73018",
+      direction: "Northbound",
+      lane: "Approach lane",
+      lat: 41.88366,
+      lng: -87.73018,
+      source: "South approach",
+    },
+    {
+      id: "seed-7trm221",
+      plate1: "7TRM221",
+      plate2: "7TRN221",
+      state: "IN",
+      cameraId: "cam-front-1",
+      conf: 79,
+      timestampUtc: "2026-03-27T22:05:32Z",
+      vehicle: "2018 Chevy Malibu",
+      gps: "41.88291, -87.73210",
+      direction: "Stopped",
+      lane: "Loading lane",
+      lat: 41.88291,
+      lng: -87.73210,
+      source: "Warehouse frontage",
+    },
+  ];
 
-  const parsed = Number(trimmed);
-  return Number.isFinite(parsed) ? parsed : undefined;
+  return seeds.map((row) => ({
+    ...row,
+    camera: buildCameraShortLabel(row.cameraId),
+    time: formatClock(row.timestampUtc),
+    hotlist: matchesHotlist(row.plate1, row.plate2, hotlists),
+  }));
 }
 
-const defaultSearchFormState: SearchFormState = {
-  plate: "",
-  plateMatch: "contains",
-  startUtc: "",
-  endUtc: "",
-  cameraId: "",
-  minLatitude: "",
-  maxLatitude: "",
-  minLongitude: "",
-  maxLongitude: "",
-  vehicleColor: "",
-  vehicleMake: "",
-  vehicleModel: "",
-  vehicleYear: "",
-  alertStatus: "",
-};
+function mapDetectionToRow(record: DashboardDetection, index: number, hotlists: DashboardHotlist[]): ConsoleDetectionRow {
+  const primaryPlate = record.plate_text ?? record.plate_candidates[0]?.text ?? `UNREAD-${index + 1}`;
+  const alternatePlate = record.plate_candidates.find((candidate) => candidate.text !== primaryPlate)?.text ?? (primaryPlate.slice(1) || "--");
+  const fallback = fallbackPoint(index);
+  const confidence = confidencePercent(record.plate_confidence ?? record.plate_candidates[0]?.confidence ?? 0.78);
+  const latitude = record.gps_latitude ?? fallback.lat;
+  const longitude = record.gps_longitude ?? fallback.lng;
+  const lane = ["Left lane", "Center lane", "Right lane", "Shoulder"][index % 4];
+  const direction = ["Northbound", "Eastbound", "Southbound", "Westbound"][index % 4];
 
-function App() {
-  const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceId>("navigation");
-  const [layout, setLayout] = useState<DashboardLayout>(() => loadLayout());
-  const [fieldSettings, setFieldSettings] = useState<FieldSettings>(() => loadFieldSettings());
-  const [queueView, setQueueView] = useState<QueueViewId>("hotlist");
-  const [queuePage, setQueuePage] = useState(0);
-  const [targetPanelTab, setTargetPanelTab] = useState<TargetPanelTabId>("overview");
-  const [selectedAlertId, setSelectedAlertId] = useState<string>(alerts[0]?.id ?? "");
-  const [focusedDetectionId, setFocusedDetectionId] = useState<string | null>(null);
-  const [selectedCameraId, setSelectedCameraId] = useState<string>(cameraFeeds[0]?.id ?? "");
-  const [destinationInput, setDestinationInput] = useState<string>(alerts[0]?.location ?? "");
-  const [activeDestination, setActiveDestination] = useState<string>(alerts[0]?.location ?? "");
-  const [navigationActive, setNavigationActive] = useState(false);
-  const [addressDetectionEnabled, setAddressDetectionEnabled] = useState(true);
-  const [currentDistanceFeet, setCurrentDistanceFeet] = useState(1400);
-  const [popupStack, setPopupStack] = useState<PopupNotification[]>([]);
-  const [popupHistory, setPopupHistory] = useState<DetectionPopupEvent[]>(defaultPopupHistory);
-  const [addressPopupIndex, setAddressPopupIndex] = useState(0);
-  const [hotlistPopupIndex, setHotlistPopupIndex] = useState(0);
-  const [liveOverview, setLiveOverview] = useState<DashboardOverviewResponse | null>(null);
-  const [apiKey, setApiKey] = useState<string>(() => loadStoredString(apiKeyStorageKey));
-  const [sessionLabel, setSessionLabel] = useState<string>(() => loadStoredString(sessionLabelStorageKey, "cab_console_01"));
-  const [operatorSessionError, setOperatorSessionError] = useState<string | null>(null);
-  const [searchForm, setSearchForm] = useState<SearchFormState>(defaultSearchFormState);
-  const [searchResults, setSearchResults] = useState<DashboardDetection[]>([]);
-  const [searchTotalResults, setSearchTotalResults] = useState(0);
-  const [searchOffset, setSearchOffset] = useState(0);
-  const [searchLoading, setSearchLoading] = useState(false);
-  const [searchError, setSearchError] = useState<string | null>(null);
-  const [searchExecuted, setSearchExecuted] = useState(false);
-  const [liveDataSource, setLiveDataSource] = useState<"demo" | "live" | "fallback">("demo");
-  const [liveError, setLiveError] = useState<string | null>(null);
-  const [reviewHistory, setReviewHistory] = useState<ReviewRecord[]>([]);
-  const [reviewAction, setReviewAction] = useState<ReviewAction>("confirm");
-  const [reviewOperatorId, setReviewOperatorId] = useState("");
-  const [reviewCorrectedPlate, setReviewCorrectedPlate] = useState(alerts[0]?.plate ?? "");
-  const [reviewNotes, setReviewNotes] = useState("");
-  const [reviewLoading, setReviewLoading] = useState(false);
-  const [reviewSubmitting, setReviewSubmitting] = useState(false);
-  const [reviewError, setReviewError] = useState<string | null>(null);
-  const [reviewSuccess, setReviewSuccess] = useState<string | null>(null);
-  const [followUpPriority, setFollowUpPriority] = useState<FollowUpPriority>("priority");
-  const [followUpStatus, setFollowUpStatus] = useState<FollowUpStatus>("open");
-  const [followUpAssignedOperatorId, setFollowUpAssignedOperatorId] = useState("");
-  const [followUpSummary, setFollowUpSummary] = useState("");
-  const [followUpNotes, setFollowUpNotes] = useState("");
-  const [followUpDueAt, setFollowUpDueAt] = useState("");
-  const [followUpSubmitting, setFollowUpSubmitting] = useState(false);
-  const [followUpError, setFollowUpError] = useState<string | null>(null);
-  const [followUpSuccess, setFollowUpSuccess] = useState<string | null>(null);
-  const [assignmentPriority, setAssignmentPriority] = useState<DispatchAssignmentPriority>("priority");
-  const [assignmentStatus, setAssignmentStatus] = useState<DispatchAssignmentStatus>("queued");
-  const [assignmentOperatorId, setAssignmentOperatorId] = useState("");
-  const [assignmentUnitLabel, setAssignmentUnitLabel] = useState("");
-  const [assignmentDestination, setAssignmentDestination] = useState(alerts[0]?.location ?? "");
-  const [assignmentSummary, setAssignmentSummary] = useState("");
-  const [assignmentNotes, setAssignmentNotes] = useState("");
-  const [assignmentSubmitting, setAssignmentSubmitting] = useState(false);
-  const [assignmentError, setAssignmentError] = useState<string | null>(null);
-  const [assignmentSuccess, setAssignmentSuccess] = useState<string | null>(null);
-  const [alertActionOperatorId, setAlertActionOperatorId] = useState("");
-  const [alertActionNotes, setAlertActionNotes] = useState("");
-  const [alertActionSubmitting, setAlertActionSubmitting] = useState(false);
-  const [alertActionPendingStatus, setAlertActionPendingStatus] = useState<DashboardAlert["status"] | null>(null);
-  const [alertActionError, setAlertActionError] = useState<string | null>(null);
-  const [alertActionSuccess, setAlertActionSuccess] = useState<string | null>(null);
-  const [hotlistEntries, setHotlistEntries] = useState<DashboardHotlist[]>([]);
-  const [selectedHotlistId, setSelectedHotlistId] = useState<string | null>(null);
-  const [hotlistPlateText, setHotlistPlateText] = useState("");
-  const [hotlistLabel, setHotlistLabel] = useState("");
-  const [hotlistNotes, setHotlistNotes] = useState("");
-  const [hotlistActive, setHotlistActive] = useState(true);
-  const [hotlistLoading, setHotlistLoading] = useState(false);
-  const [hotlistSaving, setHotlistSaving] = useState(false);
-  const [hotlistError, setHotlistError] = useState<string | null>(null);
-  const [hotlistSuccess, setHotlistSuccess] = useState<string | null>(null);
-  const [demoRuntimeStatus, setDemoRuntimeStatus] = useState<DemoRuntimeStatusRecord | null>(null);
-  const [demoFramesDirectory, setDemoFramesDirectory] = useState("");
-  const [demoSequenceId, setDemoSequenceId] = useState("seq_console_demo");
-  const [demoPlateText, setDemoPlateText] = useState(alerts[0]?.plate ?? "6BZN220");
-  const [demoLoading, setDemoLoading] = useState(false);
-  const [demoSubmitting, setDemoSubmitting] = useState(false);
-  const [demoError, setDemoError] = useState<string | null>(null);
-  const [demoSuccess, setDemoSuccess] = useState<string | null>(null);
-  const [framePreviewUrl, setFramePreviewUrl] = useState<string | null>(null);
-  const [plateCropPreviewUrl, setPlateCropPreviewUrl] = useState<string | null>(null);
-  const [framePreviewUnavailable, setFramePreviewUnavailable] = useState(false);
-  const [plateCropPreviewUnavailable, setPlateCropPreviewUnavailable] = useState(false);
-  const [chatMessages, setChatMessages] = useState<CrewChatMessage[]>(demoChatMessages);
-  const [chatDraftMessage, setChatDraftMessage] = useState("");
-  const [fieldPhotoLog, setFieldPhotoLog] = useState<Array<{ id: string; label: string; timestamp: string; note: string }>>([]);
-  const [fieldPhotoNote, setFieldPhotoNote] = useState("");
-  const previousWithinArrivalRef = useRef(false);
-  const queuedLivePopupIdsRef = useRef<Set<string>>(new Set());
-  const previousAlertActionTargetRef = useRef<string | null>(null);
-  const previousDemoRunStateRef = useRef<DemoRuntimeStatusRecord["state"]>("idle");
-  const previousDemoRunIdRef = useRef<string | null>(null);
-  const operatorSessionIdRef = useRef<string>(loadOrCreateOperatorSessionId());
-
-  const operatorAlerts = liveOverview ? mapOverviewToAlertItems(liveOverview, alerts) : alerts;
-  const detectionsById = new Map((liveOverview?.detections ?? []).map((record) => [record.detection_id, record]));
-  const searchResultsById = new Map(searchResults.map((record) => [record.detection_id, record]));
-  const selectedAlert = operatorAlerts.find((alert) => alert.id === selectedAlertId) ?? operatorAlerts[0];
-  const selectedDetectionId = focusedDetectionId ?? selectedAlert?.detectionId ?? null;
-  const selectedDetection =
-    (selectedDetectionId ? searchResultsById.get(selectedDetectionId) ?? detectionsById.get(selectedDetectionId) : null) ?? null;
-  const selectedLiveAlert =
-    (selectedDetectionId ? liveOverview?.alerts.find((alert) => alert.detection_id === selectedDetectionId) ?? null : null) ??
-    liveOverview?.alerts.find((alert) => alert.alert_id === selectedAlertId) ??
-    null;
-  const liveFollowUps = liveOverview?.follow_ups ?? [];
-  const liveAssignments = liveOverview?.assignments ?? [];
-  const activeSessions = liveOverview?.active_sessions ?? [];
-  const currentOperator = liveOverview?.current_principal ?? demoOperatorPrincipal;
-  const selectedFollowUp =
-    (selectedDetectionId
-      ? liveFollowUps.find((record) => record.detection_id === selectedDetectionId && record.status !== "resolved") ??
-        liveFollowUps.find((record) => record.detection_id === selectedDetectionId) ??
-        null
-      : null) ?? null;
-  const selectedAssignment =
-    (selectedDetectionId
-      ? liveAssignments.find(
-          (record) =>
-            record.detection_id === selectedDetectionId &&
-            record.status !== "completed" &&
-            record.status !== "cancelled",
-        ) ??
-        liveAssignments.find((record) => record.detection_id === selectedDetectionId) ??
-        null
-      : null) ?? null;
-  const otherActiveSessions = activeSessions.filter((record) => record.session_id !== operatorSessionIdRef.current);
-  const selectedHotlist = hotlistEntries.find((entry) => entry.entry_id === selectedHotlistId) ?? null;
-  const selectedCamera = cameraFeeds.find((camera) => camera.id === selectedCameraId) ?? cameraFeeds[0];
-  const onlineCameraCount = cameraFeeds.filter((camera) => camera.status === "Online").length;
-  const liveHealthState = liveOverview?.health.state ?? "demo";
-  const activeHotlistCount = liveOverview?.counts.active_hotlists ?? 0;
-  const activeAlertCount = liveOverview?.counts.active_alerts ?? operatorAlerts.filter((alert) => alert.severity === "critical").length;
-  const openFollowUpCount =
-    liveOverview?.counts.open_follow_ups ?? liveFollowUps.filter((record) => record.status !== "resolved").length;
-  const activeAssignmentCount =
-    liveOverview?.counts.active_assignments ??
-    liveAssignments.filter((record) => record.status !== "completed" && record.status !== "cancelled").length;
-  const activeSessionCount = liveOverview?.counts.active_sessions ?? activeSessions.length;
-  const recoveryLogEntries = liveOverview ? mapOverviewToRecoveryLog(liveOverview) : recoveryLog;
-  const selectedAlertMatchesDetection = selectedDetectionId === null || selectedAlert?.detectionId === selectedDetectionId;
-  const selectedDisplayPlate = selectedDetection?.plate_text ?? selectedLiveAlert?.matched_plate_text ?? selectedAlert?.plate ?? "Plate unavailable";
-  const selectedDisplayVehicle = buildDetectionVehicleLabel(selectedDetection, selectedAlert?.vehicle ?? "Live vehicle");
-  const selectedDisplayColorYear = buildDetectionColorYearLabel(selectedDetection, selectedAlert?.colorYear ?? "Unknown / Unknown");
-  const selectedDisplayCamera = selectedDetection ? formatCameraLabel(selectedDetection.camera_id) : selectedAlert.camera;
-  const selectedDisplayGps = selectedDetection
-    ? formatGpsLabel(selectedDetection.gps_latitude, selectedDetection.gps_longitude)
-    : selectedAlert.gps;
-  const selectedDisplayConfidence = selectedDetection?.plate_confidence ?? selectedLiveAlert?.match_confidence ?? selectedAlert.confidence;
-  const selectedDisplayPrimaryBadge = selectedAlertMatchesDetection
-    ? scenarioLabels[selectedAlert.scenario]
-    : selectedLiveAlert
-      ? "Hotlist hit"
-      : "Detection review";
-  const selectedDisplaySecondaryBadge = selectedAlertMatchesDetection
-    ? statusLabels[selectedAlert.status]
-    : selectedAssignment
-      ? assignmentStatusLabel(selectedAssignment.status)
-      : selectedLiveAlert
-        ? selectedLiveAlert.status
-        : "No alert";
-  const selectedDisplayBestApproach = selectedAlertMatchesDetection
-    ? selectedAlert.bestApproach
-    : selectedAssignment?.summary ??
-      selectedFollowUp?.summary ??
-      (selectedLiveAlert
-        ? "Use the evidence frame and plate-crop confidence to confirm before escalating the live alert."
-        : "Review OCR candidates, compare the crop, and pin only detections that need follow-up.");
-  const selectedDisplayNotes = selectedAlertMatchesDetection
-    ? selectedAlert.notes
-    : selectedLiveAlert?.notes ??
-      (selectedDetection
-        ? `Frame ${selectedDetection.frame_number} / Sync status ${selectedDetection.sync_status}`
-        : "Select a live detection to inspect OCR candidates and attribute confidence.");
-  const searchCameraChoices = Array.from(
-    new Set((liveOverview?.detections ?? []).map((record) => record.camera_id)),
-  ).sort((left, right) => left.localeCompare(right));
-  const knownHotlistPlates = new Set(
-    [
-      ...hotlistPopupDetections.map((event) => event.plate).filter((plate): plate is string => typeof plate === "string"),
-      ...hotlistEntries.filter((entry) => entry.active).map((entry) => entry.plate_text),
-    ].map((plate) => plate.toUpperCase()),
-  );
-  const selectedWorkflowNotes = selectedAssignment?.notes ?? selectedFollowUp?.notes ?? selectedDisplayNotes;
-  const selectedIsHotlistMatch = selectedLiveAlert
-    ? !!selectedLiveAlert.hotlist_entry_id
-    : knownHotlistPlates.has(selectedDisplayPlate.toUpperCase());
-  const selectedFramePreviewUrl = liveDataSource === "live" ? framePreviewUrl : null;
-  const selectedPlateCropPreviewUrl = liveDataSource === "live" ? plateCropPreviewUrl : null;
-  const withinArrivalRadius = navigationActive && currentDistanceFeet <= fieldSettings.arrivalTriggerDistance;
-  const activeScanMode = withinArrivalRadius;
-  const generalPopupsLive = navigationActive && addressDetectionEnabled && withinArrivalRadius;
-  const currentDistanceLabel = formatDistance(currentDistanceFeet);
-  const navigationModeLabel = activeScanMode ? "Active scan" : navigationActive ? "Transit monitor" : "Idle";
-  const addressPopupPolicy = generalPopupsLive
-    ? "General popups live"
-    : addressDetectionEnabled
-      ? "General popups suppressed"
-      : "Address popups disabled";
-  const radiusDetectionSummary = generalPopupsLive
-    ? `All vehicles inside the ${fieldSettings.arrivalTriggerDistance} ft address radius are surfacing live.`
-    : addressDetectionEnabled
-      ? "Vehicles are still being classified in the background until the cab enters the arrival ring."
-      : "Address-radius detection is paused by the operator. Hotlist alerts remain live.";
-  const alertActionsAvailable = liveDataSource === "live" && selectedLiveAlert !== null;
-  const alertActionsEnabled = alertActionsAvailable && currentOperator.capabilities.can_update_alerts;
-  const reviewsEnabled = liveDataSource === "live" && selectedDetectionId !== null;
-  const hotlistsEnabled = liveDataSource === "live";
-  const demoRuntimeEnabled = liveDataSource === "live";
-  const latestReview = reviewHistory[0] ?? null;
-  const canSubmitReview =
-    reviewsEnabled &&
-    currentOperator.capabilities.can_submit_reviews &&
-    !reviewSubmitting &&
-    (reviewAction !== "correct" || reviewCorrectedPlate.trim().length > 0);
-  const canManageFollowUps =
-    liveDataSource === "live" && currentOperator.capabilities.can_manage_follow_ups && selectedDetectionId !== null;
-  const canManageAssignments =
-    liveDataSource === "live" && currentOperator.capabilities.can_manage_dispatch && selectedDetectionId !== null;
-  const canSubmitHotlist =
-    hotlistsEnabled &&
-    currentOperator.capabilities.can_manage_hotlists &&
-    !hotlistSaving &&
-    hotlistPlateText.trim().length > 0;
-  const canStartDemoRun =
-    demoRuntimeEnabled &&
-    currentOperator.capabilities.can_start_demo_runs &&
-    !demoSubmitting &&
-    demoFramesDirectory.trim().length > 0 &&
-    demoRuntimeStatus?.state !== "running";
-  const routeProgressPercent = Math.min(100, (Math.max(0, 1760 - currentDistanceFeet) / 1760) * 100);
-  const routeEtaLabel = formatEtaFromFeet(currentDistanceFeet, navigationActive);
-  const routeLeadLabel =
-    selectedAssignment?.assigned_operator_id ??
-    selectedFollowUp?.assigned_operator_id ??
-    (alertActionOperatorId.trim() || reviewOperatorId.trim() || operatorDisplayName(currentOperator));
-  const routeUnitLabel = selectedAssignment?.assigned_unit_label ?? "Cab console";
-  const routeStages: RouteStageItem[] = [
-    {
-      id: "pin",
-      label: "Pin",
-      detail: selectedFollowUp
-        ? `${followUpStatusLabel(selectedFollowUp.status)} / ${titleCaseLabel(selectedFollowUp.priority)}`
-        : "Create a follow-up if this detection needs a second pass.",
-      state: selectedFollowUp ? "done" : selectedDetectionId ? "active" : "queued",
-    },
-    {
-      id: "dispatch",
-      label: "Dispatch",
-      detail: selectedAssignment
-        ? `${assignmentStatusLabel(selectedAssignment.status)} / ${selectedAssignment.assigned_unit_label ?? "Unit pending"}`
-        : "Assign a unit and operator before the approach.",
-      state:
-        selectedAssignment?.status === "completed"
-          ? "done"
-          : selectedAssignment
-            ? "active"
-            : selectedDetectionId
-              ? "queued"
-              : "queued",
-    },
-    {
-      id: "transit",
-      label: "Transit",
-      detail: navigationActive ? `${routeEtaLabel} to ${activeDestination}` : "Route not started.",
-      state: navigationActive ? (withinArrivalRadius ? "done" : "active") : "queued",
-    },
-    {
-      id: "arrival",
-      label: "Arrival ring",
-      detail: withinArrivalRadius
-        ? "Inside the trigger distance. General popups are live."
-        : `${fieldSettings.arrivalTriggerDistance} ft trigger distance.`,
-      state: withinArrivalRadius ? "active" : navigationActive ? "queued" : "queued",
-    },
-    {
-      id: "confirm",
-      label: "Confirm",
-      detail:
-        selectedAssignment?.status === "onsite"
-          ? "Crew is on scene. Confirm plate, VIN, and a safe hookup position."
-          : selectedAlert.status === "onsite"
-            ? "On-scene confirmation is in progress."
-            : "Use cameras and evidence to verify before engagement.",
-      state:
-        selectedAssignment?.status === "completed"
-          ? "done"
-          : selectedAssignment?.status === "onsite" || selectedAlert.status === "onsite"
-            ? "active"
-            : "queued",
-    },
-  ];
-  const currentRouteStage =
-    routeStages.find((stage) => stage.state === "active") ??
-    [...routeStages].reverse().find((stage) => stage.state === "done") ??
-    routeStages[0];
-  const routeCommandCards = [
-    {
-      label: "Next move",
-      value: selectedAssignment?.summary ?? selectedAlert.routeAction,
-      tone: currentRouteStage.state === "active" ? "badge--priority" : "badge--outlined",
-    },
-    {
-      label: "Unit",
-      value: routeUnitLabel,
-      tone: selectedAssignment ? "badge--good" : "badge--outlined",
-    },
-    {
-      label: "Lead",
-      value: routeLeadLabel,
-      tone: "badge--good",
-    },
-    {
-      label: "ETA",
-      value: routeEtaLabel,
-      tone: withinArrivalRadius ? "badge--good" : navigationActive ? "badge--priority" : "badge--muted",
-    },
-    {
-      label: "Alert scope",
-      value: generalPopupsLive ? "General + hotlist" : "Hotlist only",
-      tone: generalPopupsLive ? "badge--good" : "badge--outlined",
-    },
-  ] as const;
-  const routeFocusItems = [
-    selectedDisplayBestApproach,
-    selectedWorkflowNotes,
-    radiusDetectionSummary,
-    selectedFollowUp?.due_at_utc
-      ? `Pinned follow-up due ${formatHotlistTimestamp(selectedFollowUp.due_at_utc)}.`
-      : "No due time is set on the current follow-up.",
-  ];
-  const hotlistAlertCount = liveOverview
-    ? liveOverview.alerts.filter((alert) => alert.hotlist_entry_id && alert.status === "active").length
-    : operatorAlerts.filter((alert) => alert.severity === "critical").length;
-  const glanceTiles = [
-    {
-      label: "Primary target",
-      value: selectedDisplayPlate,
-      sublabel: selectedDisplayVehicle,
-    },
-    {
-      label: "Hotlist alerts",
-      value: `${hotlistAlertCount} active`,
-      sublabel: hotlistAlertCount > 0 ? "Unsuppressed. Requires immediate response." : "No active hotlist matches right now.",
-    },
-    {
-      label: "Route window",
-      value: routeEtaLabel,
-      sublabel: generalPopupsLive
-        ? `${currentDistanceLabel} to ${activeDestination} / radius alerts live`
-        : `${currentDistanceLabel} to ${activeDestination} / background classify only`,
-    },
-    {
-      label: "Mission stage",
-      value: currentRouteStage.label,
-      sublabel: currentRouteStage.detail,
-    },
-    {
-      label: "Dispatch",
-      value: selectedAssignment ? assignmentStatusLabel(selectedAssignment.status) : "Unassigned",
-      sublabel: selectedAssignment?.assigned_unit_label ?? "No unit committed yet",
-    },
-    {
-      label: "Follow-up",
-      value: selectedFollowUp ? followUpStatusLabel(selectedFollowUp.status) : "Not pinned",
-      sublabel: selectedFollowUp?.summary ?? "Pin the detection if it needs a second pass.",
-    },
-    {
-      label: "Crew",
-      value: `${activeSessionCount} live`,
-      sublabel:
-        liveDataSource === "live"
-          ? `${operatorDisplayName(currentOperator)} + ${Math.max(0, activeSessionCount - 1)} other operators`
-          : operatorDisplayName(currentOperator),
-    },
-    {
-      label: "Cameras",
-      value: `${onlineCameraCount}/4 online`,
-      sublabel: `${selectedCamera.label} priority feed`,
-    },
-  ];
-  const liveAlertsByAlertId = new Map((liveOverview?.alerts ?? []).map((record) => [record.alert_id, record]));
-  const mapAlertMarkers = operatorAlerts.map((alert, index) => {
-    const hasAssignment = !!liveAssignments.find(
-      (record) =>
-        record.detection_id === alert.detectionId &&
-        record.status !== "completed" &&
-        record.status !== "cancelled",
-    );
-    const hasFollowUp = !!liveFollowUps.find(
-      (record) => record.detection_id === alert.detectionId && record.status !== "resolved",
-    );
-    const liveAlert = liveAlertsByAlertId.get(alert.id);
-    const isHotlistMatch = liveAlert ? !!liveAlert.hotlist_entry_id : knownHotlistPlates.has(alert.plate.toUpperCase());
-    return {
-      alert,
-      x: 18 + index * 19,
-      y: 20 + (index % 3) * 18,
-      hasAssignment,
-      hasFollowUp,
-      isHotlistMatch,
-    };
-  });
-  const mapCameraNodes = cameraFeeds.map((camera, index) => ({
-    ...camera,
-    x: 14 + (index % 2) * 18,
-    y: 18 + Math.floor(index / 2) * 40,
-  }));
-  const mapSessionNodes = otherActiveSessions.slice(0, 4).map((session, index) => ({
-    session,
-    x: 24 + index * 12,
-    y: 78 - (index % 2) * 12,
-  }));
-  const mapUnitPosition = {
-    x: `${12 + routeProgressPercent * 0.55}%`,
-    y: `${74 - routeProgressPercent * 0.34}%`,
+  return {
+    id: `live-${record.detection_id}`,
+    detectionId: record.detection_id,
+    plate1: normalizePlate(primaryPlate) || "UNKNOWN",
+    plate2: normalizePlate(alternatePlate) || "--",
+    state: "--",
+    camera: buildCameraShortLabel(record.camera_id),
+    cameraId: record.camera_id,
+    conf: confidence,
+    time: formatClock(record.timestamp_utc),
+    timestampUtc: record.timestamp_utc,
+    hotlist: matchesHotlist(primaryPlate, alternatePlate, hotlists),
+    vehicle: buildVehicleLabel(record),
+    gps: `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`,
+    direction,
+    lane,
+    lat: latitude,
+    lng: longitude,
+    source: buildCameraDisplayName(record.camera_id),
   };
-  const queuePageSize = 5;
-  const searchPageSize = 12;
-  const alertRows = operatorAlerts.map((alert) => {
-    const liveAlert = liveAlertsByAlertId.get(alert.id);
-    return {
-      alert,
-      isHotlistMatch: liveAlert ? !!liveAlert.hotlist_entry_id : knownHotlistPlates.has(alert.plate.toUpperCase()),
-    };
-  });
-  const hotlistQueueRows = alertRows.filter((row) => row.isHotlistMatch);
-  const radiusQueueRows = alertRows.filter((row) => !row.isHotlistMatch);
-  const queueItemsTotal =
-    queueView === "popups" ? popupHistory.length : queueView === "hotlist" ? hotlistQueueRows.length : radiusQueueRows.length;
-  const queuePageCount = Math.max(1, Math.ceil(Math.max(queueItemsTotal, 1) / queuePageSize));
-  const queuePageIndex = Math.min(queuePage, queuePageCount - 1);
-  const queueStart = queuePageIndex * queuePageSize;
-  const visibleHotlistRows = hotlistQueueRows.slice(queueStart, queueStart + queuePageSize);
-  const visibleRadiusRows = radiusQueueRows.slice(queueStart, queueStart + queuePageSize);
-  const visiblePopupHistory = popupHistory.slice(queueStart, queueStart + queuePageSize);
-  const activeQueueRows = queueView === "hotlist" ? visibleHotlistRows : visibleRadiusRows;
-  const queueHeadline =
-    queueView === "hotlist" ? "Hotlist targets" : queueView === "radius" ? "Radius detections" : "Popup activity";
-  const queueDescription =
-    queueView === "hotlist"
-      ? "Unsuppressed hotlist targets that require immediate action."
-      : queueView === "radius"
-        ? "General vehicle detections surfacing inside the target radius."
-        : "Recent popup activity shown in the cab.";
-  const queueEmptyMessage =
-    queueView === "hotlist"
-      ? "No active hotlist targets in the queue."
-      : "No general vehicle detections are currently surfacing inside the radius.";
-  const priorityAlertRow =
-    hotlistQueueRows.find((row) => row.alert.id === selectedAlert.id) ??
-    hotlistQueueRows[0] ??
-    alertRows.find((row) => row.alert.id === selectedAlert.id) ??
-    alertRows[0] ??
-    null;
-  const priorityAlert = priorityAlertRow?.alert ?? selectedAlert;
-  const priorityDetectionId = priorityAlert.detectionId ?? null;
-  const priorityFollowUp =
-    liveFollowUps.find((record) => record.detection_id === priorityDetectionId && record.status !== "resolved") ??
-    liveFollowUps.find((record) => record.detection_id === priorityDetectionId) ??
-    (priorityAlert.id === selectedAlert.id ? selectedFollowUp : null);
-  const priorityAssignment =
-    liveAssignments.find(
-      (record) =>
-        record.detection_id === priorityDetectionId &&
-        record.status !== "completed" &&
-        record.status !== "cancelled",
-    ) ??
-    liveAssignments.find((record) => record.detection_id === priorityDetectionId) ??
-    (priorityAlert.id === selectedAlert.id ? selectedAssignment : null);
-  const priorityWorkflowNotes = priorityAlert.id === selectedAlert.id ? selectedWorkflowNotes : priorityAlert.notes;
-  const priorityRouteAction = priorityAssignment?.summary ?? priorityAlert.routeAction;
-  const priorityLeadOperator =
-    priorityAssignment?.assigned_operator_id ?? priorityFollowUp?.assigned_operator_id ?? routeLeadLabel;
-  const priorityUnit = priorityAssignment?.assigned_unit_label ?? routeUnitLabel;
-  const priorityQueueRows = hotlistQueueRows.slice(0, 4);
-  const priorityGlanceTiles = glanceTiles.filter((tile) =>
-    ["Hotlist alerts", "Route window", "Dispatch", "Follow-up"].includes(tile.label),
-  );
-  const searchPageCount = Math.max(1, Math.ceil(Math.max(searchTotalResults, 1) / searchPageSize));
-  const searchPageIndex = Math.min(Math.floor(searchOffset / searchPageSize), searchPageCount - 1);
-  const searchPageLabel =
-    searchTotalResults === 0
-      ? "No results yet"
-      : `Showing ${Math.min(searchOffset + 1, searchTotalResults)}-${Math.min(searchOffset + searchResults.length, searchTotalResults)} of ${searchTotalResults}`;
-  const activePrimaryWorkspace: PrimaryWorkspaceId = activeWorkspace === "dashboard" ? "navigation" : activeWorkspace;
-  const mobileHeaderEyebrow =
-    activeWorkspace === "dashboard"
-      ? "Arrival active scan"
-      : activeWorkspace === "navigation"
-        ? "Driver route view"
-        : activeWorkspace === "alerts"
-          ? "Priority target queue"
-          : activeWorkspace === "search"
-            ? "Search and history"
-            : activeWorkspace === "cameras"
-              ? "Manual camera review"
-              : "Mobile controls";
-  const mobileHeaderTitle = activeWorkspace === "dashboard" ? "Arrival Scan" : workspaceLabel(activeWorkspace);
-  const mobileHeaderSubtitle =
-    activeWorkspace === "dashboard"
-      ? withinArrivalRadius
-        ? `Within ${fieldSettings.arrivalTriggerDistance} ft of ${activeDestination}. Local detections and hotlist alerts are live.`
-        : `Waiting to enter the ${fieldSettings.arrivalTriggerDistance} ft arrival radius for ${activeDestination}.`
-      : activeWorkspace === "navigation"
-        ? `${activeDestination} • ${routeEtaLabel} • ${generalPopupsLive ? "General + hotlist live" : "Transit monitor"}`
-        : activeWorkspace === "alerts"
-          ? "Work the live queue, open the current target, and keep hotlist interrupts ahead of routine review."
-          : activeWorkspace === "search"
-            ? "Find plates, address activity, and field evidence without leaving the cab workflow."
-            : activeWorkspace === "cameras"
-              ? `Best used while parked or staged. ${selectedCamera.label} is the current priority feed.`
-              : "Tune arrival scan, alerts, camera behavior, and local workflow defaults for this device.";
-  const mobileStatusItems = [
-    { label: "GPS", value: "LOCK" },
-    { label: "CAM", value: `${onlineCameraCount}/4` },
-    { label: "AI", value: liveHealthState === "healthy" ? "READY" : titleCaseLabel(liveHealthState).toUpperCase() },
-    { label: "SYNC", value: liveDataSource === "live" ? "LIVE" : liveDataSource === "fallback" ? "FBK" : "DEMO" },
-    { label: "HOT", value: hotlistAlertCount > 0 ? String(hotlistAlertCount) : "CLR" },
-  ] as const;
-  const mobileGlanceTiles = (activeWorkspace === "dashboard" ? priorityGlanceTiles : glanceTiles).slice(0, 4);
-  const hotlistTakeoverPopup = popupStack.find((popup) => popup.type === "hotlist") ?? null;
-  const passivePopupStack = popupStack.filter((popup) => popup.instanceId !== hotlistTakeoverPopup?.instanceId);
-
-  // Geo-coordinates for Leaflet: map percentages to lat/lng offsets around the demo center.
-  const geoCenter = defaultMapCenter;
-  const geoSpan = 0.015; // ~1 mile spread
-  function pctToGeo(xPct: number, yPct: number): { lat: number; lng: number } {
-    return {
-      lat: geoCenter[0] + geoSpan * (0.5 - yPct / 100),
-      lng: geoCenter[1] + geoSpan * (xPct / 100 - 0.5),
-    };
-  }
-  const geoUnitPosition = pctToGeo(
-    12 + routeProgressPercent * 0.55,
-    74 - routeProgressPercent * 0.34,
-  );
-  const geoAlertMarkers = mapAlertMarkers.map((marker) => ({
-    id: marker.alert.id,
-    lat: pctToGeo(marker.x, marker.y).lat,
-    lng: pctToGeo(marker.x, marker.y).lng,
-    plate: marker.alert.plate,
-    severity: marker.alert.severity,
-    isHotlist: marker.isHotlistMatch,
-    onSelect: () => {
-      setSelectedAlertId(marker.alert.id);
-      setFocusedDetectionId(marker.alert.detectionId ?? null);
-    },
-  }));
-  const geoCameraNodes = mapCameraNodes.map((cam) => ({
-    id: cam.id,
-    lat: pctToGeo(cam.x, cam.y).lat,
-    lng: pctToGeo(cam.x, cam.y).lng,
-    zone: cam.zone,
-  }));
-  const geoSessionNodes = mapSessionNodes.map((sess) => ({
-    id: sess.session.session_id,
-    lat: pctToGeo(sess.x, sess.y).lat,
-    lng: pctToGeo(sess.x, sess.y).lng,
-    label: `${sess.session.display_name ?? sess.session.principal_id} - ${sess.session.workspace}`,
-  }));
-  const geoRoutePath: [number, number][] = [
-    [pctToGeo(12, 74).lat, pctToGeo(12, 74).lng],
-    [pctToGeo(35, 55).lat, pctToGeo(35, 55).lng],
-    [pctToGeo(55, 38).lat, pctToGeo(55, 38).lng],
-    [pctToGeo(67, 40).lat, pctToGeo(67, 40).lng],
-  ];
-  const geoDestinationPosition = {
-    lat: geoRoutePath[geoRoutePath.length - 1]?.[0] ?? geoUnitPosition.lat,
-    lng: geoRoutePath[geoRoutePath.length - 1]?.[1] ?? geoUnitPosition.lng,
-  };
-
-  async function refreshOverview(signal?: AbortSignal): Promise<void> {
-    try {
-      const overview = await fetchDashboardOverview(signal);
-      if (signal?.aborted) {
-        return;
-      }
-
-      setLiveOverview(overview);
-      setLiveDataSource("live");
-      setLiveError(null);
-    } catch (error) {
-      if (signal?.aborted) {
-        return;
-      }
-
-      setLiveOverview(null);
-      setLiveDataSource("fallback");
-      setLiveError(error instanceof Error ? error.message : "Live API unavailable");
-    }
-  }
-
-  async function refreshDemoStatus(signal?: AbortSignal): Promise<void> {
-    if (!demoRuntimeEnabled) {
-      return;
-    }
-
-    try {
-      const status = await fetchDemoRuntimeStatus(signal);
-      if (signal?.aborted) {
-        return;
-      }
-
-      setDemoRuntimeStatus(status);
-      setDemoError(null);
-    } catch (error) {
-      if (signal?.aborted) {
-        return;
-      }
-
-      setDemoRuntimeStatus(null);
-      setDemoError(error instanceof Error ? error.message : "Demo runtime unavailable");
-    }
-  }
-
-  function sortHotlists(entries: DashboardHotlist[]): DashboardHotlist[] {
-    return [...entries].sort((left, right) => right.updated_at_utc.localeCompare(left.updated_at_utc));
-  }
-
-  function loadHotlistForm(entry: DashboardHotlist | null): void {
-    setSelectedHotlistId(entry?.entry_id ?? null);
-    setHotlistPlateText(entry?.plate_text ?? "");
-    setHotlistLabel(entry?.label ?? "");
-    setHotlistNotes(entry?.notes ?? "");
-    setHotlistActive(entry?.active ?? true);
-    setHotlistError(null);
-    setHotlistSuccess(null);
-  }
-
-  useEffect(() => {
-    window.localStorage.setItem(layoutStorageKey, JSON.stringify(layout));
-  }, [layout]);
-
-  useEffect(() => {
-    window.localStorage.setItem(settingsStorageKey, JSON.stringify(fieldSettings));
-  }, [fieldSettings]);
-
-  useEffect(() => {
-    setQueuePage(0);
-  }, [queueView]);
-
-  useEffect(() => {
-    const maxPage = Math.max(0, Math.ceil(Math.max(queueItemsTotal, 1) / queuePageSize) - 1);
-    if (queuePage > maxPage) {
-      setQueuePage(maxPage);
-    }
-  }, [queueItemsTotal, queuePage, queuePageSize]);
-
-  useEffect(() => {
-    setApiClientConfig({ apiKey });
-    window.localStorage.setItem(apiKeyStorageKey, apiKey);
-  }, [apiKey]);
-
-  useEffect(() => {
-    window.localStorage.setItem(sessionLabelStorageKey, sessionLabel);
-  }, [sessionLabel]);
-
-  useEffect(() => {
-    if (operatorAlerts.some((alert) => alert.id === selectedAlertId)) {
-      return;
-    }
-
-    setSelectedAlertId(operatorAlerts[0]?.id ?? "");
-  }, [operatorAlerts, selectedAlertId]);
-
-  useEffect(() => {
-    if (liveDataSource === "live") {
-      return;
-    }
-
-    setSearchResults([]);
-    setSearchTotalResults(0);
-    setSearchLoading(false);
-    setSearchError(null);
-    setSearchExecuted(false);
-  }, [liveDataSource]);
-
-  useEffect(() => {
-    if (!focusedDetectionId) {
-      return;
-    }
-
-    const existsInOverview = detectionsById.has(focusedDetectionId);
-    const existsInSearch = searchResultsById.has(focusedDetectionId);
-    const existsInAlerts = operatorAlerts.some((alert) => alert.detectionId === focusedDetectionId);
-    if (existsInOverview || existsInSearch || existsInAlerts) {
-      return;
-    }
-
-    setFocusedDetectionId(null);
-  }, [detectionsById, focusedDetectionId, operatorAlerts, searchResultsById]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void refreshOverview(controller.signal);
-    const interval = window.setInterval(() => {
-      void refreshOverview();
-    }, 15000);
-
-    return () => {
-      controller.abort();
-      window.clearInterval(interval);
-    };
-  }, [apiKey]);
-
-  useEffect(() => {
-    if (liveDataSource !== "live") {
-      setOperatorSessionError(null);
-      return;
-    }
-
-    let disposed = false;
-
-    const sendHeartbeat = async (): Promise<void> => {
-      try {
-        await sendOperatorSessionHeartbeat({
-          session_id: operatorSessionIdRef.current,
-          client_label: sessionLabel.trim() || undefined,
-          workspace: activeWorkspace,
-          selected_detection_id: selectedDetectionId ?? undefined,
-          selected_alert_id: (selectedLiveAlert?.alert_id ?? selectedAlertId) || undefined,
-          navigation_active: navigationActive,
-        });
-        if (!disposed) {
-          setOperatorSessionError(null);
-        }
-      } catch (error) {
-        if (!disposed) {
-          setOperatorSessionError(error instanceof Error ? error.message : "Operator presence unavailable");
-        }
-      }
-    };
-
-    void sendHeartbeat();
-    const interval = window.setInterval(() => {
-      void sendHeartbeat();
-    }, 15000);
-
-    return () => {
-      disposed = true;
-      window.clearInterval(interval);
-    };
-  }, [activeWorkspace, liveDataSource, navigationActive, selectedAlertId, selectedDetectionId, selectedLiveAlert, sessionLabel]);
-
-  useEffect(() => {
-    setReviewAction("confirm");
-    setReviewCorrectedPlate(selectedDisplayPlate);
-    setReviewNotes("");
-    setReviewSuccess(null);
-    setReviewError(null);
-  }, [selectedDetectionId, selectedDisplayPlate]);
-
-  useEffect(() => {
-    if (reviewOperatorId.trim()) {
-      return;
-    }
-    setReviewOperatorId(sessionLabel.trim() || currentOperator.principal_id);
-  }, [currentOperator.principal_id, reviewOperatorId, sessionLabel]);
-
-  useEffect(() => {
-    const nextAlertId = selectedLiveAlert?.alert_id ?? null;
-    if (liveDataSource === "live" && previousAlertActionTargetRef.current === nextAlertId) {
-      return;
-    }
-
-    previousAlertActionTargetRef.current = nextAlertId;
-    setAlertActionOperatorId(selectedLiveAlert?.response_operator_id ?? "");
-    setAlertActionNotes(selectedLiveAlert?.response_notes ?? "");
-    setAlertActionPendingStatus(null);
-    setAlertActionSuccess(null);
-    setAlertActionError(null);
-  }, [liveDataSource, selectedLiveAlert]);
-
-  useEffect(() => {
-    setFollowUpPriority(
-      selectedFollowUp?.priority ??
-        (selectedAlert.severity === "critical" ? "critical" : selectedAlert.severity === "priority" ? "priority" : "routine"),
-    );
-    setFollowUpStatus(selectedFollowUp?.status ?? "open");
-    setFollowUpAssignedOperatorId((selectedFollowUp?.assigned_operator_id ?? sessionLabel.trim()) || currentOperator.principal_id);
-    setFollowUpSummary(selectedFollowUp?.summary ?? `Pin ${selectedDisplayPlate} for follow-up.`);
-    setFollowUpNotes(selectedFollowUp?.notes ?? selectedAlert.notes);
-    setFollowUpDueAt(selectedFollowUp?.due_at_utc ? formatLocalDateTimeInput(selectedFollowUp.due_at_utc) : "");
-    setFollowUpSuccess(null);
-    setFollowUpError(null);
-  }, [
-    currentOperator.principal_id,
-    selectedAlert.notes,
-    selectedAlert.severity,
-    selectedDetectionId,
-    selectedDisplayPlate,
-    selectedFollowUp,
-    sessionLabel,
-  ]);
-
-  useEffect(() => {
-    setAssignmentPriority(
-      selectedAssignment?.priority ??
-        (selectedAlert.severity === "critical" ? "critical" : selectedAlert.severity === "priority" ? "priority" : "watch"),
-    );
-    setAssignmentStatus(selectedAssignment?.status ?? "queued");
-    setAssignmentOperatorId((selectedAssignment?.assigned_operator_id ?? sessionLabel.trim()) || currentOperator.principal_id);
-    setAssignmentUnitLabel(selectedAssignment?.assigned_unit_label ?? "Truck 4");
-    setAssignmentDestination(selectedAssignment?.destination_label ?? selectedAlert.location);
-    setAssignmentSummary(selectedAssignment?.summary ?? `Dispatch field crew to ${selectedAlert.location}.`);
-    setAssignmentNotes(selectedAssignment?.notes ?? selectedAlert.bestApproach);
-    setAssignmentSuccess(null);
-    setAssignmentError(null);
-  }, [
-    currentOperator.principal_id,
-    selectedAlert.bestApproach,
-    selectedAlert.location,
-    selectedAlert.severity,
-    selectedAssignment,
-    sessionLabel,
-  ]);
-
-  useEffect(() => {
-    if (demoPlateText.trim().length > 0) {
-      return;
-    }
-    setDemoPlateText(selectedAlert.plate);
-  }, [demoPlateText, selectedAlert.plate]);
-
-  useEffect(() => {
-    let disposed = false;
-    const controller = new AbortController();
-
-    setFramePreviewUnavailable(false);
-    setPlateCropPreviewUnavailable(false);
-    setFramePreviewUrl((current) => {
-      if (current) {
-        URL.revokeObjectURL(current);
-      }
-      return null;
-    });
-    setPlateCropPreviewUrl((current) => {
-      if (current) {
-        URL.revokeObjectURL(current);
-      }
-      return null;
-    });
-
-    if (liveDataSource !== "live" || !selectedDetectionId) {
-      return () => {
-        disposed = true;
-        controller.abort();
-      };
-    }
-
-    fetchDetectionFrameObjectUrl(selectedDetectionId, controller.signal)
-      .then((url) => {
-        if (disposed) {
-          URL.revokeObjectURL(url);
-          return;
-        }
-        setFramePreviewUrl((current) => {
-          if (current) {
-            URL.revokeObjectURL(current);
-          }
-          return url;
-        });
-      })
-      .catch((error) => {
-        if (!controller.signal.aborted && !disposed) {
-          setFramePreviewUnavailable(error instanceof Error);
-        }
-      });
-
-    fetchDetectionPlateCropObjectUrl(selectedDetectionId, controller.signal)
-      .then((url) => {
-        if (disposed) {
-          URL.revokeObjectURL(url);
-          return;
-        }
-        setPlateCropPreviewUrl((current) => {
-          if (current) {
-            URL.revokeObjectURL(current);
-          }
-          return url;
-        });
-      })
-      .catch((error) => {
-        if (!controller.signal.aborted && !disposed) {
-          setPlateCropPreviewUnavailable(error instanceof Error);
-        }
-      });
-
-    return () => {
-      disposed = true;
-      controller.abort();
-      setFramePreviewUrl((current) => {
-        if (current) {
-          URL.revokeObjectURL(current);
-        }
-        return null;
-      });
-      setPlateCropPreviewUrl((current) => {
-        if (current) {
-          URL.revokeObjectURL(current);
-        }
-        return null;
-      });
-    };
-  }, [liveDataSource, selectedDetectionId]);
-
-  useEffect(() => {
-    if (!demoRuntimeEnabled) {
-      setDemoRuntimeStatus(null);
-      setDemoLoading(false);
-      setDemoError(null);
-      setDemoSuccess(null);
-      previousDemoRunStateRef.current = "idle";
-      previousDemoRunIdRef.current = null;
-      return;
-    }
-
-    let disposed = false;
-    const controller = new AbortController();
-    setDemoLoading(true);
-
-    fetchDemoRuntimeStatus(controller.signal)
-      .then((status) => {
-        if (disposed) {
-          return;
-        }
-
-        setDemoRuntimeStatus(status);
-        setDemoError(null);
-        previousDemoRunStateRef.current = status.state;
-        previousDemoRunIdRef.current = status.run_id;
-      })
-      .catch((error) => {
-        if (controller.signal.aborted || disposed) {
-          return;
-        }
-
-        setDemoRuntimeStatus(null);
-        setDemoError(error instanceof Error ? error.message : "Demo runtime unavailable");
-      })
-      .finally(() => {
-        if (!disposed) {
-          setDemoLoading(false);
-        }
-      });
-
-    const interval = window.setInterval(() => {
-      void refreshDemoStatus();
-    }, 4000);
-
-    return () => {
-      disposed = true;
-      controller.abort();
-      window.clearInterval(interval);
-    };
-  }, [demoRuntimeEnabled]);
-
-  useEffect(() => {
-    if (!demoRuntimeStatus?.run_id) {
-      previousDemoRunStateRef.current = demoRuntimeStatus?.state ?? "idle";
-      previousDemoRunIdRef.current = demoRuntimeStatus?.run_id ?? null;
-      return;
-    }
-
-    const runJustCompleted =
-      demoRuntimeStatus.run_id !== previousDemoRunIdRef.current ||
-      (previousDemoRunStateRef.current === "running" && demoRuntimeStatus.state !== "running");
-
-    if (runJustCompleted && demoRuntimeStatus.state === "succeeded") {
-      setDemoSuccess(
-        `Demo run ready: ${demoRuntimeStatus.summary?.stored_detection_ids.length ?? 0} detection${
-          demoRuntimeStatus.summary?.stored_detection_ids.length === 1 ? "" : "s"
-        } and ${demoRuntimeStatus.summary?.created_alert_ids.length ?? 0} alert${
-          demoRuntimeStatus.summary?.created_alert_ids.length === 1 ? "" : "s"
-        } recorded.`,
-      );
-      void refreshOverview();
-    } else if (runJustCompleted && demoRuntimeStatus.state === "failed" && demoRuntimeStatus.error_message) {
-      setDemoError(demoRuntimeStatus.error_message);
-      setDemoSuccess(null);
-    }
-
-    previousDemoRunStateRef.current = demoRuntimeStatus.state;
-    previousDemoRunIdRef.current = demoRuntimeStatus.run_id;
-  }, [demoRuntimeStatus]);
-
-  useEffect(() => {
-    if (!hotlistsEnabled) {
-      setHotlistEntries([]);
-      setHotlistLoading(false);
-      setHotlistError(null);
-      setHotlistSuccess(null);
-      loadHotlistForm(null);
-      return;
-    }
-
-    let disposed = false;
-    const controller = new AbortController();
-    setHotlistLoading(true);
-
-    fetchHotlists(controller.signal)
-      .then((entries) => {
-        if (disposed) {
-          return;
-        }
-
-        setHotlistEntries(entries);
-        setHotlistError(null);
-        if (entries.length > 0) {
-          loadHotlistForm(entries[0]);
-        } else {
-          loadHotlistForm(null);
-        }
-      })
-      .catch((error) => {
-        if (controller.signal.aborted || disposed) {
-          return;
-        }
-
-        setHotlistEntries([]);
-        setHotlistError(error instanceof Error ? error.message : "Hotlist management unavailable");
-      })
-      .finally(() => {
-        if (!disposed) {
-          setHotlistLoading(false);
-        }
-      });
-
-    return () => {
-      disposed = true;
-      controller.abort();
-    };
-  }, [hotlistsEnabled]);
-
-  useEffect(() => {
-    if (!reviewsEnabled || !selectedDetectionId) {
-      setReviewHistory([]);
-      setReviewLoading(false);
-      setReviewError(null);
-      return;
-    }
-
-    let disposed = false;
-    const controller = new AbortController();
-    setReviewLoading(true);
-
-    fetchReviews(selectedDetectionId, controller.signal)
-      .then((reviews) => {
-        if (disposed) {
-          return;
-        }
-
-        setReviewHistory(reviews);
-        setReviewError(null);
-      })
-      .catch((error) => {
-        if (controller.signal.aborted || disposed) {
-          return;
-        }
-
-        setReviewHistory([]);
-        setReviewError(error instanceof Error ? error.message : "Review history unavailable");
-      })
-      .finally(() => {
-        if (!disposed) {
-          setReviewLoading(false);
-        }
-      });
-
-    return () => {
-      disposed = true;
-      controller.abort();
-    };
-  }, [reviewsEnabled, selectedDetectionId]);
-
-  function dismissPopup(instanceId: string): void {
-    setPopupStack((current) => current.filter((popup) => popup.instanceId !== instanceId));
-  }
-
-  function queuePopup(event: DetectionPopupEvent, options?: { updateHistory?: boolean }): void {
-    const instanceId = `${event.id}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    const popup: PopupNotification = {
-      ...event,
-      instanceId,
-    };
-    const updateHistory = options?.updateHistory ?? true;
-
-    setPopupStack((current) => [popup, ...current].slice(0, 4));
-    if (updateHistory) {
-      setPopupHistory((current) => [event, ...current.filter((item) => item.id !== event.id)].slice(0, 6));
-    }
-
-    window.setTimeout(() => {
-      setPopupStack((current) => current.filter((item) => item.instanceId !== instanceId));
-    }, event.type === "hotlist" ? 9000 : 6500);
-  }
-
-  useEffect(() => {
-    const justEnteredArrivalRadius = withinArrivalRadius && !previousWithinArrivalRef.current;
-    previousWithinArrivalRef.current = withinArrivalRadius;
-
-    if (!justEnteredArrivalRadius) {
-      return;
-    }
-
-    startTransition(() => {
-      setActiveWorkspace("dashboard");
-      setTargetPanelTab("workflow");
-      setChatMessages((current) => [
-        ...current,
-        {
-          id: `sys-arrival-${Date.now()}`,
-          sender: "System",
-          body: `Geofence triggered - entered arrival radius (${fieldSettings.arrivalTriggerDistance} ft). Scan mode active.`,
-          timestamp: new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }),
-          type: "system",
-        },
-      ]);
-    });
-  }, [withinArrivalRadius, fieldSettings.arrivalTriggerDistance]);
-
-  useEffect(() => {
-    if (!liveOverview) {
-      setPopupHistory(defaultPopupHistory);
-      return;
-    }
-
-    const livePopupActivity = mapOverviewToPopupHistory(liveOverview);
-    const visibleLivePopupActivity = livePopupActivity.filter(
-      (event) => generalPopupsLive || event.type === "hotlist",
-    );
-
-    if (visibleLivePopupActivity.length === 0) {
-      setPopupHistory([]);
-      return;
-    }
-
-    setPopupHistory(visibleLivePopupActivity);
-
-    for (const event of [...visibleLivePopupActivity].reverse()) {
-      if (queuedLivePopupIdsRef.current.has(event.id)) {
-        continue;
-      }
-
-      queuePopup(event, { updateHistory: false });
-      queuedLivePopupIdsRef.current.add(event.id);
-    }
-  }, [generalPopupsLive, liveOverview]);
-
-  useEffect(() => {
-    if (liveOverview) {
-      return;
-    }
-
-    const kickoff = window.setTimeout(() => {
-      setHotlistPopupIndex((index) => {
-        queuePopup(hotlistPopupDetections[index]);
-        return (index + 1) % hotlistPopupDetections.length;
-      });
-    }, 2500);
-
-    const interval = window.setInterval(() => {
-      setHotlistPopupIndex((index) => {
-        queuePopup(hotlistPopupDetections[index]);
-        return (index + 1) % hotlistPopupDetections.length;
-      });
-    }, 22000);
-
-    return () => {
-      window.clearTimeout(kickoff);
-      window.clearInterval(interval);
-    };
-  }, [liveOverview]);
-
-  useEffect(() => {
-    if (liveOverview || !generalPopupsLive) {
-      return;
-    }
-
-    const kickoff = window.setTimeout(() => {
-      setAddressPopupIndex((index) => {
-        queuePopup(addressScanDetections[index]);
-        return (index + 1) % addressScanDetections.length;
-      });
-    }, 1400);
-
-    const interval = window.setInterval(() => {
-      setAddressPopupIndex((index) => {
-        queuePopup(addressScanDetections[index]);
-        return (index + 1) % addressScanDetections.length;
-      });
-    }, 12000);
-
-    return () => {
-      window.clearTimeout(kickoff);
-      window.clearInterval(interval);
-    };
-  }, [generalPopupsLive, liveOverview]);
-
-  function selectWorkspace(nextWorkspace: WorkspaceId): void {
-    startTransition(() => {
-      setActiveWorkspace(nextWorkspace);
-      setTargetPanelTab(nextWorkspace === "search" ? "reviews" : nextWorkspace === "alerts" ? "workflow" : "overview");
-    });
-  }
-
-  function focusPopupTarget(popup: PopupNotification, nextWorkspace: WorkspaceId, nextTab: TargetPanelTabId): void {
-    const matchedAlert =
-      operatorAlerts.find((alert) => alert.plate === (popup.plate ?? "") && alert.time === popup.timestamp) ??
-      operatorAlerts.find((alert) => popup.plate && alert.plate === popup.plate) ??
-      operatorAlerts.find((alert) => alert.location === popup.location && alert.camera === popup.camera) ??
-      null;
-
-    startTransition(() => {
-      if (matchedAlert) {
-        setSelectedAlertId(matchedAlert.id);
-        setFocusedDetectionId(matchedAlert.detectionId ?? null);
-      }
-      setActiveWorkspace(nextWorkspace);
-      setTargetPanelTab(nextTab);
-    });
-  }
-
-  function updateSearchField<K extends keyof SearchFormState>(key: K, value: SearchFormState[K]): void {
-    setSearchForm((current) => ({
-      ...current,
-      [key]: value,
-    }));
-    setSearchOffset(0);
-  }
-
-  function resetSearchFilters(): void {
-    setSearchForm(defaultSearchFormState);
-    setSearchResults([]);
-    setSearchTotalResults(0);
-    setSearchOffset(0);
-    setSearchError(null);
-    setSearchExecuted(false);
-    setFocusedDetectionId(selectedAlert?.detectionId ?? null);
-  }
-
-  function focusDetection(detectionId: string, alertId?: string | null): void {
-    setFocusedDetectionId(detectionId);
-    if (alertId) {
-      setSelectedAlertId(alertId);
-    }
-  }
-
-  function setCameraMode(cameraMode: CameraMode): void {
-    setLayout((current) => ({
-      ...current,
-      cameraMode,
-    }));
-  }
-
-  function updateFieldSetting<K extends keyof FieldSettings>(key: K, value: FieldSettings[K]): void {
-    setFieldSettings((current) => ({
-      ...current,
-      [key]: value,
-    }));
-  }
-
-  function handleNavigationToggle(): void {
-    if (navigationActive) {
-      setNavigationActive(false);
-      return;
-    }
-
-    const nextDestination = destinationInput.trim() || selectedAlert.location;
-    setDestinationInput(nextDestination);
-    setActiveDestination(nextDestination);
-    startTransition(() => {
-      setNavigationActive(true);
-      setActiveWorkspace("navigation");
-    });
-  }
-
-  async function runDetectionSearch(offset: number, focusFirstResult: boolean): Promise<void> {
-    if (liveDataSource !== "live") {
-      setSearchError("Connect the live API before running operator search.");
-      return;
-    }
-
-    setSearchLoading(true);
-    setSearchError(null);
-
-    try {
-      const response = await searchDetections({
-        plate: searchForm.plate,
-        plate_match: searchForm.plateMatch,
-        start_utc: toUtcIsoString(searchForm.startUtc),
-        end_utc: toUtcIsoString(searchForm.endUtc),
-        camera_id: searchForm.cameraId || undefined,
-        min_latitude: parseOptionalNumber(searchForm.minLatitude),
-        max_latitude: parseOptionalNumber(searchForm.maxLatitude),
-        min_longitude: parseOptionalNumber(searchForm.minLongitude),
-        max_longitude: parseOptionalNumber(searchForm.maxLongitude),
-        vehicle_color: searchForm.vehicleColor,
-        vehicle_make: searchForm.vehicleMake,
-        vehicle_model: searchForm.vehicleModel,
-        vehicle_year: searchForm.vehicleYear,
-        alert_status: searchForm.alertStatus || undefined,
-        limit: searchPageSize,
-        offset,
-      });
-
-      setSearchResults(response.results);
-      setSearchTotalResults(response.page.total_results);
-      setSearchOffset(offset);
-      setSearchExecuted(true);
-
-      if (focusFirstResult && response.results.length > 0) {
-        const firstDetection = response.results[0];
-        const matchingAlert = liveOverview?.alerts.find((alert) => alert.detection_id === firstDetection.detection_id) ?? null;
-        focusDetection(firstDetection.detection_id, matchingAlert?.alert_id);
-      }
-    } catch (error) {
-      setSearchResults([]);
-      setSearchTotalResults(0);
-      setSearchOffset(offset);
-      setSearchExecuted(true);
-      setSearchError(error instanceof Error ? error.message : "Failed to run search");
-    } finally {
-      setSearchLoading(false);
-    }
-  }
-
-  async function handleSearchSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
-    await runDetectionSearch(0, true);
-  }
-
-  function changeSearchPage(direction: -1 | 1): void {
-    const nextOffset = Math.max(0, searchOffset + direction * searchPageSize);
-    void runDetectionSearch(nextOffset, false);
-  }
-
-  async function handleReviewSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
-    if (!selectedDetectionId) {
-      return;
-    }
-
-    const normalizedCorrection = reviewCorrectedPlate.trim().toUpperCase();
-    if (reviewAction === "correct" && normalizedCorrection.length === 0) {
-      setReviewError("Corrected plate text is required when saving a correction.");
-      return;
-    }
-
-    setReviewSubmitting(true);
-    setReviewError(null);
-    setReviewSuccess(null);
-
-    try {
-      const review = await createReview(selectedDetectionId, {
-        action: reviewAction,
-        operator_id: reviewOperatorId.trim() || undefined,
-        corrected_plate_text: reviewAction === "correct" ? normalizedCorrection : undefined,
-        notes: reviewNotes.trim() || undefined,
-        reviewed_at_utc: new Date().toISOString(),
-      });
-
-      setReviewHistory((current) => [review, ...current.filter((item) => item.review_id !== review.review_id)]);
-      setReviewSuccess(
-        review.action === "correct"
-          ? `Correction saved locally as ${review.corrected_plate_text ?? normalizedCorrection}.`
-          : `${reviewActionLabel(review.action)} review saved locally.`,
-      );
-      setReviewNotes("");
-      if (review.action === "correct" && review.corrected_plate_text) {
-        setReviewCorrectedPlate(review.corrected_plate_text);
-      }
-      void refreshOverview();
-    } catch (error) {
-      setReviewError(error instanceof Error ? error.message : "Failed to save review");
-    } finally {
-      setReviewSubmitting(false);
-    }
-  }
-
-  async function handleFollowUpSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
-    if (!selectedDetectionId) {
-      return;
-    }
-
-    setFollowUpSubmitting(true);
-    setFollowUpError(null);
-    setFollowUpSuccess(null);
-
-    try {
-      const submission = {
-        detection_id: selectedDetectionId,
-        alert_id: selectedLiveAlert?.alert_id ?? undefined,
-        plate_text: selectedDisplayPlate !== "Plate unavailable" ? selectedDisplayPlate : undefined,
-        priority: followUpPriority,
-        status: followUpStatus,
-        assigned_operator_id: followUpAssignedOperatorId.trim() || undefined,
-        summary: followUpSummary.trim() || undefined,
-        notes: followUpNotes.trim() || undefined,
-        due_at_utc: toUtcIsoString(followUpDueAt),
-      };
-
-      const savedFollowUp = selectedFollowUp
-        ? await updateFollowUp(selectedFollowUp.follow_up_id, submission)
-        : await createFollowUp(submission);
-
-      setFollowUpSuccess(
-        selectedFollowUp
-          ? `${followUpStatusLabel(savedFollowUp.status)} follow-up saved for ${savedFollowUp.plate_text ?? selectedDisplayPlate}.`
-          : `Pinned ${savedFollowUp.plate_text ?? selectedDisplayPlate} for follow-up.`,
-      );
-      void refreshOverview();
-    } catch (error) {
-      setFollowUpError(error instanceof Error ? error.message : "Failed to save follow-up");
-    } finally {
-      setFollowUpSubmitting(false);
-    }
-  }
-
-  async function handleAssignmentSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
-    if (!selectedDetectionId) {
-      return;
-    }
-
-    setAssignmentSubmitting(true);
-    setAssignmentError(null);
-    setAssignmentSuccess(null);
-
-    try {
-      const submission = {
-        detection_id: selectedDetectionId,
-        alert_id: selectedLiveAlert?.alert_id ?? undefined,
-        plate_text: selectedDisplayPlate !== "Plate unavailable" ? selectedDisplayPlate : undefined,
-        priority: assignmentPriority,
-        status: assignmentStatus,
-        assigned_operator_id: assignmentOperatorId.trim() || undefined,
-        assigned_unit_label: assignmentUnitLabel.trim() || undefined,
-        destination_label: assignmentDestination.trim() || undefined,
-        summary: assignmentSummary.trim() || undefined,
-        notes: assignmentNotes.trim() || undefined,
-      };
-
-      const savedAssignment = selectedAssignment
-        ? await updateDispatchAssignment(selectedAssignment.assignment_id, submission)
-        : await createDispatchAssignment(submission);
-
-      setAssignmentSuccess(
-        selectedAssignment
-          ? `${assignmentStatusLabel(savedAssignment.status)} assignment saved for ${savedAssignment.plate_text ?? selectedDisplayPlate}.`
-          : `Dispatch assignment created for ${savedAssignment.plate_text ?? selectedDisplayPlate}.`,
-      );
-      void refreshOverview();
-    } catch (error) {
-      setAssignmentError(error instanceof Error ? error.message : "Failed to save assignment");
-    } finally {
-      setAssignmentSubmitting(false);
-    }
-  }
-
-  async function handleAlertAction(nextStatus: DashboardAlert["status"]): Promise<void> {
-    if (!selectedLiveAlert) {
-      return;
-    }
-
-    const operatorId = alertActionOperatorId.trim();
-    const responseNotes = alertActionNotes.trim();
-    const popupEventId = `popup_${selectedLiveAlert.alert_id}`;
-
-    setAlertActionSubmitting(true);
-    setAlertActionPendingStatus(nextStatus);
-    setAlertActionError(null);
-    setAlertActionSuccess(null);
-
-    try {
-      const updatedAlert = await updateAlert(selectedLiveAlert.alert_id, {
-        status: nextStatus,
-        operator_id: operatorId || undefined,
-        response_notes: responseNotes || undefined,
-      });
-
-      setLiveOverview((current) => {
-        if (!current) {
-          return current;
-        }
-
-        const nextAlerts = current.alerts.map((alert) => (alert.alert_id === updatedAlert.alert_id ? updatedAlert : alert));
-        return {
-          ...current,
-          counts: {
-            ...current.counts,
-            active_alerts: nextAlerts.filter((alert) => alert.status === "active").length,
-          },
-          alerts: nextAlerts,
-          popup_activity:
-            updatedAlert.status === "dismissed"
-              ? current.popup_activity.filter((event) => event.event_id !== popupEventId)
-              : current.popup_activity,
-        };
-      });
-      setAlertActionOperatorId(updatedAlert.response_operator_id ?? "");
-      setAlertActionNotes(updatedAlert.response_notes ?? "");
-      setAlertActionSuccess(
-        nextStatus === "acknowledged"
-          ? "Alert acknowledged and saved locally."
-          : nextStatus === "dismissed"
-            ? "Alert stood down and removed from live popup activity."
-            : "Alert reopened and returned to active monitoring.",
-      );
-
-      if (nextStatus === "dismissed") {
-        queuedLivePopupIdsRef.current.delete(popupEventId);
-        setPopupHistory((current) => current.filter((event) => event.id !== popupEventId));
-        setPopupStack((current) => current.filter((popup) => popup.id !== popupEventId));
-      }
-
-      void refreshOverview();
-    } catch (error) {
-      setAlertActionError(error instanceof Error ? error.message : "Failed to update alert");
-    } finally {
-      setAlertActionSubmitting(false);
-      setAlertActionPendingStatus(null);
-    }
-  }
-
-  async function handleHotlistSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
-    if (!hotlistsEnabled) {
-      return;
-    }
-
-    const normalizedPlate = hotlistPlateText.trim().toUpperCase();
-    if (normalizedPlate.length === 0) {
-      setHotlistError("Plate text is required before saving a hotlist entry.");
-      return;
-    }
-
-    setHotlistSaving(true);
-    setHotlistError(null);
-    setHotlistSuccess(null);
-
-    try {
-      const submission = {
-        plate_text: normalizedPlate,
-        label: hotlistLabel.trim() || undefined,
-        notes: hotlistNotes.trim() || undefined,
-        active: hotlistActive,
-      };
-
-      const savedEntry = selectedHotlist
-        ? await updateHotlist(selectedHotlist.entry_id, submission)
-        : await createHotlist(submission);
-
-      setHotlistEntries((current) => {
-        const remainingEntries = current.filter((entry) => entry.entry_id !== savedEntry.entry_id);
-        return sortHotlists([savedEntry, ...remainingEntries]);
-      });
-      loadHotlistForm(savedEntry);
-      setHotlistSuccess(
-        selectedHotlist
-          ? `Updated hotlist entry for ${savedEntry.plate_text}.`
-          : `Created hotlist entry for ${savedEntry.plate_text}.`,
-      );
-      void refreshOverview();
-    } catch (error) {
-      setHotlistError(error instanceof Error ? error.message : "Failed to save hotlist entry");
-    } finally {
-      setHotlistSaving(false);
-    }
-  }
-
-  async function handleDemoRunSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
-    if (!demoRuntimeEnabled) {
-      return;
-    }
-
-    const framesDirectory = demoFramesDirectory.trim();
-    const plateText = demoPlateText.trim().toUpperCase();
-    if (framesDirectory.length === 0) {
-      setDemoError("A local frame folder is required before starting a demo run.");
-      return;
-    }
-    if (plateText.length === 0) {
-      setDemoError("A demo plate value is required before starting a demo run.");
-      return;
-    }
-
-    setDemoSubmitting(true);
-    setDemoError(null);
-    setDemoSuccess(null);
-
-    try {
-      const status = await startDemoRun({
-        frames_directory: framesDirectory,
-        frame_interval_ms: 100.0,
-        sequence_id: demoSequenceId.trim() || undefined,
-        plate_text: plateText,
-      });
-      setDemoRuntimeStatus(status);
-      setDemoSuccess(`Demo run started for ${plateText}. The dashboard will refresh when the ingest job completes.`);
-    } catch (error) {
-      setDemoError(error instanceof Error ? error.message : "Failed to start demo run");
-    } finally {
-      setDemoSubmitting(false);
-    }
-  }
-
-  function renderPanel(panelId: PanelId): ReactElement {
-    switch (panelId) {
-      case "routePlanner":
-        return (
-          <PanelFrame panelId={panelId}>
-            <div className="route-summary">
-              <label className="field-group">
-                <span>Destination</span>
-                <input
-                  className="input-control"
-                  placeholder="Enter target address or recovery location"
-                  type="text"
-                  value={destinationInput}
-                  onChange={(event) => setDestinationInput(event.target.value)}
-                />
-              </label>
-              <div className="route-destination">
-                <strong>{activeDestination}</strong>
-                <span>{navigationActive ? "Navigation active" : "Ready to route"}</span>
-              </div>
-              <div className="mode-pills">
-                <span className={`badge ${activeScanMode ? "badge--scan-live" : navigationActive ? "badge--scan-bg" : "badge--muted"}`}>
-                  {activeScanMode ? "Scan live" : navigationActive ? "Transit" : "Idle"}
-                </span>
-                <span className={`badge ${addressDetectionEnabled ? "badge--good" : "badge--muted"}`}>
-                  Address {addressDetectionEnabled ? "on" : "off"}
-                </span>
-                <span className="badge badge--hotlist-always">Hotlist always on</span>
-                {hotlistAlertCount > 0 ? (
-                  <span className="badge badge--critical">{hotlistAlertCount} hotlist alert{hotlistAlertCount === 1 ? "" : "s"}</span>
-                ) : null}
-              </div>
-              <div className="route-meta-grid">
-                <StatusLine label="Current range" value={currentDistanceLabel} />
-                <StatusLine label="Scenario" value={scenarioLabels[selectedAlert.scenario]} />
-                <StatusLine label="Arrival ring" value={`${fieldSettings.arrivalTriggerDistance} ft`} />
-                <StatusLine label="Alert scope" value={generalPopupsLive ? "General + hotlist" : "Hotlist only"} />
-              </div>
-              <div className="proximity-shell">
-                <div className="proximity-shell__header">
-                  <span className="panel-label">Arrival simulator</span>
-                  <strong>{currentDistanceLabel}</strong>
-                </div>
-                <input
-                  aria-label="Arrival distance simulator"
-                  className="range-control"
-                  max="1760"
-                  min="0"
-                  step="25"
-                  type="range"
-                  value={currentDistanceFeet}
-                  onChange={(event) => setCurrentDistanceFeet(Number(event.target.value))}
-                />
-                <p className="proximity-hint">
-                  Crossing the arrival ring automatically flips the system into active scan mode.
-                </p>
-              </div>
-              <div className={`trigger-meter ${withinArrivalRadius || routeProgressPercent > 80 ? "trigger-meter--near" : ""}`}>
-                <div
-                  className="trigger-meter__fill"
-                  style={{ "--fill": `${routeProgressPercent}%` } as CSSProperties}
-                />
-              </div>
-              <div className="route-stage-strip" aria-label="Mission stage strip">
-                {routeStages.map((stage) => (
-                  <article
-                    key={stage.id}
-                    className={`route-stage-card route-stage-card--${stage.state} ${
-                      currentRouteStage.id === stage.id ? "is-current" : ""
-                    }`}
-                  >
-                    <div className="route-stage-card__header">
-                      <span className="panel-label">{stage.label}</span>
-                      <span className={`badge ${routeStageTone(stage.state)}`}>{titleCaseLabel(stage.state)}</span>
-                    </div>
-                    <p>{stage.detail}</p>
-                  </article>
-                ))}
-              </div>
-              <div className="route-command-grid" aria-label="Route command cards">
-                {routeCommandCards.map((card) => (
-                  <div key={card.label} className="route-command-card">
-                    <span>{card.label}</span>
-                    <strong>{card.value}</strong>
-                    <em className={`badge ${card.tone}`}>{card.label}</em>
-                  </div>
-                ))}
-              </div>
-              <div className="route-focus-board">
-                <div className="route-focus-board__header">
-                  <div>
-                    <span className="panel-label">Crew focus</span>
-                    <strong>{currentRouteStage.label}</strong>
-                  </div>
-                  <span className={`badge ${routeStageTone(currentRouteStage.state)}`}>
-                    {routeProgressPercent.toFixed(0)}% route progress
-                  </span>
-                </div>
-                <div className="route-focus-board__grid">
-                  <StatusLine label="Assigned unit" value={routeUnitLabel} />
-                  <StatusLine label="Lead operator" value={routeLeadLabel} />
-                </div>
-                <ul className="route-focus-list">
-                  {routeFocusItems.map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
-              </div>
-              <div className="panel-actions">
-                <button className="button button--primary" type="button" onClick={handleNavigationToggle}>
-                  {navigationActive ? "Stop navigation" : "Start navigation"}
-                </button>
-                <button
-                  className={`button ${addressDetectionEnabled ? "" : "button--primary"}`}
-                  type="button"
-                  onClick={() => setAddressDetectionEnabled((current) => !current)}
-                >
-                  Address detection {addressDetectionEnabled ? "on" : "off"}
-                </button>
-                <button className="button" type="button" onClick={() => setCurrentDistanceFeet(fieldSettings.arrivalTriggerDistance)}>
-                  Jump to arrival ring
-                </button>
-              </div>
-            </div>
-          </PanelFrame>
-        );
-      case "statusStack":
-        return (
-          <PanelFrame panelId={panelId}>
-            <div className="status-stack">
-              <StatusRow label="GPS" value="Locked" tone="good" />
-              <StatusRow label="Navigation" value={navigationModeLabel} tone={navigationActive ? "good" : "neutral"} />
-              <StatusRow label="Camera bank" value={`${onlineCameraCount}/4 online`} tone="good" />
-              <StatusRow
-                label="Crew"
-                value={
-                  liveDataSource === "live"
-                    ? `${activeSessionCount} active / ${operatorDisplayName(currentOperator)}`
-                    : operatorDisplayName(currentOperator)
-                }
-                tone={activeSessionCount > 1 ? "good" : "neutral"}
-              />
-              <StatusRow
-                label="Radius detection"
-                value={
-                  addressDetectionEnabled
-                    ? generalPopupsLive
-                      ? "Popup alerts live"
-                      : "Background detection only"
-                    : "Disabled by operator"
-                }
-                tone={generalPopupsLive ? "good" : addressDetectionEnabled ? "neutral" : "warn"}
-              />
-              <StatusRow label="Hotlist alerting" value="Always active" tone="good" />
-              <StatusRow label="Storage" value={fieldSettings.lowStorageWarning ? "Warn at 15%" : "No warning"} tone="neutral" />
-              <StatusRow
-                label="Alert tone"
-                value={fieldSettings.silentShiftMode ? "Visual priority" : "Audible + visual"}
-                tone={fieldSettings.silentShiftMode ? "warn" : "good"}
-              />
-            </div>
-            <div className="status-ticker">
-              {generalPopupsLive
-                ? "Inside arrival radius. General detections now surface as popups."
-                : `${addressPopupPolicy}. Standard detection still runs in the background.`}{" "}
-              Hotlist matches remain unsuppressed at all times.
-            </div>
-          </PanelFrame>
-        );
-      case "opsMap":
-        return (
-          <PanelFrame panelId={panelId}>
-            <div className="map-header">
-              <div>
-                <div className="eyebrow">Live route context</div>
-                <h3>{activeDestination}</h3>
-              </div>
-              <div className="map-stats">
-                <span>{currentDistanceLabel}</span>
-                <span>{activeScanMode ? "Active scan live" : fieldSettings.routeTrafficOverlay ? "Traffic overlay on" : "Traffic overlay off"}</span>
-              </div>
-            </div>
-            <OpsMapLeaflet
-              unitPosition={geoUnitPosition}
-              destinationPosition={geoDestinationPosition}
-              destinationLabel={activeDestination}
-              alertMarkers={geoAlertMarkers}
-              cameraNodes={geoCameraNodes}
-              sessionNodes={geoSessionNodes}
-              arrivalRadius={fieldSettings.arrivalTriggerDistance}
-              withinArrival={withinArrivalRadius}
-              routePath={geoRoutePath}
-            />
-            <div className="map-legend map-legend--standalone">
-              <span className="panel-label">Current mission call</span>
-              <strong>{currentRouteStage.label}</strong>
-              <p>{selectedAlert.bestApproach}</p>
-              <div className="mode-pills">
-                <span className={`badge ${activeScanMode ? "badge--scan-live" : navigationActive ? "badge--scan-bg" : "badge--outlined"}`}>
-                  {activeScanMode ? "Scan live" : navigationActive ? "Transit" : "Idle"}
-                </span>
-                <span className="badge badge--hotlist-always">Hotlist on</span>
-                {hotlistAlertCount > 0 ? (
-                  <span className="badge badge--critical">{hotlistAlertCount} hotlist</span>
-                ) : null}
-              </div>
-            </div>
-            <div className="map-summary-grid">
-              <div className="map-summary-card">
-                <span className="panel-label">Drive screen</span>
-                <strong>{routeUnitLabel}</strong>
-                <div className="map-summary-card__grid">
-                  <StatusLine label="ETA" value={routeEtaLabel} />
-                  <StatusLine label="Lead" value={routeLeadLabel} />
-                  <StatusLine label="Progress" value={`${routeProgressPercent.toFixed(0)}%`} />
-                  <StatusLine
-                    label="Scan mode"
-                    value={activeScanMode ? "Live scan" : navigationActive ? "Transit / classify" : "Idle"}
-                  />
-                  <StatusLine label="Alert scope" value={generalPopupsLive ? "General + hotlist" : "Hotlist only"} />
-                  <StatusLine label="Hotlist" value={hotlistAlertCount > 0 ? `${hotlistAlertCount} active` : "Clear"} />
-                </div>
-              </div>
-              <div className="map-summary-card">
-                <span className="panel-label">Mission stages</span>
-                <div className="map-stage-list">
-                  {routeStages.map((stage) => (
-                    <article
-                      key={stage.id}
-                      className={`map-stage-row map-stage-row--${stage.state} ${
-                        currentRouteStage.id === stage.id ? "is-current" : ""
-                      }`}
-                    >
-                      <div className="map-stage-row__meta">
-                        <strong>{stage.label}</strong>
-                        <span className={`badge ${routeStageTone(stage.state)}`}>{titleCaseLabel(stage.state)}</span>
-                      </div>
-                      <p>{stage.detail}</p>
-                    </article>
-                  ))}
-                </div>
-              </div>
-              <div className="map-summary-card">
-                <span className="panel-label">Crew and field status</span>
-                <div className="map-summary-card__grid">
-                  <StatusLine label="Crew live" value={`${activeSessionCount} sessions`} />
-                  <StatusLine label="Cameras" value={`${mapCameraNodes.length} mapped`} />
-                  <StatusLine label="Hotlist alerts" value={hotlistAlertCount > 0 ? `${hotlistAlertCount} active` : "Clear"} />
-                  <StatusLine label="Pinned work" value={selectedFollowUp ? followUpStatusLabel(selectedFollowUp.status) : "None"} />
-                  <StatusLine
-                    label="Dispatch"
-                    value={selectedAssignment ? assignmentStatusLabel(selectedAssignment.status) : "Pending"}
-                  />
-                </div>
-                <ul className="route-focus-list route-focus-list--compact">
-                  {routeFocusItems.map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-          </PanelFrame>
-        );
-      case "cameraMatrix":
-        return (
-          <PanelFrame
-            panelId={panelId}
-            actions={
-              <div className="view-toggle">
-                {(["priority", "quad", "strip", "dual"] as CameraMode[]).map((mode) => (
-                  <button
-                    key={mode}
-                    className={`toggle-chip ${layout.cameraMode === mode ? "is-active" : ""}`}
-                    type="button"
-                    onClick={() => setCameraMode(mode)}
-                  >
-                    {mode === "priority" ? "Priority" : mode === "quad" ? "Quad" : mode === "dual" ? "Dual" : "Strip"}
-                  </button>
-                ))}
-              </div>
-            }
-          >
-            <div className={`camera-grid camera-grid--${layout.cameraMode}`}>
-              {(layout.cameraMode === "dual" ? cameraFeeds.slice(0, 2) : cameraFeeds).map((camera) => (
-                <button
-                  key={camera.id}
-                  className={`camera-tile ${camera.id === selectedCamera.id ? "is-selected" : ""}`}
-                  type="button"
-                  onClick={() => setSelectedCameraId(camera.id)}
-                >
-                  <div className="camera-tile__video">
-                    <div className="camera-tile__overlay" />
-                    <span className="camera-tile__zone">{camera.zone}</span>
-                    <strong>{camera.label}</strong>
-                  </div>
-                  <div className="camera-tile__meta">
-                    <span>{camera.id}</span>
-                    <span className={`badge ${camera.status === "Online" ? "badge--good" : "badge--muted"}`}>
-                      {camera.status}
-                    </span>
-                    <span>{camera.fps} FPS</span>
-                    <span>{camera.status === "Online" ? `${camera.tempC}C` : "--"}</span>
-                  </div>
-                </button>
-              ))}
-            </div>
-            <div className="camera-footnote">
-              Selected view: {selectedCamera.label} / {selectedCamera.role}
-            </div>
-          </PanelFrame>
-        );
-      case "hotlistFeed":
-        return (
-          <PanelFrame panelId={panelId}>
-            <div className="queue-shell">
-              <div className="queue-shell__header">
-                <div>
-                  <strong>{queueHeadline}</strong>
-                  <span>{queueDescription}</span>
-                </div>
-                <div className="queue-shell__controls">
-                  <div className="view-toggle">
-                    {queueViewOptions.map((option) => (
-                      <button
-                        key={option.id}
-                        className={`toggle-chip ${queueView === option.id ? "is-active" : ""}`}
-                        type="button"
-                        onClick={() => setQueueView(option.id)}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="queue-pager">
-                    <button
-                      className="button"
-                      disabled={queuePageIndex === 0}
-                      type="button"
-                      onClick={() => setQueuePage((current) => Math.max(0, current - 1))}
-                    >
-                      Back
-                    </button>
-                    <span>{queueItemsTotal === 0 ? "No items" : `Page ${queuePageIndex + 1} / ${queuePageCount}`}</span>
-                    <button
-                      className="button"
-                      disabled={queuePageIndex >= queuePageCount - 1 || queueItemsTotal === 0}
-                      type="button"
-                      onClick={() => setQueuePage((current) => Math.min(queuePageCount - 1, current + 1))}
-                    >
-                      Next
-                    </button>
-                  </div>
-                </div>
-              </div>
-              {queueView === "popups" ? (
-                visiblePopupHistory.length === 0 ? (
-                  <div className="queue-empty">No popup events are waiting in the current log view.</div>
-                ) : (
-                  <div className="queue-list">
-                    {visiblePopupHistory.map((event) => (
-                      <article key={event.id} className="queue-card queue-card--popup">
-                        <div className="queue-card__header">
-                          <span className={`badge ${event.type === "hotlist" ? "badge--critical" : "badge--priority"}`}>
-                            {detectionPopupTypeLabels[event.type]}
-                          </span>
-                          <span>{event.timestamp}</span>
-                        </div>
-                        <strong>{event.plate ?? "Plate unavailable"}</strong>
-                        <p>{`${event.vehicle} / ${event.camera}`}</p>
-                        <div className="queue-card__meta">
-                          <span>{event.location}</span>
-                          <span>{confidenceLabel(event.confidence)}</span>
-                        </div>
-                        <p>{event.note}</p>
-                      </article>
-                    ))}
-                  </div>
-                )
-              ) : (
-                <div className="queue-list">
-                  {activeQueueRows.length === 0 ? (
-                    <div className="queue-empty">{queueEmptyMessage}</div>
-                  ) : (
-                    activeQueueRows.map(({ alert, isHotlistMatch }) => (
-                      <button
-                        key={alert.id}
-                        className={`queue-card ${alert.id === selectedAlert.id ? "is-selected" : ""}`}
-                        type="button"
-                        onClick={() => {
-                          setSelectedAlertId(alert.id);
-                          setFocusedDetectionId(alert.detectionId ?? null);
-                          setTargetPanelTab("workflow");
-                        }}
-                      >
-                        <div className="queue-card__header">
-                          <span className={`badge ${isHotlistMatch ? "badge--critical" : `badge--${severityTone(alert.severity)}`}`}>
-                            {isHotlistMatch ? "Hotlist" : scenarioLabels[alert.scenario]}
-                          </span>
-                          <span>{alert.time}</span>
-                        </div>
-                        <strong>{alert.plate}</strong>
-                        <p>{alert.vehicle}</p>
-                        <div className="queue-card__meta">
-                          <span>{alert.location}</span>
-                          <span>{alert.distance}</span>
-                        </div>
-                        <div className="queue-card__meta">
-                          <span>{alert.camera}</span>
-                          <span>{alert.routeAction}</span>
-                        </div>
-                      </button>
-                    ))
-                  )}
-                </div>
-              )}
-            </div>
-          </PanelFrame>
-        );
-      case "selectedAlert":
-        return (
-          <PanelFrame panelId={panelId}>
-            <div className="target-card">
-              <div className="target-card__hero">
-                <div className="target-evidence">
-                  <div className="target-photo">
-                    {selectedFramePreviewUrl && !framePreviewUnavailable ? (
-                      <img
-                        alt={`Evidence frame for ${selectedDisplayPlate}`}
-                        className="target-photo__image"
-                        src={selectedFramePreviewUrl}
-                        onError={() => setFramePreviewUnavailable(true)}
-                      />
-                    ) : (
-                      <div className="target-photo__placeholder">
-                        <span>{liveDataSource === "live" ? "Evidence frame unavailable" : "Target photo"}</span>
-                        <strong>{selectedDisplayPlate}</strong>
-                      </div>
-                    )}
-                    <div className="target-photo__overlay">
-                      <span>{selectedFramePreviewUrl && !framePreviewUnavailable ? "Live evidence frame" : "Target photo"}</span>
-                      <strong>{selectedDisplayPlate}</strong>
-                    </div>
-                  </div>
-                  <div className="target-crop">
-                    {selectedPlateCropPreviewUrl && !plateCropPreviewUnavailable ? (
-                      <img
-                        alt={`Plate crop for ${selectedDisplayPlate}`}
-                        className="target-crop__image"
-                        src={selectedPlateCropPreviewUrl}
-                        onError={() => setPlateCropPreviewUnavailable(true)}
-                      />
-                    ) : (
-                      <div className="target-crop__placeholder">
-                        {liveDataSource === "live" ? "Plate crop unavailable for this detection." : "Live plate crop preview"}
-                      </div>
-                    )}
-                    <span className="target-crop__label">Plate crop</span>
-                  </div>
-                </div>
-                <div className="target-keyline">
-                  {selectedIsHotlistMatch ? (
-                    <span className="badge badge--hotlist-always">Hotlist match</span>
-                  ) : null}
-                  <span className={`badge ${selectedAlertMatchesDetection ? `badge--${severityTone(selectedAlert.severity)}` : "badge--priority"}`}>
-                    {selectedDisplayPrimaryBadge}
-                  </span>
-                  <span className="badge badge--outlined">{selectedDisplaySecondaryBadge}</span>
-                  {selectedFollowUp ? (
-                    <span className={`badge badge--${followUpPriorityTone(selectedFollowUp.priority)}`}>
-                      Pinned {followUpStatusLabel(selectedFollowUp.status)}
-                    </span>
-                  ) : null}
-                  {selectedAssignment ? (
-                    <span className={`badge ${assignmentStatusTone(selectedAssignment.status)}`}>
-                      {assignmentStatusLabel(selectedAssignment.status)}
-                    </span>
-                  ) : null}
-                  <h3>{selectedDisplayVehicle}</h3>
-                  <p>{selectedDisplayColorYear}</p>
-                </div>
-              </div>
-              <div className="target-details">
-                <StatusLine label="Camera" value={selectedDisplayCamera} />
-                <StatusLine label="Confidence" value={formatOptionalConfidence(selectedDisplayConfidence)} />
-                <StatusLine label="GPS" value={selectedDisplayGps} />
-                <StatusLine label={selectedDetection ? "Frame" : "Distance"} value={selectedDetection ? `#${selectedDetection.frame_number}` : currentDistanceLabel} />
-                <StatusLine
-                  label="Evidence"
-                  value={
-                    selectedFramePreviewUrl && !framePreviewUnavailable
-                      ? "Live frame ready"
-                      : liveDataSource === "live"
-                        ? "Waiting on local media"
-                        : "Live API only"
-                  }
-                />
-                <StatusLine
-                  label="Sync"
-                  value={selectedDetection ? selectedDetection.sync_status : liveDataSource === "live" ? "Live API" : "Demo data"}
-                />
-                <StatusLine
-                  label="Latest review"
-                  value={
-                    reviewLoading
-                      ? "Loading..."
-                      : latestReview
-                        ? reviewActionLabel(latestReview.action)
-                        : reviewsEnabled
-                          ? "No reviews yet"
-                          : "Live API only"
-                  }
-                />
-                <StatusLine
-                  label="Follow-up"
-                  value={
-                    selectedFollowUp
-                      ? `${followUpStatusLabel(selectedFollowUp.status)} / ${titleCaseLabel(selectedFollowUp.priority)}`
-                      : liveDataSource === "live"
-                        ? "Not pinned"
-                        : "Live API only"
-                  }
-                />
-                <StatusLine
-                  label="Dispatch"
-                  value={
-                    selectedAssignment
-                      ? assignmentStatusLabel(selectedAssignment.status)
-                      : liveDataSource === "live"
-                        ? "Not assigned"
-                        : "Live API only"
-                  }
-                />
-              </div>
-              <div className="target-tabs">
-                {targetPanelTabs.map((tab) => (
-                  <button
-                    key={tab.id}
-                    className={`toggle-chip ${targetPanelTab === tab.id ? "is-active" : ""}`}
-                    type="button"
-                    onClick={() => setTargetPanelTab(tab.id)}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
-              <div className="target-tab-panel">
-                {targetPanelTab === "overview" ? (
-                  <>
-                    <div className="notes-box">
-                      <label className="panel-label">Best approach</label>
-                      <p>{selectedDisplayBestApproach}</p>
-                    </div>
-                    <div className="notes-box">
-                      <label className="panel-label">Field notes</label>
-                      <p>{selectedWorkflowNotes}</p>
-                    </div>
-                    <div className="notes-box">
-                      <div className="live-activity__header">
-                        <strong>Follow-up and dispatch</strong>
-                        <span>
-                          {selectedFollowUp
-                            ? `${followUpStatusLabel(selectedFollowUp.status)} follow-up`
-                            : selectedAssignment
-                              ? `${assignmentStatusLabel(selectedAssignment.status)} dispatch`
-                              : "No pinned workflow yet"}
-                        </span>
-                      </div>
-                      <p>
-                        {selectedAssignment?.assigned_unit_label ? `${selectedAssignment.assigned_unit_label} / ` : ""}
-                        {selectedAssignment?.assigned_operator_id ?? selectedFollowUp?.assigned_operator_id ?? "Unassigned"}
-                        {selectedFollowUp?.due_at_utc ? ` / Due ${formatHotlistTimestamp(selectedFollowUp.due_at_utc)}` : ""}
-                      </p>
-                    </div>
-                    {selectedDetection ? (
-                      <div className="detection-insights">
-                        <div className="notes-box">
-                          <div className="live-activity__header">
-                            <strong>OCR candidates</strong>
-                            <span>
-                              {selectedDetection.plate_candidates.length} candidate
-                              {selectedDetection.plate_candidates.length === 1 ? "" : "s"}
-                            </span>
-                          </div>
-                          {selectedDetection.plate_candidates.length === 0 ? (
-                            <p>No alternate OCR candidates were retained for this detection.</p>
-                          ) : (
-                            <div className="candidate-list">
-                              {selectedDetection.plate_candidates.slice(0, 5).map((candidate, index) => (
-                                <div
-                                  key={`${candidate.text}-${index}`}
-                                  className={`candidate-row ${candidate.text === selectedDetection.plate_text ? "is-primary" : ""}`}
-                                >
-                                  <strong>{candidate.text}</strong>
-                                  <span>{confidenceLabel(candidate.confidence)}</span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                        <div className="notes-box">
-                          <div className="live-activity__header">
-                            <strong>Confidence breakdown</strong>
-                            <span>Stored with the detection record</span>
-                          </div>
-                          <div className="confidence-grid">
-                            <StatusLine label="OCR" value={formatOptionalConfidence(selectedDetection.plate_confidence)} />
-                            <StatusLine label="Color" value={formatOptionalConfidence(selectedDetection.vehicle_color_confidence)} />
-                            <StatusLine label="Make" value={formatOptionalConfidence(selectedDetection.vehicle_make_confidence)} />
-                            <StatusLine label="Model" value={formatOptionalConfidence(selectedDetection.vehicle_model_confidence)} />
-                            <StatusLine label="Year" value={formatOptionalConfidence(selectedDetection.optional_year_confidence)} />
-                            <StatusLine label="Tracker" value={selectedDetection.tracker_id ?? "Untracked"} />
-                          </div>
-                        </div>
-                      </div>
-                    ) : null}
-                  </>
-                ) : targetPanelTab === "workflow" ? (
-                  <>
-                    <div className="notes-box">
-                      <label className="panel-label">Best approach</label>
-                      <p>{selectedDisplayBestApproach}</p>
-                    </div>
-                    <div className="notes-box">
-                      <div className="live-activity__header">
-                        <strong>Follow-up and dispatch</strong>
-                        <span>
-                          {selectedFollowUp
-                            ? `${followUpStatusLabel(selectedFollowUp.status)} follow-up`
-                            : selectedAssignment
-                              ? `${assignmentStatusLabel(selectedAssignment.status)} dispatch`
-                              : "No pinned workflow yet"}
-                        </span>
-                      </div>
-                      <p>
-                        {selectedAssignment?.assigned_unit_label ? `${selectedAssignment.assigned_unit_label} / ` : ""}
-                        {selectedAssignment?.assigned_operator_id ?? selectedFollowUp?.assigned_operator_id ?? "Unassigned"}
-                        {selectedFollowUp?.due_at_utc ? ` / Due ${formatHotlistTimestamp(selectedFollowUp.due_at_utc)}` : ""}
-                      </p>
-                    </div>
-                    <div className="notes-box">
-                      <label className="panel-label">Field notes</label>
-                      <p>{selectedWorkflowNotes}</p>
-                    </div>
-                    <div className="workflow-summary-grid">
-                      <StatusLine label="Follow-up owner" value={selectedFollowUp?.assigned_operator_id ?? "Unassigned"} />
-                      <StatusLine label="Dispatch unit" value={selectedAssignment?.assigned_unit_label ?? "Unset"} />
-                      <StatusLine
-                        label="Dispatch status"
-                        value={selectedAssignment ? assignmentStatusLabel(selectedAssignment.status) : "Pending"}
-                      />
-                      <StatusLine label="Queue state" value={selectedFollowUp ? followUpStatusLabel(selectedFollowUp.status) : "Not pinned"} />
-                    </div>
-                  </>
-                ) : null}
-                {targetPanelTab === "reviews" ? (
-                  <div className="review-shell">
-                <div className="live-activity__header">
-                  <strong>Operator review</strong>
-                  <span>
-                    {reviewsEnabled && currentOperator.capabilities.can_submit_reviews
-                      ? "Persisted locally through the live API."
-                      : reviewsEnabled
-                        ? `${operatorDisplayName(currentOperator)} is read-only for review actions.`
-                      : "Review submission unlocks when the live API is connected."}
-                  </span>
-                </div>
-                {reviewsEnabled ? (
-                  <>
-                    <form className="review-form" onSubmit={handleReviewSubmit}>
-                      <div className="form-grid review-form__grid">
-                        <label className="field-group">
-                          <span>Review action</span>
-                          <select
-                            value={reviewAction}
-                            onChange={(event) => setReviewAction(event.target.value as ReviewAction)}
-                          >
-                            <option value="confirm">Confirm read</option>
-                            <option value="correct">Correct read</option>
-                            <option value="flag">Flag for follow-up</option>
-                            <option value="dismiss">Dismiss hit</option>
-                          </select>
-                        </label>
-                        <label className="field-group">
-                          <span>Operator ID</span>
-                          <input
-                            className="input-control"
-                            placeholder="cab_demo_01"
-                            type="text"
-                            value={reviewOperatorId}
-                            onChange={(event) => setReviewOperatorId(event.target.value)}
-                          />
-                        </label>
-                        <label className="field-group">
-                          <span>Corrected plate</span>
-                          <input
-                            className="input-control"
-                            disabled={reviewAction !== "correct"}
-                            placeholder="Required for corrections"
-                            type="text"
-                            value={reviewCorrectedPlate}
-                            onChange={(event) => setReviewCorrectedPlate(event.target.value.toUpperCase())}
-                          />
-                        </label>
-                      </div>
-                      <label className="field-group">
-                        <span>Review notes</span>
-                        <textarea
-                          className="input-control input-control--multiline"
-                          placeholder="Add field notes, confidence callouts, or next-step guidance."
-                          value={reviewNotes}
-                          onChange={(event) => setReviewNotes(event.target.value)}
-                        />
-                      </label>
-                      {reviewError ? <div className="review-feedback review-feedback--error">{reviewError}</div> : null}
-                      {reviewSuccess ? <div className="review-feedback review-feedback--good">{reviewSuccess}</div> : null}
-                      <div className="panel-actions">
-                        <button className="button button--primary" disabled={!canSubmitReview} type="submit">
-                          {reviewSubmitting ? "Saving review..." : "Save review"}
-                        </button>
-                        <span className="panel-label">
-                          {reviewLoading ? "Loading review history..." : `${reviewHistory.length} review${reviewHistory.length === 1 ? "" : "s"} on file`}
-                        </span>
-                      </div>
-                    </form>
-                    <div className="review-history">
-                      <div className="live-activity__header">
-                        <strong>Recent review history</strong>
-                        <span>
-                          {latestReview
-                            ? `Last update ${formatReviewTimestamp(latestReview.reviewed_at_utc)}`
-                            : "No saved reviews for this detection yet."}
-                        </span>
-                      </div>
-                      {reviewHistory.length === 0 ? (
-                        <div className="review-empty">No operator reviews have been saved for this detection yet.</div>
-                      ) : (
-                        reviewHistory.slice(0, 4).map((review) => (
-                          <div key={review.review_id} className="review-row">
-                            <div className="review-row__header">
-                              <span className={`badge ${reviewActionBadgeTone(review.action)}`}>
-                                {reviewActionLabel(review.action)}
-                              </span>
-                              <span>{formatReviewTimestamp(review.reviewed_at_utc)}</span>
-                            </div>
-                            <strong>{review.corrected_plate_text ?? selectedDisplayPlate}</strong>
-                            <p>
-                              {review.operator_id ? `${review.operator_id} / ` : ""}
-                              {review.notes ?? "No operator notes recorded."}
-                            </p>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </>
-                ) : (
-                  <div className="review-empty">
-                    Connect the live API to load local review history and save operator review actions.
-                  </div>
-                )}
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          </PanelFrame>
-        );
-      case "recoveryLog":
-        return (
-          <PanelFrame panelId={panelId}>
-            <div className="log-list">
-              {recoveryLogEntries.map((entry) => {
-                const entryLiveAlert = liveOverview?.alerts.find((alert) => alert.alert_id === entry.id);
-                const entryIsHotlist = entryLiveAlert ? !!entryLiveAlert.hotlist_entry_id : entry.status === "active";
-                const entryFollowUp = liveFollowUps.find(
-                  (record) => record.detection_id === entryLiveAlert?.detection_id && record.status !== "resolved",
-                );
-                const entryAssignment = liveAssignments.find(
-                  (record) =>
-                    record.detection_id === entryLiveAlert?.detection_id &&
-                    record.status !== "completed" &&
-                    record.status !== "cancelled",
-                );
-                return (
-                  <div key={entry.id} className="log-row">
-                    <span
-                      className={`badge badge--${
-                        entry.status === "active" ? "good" : entry.status === "watch" ? "priority" : "muted"
-                      }`}
-                    >
-                      {entry.status}
-                    </span>
-                    <div>
-                      <strong>
-                        {entry.title}
-                        {entryIsHotlist ? " [Hotlist]" : ""}
-                      </strong>
-                      <p>
-                        {entry.plate}
-                        {entryFollowUp ? ` / Pinned ${followUpStatusLabel(entryFollowUp.status)}` : ""}
-                        {entryAssignment ? ` / ${assignmentStatusLabel(entryAssignment.status)}` : ""}
-                      </p>
-                    </div>
-                    <span>{entry.updatedAt}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </PanelFrame>
-        );
-      case "dispatchBoard":
-        return (
-          <PanelFrame panelId={panelId}>
-            <div className="runtime-shell">
-              <div className="live-activity__header">
-                <strong>Follow-up pin</strong>
-                <span>
-                  {canManageFollowUps
-                    ? "Pin high-value detections and keep follow-up ownership visible."
-                    : liveDataSource === "live" && selectedDetectionId
-                      ? `${operatorDisplayName(currentOperator)} can view follow-ups but cannot edit them.`
-                      : "Connect the live API and select a detection to pin follow-up work."}
-                </span>
-              </div>
-              {liveDataSource === "live" && selectedDetectionId ? (
-                <div className="review-shell">
-                  <div className="runtime-summary">
-                    <div className="runtime-summary__grid">
-                      <StatusLine label="Selected plate" value={selectedDisplayPlate} />
-                      <StatusLine
-                        label="Follow-up state"
-                        value={selectedFollowUp ? followUpStatusLabel(selectedFollowUp.status) : "Not pinned"}
-                      />
-                      <StatusLine
-                        label="Priority"
-                        value={selectedFollowUp ? titleCaseLabel(selectedFollowUp.priority) : titleCaseLabel(followUpPriority)}
-                      />
-                      <StatusLine
-                        label="Assigned"
-                        value={(selectedFollowUp?.assigned_operator_id ?? followUpAssignedOperatorId.trim()) || "Unassigned"}
-                      />
-                    </div>
-                  </div>
-                  <form className="review-form" onSubmit={handleFollowUpSubmit}>
-                    <div className="form-grid review-form__grid">
-                      <label className="field-group">
-                        <span>Priority</span>
-                        <select
-                          value={followUpPriority}
-                          onChange={(event) => setFollowUpPriority(event.target.value as FollowUpPriority)}
-                        >
-                          <option value="routine">Routine</option>
-                          <option value="priority">Priority</option>
-                          <option value="critical">Critical</option>
-                        </select>
-                      </label>
-                      <label className="field-group">
-                        <span>Status</span>
-                        <select value={followUpStatus} onChange={(event) => setFollowUpStatus(event.target.value as FollowUpStatus)}>
-                          <option value="open">Open</option>
-                          <option value="monitoring">Monitoring</option>
-                          <option value="resolved">Resolved</option>
-                        </select>
-                      </label>
-                      <label className="field-group">
-                        <span>Assigned operator</span>
-                        <input
-                          className="input-control"
-                          placeholder="tow_lead_02"
-                          type="text"
-                          value={followUpAssignedOperatorId}
-                          onChange={(event) => setFollowUpAssignedOperatorId(event.target.value)}
-                        />
-                      </label>
-                      <label className="field-group">
-                        <span>Follow-up due</span>
-                        <input
-                          className="input-control"
-                          type="datetime-local"
-                          value={followUpDueAt}
-                          onChange={(event) => setFollowUpDueAt(event.target.value)}
-                        />
-                      </label>
-                    </div>
-                    <label className="field-group">
-                      <span>Pin summary</span>
-                      <input
-                        className="input-control"
-                        placeholder="Pin this read until the field crew is staged."
-                        type="text"
-                        value={followUpSummary}
-                        onChange={(event) => setFollowUpSummary(event.target.value)}
-                      />
-                    </label>
-                    <label className="field-group">
-                      <span>Follow-up notes</span>
-                      <textarea
-                        className="input-control input-control--multiline"
-                        placeholder="Capture the reason this detection stays pinned and what the next operator should do."
-                        value={followUpNotes}
-                        onChange={(event) => setFollowUpNotes(event.target.value)}
-                      />
-                    </label>
-                    {followUpError ? <div className="review-feedback review-feedback--error">{followUpError}</div> : null}
-                    {followUpSuccess ? <div className="review-feedback review-feedback--good">{followUpSuccess}</div> : null}
-                    <div className="panel-actions">
-                      <button className="button button--primary" disabled={!canManageFollowUps || followUpSubmitting} type="submit">
-                        {followUpSubmitting ? "Saving follow-up..." : selectedFollowUp ? "Update follow-up" : "Pin detection"}
-                      </button>
-                      <span className="panel-label">
-                        {openFollowUpCount} open follow-up{openFollowUpCount === 1 ? "" : "s"} across the dashboard
-                      </span>
-                    </div>
-                  </form>
-                </div>
-              ) : (
-                <div className="review-empty">Connect the live API to pin detections for follow-up.</div>
-              )}
-
-              <div className="live-activity__header">
-                <strong>Dispatch assignment</strong>
-                <span>
-                  {canManageAssignments
-                    ? "Create a field assignment that survives beyond the alert lifecycle buttons."
-                    : liveDataSource === "live" && selectedDetectionId
-                      ? `${operatorDisplayName(currentOperator)} can view assignments but cannot dispatch them.`
-                      : "Connect the live API and select a detection to create dispatch work."}
-                </span>
-              </div>
-              {liveDataSource === "live" && selectedDetectionId ? (
-                <div className="review-shell">
-                  <div className="runtime-summary">
-                    <div className="runtime-summary__grid">
-                      <StatusLine label="Assignment" value={selectedAssignment ? assignmentStatusLabel(selectedAssignment.status) : "None"} />
-                      <StatusLine
-                        label="Priority"
-                        value={selectedAssignment ? titleCaseLabel(selectedAssignment.priority) : titleCaseLabel(assignmentPriority)}
-                      />
-                      <StatusLine
-                        label="Assigned unit"
-                        value={(selectedAssignment?.assigned_unit_label ?? assignmentUnitLabel.trim()) || "Unset"}
-                      />
-                      <StatusLine
-                        label="Destination"
-                        value={(selectedAssignment?.destination_label ?? assignmentDestination.trim()) || "Unset"}
-                      />
-                    </div>
-                  </div>
-                  <form className="review-form" onSubmit={handleAssignmentSubmit}>
-                    <div className="form-grid review-form__grid">
-                      <label className="field-group">
-                        <span>Priority</span>
-                        <select
-                          value={assignmentPriority}
-                          onChange={(event) => setAssignmentPriority(event.target.value as DispatchAssignmentPriority)}
-                        >
-                          <option value="watch">Watch</option>
-                          <option value="priority">Priority</option>
-                          <option value="critical">Critical</option>
-                        </select>
-                      </label>
-                      <label className="field-group">
-                        <span>Status</span>
-                        <select
-                          value={assignmentStatus}
-                          onChange={(event) => setAssignmentStatus(event.target.value as DispatchAssignmentStatus)}
-                        >
-                          <option value="queued">Queued</option>
-                          <option value="assigned">Assigned</option>
-                          <option value="en_route">En Route</option>
-                          <option value="onsite">On Scene</option>
-                          <option value="completed">Completed</option>
-                          <option value="cancelled">Cancelled</option>
-                        </select>
-                      </label>
-                      <label className="field-group">
-                        <span>Assigned operator</span>
-                        <input
-                          className="input-control"
-                          placeholder="tow_lead_02"
-                          type="text"
-                          value={assignmentOperatorId}
-                          onChange={(event) => setAssignmentOperatorId(event.target.value)}
-                        />
-                      </label>
-                      <label className="field-group">
-                        <span>Assigned unit</span>
-                        <input
-                          className="input-control"
-                          placeholder="Truck 4"
-                          type="text"
-                          value={assignmentUnitLabel}
-                          onChange={(event) => setAssignmentUnitLabel(event.target.value)}
-                        />
-                      </label>
-                    </div>
-                    <div className="form-grid review-form__grid">
-                      <label className="field-group">
-                        <span>Destination</span>
-                        <input
-                          className="input-control"
-                          placeholder="1250 Shoreline Blvd"
-                          type="text"
-                          value={assignmentDestination}
-                          onChange={(event) => setAssignmentDestination(event.target.value)}
-                        />
-                      </label>
-                      <label className="field-group">
-                        <span>Assignment brief</span>
-                        <input
-                          className="input-control"
-                          placeholder="Tow team rolling to the pinned target."
-                          type="text"
-                          value={assignmentSummary}
-                          onChange={(event) => setAssignmentSummary(event.target.value)}
-                        />
-                      </label>
-                    </div>
-                    <label className="field-group">
-                      <span>Dispatch notes</span>
-                      <textarea
-                        className="input-control input-control--multiline"
-                        placeholder="Record approach instructions, staging notes, and scene handoff details."
-                        value={assignmentNotes}
-                        onChange={(event) => setAssignmentNotes(event.target.value)}
-                      />
-                    </label>
-                    {assignmentError ? <div className="review-feedback review-feedback--error">{assignmentError}</div> : null}
-                    {assignmentSuccess ? <div className="review-feedback review-feedback--good">{assignmentSuccess}</div> : null}
-                    <div className="panel-actions">
-                      <button className="button button--primary" disabled={!canManageAssignments || assignmentSubmitting} type="submit">
-                        {assignmentSubmitting ? "Saving assignment..." : selectedAssignment ? "Update assignment" : "Create assignment"}
-                      </button>
-                      <span className="panel-label">
-                        {activeAssignmentCount} active assignment{activeAssignmentCount === 1 ? "" : "s"} on the board
-                      </span>
-                    </div>
-                  </form>
-                  {liveAssignments.length > 0 ? (
-                    <div className="review-history">
-                      <div className="live-activity__header">
-                        <strong>Active dispatch board</strong>
-                        <span>Recent assignments across the live dashboard.</span>
-                      </div>
-                      {liveAssignments.slice(0, 4).map((assignment) => (
-                        <div key={assignment.assignment_id} className="review-row">
-                          <div className="review-row__header">
-                            <span className={`badge ${assignmentStatusTone(assignment.status)}`}>
-                              {assignmentStatusLabel(assignment.status)}
-                            </span>
-                            <span>{formatHotlistTimestamp(assignment.updated_at_utc)}</span>
-                          </div>
-                          <strong>{assignment.plate_text ?? "Plate unavailable"}</strong>
-                          <p>
-                            {(assignment.assigned_unit_label ?? "No unit") + " / " + (assignment.assigned_operator_id ?? "No operator")}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              ) : (
-                <div className="review-empty">Connect the live API to create and track dispatch assignments.</div>
-              )}
-
-              <div className="live-activity__header">
-                <strong>Demo runtime</strong>
-                <span className={`badge ${demoRuntimeBadgeTone(demoRuntimeStatus?.state)}`}>
-                  {demoRuntimeLabel(demoRuntimeStatus?.state)}
-                </span>
-              </div>
-              {demoRuntimeEnabled ? (
-                <>
-                  <div className="runtime-summary">
-                    <div className="runtime-summary__grid">
-                      <StatusLine label="Run ID" value={demoRuntimeStatus?.run_id ?? "Waiting"} />
-                      <StatusLine
-                        label="Started"
-                        value={
-                          demoRuntimeStatus?.started_at_utc
-                            ? formatHotlistTimestamp(demoRuntimeStatus.started_at_utc)
-                            : "Not started"
-                        }
-                      />
-                      <StatusLine
-                        label="Completed"
-                        value={
-                          demoRuntimeStatus?.completed_at_utc
-                            ? formatHotlistTimestamp(demoRuntimeStatus.completed_at_utc)
-                            : demoRuntimeStatus?.state === "running"
-                              ? "In progress"
-                              : "Not completed"
-                        }
-                      />
-                      <StatusLine
-                        label="Plate seed"
-                        value={demoRuntimeStatus?.plate_text ?? (demoPlateText.trim().toUpperCase() || "Unset")}
-                      />
-                    </div>
-                    <div className="runtime-summary__grid">
-                      <StatusLine
-                        label="Frames folder"
-                        value={demoRuntimeStatus?.frames_directory ?? (demoFramesDirectory.trim() || "Set a local path")}
-                      />
-                      <StatusLine
-                        label="Detections"
-                        value={String(demoRuntimeStatus?.summary?.stored_detection_ids.length ?? 0)}
-                      />
-                      <StatusLine
-                        label="Alerts"
-                        value={String(demoRuntimeStatus?.summary?.created_alert_ids.length ?? 0)}
-                      />
-                      <StatusLine
-                        label="Tracks"
-                        value={String(demoRuntimeStatus?.summary?.tracks_finalized ?? 0)}
-                      />
-                    </div>
-                  </div>
-                  <form className="review-form" onSubmit={handleDemoRunSubmit}>
-                    <div className="form-grid review-form__grid">
-                      <label className="field-group">
-                        <span>Frame folder</span>
-                        <input
-                          className="input-control"
-                          placeholder="C:\\frames\\demo-run"
-                          type="text"
-                          value={demoFramesDirectory}
-                          onChange={(event) => setDemoFramesDirectory(event.target.value)}
-                        />
-                      </label>
-                      <label className="field-group">
-                        <span>Sequence ID</span>
-                        <input
-                          className="input-control"
-                          placeholder="seq_console_demo"
-                          type="text"
-                          value={demoSequenceId}
-                          onChange={(event) => setDemoSequenceId(event.target.value)}
-                        />
-                      </label>
-                      <label className="field-group">
-                        <span>Plate seed</span>
-                        <input
-                          className="input-control"
-                          placeholder="6BZN220"
-                          type="text"
-                          value={demoPlateText}
-                          onChange={(event) => setDemoPlateText(event.target.value.toUpperCase())}
-                        />
-                      </label>
-                    </div>
-                    {demoLoading ? <div className="review-empty">Loading demo runtime status...</div> : null}
-                    {demoError ? <div className="review-feedback review-feedback--error">{demoError}</div> : null}
-                    {demoSuccess ? <div className="review-feedback review-feedback--good">{demoSuccess}</div> : null}
-                    <div className="panel-actions">
-                      <button className="button button--primary" disabled={!canStartDemoRun} type="submit">
-                        {demoSubmitting
-                          ? "Starting demo..."
-                          : demoRuntimeStatus?.state === "running"
-                            ? "Demo running..."
-                            : "Run headless demo"}
-                      </button>
-                      <button
-                        className="button"
-                        disabled={!demoRuntimeEnabled || demoLoading}
-                        type="button"
-                        onClick={() => {
-                          void refreshDemoStatus();
-                        }}
-                      >
-                        Refresh status
-                      </button>
-                      <button className="button" type="button" onClick={() => setDemoPlateText(selectedAlert.plate)}>
-                        Use selected plate
-                      </button>
-                    </div>
-                  </form>
-                </>
-              ) : (
-                <div className="review-empty">
-                  Connect the live API to launch headless demo ingest runs from the app and watch new detections land live.
-                </div>
-              )}
-              <div className="live-activity__header">
-                <strong>Alert response</strong>
-                <span>
-                  {alertActionsEnabled
-                    ? "Persisted locally through the live API."
-                    : alertActionsAvailable
-                      ? `${operatorDisplayName(currentOperator)} can view alert response history but cannot change status.`
-                    : "Connect the live API to acknowledge, stand down, or reopen alerts."}
-                </span>
-              </div>
-              {alertActionsAvailable && selectedLiveAlert ? (
-                <div className="review-shell">
-                  <div className="runtime-summary">
-                    <div className="runtime-summary__grid">
-                      <StatusLine label="Workflow state" value={statusLabels[selectedAlert.status]} />
-                      <StatusLine label="Recommended action" value={selectedAlert.routeAction} />
-                      <StatusLine label="Operator" value={selectedLiveAlert.response_operator_id ?? "Unassigned"} />
-                      <StatusLine
-                        label="Last update"
-                        value={
-                          selectedLiveAlert.updated_at_utc
-                            ? formatHotlistTimestamp(selectedLiveAlert.updated_at_utc)
-                            : "No field action recorded"
-                        }
-                      />
-                    </div>
-                  </div>
-                  <div className="review-form">
-                    <div className="form-grid review-form__grid">
-                      <label className="field-group">
-                        <span>Operator ID</span>
-                        <input
-                          className="input-control"
-                          placeholder="cab_demo_01"
-                          type="text"
-                          value={alertActionOperatorId}
-                          onChange={(event) => setAlertActionOperatorId(event.target.value)}
-                        />
-                      </label>
-                      <label className="field-group">
-                        <span>Selected target</span>
-                        <input className="input-control" disabled type="text" value={`${selectedAlert.plate} / ${selectedAlert.vehicle}`} />
-                      </label>
-                    </div>
-                    <label className="field-group">
-                      <span>Response notes</span>
-                      <textarea
-                        className="input-control input-control--multiline"
-                        placeholder="Record contact attempts, scene conditions, or stand-down context."
-                        value={alertActionNotes}
-                        onChange={(event) => setAlertActionNotes(event.target.value)}
-                      />
-                    </label>
-                    {alertActionError ? (
-                      <div className="review-feedback review-feedback--error">{alertActionError}</div>
-                    ) : null}
-                    {alertActionSuccess ? (
-                      <div className="review-feedback review-feedback--good">{alertActionSuccess}</div>
-                    ) : null}
-                    <div className="action-grid">
-                      <button
-                        className={`button ${selectedLiveAlert.status === "active" ? "button--primary" : ""}`}
-                        disabled={!alertActionsEnabled || alertActionSubmitting || selectedLiveAlert.status === "acknowledged"}
-                        type="button"
-                        onClick={() => {
-                          void handleAlertAction("acknowledged");
-                        }}
-                      >
-                        {alertActionPendingStatus === "acknowledged" ? "Saving..." : "Acknowledge"}
-                      </button>
-                      <button
-                        className={`button ${selectedLiveAlert.status === "acknowledged" ? "button--primary" : ""}`}
-                        disabled={!alertActionsEnabled || alertActionSubmitting || selectedLiveAlert.status === "dismissed"}
-                        type="button"
-                        onClick={() => {
-                          void handleAlertAction("dismissed");
-                        }}
-                      >
-                        {alertActionPendingStatus === "dismissed" ? "Saving..." : "Stand down"}
-                      </button>
-                      <button
-                        className={`button ${selectedLiveAlert.status === "dismissed" ? "button--primary" : ""}`}
-                        disabled={!alertActionsEnabled || alertActionSubmitting || selectedLiveAlert.status === "active"}
-                        type="button"
-                        onClick={() => {
-                          void handleAlertAction("active");
-                        }}
-                      >
-                        {alertActionPendingStatus === "active" ? "Saving..." : "Re-open"}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="review-empty">
-                  Connect the live API to save field actions and keep alert status changes across refreshes.
-                </div>
-              )}
-            </div>
-          </PanelFrame>
-        );
-      case "crewChat":
-        return (
-          <PanelFrame panelId={panelId}>
-            <div className="crew-chat">
-              <div className="crew-chat__messages">
-                {chatMessages.map((msg) => (
-                  <div key={msg.id} className={`crew-chat__row crew-chat__row--${msg.type}`}>
-                    <div className="crew-chat__meta">
-                      <strong>{msg.sender}</strong>
-                      <span>{msg.timestamp}</span>
-                    </div>
-                    <p>{msg.body}</p>
-                  </div>
-                ))}
-              </div>
-              <form
-                className="crew-chat__compose"
-                onSubmit={(event: FormEvent) => {
-                  event.preventDefault();
-                  const body = chatDraftMessage.trim();
-                  if (!body) return;
-                  setChatMessages((current) => [
-                    ...current,
-                    {
-                      id: `msg-${Date.now()}`,
-                      sender: currentOperator.display_name ?? currentOperator.principal_id,
-                      body,
-                      timestamp: new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }),
-                      type: "message",
-                    },
-                  ]);
-                  setChatDraftMessage("");
-                }}
-              >
-                <input
-                  className="input-control"
-                  placeholder="Message crew..."
-                  type="text"
-                  value={chatDraftMessage}
-                  onChange={(event) => setChatDraftMessage(event.target.value)}
-                />
-                <button className="button button--primary" type="submit">Send</button>
-              </form>
-              <div className="crew-chat__actions">
-                <button
-                  className="button"
-                  type="button"
-                  onClick={() => {
-                    setChatMessages((current) => [
-                      ...current,
-                      {
-                        id: `handoff-${Date.now()}`,
-                        sender: "System",
-                        body: `Handoff initiated by ${currentOperator.display_name ?? currentOperator.principal_id} for ${selectedAlert.plate} - ${selectedAlert.vehicle}`,
-                        timestamp: new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }),
-                        type: "handoff",
-                      },
-                    ]);
-                  }}
-                >
-                  Handoff current target
-                </button>
-                <button
-                  className="button"
-                  type="button"
-                  onClick={() => {
-                    const photoId = `photo-${Date.now()}`;
-                    const timestamp = new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
-                    setFieldPhotoLog((current) => [
-                      ...current,
-                      { id: photoId, label: `Evidence ${current.length + 1}`, timestamp, note: fieldPhotoNote.trim() || "No annotation" },
-                    ]);
-                    setChatMessages((current) => [
-                      ...current,
-                      {
-                        id: `photo-msg-${Date.now()}`,
-                        sender: "System",
-                        body: `Field photo captured - ${fieldPhotoNote.trim() || "No annotation"}`,
-                        timestamp,
-                        type: "system",
-                      },
-                    ]);
-                    setFieldPhotoNote("");
-                  }}
-                >
-                  Capture field photo
-                </button>
-              </div>
-              <label className="field-group">
-                <span>Photo annotation</span>
-                <input
-                  className="input-control"
-                  placeholder="Describe what you see before capture"
-                  type="text"
-                  value={fieldPhotoNote}
-                  onChange={(event) => setFieldPhotoNote(event.target.value)}
-                />
-              </label>
-              {fieldPhotoLog.length > 0 ? (
-                <div className="crew-chat__photo-log">
-                  <div className="live-activity__header">
-                    <strong>Evidence log</strong>
-                    <span>{fieldPhotoLog.length} captured</span>
-                  </div>
-                  {fieldPhotoLog.map((photo) => (
-                    <div key={photo.id} className="crew-chat__row crew-chat__row--system">
-                      <div className="crew-chat__meta">
-                        <strong>{photo.label}</strong>
-                        <span>{photo.timestamp}</span>
-                      </div>
-                      <p>{photo.note}</p>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          </PanelFrame>
-        );
-      default:
-        return (
-          <PanelFrame panelId={panelId}>
-            <div />
-          </PanelFrame>
-        );
-    }
-  }
-
-  function renderWorkspace(): ReactElement {
-    const dashboardWorkspace = (
-      <section className="workspace-card">
-        <div className="workspace-card__header">
-          <div>
-            <div className="eyebrow">Arrival active scan</div>
-            <h2>Within Radius</h2>
-            <p>
-              Use this contextual screen once the truck enters the arrival ring. Keep only the live target, address
-              detections, and immediate workflow actions visible while on scene.
-            </p>
-          </div>
-          <div className="workspace-card__actions">
-            <button className="button" type="button" onClick={() => selectWorkspace("navigation")}>
-              Return to drive
-            </button>
-            <button
-              className="button"
-              type="button"
-              onClick={() => {
-                setQueueView("hotlist");
-                setTargetPanelTab("workflow");
-                selectWorkspace("alerts");
-              }}
-            >
-              Open target queue
-            </button>
-          </div>
-        </div>
-        <div className="priority-dashboard">
-          <div className="priority-dashboard__hero">
-            <section className="panel-frame">
-              <div className="panel-frame__header">
-                <div>
-                  <h3>Priority target</h3>
-                  <p>Current hotlist or active recovery target that needs the next operator decision.</p>
-                </div>
-              </div>
-              <div className="priority-hero">
-                <div className="priority-hero__header">
-                  <div>
-                    <span className="panel-label">{priorityAlert.time}</span>
-                    <h3>{priorityAlert.plate}</h3>
-                    <p>{priorityAlert.vehicle}</p>
-                  </div>
-                  <div className="badge-group">
-                    {priorityAlertRow?.isHotlistMatch ? <span className="badge badge--critical">Hotlist</span> : null}
-                    <span className={`badge badge--${severityTone(priorityAlert.severity)}`}>{priorityAlert.severity}</span>
-                    <span className="badge badge--outlined">{scenarioLabels[priorityAlert.scenario]}</span>
-                    <span className="badge badge--outlined">{statusLabels[priorityAlert.status]}</span>
-                  </div>
-                </div>
-                <div className="priority-hero__grid">
-                  <StatusLine label="Next move" value={priorityRouteAction} />
-                  <StatusLine label="Route stage" value={currentRouteStage.label} />
-                  <StatusLine label="ETA" value={routeEtaLabel} />
-                  <StatusLine label="Unit" value={priorityUnit} />
-                  <StatusLine label="Lead" value={priorityLeadOperator} />
-                  <StatusLine label="Alert scope" value={generalPopupsLive ? "General + hotlist" : "Hotlist only"} />
-                </div>
-                <div className="notes-box">
-                  <label className="panel-label">Best approach</label>
-                  <p>{priorityAlert.bestApproach}</p>
-                </div>
-                <div className="notes-box">
-                  <label className="panel-label">Field notes</label>
-                  <p>{priorityWorkflowNotes}</p>
-                </div>
-              </div>
-            </section>
-          </div>
-          <div className="priority-dashboard__aside">
-            <section className="panel-frame">
-              <div className="panel-frame__header">
-                <div>
-                  <h3>Priority status</h3>
-                  <p>Dispatch, follow-up, and scan state that should stay visible at a glance.</p>
-                </div>
-              </div>
-              <div className="runtime-summary">
-                <div className="runtime-summary__grid">
-                  <StatusLine label="Hotlist alerts" value={hotlistAlertCount > 0 ? `${hotlistAlertCount} active` : "Clear"} />
-                  <StatusLine
-                    label="Dispatch"
-                    value={priorityAssignment ? assignmentStatusLabel(priorityAssignment.status) : "Unassigned"}
-                  />
-                  <StatusLine
-                    label="Follow-up"
-                    value={priorityFollowUp ? followUpStatusLabel(priorityFollowUp.status) : "Not pinned"}
-                  />
-                  <StatusLine label="Radius mode" value={generalPopupsLive ? "Live scan" : "Background classify"} />
-                </div>
-              </div>
-              {liveError ? <div className="review-feedback review-feedback--error">{liveError}</div> : null}
-              {operatorSessionError ? <div className="review-feedback review-feedback--error">{operatorSessionError}</div> : null}
-              <div className="notes-box">
-                <div className="live-activity__header">
-                  <strong>Assignment ownership</strong>
-                  <span>{priorityAssignment?.assigned_unit_label ?? "No unit assigned yet"}</span>
-                </div>
-                <p>
-                  {priorityAssignment?.assigned_operator_id ?? priorityFollowUp?.assigned_operator_id ?? "No operator assigned"}
-                </p>
-              </div>
-              <div className="notes-box">
-                <div className="live-activity__header">
-                  <strong>Current route</strong>
-                  <span>{currentDistanceLabel}</span>
-                </div>
-                <p>{activeDestination}</p>
-              </div>
-              <div className="panel-actions">
-                <button className="button" type="button" onClick={() => selectWorkspace("navigation")}>
-                  Open map and route
-                </button>
-              </div>
-            </section>
-          </div>
-          <div className="priority-dashboard__full">
-            <section className="panel-frame">
-              <div className="panel-frame__header">
-                <div>
-                  <h3>Hotlist queue</h3>
-                  <p>Only the highest-priority hotlist matches stay on the dashboard. Open Targets for the full queue.</p>
-                </div>
-                <span className="badge badge--critical">{hotlistQueueRows.length} active</span>
-              </div>
-              {priorityQueueRows.length === 0 ? (
-                <div className="queue-empty">No active hotlist targets are waiting right now.</div>
-              ) : (
-                <div className="queue-list">
-                  {priorityQueueRows.map(({ alert, isHotlistMatch }) => (
-                    <button
-                      key={alert.id}
-                      className={`queue-card ${alert.id === selectedAlert.id ? "is-selected" : ""}`}
-                      type="button"
-                      onClick={() => {
-                        setSelectedAlertId(alert.id);
-                        setFocusedDetectionId(alert.detectionId ?? null);
-                        setTargetPanelTab("workflow");
-                      }}
-                    >
-                      <div className="queue-card__header">
-                        <span className={`badge ${isHotlistMatch ? "badge--critical" : `badge--${severityTone(alert.severity)}`}`}>
-                          {isHotlistMatch ? "Hotlist" : scenarioLabels[alert.scenario]}
-                        </span>
-                        <span>{alert.time}</span>
-                      </div>
-                      <strong>{alert.plate}</strong>
-                      <p>{alert.vehicle}</p>
-                      <div className="queue-card__meta">
-                        <span>{alert.location}</span>
-                        <span>{alert.distance}</span>
-                      </div>
-                      <div className="queue-card__meta">
-                        <span>{alert.camera}</span>
-                        <span>{alert.routeAction}</span>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </section>
-          </div>
-        </div>
-      </section>
-    );
-
-    if (activeWorkspace === "navigation") {
-      return (
-        <section className="workspace-card">
-          <div className="workspace-card__header">
-            <div>
-              <div className="eyebrow">Main dashboard driver view</div>
-              <h2>Drive</h2>
-              <p>Stay route-first while rolling. Arrival scan, target review, and camera detail stay one tap away.</p>
-            </div>
-          </div>
-          <div className="quick-action-grid" aria-label="Drive quick actions">
-            <button className="quick-action-button quick-action-button--primary" type="button" onClick={handleNavigationToggle}>
-              <span>Navigation</span>
-              <strong>{navigationActive ? "Stop route" : "Start route"}</strong>
-              <small>{activeDestination}</small>
-            </button>
-            <button
-              className={`quick-action-button ${addressDetectionEnabled ? "is-active" : ""}`}
-              type="button"
-              onClick={() => setAddressDetectionEnabled((current) => !current)}
-            >
-              <span>Arrival scan</span>
-              <strong>{addressDetectionEnabled ? "Armed" : "Off"}</strong>
-              <small>{generalPopupsLive ? "General + hotlist live" : "Hotlist always remains live"}</small>
-            </button>
-            <button
-              className={`quick-action-button ${withinArrivalRadius ? "quick-action-button--critical" : ""}`}
-              type="button"
-              onClick={() => {
-                if (withinArrivalRadius) {
-                  selectWorkspace("dashboard");
-                  return;
-                }
-                setCurrentDistanceFeet(fieldSettings.arrivalTriggerDistance);
-              }}
-            >
-              <span>{withinArrivalRadius ? "Scan mode" : "Arrival ring"}</span>
-              <strong>{withinArrivalRadius ? "Open live scan" : "Jump to ring"}</strong>
-              <small>
-                {withinArrivalRadius ? "Local detections are scoped to this address." : `${fieldSettings.arrivalTriggerDistance} ft trigger distance`}
-              </small>
-            </button>
-            <button
-              className="quick-action-button"
-              type="button"
-              onClick={() => {
-                setQueueView("hotlist");
-                setTargetPanelTab("workflow");
-                selectWorkspace("alerts");
-              }}
-            >
-              <span>Hotlist</span>
-              <strong>{hotlistAlertCount > 0 ? `${hotlistAlertCount} active` : "Open queue"}</strong>
-              <small>Priority targets, radius detections, and popup history.</small>
-            </button>
-            <button className="quick-action-button" type="button" onClick={() => selectWorkspace("search")}>
-              <span>Search</span>
-              <strong>Evidence</strong>
-              <small>Plate, address, and time filters for field review.</small>
-            </button>
-            <button className="quick-action-button" type="button" onClick={() => selectWorkspace("cameras")}>
-              <span>Camera</span>
-              <strong>{selectedCamera.label}</strong>
-              <small>Manual parked review and overlay checks.</small>
-            </button>
-          </div>
-          <div className="navigation-shell">
-            <aside className="navigation-rail">
-              {renderPanel("routePlanner")}
-              {renderPanel("statusStack")}
-              {renderPanel("recoveryLog")}
-            </aside>
-            <div className="navigation-main">
-              <div className="navigation-map">{renderPanel("opsMap")}</div>
-              <div className="navigation-bottom">
-                <div className="navigation-bottom__wide">{renderPanel("cameraMatrix")}</div>
-                <div>{renderPanel("selectedAlert")}</div>
-              </div>
-            </div>
-          </div>
-        </section>
-      );
-    }
-
-    if (activeWorkspace === "alerts") {
-      return (
-        <section className="workspace-card">
-          <div className="workspace-card__header">
-            <div>
-              <div className="eyebrow">Target queue</div>
-              <h2>Targets</h2>
-              <p>Work the live queue, prioritize hotlists, and push the next field action without extra clicks.</p>
-            </div>
-          </div>
-          <div className="alerts-shell">
-            <div className="alerts-shell__feed">{renderPanel("hotlistFeed")}</div>
-            <div className="alerts-shell__detail">
-              {renderPanel("selectedAlert")}
-              {renderPanel("dispatchBoard")}
-            </div>
-          </div>
-        </section>
-      );
-    }
-
-    if (activeWorkspace === "search") {
-      return (
-        <section className="workspace-card">
-          <div className="workspace-card__header">
-            <div>
-              <div className="eyebrow">Evidence review</div>
-              <h2>Review</h2>
-              <p>Search full or partial plates, narrow by field filters, and jump straight into evidence review.</p>
-            </div>
-            <div className="workspace-card__actions">
-              <button
-                className="button"
-                type="button"
-                onClick={() =>
-                  setSearchForm((current) => ({
-                    ...current,
-                    plate: selectedDisplayPlate,
-                    plateMatch: "exact",
-                  }))
-                }
-              >
-                Use selected plate
-              </button>
-              <button className="button" type="button" onClick={resetSearchFilters}>
-                Reset filters
-              </button>
-            </div>
-          </div>
-          {liveDataSource !== "live" ? (
-            <div className="review-empty search-empty">
-              Connect the live API to search live detections by plate, date, camera, GPS region, and vehicle attributes.
-            </div>
-          ) : (
-            <div className="search-shell">
-              <aside className="search-shell__filters">
-                <PanelFrame panelId="routePlanner" titleOverride="Search Filters">
-                  <form className="review-form" onSubmit={handleSearchSubmit}>
-                    <div className="form-grid search-filter-grid">
-                      <label className="field-group">
-                        <span>Plate</span>
-                        <input
-                          className="input-control"
-                          placeholder="6BZN220 or partial"
-                          type="text"
-                          value={searchForm.plate}
-                          onChange={(event) => updateSearchField("plate", event.target.value.toUpperCase())}
-                        />
-                      </label>
-                      <label className="field-group">
-                        <span>Match mode</span>
-                        <select value={searchForm.plateMatch} onChange={(event) => updateSearchField("plateMatch", event.target.value as SearchPlateMatchMode)}>
-                          <option value="contains">Contains</option>
-                          <option value="exact">Exact</option>
-                          <option value="prefix">Prefix</option>
-                          <option value="suffix">Suffix</option>
-                        </select>
-                      </label>
-                      <label className="field-group">
-                        <span>Camera</span>
-                        <select value={searchForm.cameraId} onChange={(event) => updateSearchField("cameraId", event.target.value)}>
-                          <option value="">All cameras</option>
-                          {searchCameraChoices.map((cameraId) => (
-                            <option key={cameraId} value={cameraId}>
-                              {formatCameraLabel(cameraId)}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="field-group">
-                        <span>Alert state</span>
-                        <select value={searchForm.alertStatus} onChange={(event) => updateSearchField("alertStatus", event.target.value as SearchFormState["alertStatus"])}>
-                          <option value="">Any status</option>
-                          <option value="active">Active</option>
-                          <option value="acknowledged">Acknowledged</option>
-                          <option value="dismissed">Dismissed</option>
-                        </select>
-                      </label>
-                      <label className="field-group">
-                        <span>Start UTC</span>
-                        <input
-                          className="input-control"
-                          type="datetime-local"
-                          value={searchForm.startUtc}
-                          onChange={(event) => updateSearchField("startUtc", event.target.value)}
-                        />
-                      </label>
-                      <label className="field-group">
-                        <span>End UTC</span>
-                        <input
-                          className="input-control"
-                          type="datetime-local"
-                          value={searchForm.endUtc}
-                          onChange={(event) => updateSearchField("endUtc", event.target.value)}
-                        />
-                      </label>
-                      <label className="field-group">
-                        <span>Min latitude</span>
-                        <input
-                          className="input-control"
-                          placeholder="37.4200"
-                          type="text"
-                          value={searchForm.minLatitude}
-                          onChange={(event) => updateSearchField("minLatitude", event.target.value)}
-                        />
-                      </label>
-                      <label className="field-group">
-                        <span>Max latitude</span>
-                        <input
-                          className="input-control"
-                          placeholder="37.4300"
-                          type="text"
-                          value={searchForm.maxLatitude}
-                          onChange={(event) => updateSearchField("maxLatitude", event.target.value)}
-                        />
-                      </label>
-                      <label className="field-group">
-                        <span>Min longitude</span>
-                        <input
-                          className="input-control"
-                          placeholder="-122.0900"
-                          type="text"
-                          value={searchForm.minLongitude}
-                          onChange={(event) => updateSearchField("minLongitude", event.target.value)}
-                        />
-                      </label>
-                      <label className="field-group">
-                        <span>Max longitude</span>
-                        <input
-                          className="input-control"
-                          placeholder="-122.0700"
-                          type="text"
-                          value={searchForm.maxLongitude}
-                          onChange={(event) => updateSearchField("maxLongitude", event.target.value)}
-                        />
-                      </label>
-                      <label className="field-group">
-                        <span>Vehicle color</span>
-                        <input
-                          className="input-control"
-                          placeholder="white"
-                          type="text"
-                          value={searchForm.vehicleColor}
-                          onChange={(event) => updateSearchField("vehicleColor", event.target.value)}
-                        />
-                      </label>
-                      <label className="field-group">
-                        <span>Vehicle make</span>
-                        <input
-                          className="input-control"
-                          placeholder="toyota"
-                          type="text"
-                          value={searchForm.vehicleMake}
-                          onChange={(event) => updateSearchField("vehicleMake", event.target.value)}
-                        />
-                      </label>
-                      <label className="field-group">
-                        <span>Vehicle model</span>
-                        <input
-                          className="input-control"
-                          placeholder="camry"
-                          type="text"
-                          value={searchForm.vehicleModel}
-                          onChange={(event) => updateSearchField("vehicleModel", event.target.value)}
-                        />
-                      </label>
-                      <label className="field-group">
-                        <span>Vehicle year</span>
-                        <input
-                          className="input-control"
-                          placeholder="2019"
-                          type="text"
-                          value={searchForm.vehicleYear}
-                          onChange={(event) => updateSearchField("vehicleYear", event.target.value)}
-                        />
-                      </label>
-                    </div>
-                    {searchError ? <div className="review-feedback review-feedback--error">{searchError}</div> : null}
-                    <div className="panel-actions">
-                      <button className="button button--primary" disabled={searchLoading} type="submit">
-                        {searchLoading ? "Searching..." : "Run search"}
-                      </button>
-                      <button
-                        className="button"
-                        type="button"
-                        onClick={() =>
-                          setSearchForm((current) => ({
-                            ...current,
-                            startUtc: liveOverview?.generated_at_utc ? formatLocalDateTimeInput(liveOverview.generated_at_utc) : current.startUtc,
-                          }))
-                        }
-                      >
-                        Use current time
-                      </button>
-                    </div>
-                  </form>
-                </PanelFrame>
-              </aside>
-              <div className="search-shell__content">
-                <PanelFrame panelId="hotlistFeed" titleOverride="Search Results">
-                  <div className="search-results">
-                    <div className="search-results__header">
-                      <div className="live-activity__header">
-                        <strong>{searchExecuted ? `${searchTotalResults} result${searchTotalResults === 1 ? "" : "s"}` : "Awaiting search"}</strong>
-                        <span>
-                          {searchLoading
-                            ? "Querying the live API..."
-                            : searchExecuted
-                              ? searchPageLabel
-                              : "Search by full or partial plate and refine by field filters."}
-                        </span>
-                      </div>
-                      <div className="queue-pager">
-                        <button
-                          className="button"
-                          disabled={!searchExecuted || searchLoading || searchOffset === 0}
-                          type="button"
-                          onClick={() => changeSearchPage(-1)}
-                        >
-                          Back
-                        </button>
-                        <span>{searchExecuted ? `Page ${searchPageIndex + 1} / ${searchPageCount}` : "Page 0 / 0"}</span>
-                        <button
-                          className="button"
-                          disabled={!searchExecuted || searchLoading || searchOffset + searchResults.length >= searchTotalResults}
-                          type="button"
-                          onClick={() => changeSearchPage(1)}
-                        >
-                          Next
-                        </button>
-                      </div>
-                    </div>
-                    {searchExecuted && searchResults.length === 0 ? (
-                      <div className="review-empty">No detections matched the current search filters.</div>
-                    ) : (
-                      <div className="search-results__list">
-                        {searchResults.map((result) => {
-                          const matchingAlert = liveOverview?.alerts.find((alert) => alert.detection_id === result.detection_id) ?? null;
-                          const matchingFollowUp =
-                            liveFollowUps.find((record) => record.detection_id === result.detection_id && record.status !== "resolved") ??
-                            liveFollowUps.find((record) => record.detection_id === result.detection_id) ??
-                            null;
-                          const matchingAssignment =
-                            liveAssignments.find(
-                              (record) =>
-                                record.detection_id === result.detection_id &&
-                                record.status !== "completed" &&
-                                record.status !== "cancelled",
-                            ) ??
-                            liveAssignments.find((record) => record.detection_id === result.detection_id) ??
-                            null;
-                          return (
-                            <button
-                              key={result.detection_id}
-                              className={`search-result-card ${result.detection_id === selectedDetectionId ? "is-selected" : ""}`}
-                              type="button"
-                              onClick={() => focusDetection(result.detection_id, matchingAlert?.alert_id)}
-                            >
-                              <div className="search-result-card__header">
-                                <div>
-                                  <strong>{result.plate_text ?? "Plate unavailable"}</strong>
-                                  <p>{buildDetectionVehicleLabel(result, "Live vehicle")}</p>
-                                </div>
-                                <div className="search-result-card__badges">
-                                  {matchingAlert ? (
-                                    <span className={`badge ${matchingAlert.status === "active" ? "badge--critical" : matchingAlert.status === "acknowledged" ? "badge--priority" : "badge--muted"}`}>
-                                      {matchingAlert.status}
-                                    </span>
-                                  ) : (
-                                    <span className="badge badge--outlined">No alert</span>
-                                  )}
-                                  {matchingFollowUp ? (
-                                    <span className={`badge badge--${followUpPriorityTone(matchingFollowUp.priority)}`}>
-                                      {followUpStatusLabel(matchingFollowUp.status)}
-                                    </span>
-                                  ) : null}
-                                  {matchingAssignment ? (
-                                    <span className={`badge ${assignmentStatusTone(matchingAssignment.status)}`}>
-                                      {assignmentStatusLabel(matchingAssignment.status)}
-                                    </span>
-                                  ) : null}
-                                  <span className="badge badge--outlined">{formatOptionalConfidence(result.plate_confidence)}</span>
-                                </div>
-                              </div>
-                              <div className="search-result-card__meta">
-                                <span>{formatCameraLabel(result.camera_id)}</span>
-                                <span>{formatReviewTimestamp(result.timestamp_utc)}</span>
-                              </div>
-                              <div className="search-result-card__meta">
-                                <span>{buildDetectionColorYearLabel(result, "Unknown / Unknown")}</span>
-                                <span>{formatGpsLabel(result.gps_latitude, result.gps_longitude)}</span>
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </PanelFrame>
-                <div className="search-shell__detail">{renderPanel("selectedAlert")}</div>
-              </div>
-            </div>
-          )}
-        </section>
-      );
-    }
-
-    if (activeWorkspace === "cameras") {
-      return (
-        <section className="workspace-card">
-          <div className="workspace-card__header">
-            <div>
-              <div className="eyebrow">Vehicle confirmation</div>
-              <h2>Cameras</h2>
-              <p>Keep the truck camera bank clean, large, and easy to read when confirming plates and vehicles.</p>
-            </div>
-          </div>
-          <div className="camera-shell">
-            <div className="camera-shell__grid">{renderPanel("cameraMatrix")}</div>
-            <div className="camera-shell__detail">
-              {renderPanel("hotlistFeed")}
-              {renderPanel("selectedAlert")}
-            </div>
-          </div>
-        </section>
-      );
-    }
-
-    if (activeWorkspace === "settings") {
-      return (
-        <section className="workspace-card">
-          <div className="workspace-card__header">
-            <div>
-              <div className="eyebrow">Cab profile</div>
-              <h2>Settings</h2>
-              <p>
-                Saved in this browser so each truck can tune the repo workflow layout and alert behavior for the agent using it.
-              </p>
-            </div>
-            <div className="workspace-card__actions">
-              <button
-                className="button"
-                type="button"
-                onClick={() => {
-                  setLayout(cloneLayout(dashboardPresets.route));
-                }}
-              >
-                Restore dashboard defaults
-              </button>
-              <button className="button" type="button" onClick={() => setFieldSettings({ ...defaultFieldSettings })}>
-                Reset field settings
-              </button>
-            </div>
-          </div>
-          <div className="settings-grid">
-            <PanelFrame panelId="routePlanner" titleOverride="Dashboard behavior">
-              <div className="settings-section">
-                <div className="runtime-summary">
-                  <div className="live-activity__header">
-                    <strong>Dashboard stays priority-only</strong>
-                    <span>Use this page for the critical repo signal only, and jump into the other tabs when deeper detail is needed.</span>
-                  </div>
-                  <div className="runtime-summary__grid">
-                    <StatusLine label="Dashboard view" value="Priority targets only" />
-                    <StatusLine label="Arrival transition" value="Workflow focus" />
-                    <StatusLine label="Camera mode" value={titleCaseLabel(layout.cameraMode)} />
-                  </div>
-                </div>
-                <div className="form-grid">
-                  <label className="field-group">
-                    <span>Camera mode</span>
-                    <select value={layout.cameraMode} onChange={(event) => setCameraMode(event.target.value as CameraMode)}>
-                      <option value="priority">Priority</option>
-                      <option value="quad">Quad</option>
-                      <option value="strip">Strip</option>
-                      <option value="dual">Dual</option>
-                    </select>
-                  </label>
-                </div>
-                <div className="panel-actions">
-                  <button
-                    className="button"
-                    type="button"
-                    onClick={() => {
-                      setActiveWorkspace("dashboard");
-                      setTargetPanelTab("workflow");
-                    }}
-                  >
-                    Open priority dashboard
-                  </button>
-                </div>
-              </div>
-            </PanelFrame>
-            <PanelFrame panelId="statusStack" titleOverride="Drive and detection">
-              <div className="form-grid">
-                <label className="field-group">
-                  <span>Target refresh interval</span>
-                  <select
-                    value={fieldSettings.targetRefreshInterval}
-                    onChange={(event) => updateFieldSetting("targetRefreshInterval", event.target.value)}
-                  >
-                    <option value="30 sec">30 sec</option>
-                    <option value="60 sec">60 sec</option>
-                    <option value="2 min">2 min</option>
-                  </select>
-                </label>
-                <label className="field-group">
-                  <span>Arrival trigger distance</span>
-                  <select
-                    value={String(fieldSettings.arrivalTriggerDistance)}
-                    onChange={(event) => updateFieldSetting("arrivalTriggerDistance", Number(event.target.value))}
-                  >
-                    <option value="150">150 ft</option>
-                    <option value="300">300 ft</option>
-                    <option value="600">600 ft</option>
-                  </select>
-                </label>
-                <label className="field-check">
-                  <span>Show route traffic overlay</span>
-                  <input
-                    checked={fieldSettings.routeTrafficOverlay}
-                    type="checkbox"
-                    onChange={(event) => updateFieldSetting("routeTrafficOverlay", event.target.checked)}
-                  />
-                </label>
-                <label className="field-check">
-                  <span>Auto mark on scene</span>
-                  <input
-                    checked={fieldSettings.autoMarkOnScene}
-                    type="checkbox"
-                    onChange={(event) => updateFieldSetting("autoMarkOnScene", event.target.checked)}
-                  />
-                </label>
-              </div>
-            </PanelFrame>
-            <PanelFrame panelId="selectedAlert" titleOverride="Detection review">
-              <div className="form-grid">
-                <label className="field-group">
-                  <span>OCR confidence floor</span>
-                  <select
-                    value={fieldSettings.ocrConfidenceThreshold.toFixed(2)}
-                    onChange={(event) => updateFieldSetting("ocrConfidenceThreshold", Number(event.target.value))}
-                  >
-                    <option value="0.70">0.70</option>
-                    <option value="0.80">0.80</option>
-                    <option value="0.90">0.90</option>
-                  </select>
-                </label>
-                <label className="field-group">
-                  <span>Max active targets</span>
-                  <select
-                    value={String(fieldSettings.maxActiveTargets)}
-                    onChange={(event) => updateFieldSetting("maxActiveTargets", Number(event.target.value))}
-                  >
-                    <option value="5">5</option>
-                    <option value="10">10</option>
-                    <option value="20">20</option>
-                  </select>
-                </label>
-                <label className="field-check">
-                  <span>Silent shift mode</span>
-                  <input
-                    checked={fieldSettings.silentShiftMode}
-                    type="checkbox"
-                    onChange={(event) => updateFieldSetting("silentShiftMode", event.target.checked)}
-                  />
-                </label>
-                <label className="field-check">
-                  <span>Low storage warning</span>
-                  <input
-                    checked={fieldSettings.lowStorageWarning}
-                    type="checkbox"
-                    onChange={(event) => updateFieldSetting("lowStorageWarning", event.target.checked)}
-                  />
-                </label>
-              </div>
-            </PanelFrame>
-            <PanelFrame panelId="dispatchBoard" titleOverride="Operator Workflow">
-              <div className="settings-section">
-                <div className="live-activity__header">
-                  <strong>Live identity and permissions</strong>
-                  <span>
-                    {liveDataSource === "live"
-                      ? `Heartbeat active for ${operatorDisplayName(currentOperator)}.`
-                      : "Paste an API key here when the deployment requires authenticated access."}
-                  </span>
-                </div>
-                <form
-                  className="review-form"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    setApiClientConfig({ apiKey });
-                    void refreshOverview();
-                  }}
-                >
-                  <div className="form-grid review-form__grid">
-                    <label className="field-group">
-                      <span>API key</span>
-                      <input
-                        autoComplete="off"
-                        className="input-control"
-                        placeholder="viewer-demo-token / operator-demo-token / admin-demo-token"
-                        type="password"
-                        value={apiKey}
-                        onChange={(event) => setApiKey(event.target.value)}
-                      />
-                    </label>
-                    <label className="field-group">
-                      <span>Session label</span>
-                      <input
-                        className="input-control"
-                        placeholder="cab_console_01"
-                        type="text"
-                        value={sessionLabel}
-                        onChange={(event) => setSessionLabel(event.target.value)}
-                      />
-                    </label>
-                  </div>
-                  <div className="panel-actions">
-                    <button className="button button--primary" type="submit">
-                      Reconnect live API
-                    </button>
-                    <button
-                      className="button"
-                      type="button"
-                      onClick={() => {
-                        setApiClientConfig({ apiKey: "" });
-                        setApiKey("");
-                        void refreshOverview();
-                      }}
-                    >
-                      Clear key
-                    </button>
-                  </div>
-                </form>
-                <div className="notes-box">
-                  <div className="live-activity__header">
-                    <strong>{operatorDisplayName(currentOperator)}</strong>
-                    <span>{currentOperator.authenticated ? "Authenticated" : "Local development mode"}</span>
-                  </div>
-                  <div className="badge-group">
-                    {currentOperator.roles.map((role) => (
-                      <span key={role} className="badge badge--outlined">
-                        {operatorRoleLabel(role)}
-                      </span>
-                    ))}
-                    {!currentOperator.capabilities.can_manage_hotlists ? (
-                      <span className="badge badge--muted">Hotlist read-only</span>
-                    ) : null}
-                    {!currentOperator.capabilities.can_manage_dispatch ? (
-                      <span className="badge badge--muted">Dispatch read-only</span>
-                    ) : null}
-                  </div>
-                </div>
-                <div className="review-history">
-                  <div className="live-activity__header">
-                    <strong>Active crew sessions</strong>
-                    <span>{activeSessionCount} active session{activeSessionCount === 1 ? "" : "s"} on the live console.</span>
-                  </div>
-                  {liveDataSource !== "live" ? (
-                    <div className="review-empty">Connect the live API to see other operator sessions and workspaces.</div>
-                  ) : otherActiveSessions.length === 0 ? (
-                    <div className="review-empty">No other live sessions are active right now.</div>
-                  ) : (
-                    otherActiveSessions.slice(0, 6).map((session) => (
-                      <div key={session.session_id} className="review-row">
-                        <div className="review-row__header">
-                          <span className="badge badge--outlined">{workspaceLabel(session.workspace)}</span>
-                          <span>{formatHotlistTimestamp(session.last_seen_at_utc)}</span>
-                        </div>
-                        <strong>{session.client_label ?? operatorDisplayName(session)}</strong>
-                        <p>
-                          {operatorDisplayName(session)} / {session.selected_detection_id ?? session.selected_alert_id ?? "No active target"}
-                        </p>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            </PanelFrame>
-            <PanelFrame panelId="hotlistFeed" titleOverride="Hotlist Control">
-              <div className="hotlist-manager">
-                <div className="live-activity__header">
-                  <strong>Local hotlist control</strong>
-                  <span>
-                    {hotlistsEnabled && currentOperator.capabilities.can_manage_hotlists
-                      ? `${hotlistEntries.length} hotlist entr${hotlistEntries.length === 1 ? "y" : "ies"} loaded from the live API.`
-                      : hotlistsEnabled
-                        ? `${operatorDisplayName(currentOperator)} can view hotlists but cannot edit them.`
-                      : "Connect the live API to create and update local hotlist entries."}
-                  </span>
-                </div>
-                {hotlistsEnabled ? (
-                  <>
-                    <div className="hotlist-list">
-                      {hotlistLoading ? (
-                        <div className="review-empty">Loading hotlist entries...</div>
-                      ) : hotlistEntries.length === 0 ? (
-                        <div className="review-empty">No hotlist entries saved yet. Create the first one below.</div>
-                      ) : (
-                        hotlistEntries.map((entry) => (
-                          <button
-                            key={entry.entry_id}
-                            className={`hotlist-row ${entry.entry_id === selectedHotlistId ? "is-selected" : ""}`}
-                            type="button"
-                            onClick={() => loadHotlistForm(entry)}
-                          >
-                            <div className="hotlist-row__header">
-                              <strong>{entry.plate_text}</strong>
-                              <span className={`badge ${entry.active ? "badge--critical" : "badge--muted"}`}>
-                                {entry.active ? "Active" : "Paused"}
-                              </span>
-                            </div>
-                            <p>{entry.label ?? "Unlabeled entry"}</p>
-                            <div className="hotlist-row__meta">
-                              <span>{entry.notes ?? "No operator notes."}</span>
-                              <span>{formatHotlistTimestamp(entry.updated_at_utc)}</span>
-                            </div>
-                          </button>
-                        ))
-                      )}
-                    </div>
-                    <form className="review-form" onSubmit={handleHotlistSubmit}>
-                      <div className="form-grid review-form__grid">
-                        <label className="field-group">
-                          <span>Plate text</span>
-                          <input
-                            className="input-control"
-                            placeholder="8ABC123"
-                            type="text"
-                            value={hotlistPlateText}
-                            onChange={(event) => setHotlistPlateText(event.target.value.toUpperCase())}
-                          />
-                        </label>
-                        <label className="field-group">
-                          <span>Label</span>
-                          <input
-                            className="input-control"
-                            placeholder="Tow-ready / watch / case name"
-                            type="text"
-                            value={hotlistLabel}
-                            onChange={(event) => setHotlistLabel(event.target.value)}
-                          />
-                        </label>
-                        <label className="field-check">
-                          <span>Entry active</span>
-                          <input
-                            checked={hotlistActive}
-                            type="checkbox"
-                            onChange={(event) => setHotlistActive(event.target.checked)}
-                          />
-                        </label>
-                      </div>
-                      <label className="field-group">
-                        <span>Hotlist notes</span>
-                        <textarea
-                          className="input-control input-control--multiline"
-                          placeholder="Describe why this vehicle is being monitored and what the field crew should do next."
-                          value={hotlistNotes}
-                          onChange={(event) => setHotlistNotes(event.target.value)}
-                        />
-                      </label>
-                      {hotlistError ? <div className="review-feedback review-feedback--error">{hotlistError}</div> : null}
-                      {hotlistSuccess ? <div className="review-feedback review-feedback--good">{hotlistSuccess}</div> : null}
-                      <div className="panel-actions">
-                        <button className="button button--primary" disabled={!canSubmitHotlist} type="submit">
-                          {hotlistSaving ? "Saving hotlist..." : selectedHotlist ? "Update hotlist" : "Create hotlist"}
-                        </button>
-                        <button className="button" type="button" onClick={() => loadHotlistForm(null)}>
-                          New entry
-                        </button>
-                        <button
-                          className="button"
-                          type="button"
-                          onClick={() =>
-                            loadHotlistForm({
-                              entry_id: "",
-                              plate_text: selectedAlert.plate,
-                              label: selectedAlert.vehicle,
-                              notes: selectedAlert.notes,
-                              active: true,
-                              created_at_utc: "",
-                              updated_at_utc: "",
-                            })
-                          }
-                        >
-                          Seed from selected alert
-                        </button>
-                      </div>
-                    </form>
-                  </>
-                ) : (
-                  <div className="review-empty">
-                    Connect the live API to load local hotlist entries and manage watchlists from this panel.
-                  </div>
-                )}
-              </div>
-            </PanelFrame>
-          </div>
-        </section>
-      );
-    }
-
-    return dashboardWorkspace;
-  }
-
-  return (
-    <div className="app-shell app-shell--mobile">
-      <section className="mobile-statusbar" aria-label="System status">
-        {mobileStatusItems.map((item) => (
-          <div key={item.label} className="mobile-statusbar__item">
-            <span>{item.label}</span>
-            <strong>{item.value}</strong>
-          </div>
-        ))}
-      </section>
-
-      <header className="mobile-header">
-        <div className="brand-lockup">
-          <div className="brand-eyebrow">RepoScan Pro Mobile</div>
-          <h1>{mobileHeaderTitle}</h1>
-          <p>{mobileHeaderSubtitle}</p>
-        </div>
-        <div className="mobile-header__chips">
-          <span className={`badge ${withinArrivalRadius ? "badge--good" : navigationActive ? "badge--priority" : "badge--outlined"}`}>
-            {withinArrivalRadius ? "Within radius" : navigationActive ? routeEtaLabel : "Route idle"}
-          </span>
-          <span className={`badge ${generalPopupsLive ? "badge--scan-live" : addressDetectionEnabled ? "badge--scan-bg" : "badge--muted"}`}>
-            {generalPopupsLive ? "Arrival scan live" : addressDetectionEnabled ? "Arrival scan armed" : "Arrival scan off"}
-          </span>
-          <span className="badge badge--hotlist-always">Hotlist always on</span>
-        </div>
-      </header>
-
-      <section className="glance-strip glance-strip--mobile" aria-label="Current cab summary">
-        {mobileGlanceTiles.map((tile) => (
-          <GlanceTile key={tile.label} label={tile.label} value={tile.value} sublabel={tile.sublabel} />
-        ))}
-      </section>
-
-      <section className="mode-banner mode-banner--mobile" aria-label="Current route mode">
-        <div className="mode-banner__group">
-          <span className="panel-label">{mobileHeaderEyebrow}</span>
-          <span>{operatorDisplayName(currentOperator)}</span>
-          <span>{currentDistanceLabel}</span>
-        </div>
-        <div className="mode-banner__divider" />
-        <div className="mode-banner__group">
-          <span>Alerts {activeAlertCount}</span>
-          <span>Pins {openFollowUpCount}</span>
-          <span>Dispatch {activeAssignmentCount}</span>
-          <span>Crew {activeSessionCount}</span>
-        </div>
-        {liveError ? <span>{liveError}</span> : null}
-        {operatorSessionError ? <span>{operatorSessionError}</span> : null}
-      </section>
-
-      {hotlistTakeoverPopup ? (
-        <aside aria-live="assertive" className="hotlist-takeover" role="alertdialog">
-          <article className="hotlist-takeover__card">
-            <div className="hotlist-takeover__header">
-              <div>
-                <span className="panel-label">Critical alert</span>
-                <h2>Hotlist Match</h2>
-              </div>
-              <span className="badge badge--critical">{fieldSettings.silentShiftMode ? "Visual priority" : "Audio + visual"}</span>
-            </div>
-            <div className="hotlist-takeover__snapshot">
-              <span>{hotlistTakeoverPopup.imageLabel}</span>
-              <strong>{hotlistTakeoverPopup.plate ?? "Plate unavailable"}</strong>
-              <p>{hotlistTakeoverPopup.vehicle}</p>
-            </div>
-            <div className="hotlist-takeover__meta">
-              <StatusLine label="Time" value={hotlistTakeoverPopup.timestamp} />
-              <StatusLine label="Camera" value={hotlistTakeoverPopup.camera} />
-              <StatusLine label="Location" value={hotlistTakeoverPopup.location} />
-              <StatusLine label="GPS" value={hotlistTakeoverPopup.gps} />
-            </div>
-            <p className="hotlist-takeover__note">{hotlistTakeoverPopup.note}</p>
-            <div className="hotlist-takeover__actions">
-              <button
-                className="button button--primary"
-                type="button"
-                onClick={() => {
-                  focusPopupTarget(hotlistTakeoverPopup, "navigation", "overview");
-                  dismissPopup(hotlistTakeoverPopup.instanceId);
-                }}
-              >
-                Navigate
-              </button>
-              <button
-                className="button"
-                type="button"
-                onClick={() => {
-                  focusPopupTarget(hotlistTakeoverPopup, "alerts", "overview");
-                  dismissPopup(hotlistTakeoverPopup.instanceId);
-                }}
-              >
-                View record
-              </button>
-              <button className="button" type="button" onClick={() => dismissPopup(hotlistTakeoverPopup.instanceId)}>
-                Dismiss
-              </button>
-            </div>
-          </article>
-        </aside>
-      ) : null}
-
-      {passivePopupStack.length > 0 ? (
-        <aside className="popup-stack" aria-live="polite">
-          {passivePopupStack.map((popup) => (
-            <article key={popup.instanceId} className={`popup-card popup-card--${popup.type}`}>
-              <div className="popup-card__media">
-                <span>{popup.imageLabel}</span>
-                <strong>{popup.plate ?? "Plate unavailable"}</strong>
-              </div>
-              <div className="popup-card__body">
-                <div className="popup-card__header">
-                  <span className={`badge ${popup.type === "hotlist" ? "badge--critical" : "badge--priority"}`}>
-                    {detectionPopupTypeLabels[popup.type]}
-                  </span>
-                  <span className="popup-card__signal">
-                    {popup.type === "hotlist"
-                      ? fieldSettings.silentShiftMode
-                        ? "Visual priority alert"
-                        : "Audible + visual alert"
-                      : "Visual popup"}
-                  </span>
-                  <button className="icon-button" type="button" onClick={() => dismissPopup(popup.instanceId)}>
-                    Dismiss
-                  </button>
-                </div>
-                <strong>{popup.vehicle}</strong>
-                <p>{popup.colorYear}</p>
-                <div className="popup-card__meta">
-                  <span>{popup.timestamp}</span>
-                  <span>{popup.camera}</span>
-                </div>
-                <div className="popup-card__meta">
-                  <span>{popup.location}</span>
-                  <span>{popup.gps}</span>
-                </div>
-                <p>{popup.note}</p>
-              </div>
-            </article>
-          ))}
-        </aside>
-      ) : null}
-
-      <main className="mobile-main">{renderWorkspace()}</main>
-
-      <nav className="mobile-bottom-nav" aria-label="Primary navigation">
-        {mobilePrimaryTabs.map((tab) => (
-          <button
-            key={tab.id}
-            className={`mobile-bottom-nav__button ${tab.id === activePrimaryWorkspace ? "is-active" : ""}`}
-            type="button"
-            onClick={() => selectWorkspace(tab.id)}
-          >
-            <span>{tab.label}</span>
-          </button>
-        ))}
-      </nav>
-    </div>
-  );
 }
 
-/* Leaflet helpers */
+function buildPlateGroups(rows: ConsoleDetectionRow[]): PlateGroup[] {
+  const groups = new Map<string, ConsoleDetectionRow[]>();
+  for (const row of rows) {
+    const key = normalizePlate(row.plate1) || row.id;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.push(row);
+    } else {
+      groups.set(key, [row]);
+    }
+  }
 
-const defaultMapCenter: [number, number] = [33.749, -84.388]; // Atlanta demo coords
-const defaultMapZoom = 14;
+  return [...groups.entries()]
+    .map(([plate, groupRows]) => ({
+      plate,
+      rows: [...groupRows].sort((left, right) => right.timestampUtc.localeCompare(left.timestampUtc)),
+    }))
+    .sort((left, right) => {
+      const leftLead = left.rows[0];
+      const rightLead = right.rows[0];
+      if (leftLead.hotlist !== rightLead.hotlist) {
+        return leftLead.hotlist ? -1 : 1;
+      }
+      return rightLead.timestampUtc.localeCompare(leftLead.timestampUtc);
+    });
+}
 
-function makeIcon(color: string, size: number = 12): L.DivIcon {
+function rowMatchesQuery(row: ConsoleDetectionRow, mode: SearchMode, query: string): boolean {
+  const normalizedQuery = query.trim().toUpperCase();
+  if (!normalizedQuery) {
+    return true;
+  }
+
+  if (mode === "plate") {
+    return normalizePlate(row.plate1).includes(normalizedQuery) || normalizePlate(row.plate2).includes(normalizedQuery);
+  }
+  if (mode === "camera") {
+    return row.camera.toUpperCase().includes(normalizedQuery) || row.source.toUpperCase().includes(normalizedQuery);
+  }
+  if (mode === "vehicle") {
+    return row.vehicle.toUpperCase().includes(normalizedQuery);
+  }
+  return row.timestampUtc.includes(normalizedQuery) || row.time.includes(normalizedQuery);
+}
+
+function filterRowsLocally(options: {
+  rows: ConsoleDetectionRow[];
+  mode: SearchMode;
+  query: string;
+  fromUtc?: string;
+  toUtc?: string;
+  hotlistOnly: boolean;
+  highConfidenceOnly: boolean;
+  currentCameraOnly: boolean;
+  currentShiftOnly: boolean;
+  currentCameraId: string;
+}): ConsoleDetectionRow[] {
+  const shiftCutoff = new Date("2026-03-27T14:00:00Z").valueOf();
+  const fromValue = options.fromUtc ? new Date(options.fromUtc).valueOf() : null;
+  const toValue = options.toUtc ? new Date(options.toUtc).valueOf() : null;
+
+  return options.rows.filter((row) => {
+    if (!rowMatchesQuery(row, options.mode, options.query)) {
+      return false;
+    }
+    if (options.hotlistOnly && !row.hotlist) {
+      return false;
+    }
+    if (options.highConfidenceOnly && row.conf < 90) {
+      return false;
+    }
+    if (options.currentCameraOnly && row.cameraId !== options.currentCameraId) {
+      return false;
+    }
+
+    const timestamp = new Date(row.timestampUtc).valueOf();
+    if (options.currentShiftOnly && timestamp < shiftCutoff) {
+      return false;
+    }
+    if (fromValue !== null && timestamp < fromValue) {
+      return false;
+    }
+    if (toValue !== null && timestamp > toValue) {
+      return false;
+    }
+    return true;
+  });
+}
+
+function statusTone(online: boolean): "good" | "off" {
+  return online ? "good" : "off";
+}
+
+function confidenceTone(value: number): "high" | "medium" | "low" {
+  if (value >= 90) {
+    return "high";
+  }
+  if (value >= 82) {
+    return "medium";
+  }
+  return "low";
+}
+
+function interpolatePosition(progress: number): { lat: number; lng: number } {
+  return {
+    lat: routeStart.lat + (targetRoute.lat - routeStart.lat) * progress,
+    lng: routeStart.lng + (targetRoute.lng - routeStart.lng) * progress,
+  };
+}
+
+function buildRoutePath(position: { lat: number; lng: number }): [number, number][] {
+  const mid1: [number, number] = [
+    position.lat + (targetRoute.lat - position.lat) * 0.4 + 0.0032,
+    position.lng + (targetRoute.lng - position.lng) * 0.2,
+  ];
+  const mid2: [number, number] = [
+    position.lat + (targetRoute.lat - position.lat) * 0.72 - 0.0016,
+    position.lng + (targetRoute.lng - position.lng) * 0.68 + 0.0024,
+  ];
+  return [
+    [position.lat, position.lng],
+    mid1,
+    mid2,
+    [targetRoute.lat, targetRoute.lng],
+  ];
+}
+
+function makeDotIcon(color: string, size: number): L.DivIcon {
   return L.divIcon({
-    className: "leaflet-marker-custom",
-    html: `<span style="display:block;width:${size}px;height:${size}px;border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 0 6px ${color}"></span>`,
+    className: "map-dot-icon",
+    html: `<span class="map-dot" style="width:${size}px;height:${size}px;background:${color}"></span>`,
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
   });
 }
 
-const unitIcon = makeIcon("#4a90ff", 16);
-const alertIconCritical = makeIcon("#ff4d6a", 14);
-const alertIconPriority = makeIcon("#ffb347", 12);
-const alertIconWatch = makeIcon("#7eb8ff", 10);
-const cameraIcon = makeIcon("#53d6a0", 10);
-const sessionIcon = makeIcon("#c084fc", 10);
-const destinationIcon = makeIcon("#f2f6ff", 12);
-
-function alertMarkerIcon(severity: string, isHotlist: boolean): L.DivIcon {
-  if (isHotlist) return alertIconCritical;
-  if (severity === "critical") return alertIconCritical;
-  if (severity === "priority") return alertIconPriority;
-  return alertIconWatch;
+function makePlateIcon(plate: string, critical: boolean): L.DivIcon {
+  return L.divIcon({
+    className: "map-plate-icon",
+    html: `<span class="plate-marker ${critical ? "critical" : ""}">${plate}</span>`,
+    iconSize: [74, 24],
+    iconAnchor: [37, 12],
+  });
 }
 
-function MapAutoFit(props: { points: [number, number][]; zoom: number }): null {
-  const map = useMap();
-  const pointsKey = props.points.map(([lat, lng]) => `${lat.toFixed(6)},${lng.toFixed(6)}`).join("|");
-  useEffect(() => {
-    if (props.points.length === 0) {
-      return;
-    }
+const unitIcon = makeDotIcon("#38E8FF", 14);
+const targetIcon = makeDotIcon("#F0F4F8", 12);
 
-    if (props.points.length === 1) {
-      map.setView(props.points[0], props.zoom, { animate: true });
-      return;
-    }
-
-    const bounds = L.latLngBounds(props.points);
-    if (bounds.isValid()) {
-      map.fitBounds(bounds.pad(0.16), { animate: true });
-    }
-  }, [map, pointsKey, props.zoom]);
-  return null;
-}
-
-interface OpsMapLeafletProps {
+function OpsMap(props: {
   unitPosition: { lat: number; lng: number };
-  destinationPosition: { lat: number; lng: number };
-  destinationLabel: string;
-  alertMarkers: Array<{
-    id: string;
-    lat: number;
-    lng: number;
-    plate: string;
-    severity: string;
-    isHotlist: boolean;
-    onSelect: () => void;
-  }>;
-  cameraNodes: Array<{ id: string; lat: number; lng: number; zone: string }>;
-  sessionNodes: Array<{ id: string; lat: number; lng: number; label: string }>;
-  arrivalRadius: number;
-  withinArrival: boolean;
   routePath: [number, number][];
-}
-
-function OpsMapLeaflet(props: OpsMapLeafletProps): ReactElement {
-  const fitPoints: [number, number][] = [
-    [props.unitPosition.lat, props.unitPosition.lng],
-    [props.destinationPosition.lat, props.destinationPosition.lng],
-    ...props.routePath,
-    ...props.alertMarkers.map((marker) => [marker.lat, marker.lng] as [number, number]),
-    ...props.cameraNodes.map((camera) => [camera.lat, camera.lng] as [number, number]),
-    ...props.sessionNodes.map((session) => [session.lat, session.lng] as [number, number]),
-  ];
-
+  rows: ConsoleDetectionRow[];
+  showRadiusRing: boolean;
+  selectedRowId: string | null;
+  onSelect: (rowId: string) => void;
+}): ReactElement {
   return (
-    <div className="leaflet-map-wrapper">
-      <MapContainer
-        center={[props.destinationPosition.lat, props.destinationPosition.lng]}
-        zoom={defaultMapZoom}
-        scrollWheelZoom={true}
-        style={{ height: "100%", width: "100%", borderRadius: "22px" }}
-        zoomControl={true}
-      >
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
-        <MapAutoFit points={fitPoints} zoom={defaultMapZoom} />
+    <MapContainer center={[targetRoute.lat, targetRoute.lng]} zoom={14} scrollWheelZoom={true} style={{ height: "100%", width: "100%" }}>
+      <TileLayer attribution="OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
 
-        <Marker position={[props.destinationPosition.lat, props.destinationPosition.lng]} icon={destinationIcon}>
-          <Popup>
-            <strong>{props.destinationLabel}</strong>
-            <br />
-            Arrival radius: {props.arrivalRadius} ft
-          </Popup>
-        </Marker>
+      <Marker position={[props.unitPosition.lat, props.unitPosition.lng]} icon={unitIcon}>
+        <Popup>Recovery unit</Popup>
+      </Marker>
 
-        {/* Unit marker */}
-        <Marker position={[props.unitPosition.lat, props.unitPosition.lng]} icon={unitIcon}>
-          <Popup>
-            <strong>Recovery unit</strong>
-          </Popup>
-        </Marker>
+      <Marker position={[targetRoute.lat, targetRoute.lng]} icon={targetIcon}>
+        <Popup>{targetRoute.address}</Popup>
+      </Marker>
 
-        {/* Arrival ring */}
+      {props.showRadiusRing ? (
         <Circle
-          center={[props.destinationPosition.lat, props.destinationPosition.lng]}
-          radius={props.arrivalRadius * 0.3048}
+          center={[targetRoute.lat, targetRoute.lng]}
+          radius={defaultUiSettings.arrivalRadiusFeet * 0.3048}
           pathOptions={{
-            color: props.withinArrival ? "#53d6a0" : "#4a90ff",
-            fillColor: props.withinArrival ? "rgba(83,214,160,0.12)" : "rgba(74,144,255,0.08)",
+            color: "#38E8FF",
+            fillColor: "rgba(56,232,255,0.10)",
             fillOpacity: 0.3,
             weight: 2,
-            dashArray: props.withinArrival ? undefined : "6 4",
+            dashArray: "6 5",
           }}
         />
+      ) : null}
 
-        {/* Route path */}
-        {props.routePath.length > 1 ? (
-          <Polyline
-            positions={props.routePath}
-            pathOptions={{ color: "#78b0ff", weight: 3, opacity: 0.75 }}
-          />
-        ) : null}
+      <Polyline positions={props.routePath} pathOptions={{ color: "#38E8FF", opacity: 0.8, weight: 4 }} />
 
-        {/* Alert markers */}
-        {props.alertMarkers.map((marker) => (
-          <Marker
-            key={marker.id}
-            position={[marker.lat, marker.lng]}
-            icon={alertMarkerIcon(marker.severity, marker.isHotlist)}
-            eventHandlers={{ click: marker.onSelect }}
-          >
-            <Popup>
-              <strong>{marker.plate}</strong>
-              <br />
-              {marker.isHotlist ? "Hotlist match" : marker.severity}
-            </Popup>
-          </Marker>
-        ))}
-
-        {/* Camera nodes */}
-        {props.cameraNodes.map((cam) => (
-          <Marker key={cam.id} position={[cam.lat, cam.lng]} icon={cameraIcon}>
-            <Popup>
-              {cam.id} - {cam.zone}
-            </Popup>
-          </Marker>
-        ))}
-
-        {/* Session nodes */}
-        {props.sessionNodes.map((sess) => (
-          <Marker key={sess.id} position={[sess.lat, sess.lng]} icon={sessionIcon}>
-            <Popup>{sess.label}</Popup>
-          </Marker>
-        ))}
-      </MapContainer>
-    </div>
+      {props.rows.map((row) => (
+        <Marker
+          key={row.id}
+          position={[row.lat, row.lng]}
+          icon={makePlateIcon(row.plate1, row.hotlist || row.id === props.selectedRowId)}
+          eventHandlers={{
+            click: () => props.onSelect(row.id),
+          }}
+        >
+          <Popup>
+            <strong>{row.plate1}</strong>
+            <br />
+            {row.vehicle}
+            <br />
+            {row.gps}
+          </Popup>
+        </Marker>
+      ))}
+    </MapContainer>
   );
 }
 
-function PanelFrame(props: {
-  panelId: PanelId;
-  children: ReactNode;
-  actions?: ReactNode;
-  titleOverride?: string;
-}): ReactElement {
-  const meta = panelCatalog[props.panelId];
+function Toggle(props: { checked: boolean; onChange: (checked: boolean) => void; label: string }): ReactElement {
   return (
-    <section className="panel-frame">
-      <div className="panel-frame__header">
-        <div>
-          <h3>{props.titleOverride ?? meta.label}</h3>
-          <p>{meta.description}</p>
-        </div>
-        {props.actions}
+    <label className="toggle" aria-label={props.label}>
+      <input checked={props.checked} type="checkbox" onChange={(event) => props.onChange(event.target.checked)} />
+      <span className="toggle-track" />
+      <span className="toggle-thumb" />
+    </label>
+  );
+}
+
+function Badge(props: { tone: "cyan" | "critical" | "success" | "warn" | "muted"; children: string }): ReactElement {
+  return <span className={`badge badge--${props.tone}`}>{props.children}</span>;
+}
+
+function ScreenHeader(props: { title: string; subtitle: string; meta?: ReactElement }): ReactElement {
+  return (
+    <header className="screen-header">
+      <div>
+        <p className="eyebrow">RepoScan Ops</p>
+        <h1>{props.title}</h1>
+        <p className="screen-subtitle">{props.subtitle}</p>
       </div>
-      {props.children}
-    </section>
+      {props.meta ? <div className="screen-header__meta">{props.meta}</div> : null}
+    </header>
   );
 }
 
-function StatusLine(props: { label: string; value: string }): ReactElement {
+function App(): ReactElement {
+  const [screen, setScreen] = useState<AppScreen>("console");
+  const [stageView, setStageView] = useState<StageView>("camera");
+  const [selectedCameraId, setSelectedCameraId] = useState<string>(cameraFeeds[2]?.id ?? cameraFeeds[0]?.id ?? "");
+  const [selectedDetectionId, setSelectedDetectionId] = useState<string | null>(null);
+  const [detailDetectionId, setDetailDetectionId] = useState<string | null>(null);
+  const [detailImageUrl, setDetailImageUrl] = useState<string | null>(null);
+  const [settings, setSettings] = useState<UiSettings>(() => loadStoredSettings());
+  const [apiKey, setApiKey] = useState<string>(() => loadStoredString(apiKeyStorageKey));
+  const [apiKeyInput, setApiKeyInput] = useState<string>(() => loadStoredString(apiKeyStorageKey));
+  const [activeDestination, setActiveDestination] = useState<string>(() => loadStoredString(targetAddressStorageKey, targetRoute.address));
+  const [destinationInput, setDestinationInput] = useState<string>(() => loadStoredString(targetAddressStorageKey, targetRoute.address));
+  const [navigationActive, setNavigationActive] = useState(true);
+  const [distanceFeet, setDistanceFeet] = useState(1400);
+  const [dataSource, setDataSource] = useState<DataSource>("demo");
+  const [overview, setOverview] = useState<DashboardOverviewResponse | null>(null);
+  const [hotlists, setHotlists] = useState<DashboardHotlist[]>(seedHotlists);
+  const [dataError, setDataError] = useState<string | null>(null);
+  const [refreshToken, setRefreshToken] = useState(0);
+  const [searchMode, setSearchMode] = useState<SearchMode>("plate");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchFromLocal, setSearchFromLocal] = useState("");
+  const [searchToLocal, setSearchToLocal] = useState("");
+  const [searchHotlistOnly, setSearchHotlistOnly] = useState(false);
+  const [searchHighConfidenceOnly, setSearchHighConfidenceOnly] = useState(false);
+  const [searchCurrentCameraOnly, setSearchCurrentCameraOnly] = useState(false);
+  const [searchCurrentShiftOnly, setSearchCurrentShiftOnly] = useState(false);
+  const [searchGroupByPlate, setSearchGroupByPlate] = useState(true);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+  const [searchResults, setSearchResults] = useState<ConsoleDetectionRow[]>([]);
+  const [searchTotal, setSearchTotal] = useState(0);
+  const [searchExecuted, setSearchExecuted] = useState(false);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchMessage, setSearchMessage] = useState<string | null>(null);
+  const [selectedHotlistId, setSelectedHotlistId] = useState<string | null>(null);
+  const [hotlistDraft, setHotlistDraft] = useState<HotlistDraft>(buildBlankHotlistDraft("9KPN665"));
+  const [hotlistSaving, setHotlistSaving] = useState(false);
+  const [hotlistDeleting, setHotlistDeleting] = useState(false);
+  const [hotlistError, setHotlistError] = useState<string | null>(null);
+  const [hotlistMessage, setHotlistMessage] = useState<string | null>(null);
+  const [hotlistOverlayId, setHotlistOverlayId] = useState<string | null>(null);
+  const [hotlistAudioMuted, setHotlistAudioMuted] = useState(false);
+  const hotlistPreviewShownRef = useRef(false);
+
+  useEffect(() => {
+    setApiClientConfig({ apiKey });
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(apiKeyStorageKey, apiKey);
+    }
+  }, [apiKey]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(uiSettingsStorageKey, JSON.stringify(settings));
+    }
+  }, [settings]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(targetAddressStorageKey, activeDestination);
+    }
+  }, [activeDestination]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function loadLiveData(): Promise<void> {
+      try {
+        const [nextOverview, nextHotlists] = await Promise.all([
+          fetchDashboardOverview(controller.signal),
+          fetchHotlists(controller.signal),
+        ]);
+
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        setOverview(nextOverview);
+        setHotlists(nextHotlists.length > 0 ? nextHotlists : seedHotlists);
+        setDataSource("live");
+        setDataError(null);
+      } catch (error) {
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        setOverview(null);
+        setDataSource(apiKey.trim() ? "fallback" : "demo");
+        setDataError(error instanceof Error ? error.message : "Unable to reach the live API");
+      }
+    }
+
+    void loadLiveData();
+
+    return () => {
+      controller.abort();
+    };
+  }, [apiKey, refreshToken]);
+
+  const allRows = (overview?.detections.length
+    ? overview.detections.map((record, index) => mapDetectionToRow(record, index, hotlists))
+    : buildSeedRows(hotlists)
+  ).sort((left, right) => right.timestampUtc.localeCompare(left.timestampUtc));
+
+  useEffect(() => {
+    const currentRowStillExists = selectedDetectionId ? allRows.some((row) => row.id === selectedDetectionId) : false;
+    if (!currentRowStillExists && allRows[0]) {
+      setSelectedDetectionId(allRows[0].id);
+    }
+  }, [allRows, selectedDetectionId]);
+
+  useEffect(() => {
+    const stillExists = selectedHotlistId ? hotlists.some((entry) => entry.entry_id === selectedHotlistId) : false;
+    if (stillExists) {
+      return;
+    }
+
+    const firstEntry = hotlists[0];
+    if (firstEntry) {
+      setSelectedHotlistId(firstEntry.entry_id);
+      setHotlistDraft(hotlistDraftFromEntry(firstEntry));
+      return;
+    }
+
+    setSelectedHotlistId(null);
+    setHotlistDraft(buildBlankHotlistDraft(allRows[0]?.plate1 ?? ""));
+  }, [hotlists, selectedHotlistId, allRows]);
+
+  useEffect(() => {
+    if (searchExecuted) {
+      return;
+    }
+    const initialRows = allRows.slice(0, 8);
+    setSearchResults(initialRows);
+    setSearchTotal(initialRows.length);
+  }, [allRows, searchExecuted]);
+
+  useEffect(() => {
+    const detailRow = [...allRows, ...searchResults].find((row) => row.id === detailDetectionId);
+    if (!detailRow?.detectionId || dataSource !== "live") {
+      setDetailImageUrl(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    let nextUrl: string | null = null;
+
+    async function loadDetailImage(): Promise<void> {
+      try {
+        const detectionId = detailRow?.detectionId ?? "";
+        nextUrl = await fetchDetectionFrameObjectUrl(detectionId, controller.signal);
+        if (!controller.signal.aborted) {
+          setDetailImageUrl(nextUrl);
+        }
+      } catch {
+        if (!controller.signal.aborted) {
+          setDetailImageUrl(null);
+        }
+      }
+    }
+
+    void loadDetailImage();
+
+    return () => {
+      controller.abort();
+      if (nextUrl) {
+        URL.revokeObjectURL(nextUrl);
+      }
+    };
+  }, [detailDetectionId, dataSource, allRows, searchResults]);
+
+  useEffect(() => {
+    if (hotlistPreviewShownRef.current || !settings.hotlistAlerts) {
+      return;
+    }
+    const firstHotlistRow = allRows.find((row) => row.hotlist);
+    if (!firstHotlistRow) {
+      return;
+    }
+    const timeout = window.setTimeout(() => {
+      hotlistPreviewShownRef.current = true;
+      setHotlistOverlayId(firstHotlistRow.id);
+    }, 1600);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [allRows, settings.hotlistAlerts]);
+
+  const selectedRow = allRows.find((row) => row.id === selectedDetectionId) ?? allRows[0] ?? null;
+  const detailRow = [...allRows, ...searchResults].find((row) => row.id === detailDetectionId) ?? null;
+  const hotlistOverlayRow = allRows.find((row) => row.id === hotlistOverlayId) ?? null;
+  const currentCamera = cameraFeeds.find((feed) => feed.id === selectedCameraId) ?? cameraFeeds[0];
+  const cameraRows = allRows.filter((row) => row.cameraId === selectedCameraId);
+  const cameraFocusRow = cameraRows[0] ?? selectedRow;
+  const routeProgress = navigationActive ? clamp(1 - distanceFeet / 4800, 0, 1) : 0;
+  const unitPosition = interpolatePosition(routeProgress);
+  const routePath = buildRoutePath(unitPosition);
+  const withinRadius = navigationActive && distanceFeet <= settings.arrivalRadiusFeet;
+  const totalReads = overview?.counts.recent_detections ?? 142;
+  const activeAlerts = overview?.counts.active_alerts ?? allRows.filter((row) => row.hotlist).length;
+  const activeSessions = overview?.counts.active_sessions ?? 3;
+  const onlineCameraCount = cameraFeeds.filter((feed) => feed.status === "Online").length;
+  const routeStatusLabel = !navigationActive
+    ? "Route idle"
+    : withinRadius
+      ? settings.arrivalScanEnabled
+        ? "Within radius - scan armed"
+        : "Within radius - scan off"
+      : "En route";
+  const routeEta = formatEta(distanceFeet, navigationActive);
+  const routeDistance = formatDistance(distanceFeet);
+  const detailTimeline = detailRow ? allRows.filter((row) => normalizePlate(row.plate1) === normalizePlate(detailRow.plate1)) : [];
+  const groupedSearchResults = searchGroupByPlate ? buildPlateGroups(searchResults) : [];
+  const hotlistWarning = !settings.hotlistAlerts || !settings.soundEnabled;
+
+  function switchScreen(nextScreen: AppScreen): void {
+    startTransition(() => setScreen(nextScreen));
+  }
+
+  function updateSetting<Key extends keyof UiSettings>(key: Key, value: UiSettings[Key]): void {
+    setSettings((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  }
+
+  function openDetail(row: ConsoleDetectionRow): void {
+    setSelectedDetectionId(row.id);
+    setDetailDetectionId(row.id);
+  }
+
+  function centerMapOnRow(row: ConsoleDetectionRow): void {
+    setSelectedDetectionId(row.id);
+    setStageView("map");
+    switchScreen("console");
+  }
+
+  function beginHotlistDraft(seedPlate?: string): void {
+    setSelectedHotlistId(null);
+    setHotlistDraft(buildBlankHotlistDraft(seedPlate ?? selectedRow?.plate1 ?? ""));
+    setHotlistError(null);
+    setHotlistMessage(null);
+  }
+
+  function loadHotlist(entry: DashboardHotlist): void {
+    setSelectedHotlistId(entry.entry_id);
+    setHotlistDraft(hotlistDraftFromEntry(entry));
+    setHotlistError(null);
+    setHotlistMessage(null);
+  }
+
+  async function handleSearchSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    setSearchLoading(true);
+    setSearchError(null);
+    setSearchMessage(null);
+
+    const fromUtc = toUtcIso(searchFromLocal);
+    const toUtc = toUtcIso(searchToLocal);
+
+    const localFallback = (): void => {
+      const nextRows = filterRowsLocally({
+        rows: allRows,
+        mode: searchMode,
+        query: searchQuery,
+        fromUtc,
+        toUtc,
+        hotlistOnly: searchHotlistOnly,
+        highConfidenceOnly: searchHighConfidenceOnly,
+        currentCameraOnly: searchCurrentCameraOnly,
+        currentShiftOnly: searchCurrentShiftOnly,
+        currentCameraId: selectedCameraId,
+      });
+      startTransition(() => {
+        setSearchResults(nextRows);
+        setSearchTotal(nextRows.length);
+        setSearchExecuted(true);
+      });
+    };
+
+    if (dataSource === "live") {
+      try {
+        const filters: DetectionSearchFilters = {
+          limit: 200,
+          start_utc: fromUtc,
+          end_utc: toUtc,
+        };
+
+        if (searchMode === "plate") {
+          filters.plate = searchQuery.trim();
+          filters.plate_match = "contains";
+        } else if (searchMode === "camera") {
+          filters.camera_id = selectedCameraId;
+        } else if (searchMode === "vehicle") {
+          const [make, ...modelParts] = searchQuery.trim().split(/\s+/).filter(Boolean);
+          if (make) {
+            filters.vehicle_make = make;
+          }
+          if (modelParts.length > 0) {
+            filters.vehicle_model = modelParts.join(" ");
+          }
+        }
+
+        const result = await searchDetections(filters);
+        const mappedRows = result.results.map((record, index) => mapDetectionToRow(record, index, hotlists));
+        const filteredRows = filterRowsLocally({
+          rows: mappedRows,
+          mode: searchMode,
+          query: searchQuery,
+          fromUtc,
+          toUtc,
+          hotlistOnly: searchHotlistOnly,
+          highConfidenceOnly: searchHighConfidenceOnly,
+          currentCameraOnly: searchCurrentCameraOnly,
+          currentShiftOnly: searchCurrentShiftOnly,
+          currentCameraId: selectedCameraId,
+        });
+
+        startTransition(() => {
+          setSearchResults(filteredRows);
+          setSearchTotal(result.page.total_results);
+          setSearchExecuted(true);
+        });
+      } catch (error) {
+        localFallback();
+        setSearchError(error instanceof Error ? `${error.message}. Showing cached results.` : "Showing cached results.");
+      }
+    } else {
+      localFallback();
+    }
+
+    setSearchLoading(false);
+  }
+
+  async function handleCopyPlate(plate: string): Promise<void> {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(plate);
+        setSearchMessage(`Copied ${plate} to clipboard.`);
+      } else {
+        setSearchMessage(`Clipboard is unavailable. Plate: ${plate}`);
+      }
+    } catch {
+      setSearchMessage(`Clipboard write failed. Plate: ${plate}`);
+    }
+  }
+
+  async function persistHotlist(
+    action: "save" | "recover",
+    entryOverride?: DashboardHotlist,
+    activeOverride?: boolean,
+  ): Promise<void> {
+    const entry =
+      entryOverride ??
+      (selectedHotlistId ? hotlists.find((hotlist) => hotlist.entry_id === selectedHotlistId) ?? null : null);
+
+    const nextPlateText = normalizePlate(entry?.plate_text ?? hotlistDraft.plateText);
+    const nextLabel = entry?.label ?? hotlistDraft.label;
+    const nextNotes = entry?.notes ?? hotlistDraft.notes;
+    const nextActive = activeOverride ?? entry?.active ?? hotlistDraft.active;
+
+    if (!nextPlateText) {
+      setHotlistError("Plate text is required.");
+      return;
+    }
+
+    try {
+      setHotlistSaving(true);
+      setHotlistError(null);
+      setHotlistMessage(null);
+
+      if (dataSource === "live") {
+        if (entry) {
+          await updateHotlist(entry.entry_id, {
+            plate_text: nextPlateText,
+            label: nextLabel || undefined,
+            notes: nextNotes || undefined,
+            active: nextActive,
+          });
+        } else {
+          const created = await createHotlist({
+            plate_text: nextPlateText,
+            label: nextLabel || undefined,
+            notes: nextNotes || undefined,
+            active: nextActive,
+          });
+          setSelectedHotlistId(created.entry_id);
+        }
+        setRefreshToken((value) => value + 1);
+      } else {
+        const now = new Date().toISOString();
+        if (entry) {
+          setHotlists((current) =>
+            current.map((item) =>
+              item.entry_id === entry.entry_id
+                ? {
+                    ...item,
+                    plate_text: nextPlateText,
+                    label: nextLabel || null,
+                    notes: nextNotes || null,
+                    active: nextActive,
+                    updated_at_utc: now,
+                  }
+                : item,
+            ),
+          );
+        } else {
+          const created: DashboardHotlist = {
+            entry_id: `hl_local_${Math.random().toString(16).slice(2, 10)}`,
+            plate_text: nextPlateText,
+            label: nextLabel || null,
+            notes: nextNotes || null,
+            active: nextActive,
+            created_at_utc: now,
+            updated_at_utc: now,
+          };
+          setHotlists((current) => [created, ...current]);
+          setSelectedHotlistId(created.entry_id);
+        }
+      }
+
+      setHotlistMessage(action === "recover" ? "Hotlist entry marked inactive." : entry ? "Hotlist entry updated." : "Hotlist entry created.");
+    } catch (error) {
+      setHotlistError(error instanceof Error ? error.message : "Unable to save the hotlist entry.");
+    } finally {
+      setHotlistSaving(false);
+    }
+  }
+
+  async function handleHotlistSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    await persistHotlist("save");
+  }
+
+  async function handleDeleteHotlist(): Promise<void> {
+    if (!selectedHotlistId) {
+      return;
+    }
+
+    try {
+      setHotlistDeleting(true);
+      setHotlistError(null);
+      setHotlistMessage(null);
+
+      if (dataSource === "live") {
+        await deleteHotlist(selectedHotlistId);
+        setRefreshToken((value) => value + 1);
+      } else {
+        setHotlists((current) => current.filter((entry) => entry.entry_id !== selectedHotlistId));
+      }
+
+      setSelectedHotlistId(null);
+      setHotlistDraft(buildBlankHotlistDraft(selectedRow?.plate1 ?? ""));
+      setHotlistMessage("Hotlist entry deleted.");
+    } catch (error) {
+      setHotlistError(error instanceof Error ? error.message : "Unable to delete the hotlist entry.");
+    } finally {
+      setHotlistDeleting(false);
+    }
+  }
+
+  async function handleRecoverFromAlert(): Promise<void> {
+    if (!hotlistOverlayRow) {
+      return;
+    }
+
+    const entry = hotlists.find((hotlist) => normalizePlate(hotlist.plate_text) === normalizePlate(hotlistOverlayRow.plate1));
+    if (!entry) {
+      setHotlistOverlayId(null);
+      return;
+    }
+
+    await persistHotlist("recover", entry, false);
+    setHotlistOverlayId(null);
+    switchScreen("hotlists");
+  }
+
+  const footerIndicators = [
+    { label: "GPS locked", value: "ON", tone: "good" },
+    { label: "Server", value: dataSource === "live" ? "Connected" : dataSource === "fallback" ? "Fallback" : "Demo", tone: dataSource === "live" ? "good" : "off" },
+    { label: "LPR", value: settings.arrivalScanEnabled ? "Active" : "Paused", tone: settings.arrivalScanEnabled ? "good" : "off" },
+    { label: "FPS", value: `${currentCamera?.fps ?? 0}`, tone: currentCamera?.status === "Online" ? "good" : "off" },
+    { label: "Cams", value: `${onlineCameraCount}/${cameraFeeds.length}`, tone: onlineCameraCount > 0 ? "good" : "off" },
+    { label: "Reads", value: `${totalReads}`, tone: "good" },
+    { label: "Alerts", value: `${activeAlerts}`, tone: activeAlerts > 0 ? "warn" : "good" },
+  ] as const;
+
   return (
-    <div className="status-line">
-      <span>{props.label}</span>
-      <strong>{props.value}</strong>
-    </div>
+    <>
+      <div className="ops-app">
+        <NavPanel
+          activeScreen={screen}
+          activeHotlists={hotlists.filter((entry) => entry.active).length}
+          currentStageView={stageView}
+          dataSource={dataSource}
+          destinationInput={destinationInput}
+          navigationActive={navigationActive}
+          onDestinationChange={setDestinationInput}
+          onResolve={() => {
+            setActiveDestination(destinationInput.trim() || targetRoute.address);
+            setStageView("map");
+          }}
+          onScreenChange={switchScreen}
+          onStageViewChange={setStageView}
+          onToggleNavigation={() => setNavigationActive((current) => !current)}
+          onHotlistSelect={(entry) => {
+            loadHotlist(entry);
+            switchScreen("hotlists");
+          }}
+          routeDistance={routeDistance}
+          routeEta={routeEta}
+          routeStatusLabel={routeStatusLabel}
+          searchCount={searchTotal || allRows.length}
+          settings={settings}
+          systemDetectionCount={totalReads}
+          systemHotlists={hotlists}
+          totalReads={totalReads}
+          uiHotlists={hotlists}
+          withinRadius={withinRadius}
+          distanceFeet={distanceFeet}
+          onDistanceChange={setDistanceFeet}
+        />
+
+        <main className="workspace">
+          {screen === "console" ? (
+            <ConsoleScreen
+              activeAlerts={activeAlerts}
+              allRows={allRows}
+              cameraFeedsList={cameraFeeds}
+              cameraFocusRow={cameraFocusRow}
+              currentCamera={currentCamera}
+              selectedCameraId={selectedCameraId}
+              selectedDetectionId={selectedDetectionId}
+              settings={settings}
+              stageView={stageView}
+              unitPosition={unitPosition}
+              routePath={routePath}
+              withinRadius={withinRadius}
+              onOpenDetail={openDetail}
+              onSelectCamera={setSelectedCameraId}
+              onSelectDetection={setSelectedDetectionId}
+              onStageViewChange={setStageView}
+            />
+          ) : null}
+
+          {screen === "search" ? (
+            <SearchScreen
+              dataSource={dataSource}
+              expandedGroups={expandedGroups}
+              groupedResults={groupedSearchResults}
+              hotlists={hotlists}
+              loading={searchLoading}
+              query={searchQuery}
+              results={searchResults}
+              resultsTotal={searchTotal}
+              searchError={searchError}
+              searchExecuted={searchExecuted}
+              searchFromLocal={searchFromLocal}
+              searchGroupByPlate={searchGroupByPlate}
+              searchHighConfidenceOnly={searchHighConfidenceOnly}
+              searchHotlistOnly={searchHotlistOnly}
+              searchMessage={searchMessage}
+              searchMode={searchMode}
+              searchToLocal={searchToLocal}
+              searchCurrentCameraOnly={searchCurrentCameraOnly}
+              searchCurrentShiftOnly={searchCurrentShiftOnly}
+              onCopyPlate={handleCopyPlate}
+              onDetails={openDetail}
+              onMap={centerMapOnRow}
+              onSearchSubmit={handleSearchSubmit}
+              onToggleExpanded={(plate) =>
+                setExpandedGroups((current) => ({
+                  ...current,
+                  [plate]: !(current[plate] ?? false),
+                }))
+              }
+              setQuery={setSearchQuery}
+              setSearchFromLocal={setSearchFromLocal}
+              setSearchGroupByPlate={setSearchGroupByPlate}
+              setSearchHighConfidenceOnly={setSearchHighConfidenceOnly}
+              setSearchHotlistOnly={setSearchHotlistOnly}
+              setSearchMode={setSearchMode}
+              setSearchToLocal={setSearchToLocal}
+              setSearchCurrentCameraOnly={setSearchCurrentCameraOnly}
+              setSearchCurrentShiftOnly={setSearchCurrentShiftOnly}
+            />
+          ) : null}
+
+          {screen === "hotlists" ? (
+            <HotlistsScreen
+              dataSource={dataSource}
+              draft={hotlistDraft}
+              error={hotlistError}
+              hotlists={hotlists}
+              message={hotlistMessage}
+              saving={hotlistSaving}
+              deleting={hotlistDeleting}
+              selectedDetectionPlate={selectedRow?.plate1 ?? ""}
+              selectedHotlistId={selectedHotlistId}
+              onClearDraft={() => beginHotlistDraft()}
+              onDelete={() => void handleDeleteHotlist()}
+              onDraftChange={setHotlistDraft}
+              onSelect={loadHotlist}
+              onSeedFromDetection={() => beginHotlistDraft(selectedRow?.plate1)}
+              onSubmit={handleHotlistSubmit}
+            />
+          ) : null}
+
+          {screen === "settings" ? (
+            <SettingsScreen
+              activeSessions={activeSessions}
+              apiKeyInput={apiKeyInput}
+              dataError={dataError}
+              dataSource={dataSource}
+              hotlistWarning={hotlistWarning}
+              onApiKeyApply={() => setApiKey(apiKeyInput.trim())}
+              onApiKeyChange={setApiKeyInput}
+              onRefresh={() => setRefreshToken((value) => value + 1)}
+              settings={settings}
+              updateSetting={updateSetting}
+            />
+          ) : null}
+        </main>
+
+        <footer className="status-footer">
+          {footerIndicators.map((indicator) => (
+            <div key={indicator.label} className="status-footer__item">
+              <span className={`status-dot status-dot--${indicator.tone}`} />
+              <strong>{indicator.label}</strong>
+              <span>{indicator.value}</span>
+            </div>
+          ))}
+        </footer>
+      </div>
+
+      {detailRow ? (
+        <DetailOverlay
+          activeDestination={activeDestination}
+          detailImageUrl={detailImageUrl}
+          detailRow={detailRow}
+          detailTimeline={detailTimeline}
+          hotlists={hotlists}
+          onAddToHotlist={() => {
+            beginHotlistDraft(detailRow.plate1);
+            switchScreen("hotlists");
+            setDetailDetectionId(null);
+          }}
+          onClose={() => setDetailDetectionId(null)}
+          onCopyPlate={handleCopyPlate}
+          onOpenMap={() => {
+            centerMapOnRow(detailRow);
+            setDetailDetectionId(null);
+          }}
+        />
+      ) : null}
+
+      {hotlistOverlayRow ? (
+        <HotlistAlertOverlay
+          activeDestination={activeDestination}
+          hotlistAudioMuted={hotlistAudioMuted}
+          hotlistRow={hotlistOverlayRow}
+          onDismiss={() => setHotlistOverlayId(null)}
+          onMuteToggle={() => setHotlistAudioMuted((value) => !value)}
+          onNavigate={() => {
+            centerMapOnRow(hotlistOverlayRow);
+            setHotlistOverlayId(null);
+          }}
+          onRecover={() => void handleRecoverFromAlert()}
+          onViewRecord={() => {
+            openDetail(hotlistOverlayRow);
+            setHotlistOverlayId(null);
+          }}
+        />
+      ) : null}
+    </>
   );
 }
 
-function StatusRow(props: { label: string; value: string; tone: "good" | "warn" | "neutral" }): ReactElement {
+function SearchResultCard(props: {
+  row: ConsoleDetectionRow;
+  hotlistLabel: string | null;
+  onDetails: () => void;
+  onMap: () => void;
+  onCopy: (plate: string) => Promise<void>;
+}): ReactElement {
+  return (
+    <article className="search-result-card">
+      <div className="search-result-card__thumb">
+        <span>{props.row.camera}</span>
+      </div>
+      <div className="search-result-card__body">
+        <div className="search-result-card__header">
+          <div>
+            <strong>{props.row.plate1}</strong>
+            <span>{props.row.vehicle}</span>
+          </div>
+          <div className="search-result-card__badges">
+            {props.row.hotlist ? <Badge tone="critical">Hotlist</Badge> : null}
+            {props.hotlistLabel ? <Badge tone="warn">{props.hotlistLabel}</Badge> : null}
+          </div>
+        </div>
+        <div className="search-result-card__meta">
+          <span>{props.row.source}</span>
+          <span>{props.row.gps}</span>
+          <span>
+            {formatDateTime(props.row.timestampUtc)} | {confidenceLabel(props.row.conf)}
+          </span>
+        </div>
+        <div className="search-result-card__actions">
+          <button className="link-button" type="button" onClick={props.onDetails}>
+            Details
+          </button>
+          <button className="link-button" type="button" onClick={props.onMap}>
+            Map
+          </button>
+          <button className="link-button" type="button" onClick={() => void props.onCopy(props.row.plate1)}>
+            Copy Plate
+          </button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function StatusRow(props: { label: string; value: string; tone: "good" | "off" }): ReactElement {
   return (
     <div className="status-row">
       <span>{props.label}</span>
       <strong>{props.value}</strong>
-      <em className={`status-dot status-dot--${props.tone}`} />
+      <i className={`status-dot status-dot--${props.tone}`} />
     </div>
   );
 }
 
-function GlanceTile(props: { label: string; value: string; sublabel: string }): ReactElement {
+function SettingsToggleRow(props: {
+  title: string;
+  detail: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}): ReactElement {
   return (
-    <div className="glance-tile">
+    <div className="settings-row">
+      <div>
+        <strong>{props.title}</strong>
+        <span>{props.detail}</span>
+      </div>
+      <Toggle checked={props.checked} label={props.title} onChange={props.onChange} />
+    </div>
+  );
+}
+
+function SettingsRangeRow(props: {
+  title: string;
+  detail: string;
+  min: number;
+  max: number;
+  step: number;
+  value: number;
+  onChange: (value: number) => void;
+}): ReactElement {
+  return (
+    <div className="settings-row settings-row--stacked">
+      <div className="settings-row__copy">
+        <strong>{props.title}</strong>
+        <span>{props.detail}</span>
+      </div>
+      <input
+        max={props.max}
+        min={props.min}
+        step={props.step}
+        type="range"
+        value={props.value}
+        onChange={(event) => props.onChange(Number(event.target.value))}
+      />
+    </div>
+  );
+}
+
+function SettingsSelectRow(props: {
+  title: string;
+  detail: string;
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+}): ReactElement {
+  return (
+    <div className="settings-row">
+      <div>
+        <strong>{props.title}</strong>
+        <span>{props.detail}</span>
+      </div>
+      <select className="select-input" value={props.value} onChange={(event) => props.onChange(event.target.value)}>
+        {props.options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function ReadOnlyRow(props: { title: string; detail: string; value: string }): ReactElement {
+  return (
+    <div className="settings-row">
+      <div>
+        <strong>{props.title}</strong>
+        <span>{props.detail}</span>
+      </div>
+      <span className="read-only-value">{props.value}</span>
+    </div>
+  );
+}
+
+function DetailField(props: { label: string; value: string; tone?: "critical" | "cyan" }): ReactElement {
+  return (
+    <div className="detail-field">
       <span>{props.label}</span>
-      <strong>{props.value}</strong>
-      <small>{props.sublabel}</small>
+      <strong className={props.tone ? `detail-field__value detail-field__value--${props.tone}` : "detail-field__value"}>{props.value}</strong>
+    </div>
+  );
+}
+
+function NavPanel(props: {
+  activeScreen: AppScreen;
+  activeHotlists: number;
+  currentStageView: StageView;
+  dataSource: DataSource;
+  destinationInput: string;
+  navigationActive: boolean;
+  onDestinationChange: (value: string) => void;
+  onResolve: () => void;
+  onScreenChange: (screen: AppScreen) => void;
+  onStageViewChange: (view: StageView) => void;
+  onToggleNavigation: () => void;
+  onHotlistSelect: (entry: DashboardHotlist) => void;
+  routeDistance: string;
+  routeEta: string;
+  routeStatusLabel: string;
+  searchCount: number;
+  settings: UiSettings;
+  systemDetectionCount: number;
+  systemHotlists: DashboardHotlist[];
+  totalReads: number;
+  uiHotlists: DashboardHotlist[];
+  withinRadius: boolean;
+  distanceFeet: number;
+  onDistanceChange: (value: number) => void;
+}): ReactElement {
+  return (
+    <aside className="nav-panel">
+      <div className="brand-card">
+        <div className="brand-mark">SIF</div>
+        <div>
+          <p className="eyebrow">Seen-It-First</p>
+          <h2>RepoScan Pro</h2>
+          <p className="brand-copy">Camera-first recovery console aligned to the latest Claude pass and your wireframe.</p>
+        </div>
+      </div>
+
+      <div className="nav-tabs">
+        {[
+          { id: "console", label: "Dashboard", count: props.totalReads },
+          { id: "search", label: "Search", count: props.searchCount },
+          { id: "hotlists", label: "Hotlists", count: props.activeHotlists },
+          { id: "settings", label: "Settings", count: 0 },
+        ].map((item) => (
+          <button
+            key={item.id}
+            className={`nav-tab ${props.activeScreen === item.id ? "is-active" : ""}`}
+            type="button"
+            onClick={() => props.onScreenChange(item.id as AppScreen)}
+          >
+            <span className="nav-tab__label">{item.label}</span>
+            <span className="nav-tab__count">{item.count > 0 ? item.count : "-"}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="panel-card">
+        <div className="panel-card__header">
+          <h3>Stage View</h3>
+          <Badge tone="cyan">{props.currentStageView === "camera" ? "Camera" : "Map"}</Badge>
+        </div>
+        <div className="segmented-control">
+          <button className={props.currentStageView === "camera" ? "is-active" : ""} type="button" onClick={() => props.onStageViewChange("camera")}>
+            Cameras
+          </button>
+          <button className={props.currentStageView === "map" ? "is-active" : ""} type="button" onClick={() => props.onStageViewChange("map")}>
+            Map
+          </button>
+        </div>
+      </div>
+
+      <div className="panel-card">
+        <div className="panel-card__header">
+          <h3>System</h3>
+          <Badge tone={props.dataSource === "live" ? "success" : "warn"}>{props.dataSource.toUpperCase()}</Badge>
+        </div>
+        <div className="status-list">
+          <StatusRow label="GPS" value="Locked" tone="good" />
+          <StatusRow label="Network" value={props.dataSource === "live" ? "Connected" : "Local cache"} tone={statusTone(props.dataSource === "live")} />
+          <StatusRow label="LPR" value={props.settings.arrivalScanEnabled ? "Active" : "Paused"} tone={statusTone(props.settings.arrivalScanEnabled)} />
+          <StatusRow label="Hotlist alerts" value={props.settings.hotlistAlerts ? "Enabled" : "Disabled"} tone={statusTone(props.settings.hotlistAlerts)} />
+          <StatusRow label="Detections" value={`${props.systemDetectionCount}`} tone="good" />
+        </div>
+      </div>
+
+      <div className="panel-card">
+        <div className="panel-card__header">
+          <h3>Destination</h3>
+          <Badge tone={props.withinRadius ? "success" : props.navigationActive ? "cyan" : "muted"}>{props.routeStatusLabel}</Badge>
+        </div>
+        <label className="field-label" htmlFor="destination-input">
+          Target address
+        </label>
+        <input
+          id="destination-input"
+          className="text-input"
+          placeholder="4128 W Fulton St, Chicago, IL"
+          type="text"
+          value={props.destinationInput}
+          onChange={(event) => props.onDestinationChange(event.target.value)}
+        />
+        <div className="range-row">
+          <div>
+            <strong>Distance to target</strong>
+            <span>{props.routeDistance}</span>
+          </div>
+          <input
+            max="5280"
+            min="0"
+            type="range"
+            value={props.distanceFeet}
+            onChange={(event) => props.onDistanceChange(Number(event.target.value))}
+          />
+        </div>
+        <div className="button-row">
+          <button className="btn btn--ghost" type="button" onClick={props.onResolve}>
+            Resolve
+          </button>
+          <button className={`btn ${props.navigationActive ? "btn--danger" : "btn--primary"}`} type="button" onClick={props.onToggleNavigation}>
+            {props.navigationActive ? "End Route" : "Start Nav"}
+          </button>
+        </div>
+        <div className="target-summary">
+          <div>
+            <span>ETA</span>
+            <strong>{props.routeEta}</strong>
+          </div>
+          <div>
+            <span>Radius</span>
+            <strong>{props.settings.arrivalRadiusFeet} ft</strong>
+          </div>
+          <div>
+            <span>Scan</span>
+            <strong>{props.settings.arrivalScanEnabled ? "ON" : "OFF"}</strong>
+          </div>
+        </div>
+      </div>
+
+      <div className="panel-card panel-card--critical">
+        <div className="panel-card__header">
+          <h3>Hotlist Queue</h3>
+          <Badge tone="critical">{`${props.systemHotlists.filter((entry) => entry.active).length} active`}</Badge>
+        </div>
+        <div className="hotlist-mini-list">
+          {props.uiHotlists.slice(0, 3).map((entry) => (
+            <button key={entry.entry_id} className="mini-hotlist-row" type="button" onClick={() => props.onHotlistSelect(entry)}>
+              <strong>{entry.plate_text}</strong>
+              <span>{entry.label ?? "Unlabeled entry"}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function ConsoleScreen(props: {
+  activeAlerts: number;
+  allRows: ConsoleDetectionRow[];
+  cameraFeedsList: typeof cameraFeeds;
+  cameraFocusRow: ConsoleDetectionRow | null;
+  currentCamera: (typeof cameraFeeds)[number] | undefined;
+  selectedCameraId: string;
+  selectedDetectionId: string | null;
+  settings: UiSettings;
+  stageView: StageView;
+  unitPosition: { lat: number; lng: number };
+  routePath: [number, number][];
+  withinRadius: boolean;
+  onOpenDetail: (row: ConsoleDetectionRow) => void;
+  onSelectCamera: (cameraId: string) => void;
+  onSelectDetection: (rowId: string) => void;
+  onStageViewChange: (view: StageView) => void;
+}): ReactElement {
+  return (
+    <section className="screen">
+      <ScreenHeader
+        title="Operations Console"
+        subtitle="Camera-first dashboard with live route, detection, and system context."
+        meta={
+          <>
+            <Badge tone={props.withinRadius ? "success" : "cyan"}>{props.withinRadius ? "Within radius" : "En route"}</Badge>
+            <Badge tone={props.settings.arrivalScanEnabled ? "cyan" : "muted"}>{props.settings.arrivalScanEnabled ? "Arrival scan on" : "Arrival scan off"}</Badge>
+          </>
+        }
+      />
+
+      <div className="console-layout">
+        <section className="stage-card">
+          <div className="stage-toolbar">
+            <div className="camera-tab-strip">
+              {props.cameraFeedsList.map((feed, index) => (
+                <button
+                  key={feed.id}
+                  className={`camera-tab ${props.selectedCameraId === feed.id ? "is-active" : ""}`}
+                  type="button"
+                  onClick={() => props.onSelectCamera(feed.id)}
+                >
+                  <span className={`camera-dot camera-dot--${feed.status === "Online" ? "live" : "off"}`} />
+                  Cam {index + 1}
+                </button>
+              ))}
+            </div>
+            <div className="stage-toolbar__right">
+              <button className={`pill-button ${props.stageView === "camera" ? "is-active" : ""}`} type="button" onClick={() => props.onStageViewChange("camera")}>
+                Camera
+              </button>
+              <button className={`pill-button ${props.stageView === "map" ? "is-active" : ""}`} type="button" onClick={() => props.onStageViewChange("map")}>
+                Map
+              </button>
+              <Badge tone={props.currentCamera?.status === "Online" ? "critical" : "muted"}>{props.currentCamera?.status === "Online" ? "LIVE" : "OFFLINE"}</Badge>
+            </div>
+          </div>
+
+          <div className="stage-surface">
+            {props.stageView === "camera" ? (
+              <div className="camera-stage">
+                <div className="camera-stage__meta">
+                  <strong>{buildCameraDisplayName(props.selectedCameraId)}</strong>
+                  <span>{props.currentCamera?.fps ?? 0} FPS</span>
+                  <span>{props.settings.resolution}</span>
+                </div>
+                <div className="camera-feed">
+                  <div className="camera-feed__grid" />
+                  <div className="camera-feed__lane camera-feed__lane--left" />
+                  <div className="camera-feed__lane camera-feed__lane--right" />
+                  <div className="camera-wireframe">
+                    <div className="camera-wireframe__roof" />
+                    <div className="camera-wireframe__body" />
+                    <div className="camera-wireframe__hood" />
+                  </div>
+                  {props.cameraFocusRow ? (
+                    <div
+                      className={`detection-box detection-box--${confidenceTone(props.cameraFocusRow.conf)}`}
+                      style={
+                        {
+                          "--box-left": props.cameraFocusRow.cameraId === "cam-front-1" ? "20%" : props.cameraFocusRow.cameraId === "cam-side-2" ? "54%" : "36%",
+                          "--box-top": props.cameraFocusRow.cameraId === "cam-front-1" ? "35%" : props.cameraFocusRow.cameraId === "cam-side-2" ? "32%" : "38%",
+                        } as CSSProperties
+                      }
+                    >
+                      <div className="detection-box__plate">
+                        {props.cameraFocusRow.plate1} {confidenceLabel(props.cameraFocusRow.conf)}
+                      </div>
+                      {props.settings.overlayLabels ? (
+                        <div className="detection-box__meta">
+                          <span>{props.cameraFocusRow.vehicle}</span>
+                          <span>{props.cameraFocusRow.direction}</span>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  <div className="camera-feed__hud">
+                    <div>
+                      <span>Frame</span>
+                      <strong>021844</strong>
+                    </div>
+                    <div>
+                      <span>Lane</span>
+                      <strong>{props.cameraFocusRow?.lane ?? "Standby"}</strong>
+                    </div>
+                    <div>
+                      <span>Direction</span>
+                      <strong>{props.cameraFocusRow?.direction ?? "Standby"}</strong>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="map-stage">
+                <OpsMap
+                  unitPosition={props.unitPosition}
+                  routePath={props.routePath}
+                  rows={props.allRows.slice(0, 8)}
+                  showRadiusRing={props.settings.showRadiusRing}
+                  selectedRowId={props.selectedDetectionId}
+                  onSelect={props.onSelectDetection}
+                />
+                <div className="map-stage__badge">{props.withinRadius ? "IN RADIUS" : "EN ROUTE"}</div>
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section className="table-card">
+          <div className="table-card__header">
+            <div>
+              <p className="eyebrow">Live Reads</p>
+              <h3>Plate Detection Table</h3>
+            </div>
+            <div className="table-card__meta">
+              <span>{props.allRows.length} visible</span>
+              <span>{props.activeAlerts} active alerts</span>
+            </div>
+          </div>
+          <div className="table-scroll">
+            <table className="detection-table">
+              <thead>
+                <tr>
+                  <th>Image</th>
+                  <th>Plate 1</th>
+                  <th>Plate 2</th>
+                  <th>State</th>
+                  <th>Camera</th>
+                  <th>Conf</th>
+                  <th>Time</th>
+                </tr>
+              </thead>
+              <tbody>
+                {props.allRows.map((row) => (
+                  <tr
+                    key={row.id}
+                    className={`${props.selectedDetectionId === row.id ? "is-selected" : ""} ${row.hotlist ? "is-hotlist" : ""}`}
+                    onClick={() => props.onSelectDetection(row.id)}
+                  >
+                    <td>
+                      <button className="thumb-cell" type="button" onClick={() => props.onOpenDetail(row)}>
+                        <span>{row.camera}</span>
+                      </button>
+                    </td>
+                    <td>{row.plate1}</td>
+                    <td>{row.plate2}</td>
+                    <td>{row.state}</td>
+                    <td>{row.camera}</td>
+                    <td>{confidenceLabel(row.conf)}</td>
+                    <td>{row.time}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </section>
+  );
+}
+
+function SearchScreen(props: {
+  dataSource: DataSource;
+  expandedGroups: Record<string, boolean>;
+  groupedResults: PlateGroup[];
+  hotlists: DashboardHotlist[];
+  loading: boolean;
+  query: string;
+  results: ConsoleDetectionRow[];
+  resultsTotal: number;
+  searchError: string | null;
+  searchExecuted: boolean;
+  searchFromLocal: string;
+  searchGroupByPlate: boolean;
+  searchHighConfidenceOnly: boolean;
+  searchHotlistOnly: boolean;
+  searchMessage: string | null;
+  searchMode: SearchMode;
+  searchToLocal: string;
+  searchCurrentCameraOnly: boolean;
+  searchCurrentShiftOnly: boolean;
+  onCopyPlate: (plate: string) => Promise<void>;
+  onDetails: (row: ConsoleDetectionRow) => void;
+  onMap: (row: ConsoleDetectionRow) => void;
+  onSearchSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  onToggleExpanded: (plate: string) => void;
+  setQuery: (value: string) => void;
+  setSearchFromLocal: (value: string) => void;
+  setSearchGroupByPlate: (value: boolean) => void;
+  setSearchHighConfidenceOnly: (value: boolean) => void;
+  setSearchHotlistOnly: (value: boolean) => void;
+  setSearchMode: (mode: SearchMode) => void;
+  setSearchToLocal: (value: string) => void;
+  setSearchCurrentCameraOnly: (value: boolean) => void;
+  setSearchCurrentShiftOnly: (value: boolean) => void;
+}): ReactElement {
+  return (
+    <section className="screen">
+      <ScreenHeader
+        title="Search Results"
+        subtitle="Field-ready plate and vehicle history with grouping, quick actions, and map handoff."
+        meta={
+          <>
+            <Badge tone={props.loading ? "warn" : "cyan"}>{props.loading ? "Searching" : "Ready"}</Badge>
+            <Badge tone={props.dataSource === "live" ? "success" : "muted"}>{props.dataSource.toUpperCase()}</Badge>
+          </>
+        }
+      />
+
+      <form className="search-toolbar-card" onSubmit={(event) => void props.onSearchSubmit(event)}>
+        <div className="search-mode-tabs">
+          {(["plate", "camera", "vehicle", "time"] as const).map((mode) => (
+            <button key={mode} className={props.searchMode === mode ? "is-active" : ""} type="button" onClick={() => props.setSearchMode(mode)}>
+              {mode}
+            </button>
+          ))}
+        </div>
+
+        <div className="search-input-row">
+          <input
+            className="text-input text-input--large"
+            placeholder={
+              props.searchMode === "plate"
+                ? "Search full or partial plate"
+                : props.searchMode === "camera"
+                  ? "Search current or named camera"
+                  : props.searchMode === "vehicle"
+                    ? "Search make / model / color"
+                    : "Optional time keyword"
+            }
+            type="text"
+            value={props.query}
+            onChange={(event) => props.setQuery(event.target.value)}
+          />
+          <button className="btn btn--primary" disabled={props.loading} type="submit">
+            {props.loading ? "Searching..." : "Run Search"}
+          </button>
+        </div>
+
+        <div className="search-filter-grid">
+          <label>
+            <span>From</span>
+            <input className="text-input" type="datetime-local" value={props.searchFromLocal} onChange={(event) => props.setSearchFromLocal(event.target.value)} />
+          </label>
+          <label>
+            <span>To</span>
+            <input className="text-input" type="datetime-local" value={props.searchToLocal} onChange={(event) => props.setSearchToLocal(event.target.value)} />
+          </label>
+        </div>
+
+        <div className="chip-row">
+          <button className={`chip ${props.searchHotlistOnly ? "is-active" : ""}`} type="button" onClick={() => props.setSearchHotlistOnly(!props.searchHotlistOnly)}>
+            Hotlist
+          </button>
+          <button className={`chip ${props.searchCurrentShiftOnly ? "is-active" : ""}`} type="button" onClick={() => props.setSearchCurrentShiftOnly(!props.searchCurrentShiftOnly)}>
+            Current shift
+          </button>
+          <button className={`chip ${props.searchCurrentCameraOnly ? "is-active" : ""}`} type="button" onClick={() => props.setSearchCurrentCameraOnly(!props.searchCurrentCameraOnly)}>
+            Current camera
+          </button>
+          <button className={`chip ${props.searchHighConfidenceOnly ? "is-active" : ""}`} type="button" onClick={() => props.setSearchHighConfidenceOnly(!props.searchHighConfidenceOnly)}>
+            High conf
+          </button>
+          <button className={`chip ${props.searchGroupByPlate ? "is-active" : ""}`} type="button" onClick={() => props.setSearchGroupByPlate(!props.searchGroupByPlate)}>
+            Group by plate
+          </button>
+        </div>
+      </form>
+
+      <section className="results-panel">
+        <div className="results-panel__header">
+          <div>
+            <p className="eyebrow">History</p>
+            <h3>{props.searchExecuted ? `${props.resultsTotal} result${props.resultsTotal === 1 ? "" : "s"}` : "Recent detections"}</h3>
+          </div>
+          <div className="results-panel__feedback">
+            {props.searchError ? <span className="feedback feedback--warn">{props.searchError}</span> : null}
+            {props.searchMessage ? <span className="feedback feedback--good">{props.searchMessage}</span> : null}
+          </div>
+        </div>
+
+        <div className="search-results">
+          {props.results.length === 0 ? (
+            <div className="empty-state">
+              <strong>No detections matched this search.</strong>
+              <p>Try a wider plate fragment, clear the time window, or disable a filter chip.</p>
+            </div>
+          ) : props.searchGroupByPlate ? (
+            props.groupedResults.map((group) => {
+              const expanded = props.expandedGroups[group.plate] ?? false;
+              const rows = expanded ? group.rows : group.rows.slice(0, 1);
+              const lead = group.rows[0];
+              return (
+                <article key={group.plate} className="result-group-card">
+                  <div className="result-group-card__header">
+                    <div>
+                      <strong>{group.plate}</strong>
+                      <span>{group.rows.length === 1 ? lead.vehicle : `Seen ${group.rows.length} times`}</span>
+                    </div>
+                    <div className="result-group-card__meta">
+                      {lead.hotlist ? <Badge tone="critical">Hotlist</Badge> : null}
+                      {group.rows.length > 1 ? (
+                        <button className="link-button" type="button" onClick={() => props.onToggleExpanded(group.plate)}>
+                          {expanded ? "Collapse sightings" : "Expand sightings"}
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="result-group-list">
+                    {rows.map((row) => (
+                      <SearchResultCard
+                        key={row.id}
+                        row={row}
+                        hotlistLabel={hotlistLabelForRow(row, props.hotlists)}
+                        onCopy={props.onCopyPlate}
+                        onDetails={() => props.onDetails(row)}
+                        onMap={() => props.onMap(row)}
+                      />
+                    ))}
+                  </div>
+                </article>
+              );
+            })
+          ) : (
+            props.results.map((row) => (
+              <SearchResultCard
+                key={row.id}
+                row={row}
+                hotlistLabel={hotlistLabelForRow(row, props.hotlists)}
+                onCopy={props.onCopyPlate}
+                onDetails={() => props.onDetails(row)}
+                onMap={() => props.onMap(row)}
+              />
+            ))
+          )}
+        </div>
+      </section>
+    </section>
+  );
+}
+
+function HotlistsScreen(props: {
+  dataSource: DataSource;
+  draft: HotlistDraft;
+  error: string | null;
+  hotlists: DashboardHotlist[];
+  message: string | null;
+  saving: boolean;
+  deleting: boolean;
+  selectedDetectionPlate: string;
+  selectedHotlistId: string | null;
+  onClearDraft: () => void;
+  onDelete: () => void;
+  onDraftChange: (draft: HotlistDraft | ((current: HotlistDraft) => HotlistDraft)) => void;
+  onSelect: (entry: DashboardHotlist) => void;
+  onSeedFromDetection: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+}): ReactElement {
+  return (
+    <section className="screen">
+      <ScreenHeader
+        title="Hotlist Manager"
+        subtitle="Add, edit, pause, recover, and delete local hotlist accounts from one workspace."
+        meta={
+          <>
+            <Badge tone="critical">{`${props.hotlists.filter((entry) => entry.active).length} active`}</Badge>
+            <Badge tone={props.dataSource === "live" ? "success" : "muted"}>{props.dataSource.toUpperCase()}</Badge>
+          </>
+        }
+      />
+
+      <div className="hotlists-grid">
+        <section className="panel-card hotlists-list-card">
+          <div className="panel-card__header">
+            <h3>Tracked Plates</h3>
+            <button className="btn btn--ghost" type="button" onClick={props.onClearDraft}>
+              New Entry
+            </button>
+          </div>
+          <div className="hotlist-list">
+            {props.hotlists.length === 0 ? (
+              <div className="empty-state">
+                <strong>No hotlist entries yet.</strong>
+                <p>Create the first one from scratch or seed it from the selected detection.</p>
+              </div>
+            ) : (
+              props.hotlists.map((entry) => (
+                <button
+                  key={entry.entry_id}
+                  className={`hotlist-row ${props.selectedHotlistId === entry.entry_id ? "is-selected" : ""}`}
+                  type="button"
+                  onClick={() => props.onSelect(entry)}
+                >
+                  <div>
+                    <strong>{entry.plate_text}</strong>
+                    <span>{entry.label ?? "Unlabeled entry"}</span>
+                  </div>
+                  <div className="hotlist-row__meta">
+                    <Badge tone={entry.active ? "critical" : "muted"}>{entry.active ? "Active" : "Paused"}</Badge>
+                    <span>{formatDateTime(entry.updated_at_utc)}</span>
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </section>
+
+        <section className="panel-card hotlist-editor-card">
+          <div className="panel-card__header">
+            <h3>{props.selectedHotlistId ? "Edit Entry" : "Create Entry"}</h3>
+            <button className="btn btn--ghost" type="button" onClick={props.onSeedFromDetection}>
+              Seed From Detection
+            </button>
+          </div>
+          <form className="hotlist-form" onSubmit={(event) => void props.onSubmit(event)}>
+            <label>
+              <span>Plate text</span>
+              <input
+                className="text-input"
+                placeholder="8ABC123"
+                type="text"
+                value={props.draft.plateText}
+                onChange={(event) =>
+                  props.onDraftChange((current) => ({
+                    ...current,
+                    plateText: normalizePlate(event.target.value),
+                  }))
+                }
+              />
+            </label>
+
+            <label>
+              <span>Label</span>
+              <input
+                className="text-input"
+                placeholder="Case name / tow-ready / visual match"
+                type="text"
+                value={props.draft.label}
+                onChange={(event) =>
+                  props.onDraftChange((current) => ({
+                    ...current,
+                    label: event.target.value,
+                  }))
+                }
+              />
+            </label>
+
+            <label>
+              <span>Notes</span>
+              <textarea
+                className="text-area"
+                placeholder="Tell the operator what to do when this vehicle is detected."
+                value={props.draft.notes}
+                onChange={(event) =>
+                  props.onDraftChange((current) => ({
+                    ...current,
+                    notes: event.target.value,
+                  }))
+                }
+              />
+            </label>
+
+            <div className="inline-setting">
+              <div>
+                <strong>Entry active</strong>
+                <span>Controls whether the plate triggers hotlist interrupts.</span>
+              </div>
+              <Toggle
+                checked={props.draft.active}
+                label="Entry active"
+                onChange={(checked) =>
+                  props.onDraftChange((current) => ({
+                    ...current,
+                    active: checked,
+                  }))
+                }
+              />
+            </div>
+
+            {props.error ? <div className="feedback feedback--error">{props.error}</div> : null}
+            {props.message ? <div className="feedback feedback--good">{props.message}</div> : null}
+
+            <div className="button-stack">
+              <button className="btn btn--primary" disabled={props.saving} type="submit">
+                {props.saving ? "Saving..." : props.selectedHotlistId ? "Update Hotlist" : "Create Hotlist"}
+              </button>
+              <button className="btn btn--ghost" type="button" onClick={props.onClearDraft}>
+                Clear Draft
+              </button>
+              <button className="btn btn--ghost" type="button" onClick={props.onSeedFromDetection}>
+                Seed {props.selectedDetectionPlate || "selection"}
+              </button>
+              <button className="btn btn--danger" disabled={!props.selectedHotlistId || props.deleting} type="button" onClick={props.onDelete}>
+                {props.deleting ? "Deleting..." : "Delete Entry"}
+              </button>
+            </div>
+          </form>
+        </section>
+      </div>
+    </section>
+  );
+}
+
+function SettingsScreen(props: {
+  activeSessions: number;
+  apiKeyInput: string;
+  dataError: string | null;
+  dataSource: DataSource;
+  hotlistWarning: boolean;
+  onApiKeyApply: () => void;
+  onApiKeyChange: (value: string) => void;
+  onRefresh: () => void;
+  settings: UiSettings;
+  updateSetting: <Key extends keyof UiSettings>(key: Key, value: UiSettings[Key]) => void;
+}): ReactElement {
+  return (
+    <section className="screen">
+      <ScreenHeader
+        title="Settings Dashboard"
+        subtitle="Scanning, alerts, camera tuning, storage, sync, and navigation defaults."
+        meta={
+          <>
+            {props.hotlistWarning ? <Badge tone="warn">Review alert settings</Badge> : <Badge tone="success">Operational</Badge>}
+            <Badge tone={props.dataSource === "live" ? "success" : "muted"}>{props.dataSource.toUpperCase()}</Badge>
+          </>
+        }
+      />
+
+      <div className="settings-columns">
+        <section className="settings-card">
+          <div className="settings-card__header">
+            <h3>Scanning</h3>
+            <p>Arrival-mode behavior and OCR thresholds.</p>
+          </div>
+          <SettingsToggleRow title="Auto-enable arrival scan" detail="Switch into local scan mode when entering the target radius." checked={props.settings.autoArrivalScan} onChange={(checked) => props.updateSetting("autoArrivalScan", checked)} />
+          <SettingsToggleRow title="Arrival scan feature" detail="Global kill switch for arrival-scoped local detections." checked={props.settings.arrivalScanEnabled} onChange={(checked) => props.updateSetting("arrivalScanEnabled", checked)} />
+          <SettingsRangeRow title="Radius size" detail={`${props.settings.arrivalRadiusFeet} ft`} min={100} max={1000} step={25} value={props.settings.arrivalRadiusFeet} onChange={(value) => props.updateSetting("arrivalRadiusFeet", value)} />
+          <SettingsRangeRow title="Duplicate suppression" detail={`${props.settings.duplicateSuppressionSeconds} sec`} min={15} max={300} step={15} value={props.settings.duplicateSuppressionSeconds} onChange={(value) => props.updateSetting("duplicateSuppressionSeconds", value)} />
+          <SettingsRangeRow title="Minimum confidence" detail={`${props.settings.minConfidence}%`} min={60} max={99} step={1} value={props.settings.minConfidence} onChange={(value) => props.updateSetting("minConfidence", value)} />
+        </section>
+
+        <section className="settings-card">
+          <div className="settings-card__header">
+            <h3>Alerts</h3>
+            <p>Hotlist signaling, persistence, and escalation controls.</p>
+          </div>
+          <SettingsToggleRow title="Hotlist alerts" detail="Show the full-screen interrupt on any matching plate." checked={props.settings.hotlistAlerts} onChange={(checked) => props.updateSetting("hotlistAlerts", checked)} />
+          <SettingsToggleRow title="Sound" detail="Enable audible alert cues." checked={props.settings.soundEnabled} onChange={(checked) => props.updateSetting("soundEnabled", checked)} />
+          <SettingsToggleRow title="Vibration" detail="Trigger haptics on critical hotlist events." checked={props.settings.vibrationEnabled} onChange={(checked) => props.updateSetting("vibrationEnabled", checked)} />
+          <SettingsRangeRow title="Alert volume" detail={`${props.settings.alertVolume}%`} min={0} max={100} step={5} value={props.settings.alertVolume} onChange={(value) => props.updateSetting("alertVolume", value)} />
+          <SettingsSelectRow title="Alert persistence" detail="How long non-critical banners remain visible." value={props.settings.alertPersistence} options={["until-dismissed", "15 sec", "60 sec"]} onChange={(value) => props.updateSetting("alertPersistence", value as AlertPersistence)} />
+        </section>
+
+        <section className="settings-card">
+          <div className="settings-card__header">
+            <h3>Camera</h3>
+            <p>Low-light handling and feed presentation.</p>
+          </div>
+          <SettingsToggleRow title="Night mode" detail="Bias the feed for low-glare operation." checked={props.settings.nightMode} onChange={(checked) => props.updateSetting("nightMode", checked)} />
+          <SettingsToggleRow title="IR control" detail="Use IR assist for parked or staged review." checked={props.settings.irControl} onChange={(checked) => props.updateSetting("irControl", checked)} />
+          <SettingsToggleRow title="Exposure lock" detail="Keep contrast stable across the approach." checked={props.settings.exposureLock} onChange={(checked) => props.updateSetting("exposureLock", checked)} />
+          <SettingsSelectRow title="Resolution" detail="Primary acquisition resolution." value={props.settings.resolution} options={["1920x1080", "1600x900", "1280x720"]} onChange={(value) => props.updateSetting("resolution", value)} />
+          <SettingsSelectRow title="Stream quality" detail="Balance decode load against visual fidelity." value={props.settings.streamQuality} options={["High", "Balanced", "Low latency"]} onChange={(value) => props.updateSetting("streamQuality", value)} />
+          <SettingsToggleRow title="Overlay labels" detail="Show plate, confidence, and direction on the live feed." checked={props.settings.overlayLabels} onChange={(checked) => props.updateSetting("overlayLabels", checked)} />
+        </section>
+
+        <section className="settings-card">
+          <div className="settings-card__header">
+            <h3>Storage and Sync</h3>
+            <p>Media pressure, upload queue, and export defaults.</p>
+          </div>
+          <ReadOnlyRow title="Local storage used" value="18.2 GB" detail="Estimated cache usage for the current shift." />
+          <ReadOnlyRow title="Sync status" value={props.dataSource === "live" ? "Healthy" : "Queued offline"} detail={`${props.activeSessions} active console session${props.activeSessions === 1 ? "" : "s"}`} />
+          <ReadOnlyRow title="Upload pending" value="00:14 ETA" detail="The most recent evidence bundle is queued for sync." />
+          <ReadOnlyRow title="Export path" value="runtime/exports" detail="Detection packages are written here by default." />
+          <SettingsToggleRow title="Auto-delete temp captures" detail="Remove transient captures after they are exported or synced." checked={props.settings.autoDeleteTempCaptures} onChange={(checked) => props.updateSetting("autoDeleteTempCaptures", checked)} />
+        </section>
+
+        <section className="settings-card">
+          <div className="settings-card__header">
+            <h3>Map and Navigation</h3>
+            <p>Route visuals and map behavior.</p>
+          </div>
+          <SettingsSelectRow title="Default map mode" detail="Preferred presentation for the ops map." value={props.settings.mapMode} options={["Dark route", "Street", "Satellite-style"]} onChange={(value) => props.updateSetting("mapMode", value)} />
+          <SettingsToggleRow title="Auto-center on vehicle" detail="Keep the unit marker centered while moving." checked={props.settings.autoCenterVehicle} onChange={(checked) => props.updateSetting("autoCenterVehicle", checked)} />
+          <SettingsToggleRow title="Show radius ring" detail="Display the active target geofence." checked={props.settings.showRadiusRing} onChange={(checked) => props.updateSetting("showRadiusRing", checked)} />
+          <SettingsToggleRow title="Traffic overlay" detail="Expose live traffic hints on route." checked={props.settings.showTraffic} onChange={(checked) => props.updateSetting("showTraffic", checked)} />
+          <SettingsSelectRow title="Navigation provider" detail="Internal route card or external navigation handoff." value={props.settings.navProvider} options={["Internal", "External"]} onChange={(value) => props.updateSetting("navProvider", value)} />
+        </section>
+
+        <section className="settings-card">
+          <div className="settings-card__header">
+            <h3>API and Session</h3>
+            <p>Live data connection, fallback state, and refresh controls.</p>
+          </div>
+          <label className="settings-input-row">
+            <span>API key</span>
+            <input className="text-input" type="password" value={props.apiKeyInput} onChange={(event) => props.onApiKeyChange(event.target.value)} />
+          </label>
+          <div className="button-row">
+            <button className="btn btn--primary" type="button" onClick={props.onApiKeyApply}>
+              Apply Key
+            </button>
+            <button className="btn btn--ghost" type="button" onClick={props.onRefresh}>
+              Refresh Live Data
+            </button>
+          </div>
+          <ReadOnlyRow title="Current source" value={props.dataSource.toUpperCase()} detail={props.dataError ?? "Live data is available when the API responds."} />
+        </section>
+      </div>
+    </section>
+  );
+}
+
+function DetailOverlay(props: {
+  activeDestination: string;
+  detailImageUrl: string | null;
+  detailRow: ConsoleDetectionRow;
+  detailTimeline: ConsoleDetectionRow[];
+  hotlists: DashboardHotlist[];
+  onAddToHotlist: () => void;
+  onClose: () => void;
+  onCopyPlate: (plate: string) => Promise<void>;
+  onOpenMap: () => void;
+}): ReactElement {
+  return (
+    <div className="overlay-shell">
+      <div className="overlay-scrim" onClick={props.onClose} />
+      <aside className="detail-overlay">
+        <div className="detail-overlay__header">
+          <button className="link-button" type="button" onClick={props.onClose}>
+            Back
+          </button>
+          <div>
+            <p className="eyebrow">Detection Record</p>
+            <h3>{props.detailRow.plate1}</h3>
+          </div>
+          {props.detailRow.hotlist ? <Badge tone="critical">Hotlist</Badge> : null}
+        </div>
+
+        <div className="detail-overlay__body">
+          <div className="detail-hero">
+            {props.detailImageUrl ? <img alt={props.detailRow.plate1} src={props.detailImageUrl} /> : <div className="detail-hero__placeholder">{props.detailRow.vehicle}</div>}
+          </div>
+
+          <div className="detail-grid">
+            <DetailField label="Plate" value={props.detailRow.plate1} tone={props.detailRow.hotlist ? "critical" : "cyan"} />
+            <DetailField label="Vehicle" value={props.detailRow.vehicle} />
+            <DetailField label="Confidence" value={confidenceLabel(props.detailRow.conf)} />
+            <DetailField label="Camera" value={props.detailRow.source} />
+            <DetailField label="GPS" value={props.detailRow.gps} />
+            <DetailField label="Direction" value={`${props.detailRow.direction} / ${props.detailRow.lane}`} />
+            <DetailField label="Address" value={props.activeDestination} />
+            <DetailField label="Time" value={formatDateTime(props.detailRow.timestampUtc)} />
+          </div>
+
+          <section className="detail-section">
+            <div className="detail-section__header">
+              <h4>Notes</h4>
+            </div>
+            <p>
+              {hotlistLabelForRow(props.detailRow, props.hotlists)
+                ? `${hotlistLabelForRow(props.detailRow, props.hotlists)}. Keep this vehicle surfaced as a hotlist interrupt and route immediately after confirmation.`
+                : `${props.detailRow.source} captured this detection on ${formatDateTime(props.detailRow.timestampUtc)}.`}
+            </p>
+          </section>
+
+          <section className="detail-section">
+            <div className="detail-section__header">
+              <h4>Event Timeline</h4>
+            </div>
+            <div className="timeline-list">
+              {props.detailTimeline.length > 0 ? (
+                props.detailTimeline.map((row) => (
+                  <div key={row.id} className="timeline-row">
+                    <strong>{formatDateTime(row.timestampUtc)}</strong>
+                    <span>{row.source}</span>
+                    <span>{row.gps}</span>
+                  </div>
+                ))
+              ) : (
+                <p>No repeat sightings were grouped for this plate.</p>
+              )}
+            </div>
+          </section>
+        </div>
+
+        <div className="detail-overlay__actions">
+          <button className="btn btn--ghost" type="button" onClick={props.onOpenMap}>
+            Open Map
+          </button>
+          <button className="btn btn--ghost" type="button" onClick={props.onAddToHotlist}>
+            Add to Hotlist
+          </button>
+          <button className="btn btn--primary" type="button" onClick={() => void props.onCopyPlate(props.detailRow.plate1)}>
+            Copy Plate
+          </button>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function HotlistAlertOverlay(props: {
+  activeDestination: string;
+  hotlistAudioMuted: boolean;
+  hotlistRow: ConsoleDetectionRow;
+  onDismiss: () => void;
+  onMuteToggle: () => void;
+  onNavigate: () => void;
+  onRecover: () => void;
+  onViewRecord: () => void;
+}): ReactElement {
+  return (
+    <div className="hotlist-alert">
+      <div className="hotlist-alert__header">
+        <div>
+          <p className="eyebrow">Critical Alert</p>
+          <h2>Hotlist Match</h2>
+        </div>
+        <Badge tone="critical">{props.hotlistAudioMuted ? "Muted" : "Audio + visual"}</Badge>
+      </div>
+
+      <div className="hotlist-alert__hero">
+        <div className="hotlist-alert__snapshot">{props.hotlistRow.vehicle}</div>
+        <div className="hotlist-alert__identity">
+          <strong>{props.hotlistRow.plate1}</strong>
+          <span>{props.hotlistRow.vehicle}</span>
+          <span>
+            {props.hotlistRow.direction} | Conf {confidenceLabel(props.hotlistRow.conf)}
+          </span>
+        </div>
+      </div>
+
+      <div className="hotlist-alert__grid">
+        <DetailField label="Camera" value={props.hotlistRow.source} />
+        <DetailField label="GPS" value={props.hotlistRow.gps} />
+        <DetailField label="Address" value={props.activeDestination} />
+        <DetailField label="Time" value={formatDateTime(props.hotlistRow.timestampUtc)} />
+      </div>
+
+      <div className="hotlist-alert__actions">
+        <button className="btn btn--primary" type="button" onClick={props.onNavigate}>
+          Navigate
+        </button>
+        <button className="btn btn--ghost" type="button" onClick={props.onViewRecord}>
+          View Record
+        </button>
+        <button className="btn btn--ghost" type="button" onClick={props.onRecover}>
+          Mark Recovered
+        </button>
+        <button className="btn btn--ghost" type="button" onClick={props.onMuteToggle}>
+          {props.hotlistAudioMuted ? "Restore Audio" : "Mute Audio This Event"}
+        </button>
+        <button className="btn btn--danger" type="button" onClick={props.onDismiss}>
+          Dismiss
+        </button>
+      </div>
     </div>
   );
 }

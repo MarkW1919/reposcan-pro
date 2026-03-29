@@ -309,6 +309,10 @@ class StorageService:
             raise HotlistNotFoundError(entry.entry_id)
         return self.repository.upsert_hotlist(entry)
 
+    def delete_hotlist(self, entry_id: str) -> None:
+        if not self.repository.delete_hotlist(entry_id):
+            raise HotlistNotFoundError(entry_id)
+
     def touch_operator_session(self, session: OperatorSessionRecord) -> OperatorSessionRecord:
         return self.repository.upsert_operator_session(session)
 
