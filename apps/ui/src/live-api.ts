@@ -793,6 +793,67 @@ export async function searchDetections(
   return (await response.json()) as DetectionSearchResult;
 }
 
+export interface AlertSearchFilters {
+  plate?: string;
+  plate_match?: SearchPlateMatchMode;
+  start_utc?: string;
+  end_utc?: string;
+  camera_id?: string;
+  min_latitude?: number;
+  max_latitude?: number;
+  min_longitude?: number;
+  max_longitude?: number;
+  vehicle_color?: string;
+  vehicle_make?: string;
+  vehicle_model?: string;
+  vehicle_year?: string;
+  status?: DashboardAlertStatus;
+  limit?: number;
+  offset?: number;
+}
+
+export interface AlertSearchResult {
+  page: SearchPageInfo;
+  results: DashboardAlert[];
+}
+
+export async function searchAlerts(
+  filters: AlertSearchFilters,
+  signal?: AbortSignal,
+): Promise<AlertSearchResult> {
+  const query = new URLSearchParams();
+
+  const addIfPresent = (key: string, value: string | number | null | undefined): void => {
+    if (value === null || value === undefined || value === "") {
+      return;
+    }
+    query.set(key, String(value));
+  };
+
+  addIfPresent("plate", filters.plate?.trim());
+  addIfPresent("plate_match", filters.plate_match);
+  addIfPresent("start_utc", filters.start_utc);
+  addIfPresent("end_utc", filters.end_utc);
+  addIfPresent("camera_id", filters.camera_id);
+  addIfPresent("min_latitude", filters.min_latitude);
+  addIfPresent("max_latitude", filters.max_latitude);
+  addIfPresent("min_longitude", filters.min_longitude);
+  addIfPresent("max_longitude", filters.max_longitude);
+  addIfPresent("vehicle_color", filters.vehicle_color?.trim());
+  addIfPresent("vehicle_make", filters.vehicle_make?.trim());
+  addIfPresent("vehicle_model", filters.vehicle_model?.trim());
+  addIfPresent("vehicle_year", filters.vehicle_year?.trim());
+  addIfPresent("status", filters.status);
+  addIfPresent("limit", filters.limit);
+  addIfPresent("offset", filters.offset);
+
+  const response = await fetch(apiUrl(`/search/alerts?${query.toString()}`), { signal, headers: authHeaders() });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, `Failed to search alerts (${response.status})`));
+  }
+  return (await response.json()) as AlertSearchResult;
+}
+
 export function mapOverviewToAlertItems(
   overview: DashboardOverviewResponse,
   fallbackAlerts: AlertItem[],

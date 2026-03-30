@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useMemo, useState, type CSSProperties, type FormEvent, type ReactElement } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactElement } from "react";
 import { Circle, MapContainer, Marker, Polyline, Popup, TileLayer } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -9,16 +9,22 @@ import {
   createDispatchAssignment,
   createFollowUp,
   createHotlist,
+  createReview,
   deleteHotlist,
   fetchDashboardOverview,
   fetchDetectionFrameObjectUrl,
+  fetchDetectionPlateCropObjectUrl,
   fetchHotlists,
+  fetchReviews,
+  searchAlerts,
   searchDetections,
+  sendOperatorSessionHeartbeat,
   setApiClientConfig,
   updateAlert,
   updateDispatchAssignment,
   updateFollowUp,
   updateHotlist,
+  type AlertSearchFilters,
   type ApiAuditEvent,
   type DispatchAssignmentPriority,
   type DispatchAssignmentRecord,
@@ -35,6 +41,9 @@ import {
   type FollowUpStatus,
   type OperatorPrincipal,
   type OperatorSessionRecord,
+  type PlateCandidate,
+  type ReviewAction,
+  type ReviewRecord,
 } from "./live-api";
 
 type AppScreen = "console" | "search" | "hotlists" | "settings";
@@ -76,6 +85,7 @@ interface ConsoleDetectionRow {
   detectionId?: string;
   plate1: string;
   plate2: string;
+  plateCandidates: PlateCandidate[];
   state: string;
   camera: string;
   cameraId: string;
@@ -162,6 +172,30 @@ interface PlateGroup {
 const uiSettingsStorageKey = "reposcan.ui.desktop-settings.v1";
 const apiKeyStorageKey = "reposcan.ui.api-key.v2";
 const targetAddressStorageKey = "reposcan.ui.target-address.v1";
+const sessionIdStorageKey = "reposcan.ui.session-id.v1";
+
+function loadOrCreateSessionId(): string {
+  if (typeof window === "undefined") {
+    return `sess_${Math.random().toString(16).slice(2, 14)}`;
+  }
+  try {
+    const stored = window.localStorage.getItem(sessionIdStorageKey);
+    if (stored) {
+      return stored;
+    }
+  } catch {
+    // ignore
+  }
+  const created = `sess_${Math.random().toString(16).slice(2, 14)}`;
+  try {
+    window.localStorage.setItem(sessionIdStorageKey, created);
+  } catch {
+    // ignore
+  }
+  return created;
+}
+
+const operatorSessionId = loadOrCreateSessionId();
 
 const targetRoute = {
   address: "4128 W Fulton St, Chicago, IL",
@@ -730,6 +764,10 @@ function buildSeedRows(hotlists: DashboardHotlist[]): ConsoleDetectionRow[] {
     camera: buildCameraShortLabel(row.cameraId),
     time: formatClock(row.timestampUtc),
     hotlist: matchesHotlist(row.plate1, row.plate2, hotlists),
+    plateCandidates: [
+      { text: row.plate1, confidence: row.conf / 100 },
+      { text: row.plate2, confidence: Math.max(0.38, row.conf / 100 - 0.18) },
+    ],
   }));
 }
 
@@ -748,6 +786,7 @@ function mapDetectionToRow(record: DashboardDetection, index: number, hotlists: 
     detectionId: record.detection_id,
     plate1: normalizePlate(primaryPlate) || "UNKNOWN",
     plate2: normalizePlate(alternatePlate) || "--",
+    plateCandidates: record.plate_candidates.length > 0 ? record.plate_candidates : [{ text: normalizePlate(primaryPlate) || "UNKNOWN", confidence: record.plate_confidence ?? 0 }],
     state: "--",
     camera: buildCameraShortLabel(record.camera_id),
     cameraId: record.camera_id,
@@ -834,7 +873,7 @@ function filterRowsLocally(options: {
   currentShiftOnly: boolean;
   currentCameraId: string;
 }): ConsoleDetectionRow[] {
-  const shiftCutoff = new Date("2026-03-27T14:00:00Z").valueOf();
+  const shiftCutoff = new Date(Date.now() - 8 * 60 * 60 * 1000).valueOf();
   const fromValue = options.fromUtc ? new Date(options.fromUtc).valueOf() : null;
   const toValue = options.toUtc ? new Date(options.toUtc).valueOf() : null;
   const minLatitude = options.minLatitude.trim() ? Number(options.minLatitude) : null;
@@ -1117,6 +1156,60 @@ function useDetectionFrameImage(detectionId: string | null | undefined, enabled:
   return frameUrl;
 }
 
+function useDetectionPlateCropImage(detectionId: string | null | undefined, enabled: boolean): string | null {
+  const [cropUrl, setCropUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!enabled || !detectionId) {
+      setCropUrl((current) => {
+        if (current) {
+          URL.revokeObjectURL(current);
+        }
+        return null;
+      });
+      return;
+    }
+
+    const controller = new AbortController();
+    let nextUrl: string | null = null;
+    const idToLoad = detectionId;
+
+    async function loadCrop(): Promise<void> {
+      try {
+        nextUrl = await fetchDetectionPlateCropObjectUrl(idToLoad, controller.signal);
+        if (!controller.signal.aborted) {
+          setCropUrl((current) => {
+            if (current && current !== nextUrl) {
+              URL.revokeObjectURL(current);
+            }
+            return nextUrl;
+          });
+        }
+      } catch {
+        if (!controller.signal.aborted) {
+          setCropUrl((current) => {
+            if (current) {
+              URL.revokeObjectURL(current);
+            }
+            return null;
+          });
+        }
+      }
+    }
+
+    void loadCrop();
+
+    return () => {
+      controller.abort();
+      if (nextUrl) {
+        URL.revokeObjectURL(nextUrl);
+      }
+    };
+  }, [detectionId, enabled]);
+
+  return cropUrl;
+}
+
 function CameraViewport(props: {
   cameraId: string;
   row: ConsoleDetectionRow | null;
@@ -1223,6 +1316,10 @@ function App(): ReactElement {
   const [assignmentSaving, setAssignmentSaving] = useState(false);
   const [assignmentError, setAssignmentError] = useState<string | null>(null);
   const [assignmentMessage, setAssignmentMessage] = useState<string | null>(null);
+  const [reviewSaving, setReviewSaving] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [reviewMessage, setReviewMessage] = useState<string | null>(null);
+  const [alertResponseNotes, setAlertResponseNotes] = useState("");
   const [hotlistsTab, setHotlistsTab] = useState<HotlistsWorkspaceTab>("accounts");
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("workspace");
   const [alertActionId, setAlertActionId] = useState<string | null>(null);
@@ -1230,6 +1327,7 @@ function App(): ReactElement {
   const [alertActionMessage, setAlertActionMessage] = useState<string | null>(null);
   const [hotlistOverlayId, setHotlistOverlayId] = useState<string | null>(null);
   const [hotlistAudioMuted, setHotlistAudioMuted] = useState(false);
+  const prevActiveAlertIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     setApiClientConfig({ apiKey });
@@ -1287,6 +1385,39 @@ function App(): ReactElement {
       controller.abort();
     };
   }, [apiKey, refreshToken]);
+
+  useEffect(() => {
+    if (dataSource !== "live") {
+      return;
+    }
+
+    const controller = new AbortController();
+
+    async function sendHeartbeat(): Promise<void> {
+      try {
+        await sendOperatorSessionHeartbeat(
+          {
+            session_id: operatorSessionId,
+            client_label: "reposcan-ops-console",
+            workspace: screen,
+            selected_detection_id: selectedDetectionId ?? undefined,
+            navigation_active: navigationActive,
+          },
+          controller.signal,
+        );
+      } catch {
+        // heartbeat failures are silent — the backend will expire stale sessions
+      }
+    }
+
+    void sendHeartbeat();
+    const intervalId = setInterval(() => void sendHeartbeat(), 30_000);
+
+    return () => {
+      controller.abort();
+      clearInterval(intervalId);
+    };
+  }, [dataSource, screen, selectedDetectionId, navigationActive]);
 
   const allRows = useMemo(() => {
     const rows =
@@ -1491,6 +1622,37 @@ function App(): ReactElement {
       controller.abort();
     };
   }, [dataSource, canViewAudit, refreshToken]);
+
+  useEffect(() => {
+    if (!settings.hotlistAlerts) {
+      return;
+    }
+    const currentActiveIds = new Set(
+      (overview?.alerts ?? []).filter((alert) => alert.status === "active").map((alert) => alert.alert_id),
+    );
+    const prev = prevActiveAlertIdsRef.current;
+    const newAlertId = [...currentActiveIds].find((id) => !prev.has(id));
+    prevActiveAlertIdsRef.current = currentActiveIds;
+
+    if (!newAlertId) {
+      return;
+    }
+
+    const newAlert = (overview?.alerts ?? []).find((alert) => alert.alert_id === newAlertId);
+    if (!newAlert) {
+      return;
+    }
+
+    const matchingRow =
+      allRows.find((row) => row.detectionId === newAlert.detection_id) ??
+      allRows.find((row) => normalizePlate(row.plate1) === normalizePlate(newAlert.matched_plate_text));
+
+    if (matchingRow) {
+      setSelectedDetectionId(matchingRow.id);
+      setHotlistOverlayId(matchingRow.id);
+      setHotlistAudioMuted(false);
+    }
+  }, [overview?.alerts, settings.hotlistAlerts, allRows]);
 
   function switchScreen(nextScreen: AppScreen): void {
     startTransition(() => setScreen(nextScreen));
@@ -2028,6 +2190,39 @@ function App(): ReactElement {
     }
   }
 
+  async function handleSubmitReview(detectionId: string, action: ReviewAction, correctedPlate?: string, notes?: string): Promise<void> {
+    try {
+      setReviewSaving(true);
+      setReviewError(null);
+      setReviewMessage(null);
+
+      if (dataSource === "live") {
+        await createReview(detectionId, {
+          action,
+          operator_id: overview?.current_principal.principal_id ?? undefined,
+          corrected_plate_text: correctedPlate?.trim() || undefined,
+          notes: notes?.trim() || undefined,
+          reviewed_at_utc: new Date().toISOString(),
+        });
+        setRefreshToken((value) => value + 1);
+      }
+
+      setReviewMessage(
+        action === "confirm"
+          ? "Detection confirmed."
+          : action === "correct"
+            ? "OCR correction saved."
+            : action === "flag"
+              ? "Detection flagged for review."
+              : "Detection dismissed as false positive.",
+      );
+    } catch (error) {
+      setReviewError(error instanceof Error ? error.message : "Unable to save review.");
+    } finally {
+      setReviewSaving(false);
+    }
+  }
+
   async function handleRecoverFromAlert(): Promise<void> {
     if (!hotlistOverlayRow) {
       return;
@@ -2044,16 +2239,19 @@ function App(): ReactElement {
     switchScreen("hotlists");
   }
 
-  async function handleAlertStatusChange(alert: DashboardAlert, status: DashboardAlertStatus): Promise<void> {
+  async function handleAlertStatusChange(alert: DashboardAlert, status: DashboardAlertStatus, responseNotes?: string): Promise<void> {
     try {
       setAlertActionId(alert.alert_id);
       setAlertActionError(null);
       setAlertActionMessage(null);
 
+      const notes = responseNotes?.trim() || undefined;
+
       if (dataSource === "live") {
         await updateAlert(alert.alert_id, {
           status,
           operator_id: overview?.current_principal.principal_id,
+          response_notes: notes,
         });
         setRefreshToken((value) => value + 1);
       } else {
@@ -2067,6 +2265,7 @@ function App(): ReactElement {
                         ...item,
                         status,
                         response_operator_id: current.current_principal.principal_id,
+                        response_notes: notes ?? item.response_notes,
                         updated_at_utc: new Date().toISOString(),
                       }
                     : item,
@@ -2255,7 +2454,9 @@ function App(): ReactElement {
               deleting={hotlistDeleting}
               selectedDetectionPlate={selectedRow?.plate1 ?? ""}
               selectedHotlistId={selectedHotlistId}
-              onAlertStatusChange={(alert, status) => void handleAlertStatusChange(alert, status)}
+              alertResponseNotes={alertResponseNotes}
+              onAlertResponseNotesChange={setAlertResponseNotes}
+              onAlertStatusChange={(alert, status, notes) => void handleAlertStatusChange(alert, status, notes)}
               onClearDraft={() => beginHotlistDraft()}
               onDelete={() => void handleDeleteHotlist()}
               onDraftChange={setHotlistDraft}
@@ -2317,11 +2518,17 @@ function App(): ReactElement {
         <DetailOverlay
           activeDestination={activeDestination}
           assignments={matchingAssignmentsForRow(detailRow, assignments)}
+          canSubmitReview={dataSource === "live"}
+          currentOperatorId={currentPrincipal?.principal_id ?? null}
+          dataSource={dataSource}
           detailImageUrl={detailImageUrl}
           hotlistEntry={hotlistEntryForRow(detailRow, hotlists)}
           detailRow={detailRow}
           detailTimeline={detailTimeline}
           followUps={matchingFollowUpsForRow(detailRow, followUps)}
+          reviewError={reviewError}
+          reviewMessage={reviewMessage}
+          reviewSaving={reviewSaving}
           onAddToHotlist={() => {
             beginHotlistDraft(detailRow.plate1);
             switchScreen("hotlists");
@@ -2333,6 +2540,7 @@ function App(): ReactElement {
             centerMapOnRow(detailRow);
             setDetailDetectionId(null);
           }}
+          onSubmitReview={handleSubmitReview}
         />
       ) : null}
 
@@ -2571,6 +2779,7 @@ function NavPanel(props: {
       <div className="nav-tabs">
         {[
           { id: "console", label: "Dashboard", count: null },
+          { id: "search", label: "Search", count: null },
           { id: "hotlists", label: "Hotlists", count: props.activeHotlists },
           { id: "settings", label: "Settings", count: null },
         ].map((item) => (
@@ -2822,11 +3031,11 @@ function ConsoleScreen(props: {
                 <tr>
                   <th>Image</th>
                   <th>Plate 1</th>
-                  <th>Plate 2</th>
-                  <th>State</th>
+                  <th>Alt Read</th>
                   <th>Camera</th>
                   <th>Conf</th>
                   <th>Time</th>
+                  <th>Sync</th>
                 </tr>
               </thead>
               <tbody>
@@ -2842,11 +3051,11 @@ function ConsoleScreen(props: {
                       </button>
                     </td>
                     <td>{row.plate1}</td>
-                    <td>{row.plate2}</td>
-                    <td>{row.state}</td>
+                    <td className="muted-cell">{row.plate2}</td>
                     <td>{row.camera}</td>
                     <td>{confidenceLabel(row.conf)}</td>
                     <td>{row.time}</td>
+                    <td className={`sync-cell sync-cell--${row.syncStatus ?? "local"}`}>{row.syncStatus ?? "local"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -3218,7 +3427,9 @@ function HotlistsScreen(props: {
   deleting: boolean;
   selectedDetectionPlate: string;
   selectedHotlistId: string | null;
-  onAlertStatusChange: (alert: DashboardAlert, status: DashboardAlertStatus) => void;
+  alertResponseNotes: string;
+  onAlertResponseNotesChange: (notes: string) => void;
+  onAlertStatusChange: (alert: DashboardAlert, status: DashboardAlertStatus, responseNotes?: string) => void;
   onClearDraft: () => void;
   onDelete: () => void;
   onDraftChange: (draft: HotlistDraft | ((current: HotlistDraft) => HotlistDraft)) => void;
@@ -3584,13 +3795,25 @@ function HotlistsScreen(props: {
                   <DetailField label="Permissions" value={`${props.canManageFollowUps ? "Follow-up" : "Read-only"} / ${props.canManageDispatch ? "Dispatch" : "Read-only"}`} />
                 </div>
 
+                <div className="form-row">
+                  <label className="form-label" htmlFor="alert-response-notes">Response notes</label>
+                  <textarea
+                    className="form-input"
+                    id="alert-response-notes"
+                    placeholder="Optional notes for this status change…"
+                    rows={2}
+                    value={props.alertResponseNotes}
+                    onChange={(e) => props.onAlertResponseNotesChange(e.target.value)}
+                  />
+                </div>
+
                 <div className="record-row__actions record-row__actions--case">
                   {focusedAlertCase.alert.status !== "acknowledged" ? (
                     <button
                       className="btn btn--primary"
                       disabled={!props.canUpdateAlerts || props.alertActionId === focusedAlertCase.alert.alert_id}
                       type="button"
-                      onClick={() => props.onAlertStatusChange(focusedAlertCase.alert, "acknowledged")}
+                      onClick={() => props.onAlertStatusChange(focusedAlertCase.alert, "acknowledged", props.alertResponseNotes || undefined)}
                     >
                       {props.alertActionId === focusedAlertCase.alert.alert_id ? "Updating..." : "Acknowledge Case"}
                     </button>
@@ -3600,7 +3823,7 @@ function HotlistsScreen(props: {
                       className="btn btn--ghost"
                       disabled={!props.canUpdateAlerts || props.alertActionId === focusedAlertCase.alert.alert_id}
                       type="button"
-                      onClick={() => props.onAlertStatusChange(focusedAlertCase.alert, "dismissed")}
+                      onClick={() => props.onAlertStatusChange(focusedAlertCase.alert, "dismissed", props.alertResponseNotes || undefined)}
                     >
                       {props.alertActionId === focusedAlertCase.alert.alert_id ? "Updating..." : "Stand Down"}
                     </button>
@@ -3610,7 +3833,7 @@ function HotlistsScreen(props: {
                       className="btn btn--ghost"
                       disabled={!props.canUpdateAlerts || props.alertActionId === focusedAlertCase.alert.alert_id}
                       type="button"
-                      onClick={() => props.onAlertStatusChange(focusedAlertCase.alert, "active")}
+                      onClick={() => props.onAlertStatusChange(focusedAlertCase.alert, "active", props.alertResponseNotes || undefined)}
                     >
                       {props.alertActionId === focusedAlertCase.alert.alert_id ? "Updating..." : "Reopen Case"}
                     </button>
@@ -4167,19 +4390,30 @@ function SettingsScreen(props: {
 function DetailOverlay(props: {
   activeDestination: string;
   assignments: DispatchAssignmentRecord[];
+  canSubmitReview: boolean;
+  currentOperatorId: string | null;
+  dataSource: DataSource;
   detailImageUrl: string | null;
   detailRow: ConsoleDetectionRow;
   detailTimeline: ConsoleDetectionRow[];
   followUps: FollowUpRecord[];
   hotlistEntry: DashboardHotlist | null;
+  reviewError: string | null;
+  reviewMessage: string | null;
+  reviewSaving: boolean;
   onAddToHotlist: () => void;
   onClose: () => void;
   onCopyPlate: (plate: string) => Promise<void>;
   onOpenMap: () => void;
+  onSubmitReview: (detectionId: string, action: ReviewAction, correctedPlate?: string, notes?: string) => Promise<void>;
 }): ReactElement {
   const sightingCount = Math.max(props.detailTimeline.length, 1);
   const activeFollowUp = props.followUps[0] ?? null;
   const activeAssignment = props.assignments[0] ?? null;
+  const plateCropUrl = useDetectionPlateCropImage(props.detailRow.detectionId, props.dataSource === "live");
+  const [reviewAction, setReviewAction] = useState<ReviewAction>("confirm");
+  const [reviewCorrectedPlate, setReviewCorrectedPlate] = useState("");
+  const [reviewNotes, setReviewNotes] = useState("");
 
   return (
     <div className="overlay-shell">
@@ -4198,9 +4432,36 @@ function DetailOverlay(props: {
         </div>
 
         <div className="detail-overlay__body">
-          <div className="detail-hero">
-            {props.detailImageUrl ? <img alt={props.detailRow.plate1} src={props.detailImageUrl} /> : <div className="detail-hero__placeholder">{props.detailRow.vehicle}</div>}
+          <div className="detail-evidence-pair">
+            <div className="detail-hero">
+              {props.detailImageUrl ? <img alt={`${props.detailRow.plate1} frame`} src={props.detailImageUrl} /> : <div className="detail-hero__placeholder">{props.detailRow.vehicle}</div>}
+              <span className="detail-evidence-label">Source frame</span>
+            </div>
+            <div className="detail-plate-crop">
+              {plateCropUrl ? <img alt={`${props.detailRow.plate1} plate crop`} src={plateCropUrl} /> : <div className="detail-hero__placeholder">{props.detailRow.plate1}</div>}
+              <span className="detail-evidence-label">Plate crop</span>
+            </div>
           </div>
+
+          {props.detailRow.plateCandidates.length > 0 ? (
+            <section className="detail-section">
+              <div className="detail-section__header">
+                <div className="detail-section__copy">
+                  <h4>OCR Candidates</h4>
+                  <p>All reads returned for this detection, ordered by confidence.</p>
+                </div>
+              </div>
+              <div className="ocr-candidates-list">
+                {props.detailRow.plateCandidates.map((candidate, index) => (
+                  <div key={`${candidate.text}-${index}`} className={`ocr-candidate-row ${index === 0 ? "ocr-candidate-row--primary" : ""}`}>
+                    <strong>{candidate.text}</strong>
+                    <span className={`conf-badge conf-badge--${confidenceTone(confidencePercent(candidate.confidence))}`}>{confidenceLabel(candidate.confidence)}</span>
+                    {index === 0 ? <Badge tone="cyan">Promoted</Badge> : null}
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
 
           <div className="detail-summary-strip">
             <div className="detail-summary-card">
@@ -4274,9 +4535,77 @@ function DetailOverlay(props: {
             <DetailField label="Direction" value={`${props.detailRow.direction} / ${props.detailRow.lane}`} />
             <DetailField label="Dispatch destination" value={activeAssignment?.destination_label ?? props.activeDestination} />
             <DetailField label="Time" value={formatDateTime(props.detailRow.timestampUtc)} />
-            <DetailField label="State" value={props.detailRow.state || "--"} />
+            <DetailField label="Sync" value={props.detailRow.syncStatus ?? "local"} />
             <DetailField label="Alt read" value={props.detailRow.plate2 || "--"} />
           </div>
+
+          {props.detailRow.detectionId ? (
+            <section className="detail-section">
+              <div className="detail-section__header">
+                <div className="detail-section__copy">
+                  <h4>Operator Review</h4>
+                  <p>Confirm the read, correct the OCR, flag for review, or dismiss as a false positive.</p>
+                </div>
+                <Badge tone={props.canSubmitReview ? "success" : "muted"}>{props.canSubmitReview ? "Writable" : "Read only"}</Badge>
+              </div>
+              {props.reviewError ? <div className="feedback feedback--error">{props.reviewError}</div> : null}
+              {props.reviewMessage ? <div className="feedback feedback--good">{props.reviewMessage}</div> : null}
+              <div className="review-form">
+                <div className="review-form__row">
+                  <label className="settings-input-row">
+                    <span>Action</span>
+                    <select
+                      className="select-input"
+                      value={reviewAction}
+                      onChange={(event) => setReviewAction(event.target.value as ReviewAction)}
+                    >
+                      <option value="confirm">Confirm — plate read is correct</option>
+                      <option value="correct">Correct — OCR needs editing</option>
+                      <option value="flag">Flag — needs further review</option>
+                      <option value="dismiss">Dismiss — false positive</option>
+                    </select>
+                  </label>
+                </div>
+                {reviewAction === "correct" ? (
+                  <label className="settings-input-row">
+                    <span>Corrected plate</span>
+                    <input
+                      className="text-input"
+                      placeholder={props.detailRow.plate1}
+                      type="text"
+                      value={reviewCorrectedPlate}
+                      onChange={(event) => setReviewCorrectedPlate(event.target.value.toUpperCase())}
+                    />
+                  </label>
+                ) : null}
+                <label className="settings-input-row">
+                  <span>Notes</span>
+                  <input
+                    className="text-input"
+                    placeholder="Optional operator notes"
+                    type="text"
+                    value={reviewNotes}
+                    onChange={(event) => setReviewNotes(event.target.value)}
+                  />
+                </label>
+                <button
+                  className="btn btn--primary"
+                  disabled={!props.canSubmitReview || props.reviewSaving || (reviewAction === "correct" && !reviewCorrectedPlate.trim())}
+                  type="button"
+                  onClick={() =>
+                    void props.onSubmitReview(
+                      props.detailRow.detectionId ?? "",
+                      reviewAction,
+                      reviewAction === "correct" ? reviewCorrectedPlate : undefined,
+                      reviewNotes || undefined,
+                    )
+                  }
+                >
+                  {props.reviewSaving ? "Saving..." : "Submit Review"}
+                </button>
+              </div>
+            </section>
+          ) : null}
 
           <section className="detail-section">
             <div className="detail-section__header">

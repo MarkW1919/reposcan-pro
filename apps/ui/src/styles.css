@@ -1745,6 +1745,142 @@ select:focus-visible {
   gap: 4px;
 }
 
+/* --- evidence pair (frame + plate crop side by side) --- */
+.detail-evidence-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.detail-plate-crop {
+  border-radius: 22px;
+  overflow: hidden;
+  border: 1px solid rgba(56, 232, 255, 0.1);
+  background: rgba(12, 22, 29, 0.9);
+  min-height: 120px;
+  display: flex;
+  flex-direction: column;
+}
+
+.detail-plate-crop img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  flex: 1;
+}
+
+.detail-evidence-label {
+  display: block;
+  text-align: center;
+  font-size: 0.72rem;
+  color: var(--muted);
+  padding: 6px 0 8px;
+}
+
+/* --- OCR candidates list --- */
+.ocr-candidates-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.ocr-candidate-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(8, 16, 22, 0.7);
+  border: 1px solid rgba(56, 232, 255, 0.06);
+}
+
+.ocr-candidate-row--primary {
+  border-color: rgba(56, 232, 255, 0.2);
+  background: rgba(14, 28, 38, 0.85);
+}
+
+.ocr-candidate-row strong {
+  font-family: var(--mono);
+  color: var(--text);
+  flex: 1;
+}
+
+/* --- confidence badges --- */
+.conf-badge {
+  font-size: 0.7rem;
+  font-family: var(--mono);
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-weight: 600;
+}
+
+.conf-badge--high {
+  background: rgba(0, 214, 143, 0.15);
+  color: var(--success);
+  border: 1px solid rgba(0, 214, 143, 0.3);
+}
+
+.conf-badge--medium {
+  background: rgba(255, 178, 0, 0.12);
+  color: var(--warn);
+  border: 1px solid rgba(255, 178, 0, 0.25);
+}
+
+.conf-badge--low {
+  background: rgba(255, 77, 94, 0.12);
+  color: var(--critical);
+  border: 1px solid rgba(255, 77, 94, 0.25);
+}
+
+/* --- review form --- */
+.review-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.review-form__row {
+  display: grid;
+  gap: 6px;
+}
+
+.review-form__row label {
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+/* --- sync cell in detection table --- */
+.sync-cell {
+  font-size: 0.72rem;
+  font-family: var(--mono);
+  padding: 2px 7px;
+  border-radius: 6px;
+}
+
+.sync-cell--synced {
+  color: var(--success);
+}
+
+.sync-cell--pending {
+  color: var(--warn);
+}
+
+.sync-cell--failed {
+  color: var(--critical);
+}
+
+.sync-cell--local {
+  color: var(--muted);
+}
+
+/* --- muted secondary text in table cells --- */
+.muted-cell {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
 .hotlist-alert {
   position: fixed;
   inset: 28px;
