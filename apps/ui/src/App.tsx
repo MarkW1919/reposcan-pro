@@ -12,10 +12,14 @@ import {
   fetchHotlists,
   searchDetections,
   setApiClientConfig,
+  updateAlert,
   updateHotlist,
+  type DashboardAlert,
+  type DashboardAlertStatus,
   type DashboardDetection,
   type DashboardHotlist,
   type DashboardOverviewResponse,
+  type DashboardPopupActivityEvent,
   type DetectionSearchFilters,
 } from "./live-api";
 
@@ -25,6 +29,7 @@ type ConsoleLayoutMode = "overview" | "focus";
 type SearchMode = "plate" | "camera" | "vehicle" | "time";
 type DataSource = "demo" | "live" | "fallback";
 type AlertPersistence = "until-dismissed" | "15 sec" | "60 sec";
+type HotlistsWorkspaceTab = "accounts" | "alerts" | "recognition";
 
 interface UiSettings {
   autoArrivalScan: boolean;
@@ -70,6 +75,26 @@ interface ConsoleDetectionRow {
   lat: number;
   lng: number;
   source: string;
+  frameNumber?: number;
+  syncStatus?: string;
+}
+
+interface CameraUiFeed {
+  id: string;
+  label: string;
+  shortLabel: string;
+  status: "Online" | "Offline";
+  fps: number | null;
+}
+
+interface HotlistAlertItem {
+  alert: DashboardAlert;
+  row: ConsoleDetectionRow | null;
+}
+
+interface RecognitionActivityItem {
+  event: DashboardPopupActivityEvent;
+  row: ConsoleDetectionRow | null;
 }
 
 interface HotlistDraft {
@@ -217,6 +242,13 @@ function formatDateTime(timestampUtc: string): string {
   });
 }
 
+function formatGpsValue(latitude: number | null | undefined, longitude: number | null | undefined): string {
+  if (typeof latitude !== "number" || typeof longitude !== "number") {
+    return "GPS unavailable";
+  }
+  return `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+}
+
 function confidencePercent(value: number): number {
   return value > 1 ? Math.round(value) : Math.round(value * 100);
 }
@@ -257,17 +289,66 @@ function hotlistLabelForRow(row: ConsoleDetectionRow, hotlists: DashboardHotlist
   return match?.label ?? null;
 }
 
+const cameraDirectionTokens = new Set(["north", "south", "east", "west", "front", "rear", "left", "right"]);
+const cameraAcronyms = new Map([
+  ["lpr", "LPR"],
+  ["usb", "USB"],
+  ["rtsp", "RTSP"],
+]);
+
+function formatCameraToken(token: string): string {
+  const normalized = token.toLowerCase();
+  if (cameraAcronyms.has(normalized)) {
+    return cameraAcronyms.get(normalized) ?? token;
+  }
+  if (/^\d+$/.test(token)) {
+    return token;
+  }
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+function parseCameraId(cameraId: string): { locationLabel: string; indexLabel: string | null } {
+  const rawTokens = cameraId
+    .replace(/^cam[_-]?/i, "")
+    .split(/[_-]+/)
+    .filter(Boolean);
+
+  const tokens = [...rawTokens];
+  const lastToken = tokens.at(-1);
+  const indexLabel = lastToken && /^\d+$/.test(lastToken) ? tokens.pop() ?? null : null;
+  const directionIndex = tokens.findIndex((token) => cameraDirectionTokens.has(token.toLowerCase()));
+
+  if (directionIndex > 0) {
+    const [directionToken] = tokens.splice(directionIndex, 1);
+    tokens.unshift(directionToken);
+  }
+
+  const locationLabel = tokens.map((token) => formatCameraToken(token)).join(" ").trim();
+  return {
+    locationLabel: locationLabel || cameraId,
+    indexLabel,
+  };
+}
+
+function humanizeCameraId(cameraId: string, variant: "short" | "full" = "short"): string {
+  const parsed = parseCameraId(cameraId);
+  if (variant === "full") {
+    return parsed.indexLabel ? `${parsed.locationLabel} Camera ${parsed.indexLabel}` : `${parsed.locationLabel} Camera`;
+  }
+  return parsed.indexLabel ? `${parsed.locationLabel} ${parsed.indexLabel}` : parsed.locationLabel;
+}
+
 function buildCameraShortLabel(cameraId: string): string {
   const index = cameraFeeds.findIndex((feed) => feed.id === cameraId);
   if (index >= 0) {
     return `Cam ${index + 1}`;
   }
-  return cameraId.replace(/^cam_/i, "").replace(/_/g, " ").replace(/\b\w/g, (value) => value.toUpperCase());
+  return humanizeCameraId(cameraId, "short");
 }
 
 function buildCameraDisplayName(cameraId: string): string {
   const camera = cameraFeeds.find((feed) => feed.id === cameraId);
-  return camera?.label ?? buildCameraShortLabel(cameraId);
+  return camera?.label ?? humanizeCameraId(cameraId, "full");
 }
 
 function titleCase(value: string | null | undefined): string {
@@ -292,12 +373,66 @@ function fallbackPoint(index: number): { lat: number; lng: number } {
 }
 
 function buildVehicleLabel(record: DashboardDetection): string {
-  const parts = [titleCase(record.vehicle_color), titleCase(record.vehicle_make), titleCase(record.vehicle_model)].filter(Boolean);
+  const parts = [
+    record.optional_vehicle_year,
+    titleCase(record.vehicle_color),
+    titleCase(record.vehicle_make),
+    titleCase(record.vehicle_model),
+  ].filter(Boolean);
   return parts.join(" ") || "Unclassified vehicle";
+}
+
+function buildCameraUiFeeds(rows: ConsoleDetectionRow[], source: DataSource): CameraUiFeed[] {
+  if (source === "live") {
+    const liveCameraIds = [...new Set(rows.map((row) => row.cameraId))];
+    return liveCameraIds.map((cameraId) => {
+      const demoFeed = cameraFeeds.find((feed) => feed.id === cameraId);
+      return {
+        id: cameraId,
+        label: buildCameraDisplayName(cameraId),
+        shortLabel: humanizeCameraId(cameraId, "short"),
+        status: "Online",
+        fps: demoFeed?.fps ?? null,
+      };
+    });
+  }
+
+  return cameraFeeds.map((feed, index) => ({
+    id: feed.id,
+    label: feed.label,
+    shortLabel: `Cam ${index + 1}`,
+    status: feed.status,
+    fps: feed.fps,
+  }));
 }
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function alertStatusTone(status: DashboardAlertStatus): "critical" | "warn" | "muted" {
+  if (status === "active") {
+    return "critical";
+  }
+  if (status === "acknowledged") {
+    return "warn";
+  }
+  return "muted";
+}
+
+function alertStatusLabel(status: DashboardAlertStatus): string {
+  if (status === "acknowledged") {
+    return "Acknowledged";
+  }
+  if (status === "dismissed") {
+    return "Dismissed";
+  }
+  return "Active";
+}
+
+function buildRecognitionVehicleLabel(event: DashboardPopupActivityEvent): string {
+  const parts = [event.optional_vehicle_year, titleCase(event.vehicle_color), titleCase(event.vehicle_make), titleCase(event.vehicle_model)].filter(Boolean);
+  return parts.join(" ") || event.hotlist_label || "Unclassified vehicle";
 }
 
 function buildBlankHotlistDraft(seedPlate = ""): HotlistDraft {
@@ -347,6 +482,8 @@ function buildSeedRows(hotlists: DashboardHotlist[]): ConsoleDetectionRow[] {
       lat: 41.88624,
       lng: -87.72819,
       source: "Fulton curbside",
+      frameNumber: 21844,
+      syncStatus: "local",
     },
     {
       id: "seed-9aja734",
@@ -363,6 +500,8 @@ function buildSeedRows(hotlists: DashboardHotlist[]): ConsoleDetectionRow[] {
       lat: 41.88584,
       lng: -87.73094,
       source: "West alley entrance",
+      frameNumber: 21731,
+      syncStatus: "local",
     },
     {
       id: "seed-5hcg067",
@@ -379,6 +518,8 @@ function buildSeedRows(hotlists: DashboardHotlist[]): ConsoleDetectionRow[] {
       lat: 41.88498,
       lng: -87.73182,
       source: "Plymouth cross street",
+      frameNumber: 21610,
+      syncStatus: "local",
     },
     {
       id: "seed-6ucj466",
@@ -395,6 +536,8 @@ function buildSeedRows(hotlists: DashboardHotlist[]): ConsoleDetectionRow[] {
       lat: 41.88702,
       lng: -87.72755,
       source: "North lot exit",
+      frameNumber: 21498,
+      syncStatus: "local",
     },
     {
       id: "seed-8abc123",
@@ -411,6 +554,8 @@ function buildSeedRows(hotlists: DashboardHotlist[]): ConsoleDetectionRow[] {
       lat: 41.88366,
       lng: -87.73018,
       source: "South approach",
+      frameNumber: 21376,
+      syncStatus: "local",
     },
     {
       id: "seed-7trm221",
@@ -427,6 +572,8 @@ function buildSeedRows(hotlists: DashboardHotlist[]): ConsoleDetectionRow[] {
       lat: 41.88291,
       lng: -87.73210,
       source: "Warehouse frontage",
+      frameNumber: 21241,
+      syncStatus: "local",
     },
   ];
 
@@ -440,7 +587,7 @@ function buildSeedRows(hotlists: DashboardHotlist[]): ConsoleDetectionRow[] {
 
 function mapDetectionToRow(record: DashboardDetection, index: number, hotlists: DashboardHotlist[]): ConsoleDetectionRow {
   const primaryPlate = record.plate_text ?? record.plate_candidates[0]?.text ?? `UNREAD-${index + 1}`;
-  const alternatePlate = record.plate_candidates.find((candidate) => candidate.text !== primaryPlate)?.text ?? (primaryPlate.slice(1) || "--");
+  const alternatePlate = record.plate_candidates.find((candidate) => candidate.text !== primaryPlate)?.text ?? "--";
   const fallback = fallbackPoint(index);
   const confidence = confidencePercent(record.plate_confidence ?? record.plate_candidates[0]?.confidence ?? 0.78);
   const latitude = record.gps_latitude ?? fallback.lat;
@@ -467,6 +614,8 @@ function mapDetectionToRow(record: DashboardDetection, index: number, hotlists: 
     lat: latitude,
     lng: longitude,
     source: buildCameraDisplayName(record.camera_id),
+    frameNumber: record.frame_number,
+    syncStatus: record.sync_status,
   };
 }
 
@@ -716,7 +865,7 @@ function Badge(props: { tone: "cyan" | "critical" | "success" | "warn" | "muted"
 
 function CameraViewport(props: {
   cameraId: string;
-  camera: (typeof cameraFeeds)[number] | undefined;
+  camera: CameraUiFeed | undefined;
   row: ConsoleDetectionRow | null;
   settings: UiSettings;
   compact?: boolean;
@@ -724,9 +873,10 @@ function CameraViewport(props: {
   return (
     <div className={`camera-stage ${props.compact ? "camera-stage--compact" : ""}`}>
       <div className="camera-stage__meta">
-        <strong>{buildCameraDisplayName(props.cameraId)}</strong>
-        <span>{props.camera?.fps ?? 0} FPS</span>
+        <strong>{props.camera?.label ?? buildCameraDisplayName(props.cameraId)}</strong>
+        <span>{typeof props.camera?.fps === "number" ? `${props.camera.fps} FPS` : "Telemetry pending"}</span>
         <span>{props.settings.resolution}</span>
+        {props.row?.syncStatus ? <span>Sync {titleCase(props.row.syncStatus)}</span> : null}
       </div>
       <div className={`camera-feed ${props.compact ? "camera-feed--compact" : ""}`}>
         <div className="camera-feed__grid" />
@@ -756,7 +906,7 @@ function CameraViewport(props: {
         <div className={`camera-feed__hud ${props.compact ? "camera-feed__hud--compact" : ""}`}>
           <div>
             <span>Frame</span>
-            <strong>021844</strong>
+            <strong>{String(props.row?.frameNumber ?? 0).padStart(6, "0")}</strong>
           </div>
           <div>
             <span>Lane</span>
@@ -794,7 +944,7 @@ function App(): ReactElement {
   const [screen, setScreen] = useState<AppScreen>("console");
   const [consoleLayoutMode, setConsoleLayoutMode] = useState<ConsoleLayoutMode>("overview");
   const [stageView, setStageView] = useState<StageView>("camera");
-  const [selectedCameraId, setSelectedCameraId] = useState<string>(cameraFeeds[2]?.id ?? cameraFeeds[0]?.id ?? "");
+  const [selectedCameraId, setSelectedCameraId] = useState<string>("");
   const [selectedDetectionId, setSelectedDetectionId] = useState<string | null>(null);
   const [detailDetectionId, setDetailDetectionId] = useState<string | null>(null);
   const [detailImageUrl, setDetailImageUrl] = useState<string | null>(null);
@@ -832,6 +982,10 @@ function App(): ReactElement {
   const [hotlistDeleting, setHotlistDeleting] = useState(false);
   const [hotlistError, setHotlistError] = useState<string | null>(null);
   const [hotlistMessage, setHotlistMessage] = useState<string | null>(null);
+  const [hotlistsTab, setHotlistsTab] = useState<HotlistsWorkspaceTab>("accounts");
+  const [alertActionId, setAlertActionId] = useState<string | null>(null);
+  const [alertActionError, setAlertActionError] = useState<string | null>(null);
+  const [alertActionMessage, setAlertActionMessage] = useState<string | null>(null);
   const [hotlistOverlayId, setHotlistOverlayId] = useState<string | null>(null);
   const [hotlistAudioMuted, setHotlistAudioMuted] = useState(false);
 
@@ -890,14 +1044,16 @@ function App(): ReactElement {
     };
   }, [apiKey, refreshToken]);
 
-  const allRows = useMemo(
-    () =>
-      (overview?.detections.length
-        ? overview.detections.map((record, index) => mapDetectionToRow(record, index, hotlists))
-        : buildSeedRows(hotlists)
-      ).sort((left, right) => right.timestampUtc.localeCompare(left.timestampUtc)),
-    [overview?.detections, hotlists],
-  );
+  const allRows = useMemo(() => {
+    const rows =
+      dataSource === "live"
+        ? (overview?.detections ?? []).map((record, index) => mapDetectionToRow(record, index, hotlists))
+        : buildSeedRows(hotlists);
+
+    return rows.sort((left, right) => right.timestampUtc.localeCompare(left.timestampUtc));
+  }, [dataSource, overview?.detections, hotlists]);
+
+  const availableCameraFeeds = useMemo(() => buildCameraUiFeeds(allRows, dataSource), [allRows, dataSource]);
 
   useEffect(() => {
     const currentRowStillExists = selectedDetectionId ? allRows.some((row) => row.id === selectedDetectionId) : false;
@@ -905,6 +1061,20 @@ function App(): ReactElement {
       setSelectedDetectionId(allRows[0].id);
     }
   }, [allRows, selectedDetectionId]);
+
+  useEffect(() => {
+    if (availableCameraFeeds.length === 0) {
+      if (selectedCameraId) {
+        setSelectedCameraId("");
+      }
+      return;
+    }
+
+    const cameraStillExists = availableCameraFeeds.some((feed) => feed.id === selectedCameraId);
+    if (!cameraStillExists) {
+      setSelectedCameraId(availableCameraFeeds[0].id);
+    }
+  }, [availableCameraFeeds, selectedCameraId]);
 
   useEffect(() => {
     const stillExists = selectedHotlistId ? hotlists.some((entry) => entry.entry_id === selectedHotlistId) : false;
@@ -969,15 +1139,17 @@ function App(): ReactElement {
   const selectedRow = allRows.find((row) => row.id === selectedDetectionId) ?? allRows[0] ?? null;
   const detailRow = [...allRows, ...searchResults].find((row) => row.id === detailDetectionId) ?? null;
   const hotlistOverlayRow = allRows.find((row) => row.id === hotlistOverlayId) ?? null;
-  const currentCamera = cameraFeeds.find((feed) => feed.id === selectedCameraId) ?? cameraFeeds[0];
+  const currentCamera = availableCameraFeeds.find((feed) => feed.id === selectedCameraId) ?? availableCameraFeeds[0];
   const secondaryCamera =
-    cameraFeeds.find((feed) => feed.id !== selectedCameraId && feed.status === "Online") ??
-    cameraFeeds.find((feed) => feed.id !== selectedCameraId) ??
+    availableCameraFeeds.find((feed) => feed.id !== selectedCameraId && feed.status === "Online") ??
+    availableCameraFeeds.find((feed) => feed.id !== selectedCameraId) ??
     currentCamera;
-  const cameraRows = allRows.filter((row) => row.cameraId === selectedCameraId);
-  const secondaryCameraRows = allRows.filter((row) => row.cameraId === secondaryCamera?.id);
+  const primaryCameraId = currentCamera?.id ?? selectedRow?.cameraId ?? selectedCameraId;
+  const secondaryCameraId = secondaryCamera?.id ?? primaryCameraId;
+  const cameraRows = allRows.filter((row) => row.cameraId === primaryCameraId);
+  const secondaryCameraRows = allRows.filter((row) => row.cameraId === secondaryCameraId);
   const cameraFocusRow = cameraRows[0] ?? selectedRow;
-  const secondaryCameraFocusRow = secondaryCameraRows[0] ?? allRows.find((row) => row.cameraId === secondaryCamera?.id) ?? selectedRow;
+  const secondaryCameraFocusRow = secondaryCameraRows[0] ?? allRows.find((row) => row.cameraId === secondaryCameraId) ?? selectedRow;
   const routeProgress = navigationActive ? clamp(1 - distanceFeet / 4800, 0, 1) : 0;
   const unitPosition = interpolatePosition(routeProgress);
   const routePath = buildRoutePath(unitPosition);
@@ -985,7 +1157,7 @@ function App(): ReactElement {
   const totalReads = overview?.counts.recent_detections ?? 142;
   const activeAlerts = overview?.counts.active_alerts ?? allRows.filter((row) => row.hotlist).length;
   const activeSessions = overview?.counts.active_sessions ?? 3;
-  const onlineCameraCount = cameraFeeds.filter((feed) => feed.status === "Online").length;
+  const onlineCameraCount = availableCameraFeeds.filter((feed) => feed.status === "Online").length;
   const routeStatusLabel = !navigationActive
     ? "Route idle"
     : withinRadius
@@ -998,6 +1170,28 @@ function App(): ReactElement {
   const detailTimeline = detailRow ? allRows.filter((row) => normalizePlate(row.plate1) === normalizePlate(detailRow.plate1)) : [];
   const groupedSearchResults = searchGroupByPlate ? buildPlateGroups(searchResults) : [];
   const hotlistWarning = !settings.hotlistAlerts || !settings.soundEnabled;
+  const hotlistAlertItems = useMemo<HotlistAlertItem[]>(
+    () =>
+      [...(overview?.alerts ?? [])]
+        .sort((left, right) => (right.updated_at_utc ?? right.timestamp_utc).localeCompare(left.updated_at_utc ?? left.timestamp_utc))
+        .map((alert) => ({
+          alert,
+          row: allRows.find((row) => row.detectionId === alert.detection_id) ?? null,
+        })),
+    [overview?.alerts, allRows],
+  );
+  const recognitionActivityItems = useMemo<RecognitionActivityItem[]>(
+    () =>
+      [...(overview?.popup_activity ?? [])]
+        .sort((left, right) => right.timestamp_utc.localeCompare(left.timestamp_utc))
+        .map((event) => ({
+          event,
+          row: allRows.find((row) => row.detectionId === event.detection_id) ?? null,
+        })),
+    [overview?.popup_activity, allRows],
+  );
+  const canManageHotlistAccounts = dataSource !== "live" || overview?.current_principal.capabilities.can_manage_hotlists === true;
+  const canUpdateVehicleAlerts = dataSource !== "live" || overview?.current_principal.capabilities.can_update_alerts === true;
 
   function switchScreen(nextScreen: AppScreen): void {
     startTransition(() => setScreen(nextScreen));
@@ -1021,7 +1215,49 @@ function App(): ReactElement {
     switchScreen("console");
   }
 
+  function openRecordForDetectionId(detectionId: string | null | undefined): void {
+    if (!detectionId) {
+      return;
+    }
+    const row = allRows.find((item) => item.detectionId === detectionId);
+    if (!row) {
+      return;
+    }
+    openDetail(row);
+  }
+
+  function centerMapOnDetectionId(detectionId: string | null | undefined): void {
+    if (!detectionId) {
+      return;
+    }
+    const row = allRows.find((item) => item.detectionId === detectionId);
+    if (!row) {
+      return;
+    }
+    centerMapOnRow(row);
+  }
+
   function openLatestHotlistAlert(): void {
+    const latestActiveAlert = [...(overview?.alerts ?? [])]
+      .filter((alert) => alert.status === "active")
+      .sort((left, right) => (right.updated_at_utc ?? right.timestamp_utc).localeCompare(left.updated_at_utc ?? left.timestamp_utc))[0];
+
+    if (latestActiveAlert) {
+      const matchingAlertRow =
+        allRows.find((row) => row.detectionId === latestActiveAlert.detection_id) ??
+        allRows.find(
+          (row) =>
+            row.cameraId === latestActiveAlert.camera_id &&
+            normalizePlate(row.plate1) === normalizePlate(latestActiveAlert.matched_plate_text),
+        );
+
+      if (matchingAlertRow) {
+        setSelectedDetectionId(matchingAlertRow.id);
+        setHotlistOverlayId(matchingAlertRow.id);
+        return;
+      }
+    }
+
     const latestHotlistRow = allRows.find((row) => row.hotlist);
     if (!latestHotlistRow) {
       switchScreen("hotlists");
@@ -1087,13 +1323,17 @@ function App(): ReactElement {
           filters.plate_match = "contains";
         } else if (searchMode === "camera") {
           const normalizedCameraQuery = searchQuery.trim().toUpperCase();
-          const matchedCamera = cameraFeeds.find(
+          const matchedCamera = availableCameraFeeds.find(
             (feed) =>
               feed.id.toUpperCase().includes(normalizedCameraQuery) ||
               feed.label.toUpperCase().includes(normalizedCameraQuery) ||
-              buildCameraShortLabel(feed.id).toUpperCase().includes(normalizedCameraQuery),
+              feed.shortLabel.toUpperCase().includes(normalizedCameraQuery),
           );
-          filters.camera_id = matchedCamera?.id ?? selectedCameraId;
+          if (matchedCamera?.id) {
+            filters.camera_id = matchedCamera.id;
+          } else if (selectedCameraId) {
+            filters.camera_id = selectedCameraId;
+          }
         } else if (searchMode === "vehicle") {
           const [make, ...modelParts] = searchQuery.trim().split(/\s+/).filter(Boolean);
           if (make) {
@@ -1278,12 +1518,58 @@ function App(): ReactElement {
     switchScreen("hotlists");
   }
 
+  async function handleAlertStatusChange(alert: DashboardAlert, status: DashboardAlertStatus): Promise<void> {
+    try {
+      setAlertActionId(alert.alert_id);
+      setAlertActionError(null);
+      setAlertActionMessage(null);
+
+      if (dataSource === "live") {
+        await updateAlert(alert.alert_id, {
+          status,
+          operator_id: overview?.current_principal.principal_id,
+        });
+        setRefreshToken((value) => value + 1);
+      } else {
+        setOverview((current) =>
+          current
+            ? {
+                ...current,
+                alerts: current.alerts.map((item) =>
+                  item.alert_id === alert.alert_id
+                    ? {
+                        ...item,
+                        status,
+                        response_operator_id: current.current_principal.principal_id,
+                        updated_at_utc: new Date().toISOString(),
+                      }
+                    : item,
+                ),
+              }
+            : current,
+        );
+      }
+
+      setAlertActionMessage(
+        status === "acknowledged"
+          ? "Vehicle alert acknowledged."
+          : status === "dismissed"
+            ? "Vehicle alert dismissed."
+            : "Vehicle alert reopened.",
+      );
+    } catch (error) {
+      setAlertActionError(error instanceof Error ? error.message : "Unable to update the alert.");
+    } finally {
+      setAlertActionId(null);
+    }
+  }
+
   const footerIndicators = [
     { label: "GPS locked", value: "ON", tone: "good" },
     { label: "Server", value: dataSource === "live" ? "Connected" : dataSource === "fallback" ? "Fallback" : "Demo", tone: dataSource === "live" ? "good" : "off" },
     { label: "LPR", value: settings.arrivalScanEnabled ? "Active" : "Paused", tone: settings.arrivalScanEnabled ? "good" : "off" },
-    { label: "FPS", value: `${currentCamera?.fps ?? 0}`, tone: currentCamera?.status === "Online" ? "good" : "off" },
-    { label: "Cams", value: `${onlineCameraCount}/${cameraFeeds.length}`, tone: onlineCameraCount > 0 ? "good" : "off" },
+    { label: "FPS", value: typeof currentCamera?.fps === "number" ? `${currentCamera.fps}` : "--", tone: currentCamera?.status === "Online" ? "good" : "off" },
+    { label: "Cams", value: `${onlineCameraCount}/${availableCameraFeeds.length}`, tone: onlineCameraCount > 0 ? "good" : "off" },
     { label: "Reads", value: `${totalReads}`, tone: "good" },
     { label: "Alerts", value: `${activeAlerts}`, tone: activeAlerts > 0 ? "warn" : "good" },
   ] as const;
@@ -1324,10 +1610,10 @@ function App(): ReactElement {
             <ConsoleScreen
               activeAlerts={activeAlerts}
               allRows={allRows}
-              cameraFeedsList={cameraFeeds}
+              cameraFeedsList={availableCameraFeeds}
               cameraFocusRow={cameraFocusRow}
               currentCamera={currentCamera}
-              selectedCameraId={selectedCameraId}
+              selectedCameraId={primaryCameraId}
               selectedDetectionId={selectedDetectionId}
               settings={settings}
               stageView={stageView}
@@ -1393,24 +1679,36 @@ function App(): ReactElement {
 
           {screen === "hotlists" ? (
             <HotlistsScreen
+              alertActionError={alertActionError}
+              alertActionId={alertActionId}
+              alertActionMessage={alertActionMessage}
+              alerts={hotlistAlertItems}
+              canManageAccounts={canManageHotlistAccounts}
+              canUpdateAlerts={canUpdateVehicleAlerts}
               dataSource={dataSource}
               draft={hotlistDraft}
               error={hotlistError}
               hotlists={hotlists}
+              activity={recognitionActivityItems}
+              activeTab={hotlistsTab}
               message={hotlistMessage}
               saving={hotlistSaving}
               deleting={hotlistDeleting}
               selectedDetectionPlate={selectedRow?.plate1 ?? ""}
               selectedHotlistId={selectedHotlistId}
+              onAlertStatusChange={(alert, status) => void handleAlertStatusChange(alert, status)}
               onClearDraft={() => beginHotlistDraft()}
               onOpenDashboard={() => switchScreen("console")}
               onDelete={() => void handleDeleteHotlist()}
               onDraftChange={setHotlistDraft}
+              onMapDetection={centerMapOnDetectionId}
               onOpenSearch={() => switchScreen("search")}
+              onOpenRecord={openRecordForDetectionId}
               onSelect={loadHotlist}
               onSeedFromDetection={() => beginHotlistDraft(selectedRow?.plate1)}
               onOpenSettings={() => switchScreen("settings")}
               onSubmit={handleHotlistSubmit}
+              onTabChange={setHotlistsTab}
             />
           ) : null}
 
@@ -1669,9 +1967,9 @@ function NavPanel(props: {
 
       <div className="nav-tabs">
         {[
-          { id: "console", label: "Dashboard", count: props.totalReads },
+          { id: "console", label: "Dashboard", count: null },
           { id: "hotlists", label: "Hotlists", count: props.activeHotlists },
-          { id: "settings", label: "Settings", count: 0 },
+          { id: "settings", label: "Settings", count: null },
         ].map((item) => (
           <button
             key={item.id}
@@ -1680,20 +1978,39 @@ function NavPanel(props: {
             onClick={() => props.onScreenChange(item.id as AppScreen)}
           >
             <span className="nav-tab__label">{item.label}</span>
-            <span className="nav-tab__count">{item.count > 0 ? item.count : "-"}</span>
+            {typeof item.count === "number" ? <span className="nav-tab__count">{item.count}</span> : null}
           </button>
         ))}
       </div>
 
       <div className="nav-action-row">
         <button className="nav-action nav-action--ghost" type="button" onClick={props.onOpenSearch}>
-          <span>Search</span>
+          <span>Search Reads</span>
           <span className="nav-action__count">{props.searchCount > 0 ? props.searchCount : "-"}</span>
         </button>
         <button className="nav-action nav-action--primary" disabled={props.activeAlerts === 0} type="button" onClick={props.onOpenAlert}>
-          <span>View Alert</span>
+          <span>Open Alert</span>
           <span className="nav-action__count">{props.activeAlerts}</span>
         </button>
+      </div>
+
+      <div className="nav-compact-summary" aria-label="Compact route summary">
+        <div className="nav-compact-chip">
+          <span>Status</span>
+          <strong>{props.routeStatusLabel}</strong>
+        </div>
+        <div className="nav-compact-chip">
+          <span>Reads</span>
+          <strong>{props.totalReads}</strong>
+        </div>
+        <div className="nav-compact-chip">
+          <span>ETA</span>
+          <strong>{props.routeEta}</strong>
+        </div>
+        <div className="nav-compact-chip">
+          <span>Radius</span>
+          <strong>{props.settings.arrivalRadiusFeet} ft</strong>
+        </div>
       </div>
 
       <div className="panel-card">
@@ -1768,11 +2085,11 @@ function NavPanel(props: {
 function ConsoleScreen(props: {
   activeAlerts: number;
   allRows: ConsoleDetectionRow[];
-  cameraFeedsList: typeof cameraFeeds;
+  cameraFeedsList: CameraUiFeed[];
   cameraFocusRow: ConsoleDetectionRow | null;
   consoleLayoutMode: ConsoleLayoutMode;
-  currentCamera: (typeof cameraFeeds)[number] | undefined;
-  secondaryCamera: (typeof cameraFeeds)[number] | undefined;
+  currentCamera: CameraUiFeed | undefined;
+  secondaryCamera: CameraUiFeed | undefined;
   secondaryCameraFocusRow: ConsoleDetectionRow | null;
   selectedCameraId: string;
   selectedDetectionId: string | null;
@@ -1793,7 +2110,7 @@ function ConsoleScreen(props: {
         <section className="stage-card">
           <div className="stage-toolbar">
             <div className="camera-tab-strip">
-              {props.cameraFeedsList.map((feed, index) => (
+              {props.cameraFeedsList.map((feed) => (
                 <button
                   key={feed.id}
                   className={`camera-tab ${props.selectedCameraId === feed.id ? "is-active" : ""}`}
@@ -1801,7 +2118,7 @@ function ConsoleScreen(props: {
                   onClick={() => props.onSelectCamera(feed.id)}
                 >
                   <span className={`camera-dot camera-dot--${feed.status === "Online" ? "live" : "off"}`} />
-                  Cam {index + 1}
+                  {feed.shortLabel}
                 </button>
               ))}
             </div>
@@ -1841,7 +2158,7 @@ function ConsoleScreen(props: {
                   <div className="console-overview-card__header">
                     <div>
                       <p className="eyebrow">Primary Camera</p>
-                      <h3>{buildCameraShortLabel(props.selectedCameraId)}</h3>
+                      <h3>{props.currentCamera?.shortLabel ?? buildCameraShortLabel(props.selectedCameraId)}</h3>
                     </div>
                     <Badge tone={props.currentCamera?.status === "Online" ? "success" : "muted"}>{props.currentCamera?.status === "Online" ? "LIVE" : "OFFLINE"}</Badge>
                   </div>
@@ -1852,7 +2169,7 @@ function ConsoleScreen(props: {
                   <div className="console-overview-card__header">
                     <div>
                       <p className="eyebrow">Support Camera</p>
-                      <h3>{buildCameraShortLabel(props.secondaryCamera?.id ?? props.selectedCameraId)}</h3>
+                      <h3>{props.secondaryCamera?.shortLabel ?? buildCameraShortLabel(props.secondaryCamera?.id ?? props.selectedCameraId)}</h3>
                     </div>
                     {props.secondaryCamera?.id !== props.selectedCameraId ? (
                       <button className="link-button" type="button" onClick={() => props.onSelectCamera(props.secondaryCamera?.id ?? props.selectedCameraId)}>
@@ -2162,6 +2479,14 @@ function SearchScreen(props: {
 }
 
 function HotlistsScreen(props: {
+  alertActionError: string | null;
+  alertActionId: string | null;
+  alertActionMessage: string | null;
+  alerts: HotlistAlertItem[];
+  canManageAccounts: boolean;
+  canUpdateAlerts: boolean;
+  activity: RecognitionActivityItem[];
+  activeTab: HotlistsWorkspaceTab;
   dataSource: DataSource;
   draft: HotlistDraft;
   error: string | null;
@@ -2171,21 +2496,29 @@ function HotlistsScreen(props: {
   deleting: boolean;
   selectedDetectionPlate: string;
   selectedHotlistId: string | null;
+  onAlertStatusChange: (alert: DashboardAlert, status: DashboardAlertStatus) => void;
   onClearDraft: () => void;
   onOpenDashboard: () => void;
   onDelete: () => void;
   onDraftChange: (draft: HotlistDraft | ((current: HotlistDraft) => HotlistDraft)) => void;
+  onMapDetection: (detectionId: string | null | undefined) => void;
   onOpenSearch: () => void;
+  onOpenRecord: (detectionId: string | null | undefined) => void;
   onSelect: (entry: DashboardHotlist) => void;
   onSeedFromDetection: () => void;
   onOpenSettings: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  onTabChange: (tab: HotlistsWorkspaceTab) => void;
 }): ReactElement {
+  const activeAlertCount = props.alerts.filter((item) => item.alert.status === "active").length;
+  const acknowledgedAlertCount = props.alerts.filter((item) => item.alert.status === "acknowledged").length;
+  const dismissedAlertCount = props.alerts.filter((item) => item.alert.status === "dismissed").length;
+
   return (
     <section className="screen">
       <ScreenHeader
-        title="Hotlist Manager"
-        subtitle="Add, edit, pause, recover, and delete local hotlist accounts from one workspace."
+        title="Hotlist Workspace"
+        subtitle="Manage watch accounts, vehicle alert workflow, and recognition events from one screen."
         meta={
           <>
             <Badge tone="critical">{`${props.hotlists.filter((entry) => entry.active).length} active`}</Badge>
@@ -2207,134 +2540,275 @@ function HotlistsScreen(props: {
         }
       />
 
-      <div className="hotlists-grid">
-        <section className="panel-card hotlists-list-card">
+      <div className="segmented-control hotlists-toolbar-tabs">
+        <button className={props.activeTab === "accounts" ? "is-active" : ""} type="button" onClick={() => props.onTabChange("accounts")}>
+          {`Accounts (${props.hotlists.length})`}
+        </button>
+        <button className={props.activeTab === "alerts" ? "is-active" : ""} type="button" onClick={() => props.onTabChange("alerts")}>
+          {`Vehicle Alerts (${props.alerts.length})`}
+        </button>
+        <button className={props.activeTab === "recognition" ? "is-active" : ""} type="button" onClick={() => props.onTabChange("recognition")}>
+          {`Recognition (${props.activity.length})`}
+        </button>
+      </div>
+
+      {props.activeTab === "accounts" ? (
+        <div className="hotlists-grid">
+          <section className="panel-card hotlists-list-card">
+            <div className="panel-card__header">
+              <h3>Hotlist Accounts</h3>
+              <button className="btn btn--ghost" disabled={!props.canManageAccounts} type="button" onClick={props.onClearDraft}>
+                New Account
+              </button>
+            </div>
+            <div className="hotlist-list">
+              {props.hotlists.length === 0 ? (
+                <div className="empty-state">
+                  <strong>No hotlist accounts yet.</strong>
+                  <p>Create the first account from scratch or seed it from the selected detection.</p>
+                </div>
+              ) : (
+                props.hotlists.map((entry) => (
+                  <button
+                    key={entry.entry_id}
+                    className={`hotlist-row ${props.selectedHotlistId === entry.entry_id ? "is-selected" : ""}`}
+                    type="button"
+                    onClick={() => props.onSelect(entry)}
+                  >
+                    <div>
+                      <strong>{entry.plate_text}</strong>
+                      <span>{entry.label ?? "Unlabeled account"}</span>
+                    </div>
+                    <div className="hotlist-row__meta">
+                      <Badge tone={entry.active ? "critical" : "muted"}>{entry.active ? "Active" : "Paused"}</Badge>
+                      <span>{formatDateTime(entry.updated_at_utc)}</span>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </section>
+
+          <section className="panel-card hotlist-editor-card">
+            <div className="panel-card__header">
+              <h3>{props.selectedHotlistId ? "Edit Account" : "Create Account"}</h3>
+              <button className="btn btn--ghost" disabled={!props.canManageAccounts} type="button" onClick={props.onSeedFromDetection}>
+                Use Selected Plate
+              </button>
+            </div>
+            <form className="hotlist-form" onSubmit={(event) => void props.onSubmit(event)}>
+              <label>
+                <span>Plate text</span>
+                <input
+                  className="text-input"
+                  placeholder="8ABC123"
+                  type="text"
+                  value={props.draft.plateText}
+                  onChange={(event) =>
+                    props.onDraftChange((current) => ({
+                      ...current,
+                      plateText: normalizePlate(event.target.value),
+                    }))
+                  }
+                />
+              </label>
+
+              <label>
+                <span>Account label</span>
+                <input
+                  className="text-input"
+                  placeholder="Case name / tow-ready / visual match"
+                  type="text"
+                  value={props.draft.label}
+                  onChange={(event) =>
+                    props.onDraftChange((current) => ({
+                      ...current,
+                      label: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+
+              <label>
+                <span>Operator notes</span>
+                <textarea
+                  className="text-area"
+                  placeholder="Tell the operator what to do when this vehicle is detected."
+                  value={props.draft.notes}
+                  onChange={(event) =>
+                    props.onDraftChange((current) => ({
+                      ...current,
+                      notes: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+
+              <div className="inline-setting">
+                <div>
+                  <strong>Account active</strong>
+                  <span>Controls whether the plate triggers hotlist interrupts.</span>
+                </div>
+                <Toggle
+                  checked={props.draft.active}
+                  label="Account active"
+                  onChange={(checked) =>
+                    props.onDraftChange((current) => ({
+                      ...current,
+                      active: checked,
+                    }))
+                  }
+                />
+              </div>
+
+              {props.error ? <div className="feedback feedback--error">{props.error}</div> : null}
+              {props.message ? <div className="feedback feedback--good">{props.message}</div> : null}
+
+              <div className="button-stack">
+                <button className="btn btn--primary" disabled={!props.canManageAccounts || props.saving} type="submit">
+                  {props.saving ? "Saving..." : props.selectedHotlistId ? "Update Account" : "Create Account"}
+                </button>
+                <button className="btn btn--ghost" disabled={!props.canManageAccounts} type="button" onClick={props.onClearDraft}>
+                  Clear Draft
+                </button>
+                <button className="btn btn--ghost" disabled={!props.canManageAccounts} type="button" onClick={props.onSeedFromDetection}>
+                  Seed {props.selectedDetectionPlate || "selection"}
+                </button>
+                <button className="btn btn--danger" disabled={!props.canManageAccounts || !props.selectedHotlistId || props.deleting} type="button" onClick={props.onDelete}>
+                  {props.deleting ? "Deleting..." : "Delete Account"}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      ) : null}
+
+      {props.activeTab === "alerts" ? (
+        <section className="panel-card hotlists-workspace-card">
           <div className="panel-card__header">
-            <h3>Tracked Plates</h3>
-            <button className="btn btn--ghost" type="button" onClick={props.onClearDraft}>
-              New Entry
-            </button>
+            <div>
+              <h3>Vehicle Alerts</h3>
+              <p>Review backend alert state and manage active hotlist matches.</p>
+            </div>
+            <div className="record-row__stats">
+              <Badge tone="critical">{`${activeAlertCount} active`}</Badge>
+              <Badge tone="warn">{`${acknowledgedAlertCount} acknowledged`}</Badge>
+              <Badge tone="muted">{`${dismissedAlertCount} dismissed`}</Badge>
+            </div>
           </div>
-          <div className="hotlist-list">
-            {props.hotlists.length === 0 ? (
+          {props.alertActionError ? <div className="feedback feedback--error">{props.alertActionError}</div> : null}
+          {props.alertActionMessage ? <div className="feedback feedback--good">{props.alertActionMessage}</div> : null}
+          <div className="record-list">
+            {props.alerts.length === 0 ? (
               <div className="empty-state">
-                <strong>No hotlist entries yet.</strong>
-                <p>Create the first one from scratch or seed it from the selected detection.</p>
+                <strong>No vehicle alerts available.</strong>
+                <p>Active matches from the backend alert queue will appear here.</p>
               </div>
             ) : (
-              props.hotlists.map((entry) => (
-                <button
-                  key={entry.entry_id}
-                  className={`hotlist-row ${props.selectedHotlistId === entry.entry_id ? "is-selected" : ""}`}
-                  type="button"
-                  onClick={() => props.onSelect(entry)}
-                >
-                  <div>
-                    <strong>{entry.plate_text}</strong>
-                    <span>{entry.label ?? "Unlabeled entry"}</span>
-                  </div>
-                  <div className="hotlist-row__meta">
-                    <Badge tone={entry.active ? "critical" : "muted"}>{entry.active ? "Active" : "Paused"}</Badge>
-                    <span>{formatDateTime(entry.updated_at_utc)}</span>
-                  </div>
-                </button>
-              ))
+              props.alerts.map(({ alert, row }) => {
+                const alertBusy = props.alertActionId === alert.alert_id;
+                const alertGps = row?.gps ?? formatGpsValue(alert.gps_latitude, alert.gps_longitude);
+                const matchConfidence = confidenceLabel(confidencePercent(alert.match_confidence));
+                return (
+                  <article key={alert.alert_id} className="record-row">
+                    <div className="record-row__header">
+                      <div className="record-row__title">
+                        <strong>{alert.matched_plate_text}</strong>
+                        <span>{alert.hotlist_label ?? row?.vehicle ?? "Live hotlist alert"}</span>
+                      </div>
+                      <div className="record-row__stats">
+                        <Badge tone={alertStatusTone(alert.status)}>{alertStatusLabel(alert.status)}</Badge>
+                        <Badge tone="cyan">{matchConfidence}</Badge>
+                      </div>
+                    </div>
+                    <div className="record-row__meta">
+                      <span>{buildCameraDisplayName(alert.camera_id)}</span>
+                      <span>{alertGps}</span>
+                      <span>{formatDateTime(alert.updated_at_utc ?? alert.timestamp_utc)}</span>
+                    </div>
+                    <p className="record-row__note">{alert.notes ?? row?.vehicle ?? "No operator note attached."}</p>
+                    <div className="record-row__actions">
+                      {alert.status !== "acknowledged" ? (
+                        <button className="link-button" disabled={!props.canUpdateAlerts || alertBusy} type="button" onClick={() => props.onAlertStatusChange(alert, "acknowledged")}>
+                          {alertBusy ? "Updating..." : "Acknowledge"}
+                        </button>
+                      ) : null}
+                      {alert.status !== "dismissed" ? (
+                        <button className="link-button" disabled={!props.canUpdateAlerts || alertBusy} type="button" onClick={() => props.onAlertStatusChange(alert, "dismissed")}>
+                          {alertBusy ? "Updating..." : "Dismiss"}
+                        </button>
+                      ) : null}
+                      {alert.status !== "active" ? (
+                        <button className="link-button" disabled={!props.canUpdateAlerts || alertBusy} type="button" onClick={() => props.onAlertStatusChange(alert, "active")}>
+                          {alertBusy ? "Updating..." : "Reopen"}
+                        </button>
+                      ) : null}
+                      <button className="link-button" disabled={!row} type="button" onClick={() => props.onOpenRecord(alert.detection_id)}>
+                        View Record
+                      </button>
+                      <button className="link-button" disabled={!row} type="button" onClick={() => props.onMapDetection(alert.detection_id)}>
+                        Map
+                      </button>
+                    </div>
+                  </article>
+                );
+              })
             )}
           </div>
         </section>
+      ) : null}
 
-        <section className="panel-card hotlist-editor-card">
+      {props.activeTab === "recognition" ? (
+        <section className="panel-card hotlists-workspace-card">
           <div className="panel-card__header">
-            <h3>{props.selectedHotlistId ? "Edit Entry" : "Create Entry"}</h3>
-            <button className="btn btn--ghost" type="button" onClick={props.onSeedFromDetection}>
-              Seed From Detection
-            </button>
+            <div>
+              <h3>Recognition Activity</h3>
+              <p>Recent recognition events and popup-worthy detections from the live backend.</p>
+            </div>
+            <Badge tone="cyan">{`${props.activity.length} events`}</Badge>
           </div>
-          <form className="hotlist-form" onSubmit={(event) => void props.onSubmit(event)}>
-            <label>
-              <span>Plate text</span>
-              <input
-                className="text-input"
-                placeholder="8ABC123"
-                type="text"
-                value={props.draft.plateText}
-                onChange={(event) =>
-                  props.onDraftChange((current) => ({
-                    ...current,
-                    plateText: normalizePlate(event.target.value),
-                  }))
-                }
-              />
-            </label>
-
-            <label>
-              <span>Label</span>
-              <input
-                className="text-input"
-                placeholder="Case name / tow-ready / visual match"
-                type="text"
-                value={props.draft.label}
-                onChange={(event) =>
-                  props.onDraftChange((current) => ({
-                    ...current,
-                    label: event.target.value,
-                  }))
-                }
-              />
-            </label>
-
-            <label>
-              <span>Notes</span>
-              <textarea
-                className="text-area"
-                placeholder="Tell the operator what to do when this vehicle is detected."
-                value={props.draft.notes}
-                onChange={(event) =>
-                  props.onDraftChange((current) => ({
-                    ...current,
-                    notes: event.target.value,
-                  }))
-                }
-              />
-            </label>
-
-            <div className="inline-setting">
-              <div>
-                <strong>Entry active</strong>
-                <span>Controls whether the plate triggers hotlist interrupts.</span>
+          <div className="record-list">
+            {props.activity.length === 0 ? (
+              <div className="empty-state">
+                <strong>No recognition activity yet.</strong>
+                <p>Popup activity and surfaced detections will appear here when the backend emits them.</p>
               </div>
-              <Toggle
-                checked={props.draft.active}
-                label="Entry active"
-                onChange={(checked) =>
-                  props.onDraftChange((current) => ({
-                    ...current,
-                    active: checked,
-                  }))
-                }
-              />
-            </div>
-
-            {props.error ? <div className="feedback feedback--error">{props.error}</div> : null}
-            {props.message ? <div className="feedback feedback--good">{props.message}</div> : null}
-
-            <div className="button-stack">
-              <button className="btn btn--primary" disabled={props.saving} type="submit">
-                {props.saving ? "Saving..." : props.selectedHotlistId ? "Update Hotlist" : "Create Hotlist"}
-              </button>
-              <button className="btn btn--ghost" type="button" onClick={props.onClearDraft}>
-                Clear Draft
-              </button>
-              <button className="btn btn--ghost" type="button" onClick={props.onSeedFromDetection}>
-                Seed {props.selectedDetectionPlate || "selection"}
-              </button>
-              <button className="btn btn--danger" disabled={!props.selectedHotlistId || props.deleting} type="button" onClick={props.onDelete}>
-                {props.deleting ? "Deleting..." : "Delete Entry"}
-              </button>
-            </div>
-          </form>
+            ) : (
+              props.activity.map(({ event, row }) => {
+                const eventConfidence = confidenceLabel(confidencePercent(event.confidence));
+                return (
+                  <article key={event.event_id} className="record-row">
+                    <div className="record-row__header">
+                      <div className="record-row__title">
+                        <strong>{event.plate_text ?? "Unread plate"}</strong>
+                        <span>{buildRecognitionVehicleLabel(event)}</span>
+                      </div>
+                      <div className="record-row__stats">
+                        <Badge tone={event.event_type === "hotlist" ? "critical" : "cyan"}>{event.event_type === "hotlist" ? "Hotlist" : "Recognition"}</Badge>
+                        <Badge tone="cyan">{eventConfidence}</Badge>
+                      </div>
+                    </div>
+                    <div className="record-row__meta">
+                      <span>{buildCameraDisplayName(event.camera_id)}</span>
+                      <span>{row?.gps ?? formatGpsValue(event.gps_latitude, event.gps_longitude)}</span>
+                      <span>{formatDateTime(event.timestamp_utc)}</span>
+                    </div>
+                    <p className="record-row__note">{event.note ?? "Recognition event surfaced by the backend."}</p>
+                    <div className="record-row__actions">
+                      <button className="link-button" disabled={!row} type="button" onClick={() => props.onOpenRecord(event.detection_id)}>
+                        View Record
+                      </button>
+                      <button className="link-button" disabled={!row} type="button" onClick={() => props.onMapDetection(event.detection_id)}>
+                        Map
+                      </button>
+                    </div>
+                  </article>
+                );
+              })
+            )}
+          </div>
         </section>
-      </div>
+      ) : null}
     </section>
   );
 }
