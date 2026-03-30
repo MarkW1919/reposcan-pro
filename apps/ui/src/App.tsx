@@ -1772,9 +1772,12 @@ function App(): ReactElement {
     );
     const prev = prevActiveAlertIdsRef.current;
 
-    // On the very first data load, seed the ref without triggering the overlay.
-    // Only surface the overlay for alerts that arrive *after* the initial load.
+    // Only initialize once we have real data — if overview is still null the
+    // active set is empty, which would make all subsequent alerts look "new."
     if (!alertSurfaceInitializedRef.current) {
+      if (!overview) {
+        return;
+      }
       alertSurfaceInitializedRef.current = true;
       prevActiveAlertIdsRef.current = currentActiveIds;
       return;
@@ -4924,13 +4927,18 @@ function HotlistAlertOverlay(props: {
   onViewRecord: () => void;
 }): ReactElement {
   return (
-    <div className="hotlist-alert">
+    <>
+      <div className="hotlist-alert__scrim" onClick={props.onDismiss} />
+      <div className="hotlist-alert">
       <div className="hotlist-alert__header">
         <div>
           <p className="eyebrow">Recovery Alert</p>
           <h2>Hotlist Match</h2>
         </div>
-        <Badge tone="critical">{props.hotlistAudioMuted ? "Muted" : "Audio + visual"}</Badge>
+        <div className="hotlist-alert__header-right">
+          <Badge tone="critical">{props.hotlistAudioMuted ? "Muted" : "Audio + visual"}</Badge>
+          <button className="hotlist-alert__close" type="button" aria-label="Dismiss alert" onClick={props.onDismiss}>✕</button>
+        </div>
       </div>
 
       <div className="hotlist-alert__hero">
@@ -4982,6 +4990,7 @@ function HotlistAlertOverlay(props: {
         </button>
       </div>
     </div>
+    </>
   );
 }
 

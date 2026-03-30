@@ -1920,6 +1920,14 @@ select:focus-visible {
   font-size: 0.82rem;
 }
 
+/* Full-screen scrim blocks NavPanel and background clicks */
+.hotlist-alert__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 49;
+  background: rgba(0, 0, 0, 0.6);
+}
+
 .hotlist-alert {
   position: fixed;
   inset: 28px;
@@ -1930,9 +1938,10 @@ select:focus-visible {
     radial-gradient(circle at top center, rgba(255, 77, 94, 0.18), transparent 30%),
     linear-gradient(180deg, rgba(25, 8, 12, 0.98), rgba(6, 10, 15, 0.98));
   display: grid;
-  grid-template-rows: auto auto auto auto;
+  grid-template-rows: auto 1fr auto;
   padding: 22px;
   gap: 18px;
+  overflow-y: auto;
   animation: hotlist-pulse 1.3s ease-in-out infinite alternate;
 }
 
@@ -1943,6 +1952,28 @@ select:focus-visible {
   to {
     box-shadow: 0 0 28px rgba(255, 77, 94, 0.22);
   }
+}
+
+.hotlist-alert__header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.hotlist-alert__close {
+  background: rgba(255, 77, 94, 0.15);
+  border: 1px solid rgba(255, 77, 94, 0.3);
+  border-radius: 10px;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 6px 10px;
+  transition: background 0.15s;
+}
+
+.hotlist-alert__close:hover {
+  background: rgba(255, 77, 94, 0.3);
 }
 
 .hotlist-alert__hero {
