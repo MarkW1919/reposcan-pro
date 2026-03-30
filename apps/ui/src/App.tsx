@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactElement } from "react";
+import { startTransition, useEffect, useMemo, useState, type CSSProperties, type FormEvent, type ReactElement } from "react";
 import { Circle, MapContainer, Marker, Polyline, Popup, TileLayer } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -21,6 +21,7 @@ import {
 
 type AppScreen = "console" | "search" | "hotlists" | "settings";
 type StageView = "camera" | "map";
+type ConsoleLayoutMode = "overview" | "focus";
 type SearchMode = "plate" | "camera" | "vehicle" | "time";
 type DataSource = "demo" | "live" | "fallback";
 type AlertPersistence = "until-dismissed" | "15 sec" | "60 sec";
@@ -579,6 +580,29 @@ function interpolatePosition(progress: number): { lat: number; lng: number } {
   };
 }
 
+function buildDetectionBoxPosition(cameraId: string, compact = false): CSSProperties {
+  const positions = compact
+    ? {
+        "cam-front-1": { left: "18%", top: "42%" },
+        "cam-side-2": { left: "50%", top: "34%" },
+        "cam-rear-3": { left: "31%", top: "37%" },
+        "cam-roof-4": { left: "44%", top: "29%" },
+      }
+    : {
+        "cam-front-1": { left: "20%", top: "35%" },
+        "cam-side-2": { left: "54%", top: "32%" },
+        "cam-rear-3": { left: "36%", top: "38%" },
+        "cam-roof-4": { left: "48%", top: "28%" },
+      };
+
+  const fallback = compact ? { left: "30%", top: "36%" } : { left: "36%", top: "38%" };
+  const resolved = positions[cameraId as keyof typeof positions] ?? fallback;
+  return {
+    "--box-left": resolved.left,
+    "--box-top": resolved.top,
+  } as CSSProperties;
+}
+
 function buildRoutePath(position: { lat: number; lng: number }): [number, number][] {
   const mid1: [number, number] = [
     position.lat + (targetRoute.lat - position.lat) * 0.4 + 0.0032,
@@ -621,6 +645,7 @@ function OpsMap(props: {
   unitPosition: { lat: number; lng: number };
   routePath: [number, number][];
   rows: ConsoleDetectionRow[];
+  radiusFeet: number;
   showRadiusRing: boolean;
   selectedRowId: string | null;
   onSelect: (rowId: string) => void;
@@ -640,7 +665,7 @@ function OpsMap(props: {
       {props.showRadiusRing ? (
         <Circle
           center={[targetRoute.lat, targetRoute.lng]}
-          radius={defaultUiSettings.arrivalRadiusFeet * 0.3048}
+          radius={props.radiusFeet * 0.3048}
           pathOptions={{
             color: "#38E8FF",
             fillColor: "rgba(56,232,255,0.10)",
@@ -689,7 +714,65 @@ function Badge(props: { tone: "cyan" | "critical" | "success" | "warn" | "muted"
   return <span className={`badge badge--${props.tone}`}>{props.children}</span>;
 }
 
-function ScreenHeader(props: { title: string; subtitle: string; meta?: ReactElement }): ReactElement {
+function CameraViewport(props: {
+  cameraId: string;
+  camera: (typeof cameraFeeds)[number] | undefined;
+  row: ConsoleDetectionRow | null;
+  settings: UiSettings;
+  compact?: boolean;
+}): ReactElement {
+  return (
+    <div className={`camera-stage ${props.compact ? "camera-stage--compact" : ""}`}>
+      <div className="camera-stage__meta">
+        <strong>{buildCameraDisplayName(props.cameraId)}</strong>
+        <span>{props.camera?.fps ?? 0} FPS</span>
+        <span>{props.settings.resolution}</span>
+      </div>
+      <div className={`camera-feed ${props.compact ? "camera-feed--compact" : ""}`}>
+        <div className="camera-feed__grid" />
+        <div className="camera-feed__lane camera-feed__lane--left" />
+        <div className="camera-feed__lane camera-feed__lane--right" />
+        <div className="camera-wireframe">
+          <div className="camera-wireframe__roof" />
+          <div className="camera-wireframe__body" />
+          <div className="camera-wireframe__hood" />
+        </div>
+        {props.row ? (
+          <div
+            className={`detection-box detection-box--${confidenceTone(props.row.conf)} ${props.compact ? "detection-box--compact" : ""}`}
+            style={buildDetectionBoxPosition(props.row.cameraId, Boolean(props.compact))}
+          >
+            <div className="detection-box__plate">
+              {props.row.plate1} {confidenceLabel(props.row.conf)}
+            </div>
+            {props.settings.overlayLabels ? (
+              <div className="detection-box__meta">
+                <span>{props.row.vehicle}</span>
+                <span>{props.row.direction}</span>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+        <div className={`camera-feed__hud ${props.compact ? "camera-feed__hud--compact" : ""}`}>
+          <div>
+            <span>Frame</span>
+            <strong>021844</strong>
+          </div>
+          <div>
+            <span>Lane</span>
+            <strong>{props.row?.lane ?? "Standby"}</strong>
+          </div>
+          <div>
+            <span>Direction</span>
+            <strong>{props.row?.direction ?? "Standby"}</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScreenHeader(props: { title: string; subtitle: string; meta?: ReactElement; actions?: ReactElement }): ReactElement {
   return (
     <header className="screen-header">
       <div>
@@ -697,13 +780,19 @@ function ScreenHeader(props: { title: string; subtitle: string; meta?: ReactElem
         <h1>{props.title}</h1>
         <p className="screen-subtitle">{props.subtitle}</p>
       </div>
-      {props.meta ? <div className="screen-header__meta">{props.meta}</div> : null}
+      {props.meta || props.actions ? (
+        <div className="screen-header__aside">
+          {props.meta ? <div className="screen-header__meta">{props.meta}</div> : null}
+          {props.actions ? <div className="screen-header__actions">{props.actions}</div> : null}
+        </div>
+      ) : null}
     </header>
   );
 }
 
 function App(): ReactElement {
   const [screen, setScreen] = useState<AppScreen>("console");
+  const [consoleLayoutMode, setConsoleLayoutMode] = useState<ConsoleLayoutMode>("overview");
   const [stageView, setStageView] = useState<StageView>("camera");
   const [selectedCameraId, setSelectedCameraId] = useState<string>(cameraFeeds[2]?.id ?? cameraFeeds[0]?.id ?? "");
   const [selectedDetectionId, setSelectedDetectionId] = useState<string | null>(null);
@@ -745,7 +834,6 @@ function App(): ReactElement {
   const [hotlistMessage, setHotlistMessage] = useState<string | null>(null);
   const [hotlistOverlayId, setHotlistOverlayId] = useState<string | null>(null);
   const [hotlistAudioMuted, setHotlistAudioMuted] = useState(false);
-  const hotlistPreviewShownRef = useRef(false);
 
   useEffect(() => {
     setApiClientConfig({ apiKey });
@@ -802,10 +890,14 @@ function App(): ReactElement {
     };
   }, [apiKey, refreshToken]);
 
-  const allRows = (overview?.detections.length
-    ? overview.detections.map((record, index) => mapDetectionToRow(record, index, hotlists))
-    : buildSeedRows(hotlists)
-  ).sort((left, right) => right.timestampUtc.localeCompare(left.timestampUtc));
+  const allRows = useMemo(
+    () =>
+      (overview?.detections.length
+        ? overview.detections.map((record, index) => mapDetectionToRow(record, index, hotlists))
+        : buildSeedRows(hotlists)
+      ).sort((left, right) => right.timestampUtc.localeCompare(left.timestampUtc)),
+    [overview?.detections, hotlists],
+  );
 
   useEffect(() => {
     const currentRowStillExists = selectedDetectionId ? allRows.some((row) => row.id === selectedDetectionId) : false;
@@ -874,30 +966,18 @@ function App(): ReactElement {
     };
   }, [detailDetectionId, dataSource, allRows, searchResults]);
 
-  useEffect(() => {
-    if (hotlistPreviewShownRef.current || !settings.hotlistAlerts) {
-      return;
-    }
-    const firstHotlistRow = allRows.find((row) => row.hotlist);
-    if (!firstHotlistRow) {
-      return;
-    }
-    const timeout = window.setTimeout(() => {
-      hotlistPreviewShownRef.current = true;
-      setHotlistOverlayId(firstHotlistRow.id);
-    }, 1600);
-
-    return () => {
-      window.clearTimeout(timeout);
-    };
-  }, [allRows, settings.hotlistAlerts]);
-
   const selectedRow = allRows.find((row) => row.id === selectedDetectionId) ?? allRows[0] ?? null;
   const detailRow = [...allRows, ...searchResults].find((row) => row.id === detailDetectionId) ?? null;
   const hotlistOverlayRow = allRows.find((row) => row.id === hotlistOverlayId) ?? null;
   const currentCamera = cameraFeeds.find((feed) => feed.id === selectedCameraId) ?? cameraFeeds[0];
+  const secondaryCamera =
+    cameraFeeds.find((feed) => feed.id !== selectedCameraId && feed.status === "Online") ??
+    cameraFeeds.find((feed) => feed.id !== selectedCameraId) ??
+    currentCamera;
   const cameraRows = allRows.filter((row) => row.cameraId === selectedCameraId);
+  const secondaryCameraRows = allRows.filter((row) => row.cameraId === secondaryCamera?.id);
   const cameraFocusRow = cameraRows[0] ?? selectedRow;
+  const secondaryCameraFocusRow = secondaryCameraRows[0] ?? allRows.find((row) => row.cameraId === secondaryCamera?.id) ?? selectedRow;
   const routeProgress = navigationActive ? clamp(1 - distanceFeet / 4800, 0, 1) : 0;
   const unitPosition = interpolatePosition(routeProgress);
   const routePath = buildRoutePath(unitPosition);
@@ -939,6 +1019,16 @@ function App(): ReactElement {
     setSelectedDetectionId(row.id);
     setStageView("map");
     switchScreen("console");
+  }
+
+  function openLatestHotlistAlert(): void {
+    const latestHotlistRow = allRows.find((row) => row.hotlist);
+    if (!latestHotlistRow) {
+      switchScreen("hotlists");
+      return;
+    }
+    setSelectedDetectionId(latestHotlistRow.id);
+    setHotlistOverlayId(latestHotlistRow.id);
   }
 
   function beginHotlistDraft(seedPlate?: string): void {
@@ -996,7 +1086,14 @@ function App(): ReactElement {
           filters.plate = searchQuery.trim();
           filters.plate_match = "contains";
         } else if (searchMode === "camera") {
-          filters.camera_id = selectedCameraId;
+          const normalizedCameraQuery = searchQuery.trim().toUpperCase();
+          const matchedCamera = cameraFeeds.find(
+            (feed) =>
+              feed.id.toUpperCase().includes(normalizedCameraQuery) ||
+              feed.label.toUpperCase().includes(normalizedCameraQuery) ||
+              buildCameraShortLabel(feed.id).toUpperCase().includes(normalizedCameraQuery),
+          );
+          filters.camera_id = matchedCamera?.id ?? selectedCameraId;
         } else if (searchMode === "vehicle") {
           const [make, ...modelParts] = searchQuery.trim().split(/\s+/).filter(Boolean);
           if (make) {
@@ -1196,32 +1293,27 @@ function App(): ReactElement {
       <div className="ops-app">
         <NavPanel
           activeScreen={screen}
+          activeAlerts={activeAlerts}
           activeHotlists={hotlists.filter((entry) => entry.active).length}
-          currentStageView={stageView}
           dataSource={dataSource}
           destinationInput={destinationInput}
           navigationActive={navigationActive}
           onDestinationChange={setDestinationInput}
+          onOpenAlert={openLatestHotlistAlert}
+          onOpenSearch={() => switchScreen("search")}
           onResolve={() => {
             setActiveDestination(destinationInput.trim() || targetRoute.address);
             setStageView("map");
           }}
           onScreenChange={switchScreen}
-          onStageViewChange={setStageView}
           onToggleNavigation={() => setNavigationActive((current) => !current)}
-          onHotlistSelect={(entry) => {
-            loadHotlist(entry);
-            switchScreen("hotlists");
-          }}
           routeDistance={routeDistance}
           routeEta={routeEta}
           routeStatusLabel={routeStatusLabel}
-          searchCount={searchTotal || allRows.length}
+          searchCount={searchExecuted ? searchTotal : allRows.length}
           settings={settings}
           systemDetectionCount={totalReads}
-          systemHotlists={hotlists}
           totalReads={totalReads}
-          uiHotlists={hotlists}
           withinRadius={withinRadius}
           distanceFeet={distanceFeet}
           onDistanceChange={setDistanceFeet}
@@ -1239,10 +1331,14 @@ function App(): ReactElement {
               selectedDetectionId={selectedDetectionId}
               settings={settings}
               stageView={stageView}
+              consoleLayoutMode={consoleLayoutMode}
               unitPosition={unitPosition}
               routePath={routePath}
               withinRadius={withinRadius}
+              secondaryCamera={secondaryCamera}
+              secondaryCameraFocusRow={secondaryCameraFocusRow}
               onOpenDetail={openDetail}
+              onConsoleLayoutChange={setConsoleLayoutMode}
               onSelectCamera={setSelectedCameraId}
               onSelectDetection={setSelectedDetectionId}
               onStageViewChange={setStageView}
@@ -1273,7 +1369,10 @@ function App(): ReactElement {
               onCopyPlate={handleCopyPlate}
               onDetails={openDetail}
               onMap={centerMapOnRow}
+              onOpenDashboard={() => switchScreen("console")}
+              onOpenHotlists={() => switchScreen("hotlists")}
               onSearchSubmit={handleSearchSubmit}
+              onOpenSettings={() => switchScreen("settings")}
               onToggleExpanded={(plate) =>
                 setExpandedGroups((current) => ({
                   ...current,
@@ -1304,10 +1403,13 @@ function App(): ReactElement {
               selectedDetectionPlate={selectedRow?.plate1 ?? ""}
               selectedHotlistId={selectedHotlistId}
               onClearDraft={() => beginHotlistDraft()}
+              onOpenDashboard={() => switchScreen("console")}
               onDelete={() => void handleDeleteHotlist()}
               onDraftChange={setHotlistDraft}
+              onOpenSearch={() => switchScreen("search")}
               onSelect={loadHotlist}
               onSeedFromDetection={() => beginHotlistDraft(selectedRow?.plate1)}
+              onOpenSettings={() => switchScreen("settings")}
               onSubmit={handleHotlistSubmit}
             />
           ) : null}
@@ -1321,6 +1423,9 @@ function App(): ReactElement {
               hotlistWarning={hotlistWarning}
               onApiKeyApply={() => setApiKey(apiKeyInput.trim())}
               onApiKeyChange={setApiKeyInput}
+              onOpenDashboard={() => switchScreen("console")}
+              onOpenHotlists={() => switchScreen("hotlists")}
+              onOpenSearch={() => switchScreen("search")}
               onRefresh={() => setRefreshToken((value) => value + 1)}
               settings={settings}
               updateSetting={updateSetting}
@@ -1529,26 +1634,24 @@ function DetailField(props: { label: string; value: string; tone?: "critical" | 
 
 function NavPanel(props: {
   activeScreen: AppScreen;
+  activeAlerts: number;
   activeHotlists: number;
-  currentStageView: StageView;
   dataSource: DataSource;
   destinationInput: string;
   navigationActive: boolean;
   onDestinationChange: (value: string) => void;
+  onOpenAlert: () => void;
+  onOpenSearch: () => void;
   onResolve: () => void;
   onScreenChange: (screen: AppScreen) => void;
-  onStageViewChange: (view: StageView) => void;
   onToggleNavigation: () => void;
-  onHotlistSelect: (entry: DashboardHotlist) => void;
   routeDistance: string;
   routeEta: string;
   routeStatusLabel: string;
   searchCount: number;
   settings: UiSettings;
   systemDetectionCount: number;
-  systemHotlists: DashboardHotlist[];
   totalReads: number;
-  uiHotlists: DashboardHotlist[];
   withinRadius: boolean;
   distanceFeet: number;
   onDistanceChange: (value: number) => void;
@@ -1560,14 +1663,13 @@ function NavPanel(props: {
         <div>
           <p className="eyebrow">Seen-It-First</p>
           <h2>RepoScan Pro</h2>
-          <p className="brand-copy">Camera-first recovery console aligned to the latest Claude pass and your wireframe.</p>
+          <p className="brand-copy">Camera-first recovery console tuned to the field workflow.</p>
         </div>
       </div>
 
       <div className="nav-tabs">
         {[
           { id: "console", label: "Dashboard", count: props.totalReads },
-          { id: "search", label: "Search", count: props.searchCount },
           { id: "hotlists", label: "Hotlists", count: props.activeHotlists },
           { id: "settings", label: "Settings", count: 0 },
         ].map((item) => (
@@ -1583,19 +1685,15 @@ function NavPanel(props: {
         ))}
       </div>
 
-      <div className="panel-card">
-        <div className="panel-card__header">
-          <h3>Stage View</h3>
-          <Badge tone="cyan">{props.currentStageView === "camera" ? "Camera" : "Map"}</Badge>
-        </div>
-        <div className="segmented-control">
-          <button className={props.currentStageView === "camera" ? "is-active" : ""} type="button" onClick={() => props.onStageViewChange("camera")}>
-            Cameras
-          </button>
-          <button className={props.currentStageView === "map" ? "is-active" : ""} type="button" onClick={() => props.onStageViewChange("map")}>
-            Map
-          </button>
-        </div>
+      <div className="nav-action-row">
+        <button className="nav-action nav-action--ghost" type="button" onClick={props.onOpenSearch}>
+          <span>Search</span>
+          <span className="nav-action__count">{props.searchCount > 0 ? props.searchCount : "-"}</span>
+        </button>
+        <button className="nav-action nav-action--primary" disabled={props.activeAlerts === 0} type="button" onClick={props.onOpenAlert}>
+          <span>View Alert</span>
+          <span className="nav-action__count">{props.activeAlerts}</span>
+        </button>
       </div>
 
       <div className="panel-card">
@@ -1607,7 +1705,6 @@ function NavPanel(props: {
           <StatusRow label="GPS" value="Locked" tone="good" />
           <StatusRow label="Network" value={props.dataSource === "live" ? "Connected" : "Local cache"} tone={statusTone(props.dataSource === "live")} />
           <StatusRow label="LPR" value={props.settings.arrivalScanEnabled ? "Active" : "Paused"} tone={statusTone(props.settings.arrivalScanEnabled)} />
-          <StatusRow label="Hotlist alerts" value={props.settings.hotlistAlerts ? "Enabled" : "Disabled"} tone={statusTone(props.settings.hotlistAlerts)} />
           <StatusRow label="Detections" value={`${props.systemDetectionCount}`} tone="good" />
         </div>
       </div>
@@ -1664,21 +1761,6 @@ function NavPanel(props: {
           </div>
         </div>
       </div>
-
-      <div className="panel-card panel-card--critical">
-        <div className="panel-card__header">
-          <h3>Hotlist Queue</h3>
-          <Badge tone="critical">{`${props.systemHotlists.filter((entry) => entry.active).length} active`}</Badge>
-        </div>
-        <div className="hotlist-mini-list">
-          {props.uiHotlists.slice(0, 3).map((entry) => (
-            <button key={entry.entry_id} className="mini-hotlist-row" type="button" onClick={() => props.onHotlistSelect(entry)}>
-              <strong>{entry.plate_text}</strong>
-              <span>{entry.label ?? "Unlabeled entry"}</span>
-            </button>
-          ))}
-        </div>
-      </div>
     </aside>
   );
 }
@@ -1688,7 +1770,10 @@ function ConsoleScreen(props: {
   allRows: ConsoleDetectionRow[];
   cameraFeedsList: typeof cameraFeeds;
   cameraFocusRow: ConsoleDetectionRow | null;
+  consoleLayoutMode: ConsoleLayoutMode;
   currentCamera: (typeof cameraFeeds)[number] | undefined;
+  secondaryCamera: (typeof cameraFeeds)[number] | undefined;
+  secondaryCameraFocusRow: ConsoleDetectionRow | null;
   selectedCameraId: string;
   selectedDetectionId: string | null;
   settings: UiSettings;
@@ -1697,24 +1782,14 @@ function ConsoleScreen(props: {
   routePath: [number, number][];
   withinRadius: boolean;
   onOpenDetail: (row: ConsoleDetectionRow) => void;
+  onConsoleLayoutChange: (mode: ConsoleLayoutMode) => void;
   onSelectCamera: (cameraId: string) => void;
   onSelectDetection: (rowId: string) => void;
   onStageViewChange: (view: StageView) => void;
 }): ReactElement {
   return (
     <section className="screen">
-      <ScreenHeader
-        title="Operations Console"
-        subtitle="Camera-first dashboard with live route, detection, and system context."
-        meta={
-          <>
-            <Badge tone={props.withinRadius ? "success" : "cyan"}>{props.withinRadius ? "Within radius" : "En route"}</Badge>
-            <Badge tone={props.settings.arrivalScanEnabled ? "cyan" : "muted"}>{props.settings.arrivalScanEnabled ? "Arrival scan on" : "Arrival scan off"}</Badge>
-          </>
-        }
-      />
-
-      <div className="console-layout">
+      <div className={`console-layout ${props.consoleLayoutMode === "overview" ? "console-layout--overview" : "console-layout--focus"}`}>
         <section className="stage-card">
           <div className="stage-toolbar">
             <div className="camera-tab-strip">
@@ -1731,76 +1806,102 @@ function ConsoleScreen(props: {
               ))}
             </div>
             <div className="stage-toolbar__right">
-              <button className={`pill-button ${props.stageView === "camera" ? "is-active" : ""}`} type="button" onClick={() => props.onStageViewChange("camera")}>
-                Camera
+              <button
+                className={`pill-button ${props.consoleLayoutMode === "overview" ? "is-active" : ""}`}
+                type="button"
+                onClick={() => props.onConsoleLayoutChange("overview")}
+              >
+                Overview
               </button>
-              <button className={`pill-button ${props.stageView === "map" ? "is-active" : ""}`} type="button" onClick={() => props.onStageViewChange("map")}>
-                Map
+              <button
+                className={`pill-button ${props.consoleLayoutMode === "focus" ? "is-active" : ""}`}
+                type="button"
+                onClick={() => props.onConsoleLayoutChange("focus")}
+              >
+                Focus
               </button>
+              {props.consoleLayoutMode === "focus" ? (
+                <>
+                  <button className={`pill-button ${props.stageView === "camera" ? "is-active" : ""}`} type="button" onClick={() => props.onStageViewChange("camera")}>
+                    Camera
+                  </button>
+                  <button className={`pill-button ${props.stageView === "map" ? "is-active" : ""}`} type="button" onClick={() => props.onStageViewChange("map")}>
+                    Map
+                  </button>
+                </>
+              ) : null}
               <Badge tone={props.currentCamera?.status === "Online" ? "critical" : "muted"}>{props.currentCamera?.status === "Online" ? "LIVE" : "OFFLINE"}</Badge>
             </div>
           </div>
 
           <div className="stage-surface">
-            {props.stageView === "camera" ? (
-              <div className="camera-stage">
-                <div className="camera-stage__meta">
-                  <strong>{buildCameraDisplayName(props.selectedCameraId)}</strong>
-                  <span>{props.currentCamera?.fps ?? 0} FPS</span>
-                  <span>{props.settings.resolution}</span>
-                </div>
-                <div className="camera-feed">
-                  <div className="camera-feed__grid" />
-                  <div className="camera-feed__lane camera-feed__lane--left" />
-                  <div className="camera-feed__lane camera-feed__lane--right" />
-                  <div className="camera-wireframe">
-                    <div className="camera-wireframe__roof" />
-                    <div className="camera-wireframe__body" />
-                    <div className="camera-wireframe__hood" />
+            {props.consoleLayoutMode === "overview" ? (
+              <div className="console-overview-grid">
+                <article className="console-overview-card console-overview-card--primary">
+                  <div className="console-overview-card__header">
+                    <div>
+                      <p className="eyebrow">Primary Camera</p>
+                      <h3>{buildCameraShortLabel(props.selectedCameraId)}</h3>
+                    </div>
+                    <Badge tone={props.currentCamera?.status === "Online" ? "success" : "muted"}>{props.currentCamera?.status === "Online" ? "LIVE" : "OFFLINE"}</Badge>
                   </div>
-                  {props.cameraFocusRow ? (
-                    <div
-                      className={`detection-box detection-box--${confidenceTone(props.cameraFocusRow.conf)}`}
-                      style={
-                        {
-                          "--box-left": props.cameraFocusRow.cameraId === "cam-front-1" ? "20%" : props.cameraFocusRow.cameraId === "cam-side-2" ? "54%" : "36%",
-                          "--box-top": props.cameraFocusRow.cameraId === "cam-front-1" ? "35%" : props.cameraFocusRow.cameraId === "cam-side-2" ? "32%" : "38%",
-                        } as CSSProperties
-                      }
-                    >
-                      <div className="detection-box__plate">
-                        {props.cameraFocusRow.plate1} {confidenceLabel(props.cameraFocusRow.conf)}
-                      </div>
-                      {props.settings.overlayLabels ? (
-                        <div className="detection-box__meta">
-                          <span>{props.cameraFocusRow.vehicle}</span>
-                          <span>{props.cameraFocusRow.direction}</span>
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : null}
-                  <div className="camera-feed__hud">
+                  <CameraViewport camera={props.currentCamera} cameraId={props.selectedCameraId} row={props.cameraFocusRow} settings={props.settings} compact />
+                </article>
+
+                <article className="console-overview-card console-overview-card--secondary">
+                  <div className="console-overview-card__header">
                     <div>
-                      <span>Frame</span>
-                      <strong>021844</strong>
+                      <p className="eyebrow">Support Camera</p>
+                      <h3>{buildCameraShortLabel(props.secondaryCamera?.id ?? props.selectedCameraId)}</h3>
                     </div>
-                    <div>
-                      <span>Lane</span>
-                      <strong>{props.cameraFocusRow?.lane ?? "Standby"}</strong>
-                    </div>
-                    <div>
-                      <span>Direction</span>
-                      <strong>{props.cameraFocusRow?.direction ?? "Standby"}</strong>
-                    </div>
+                    {props.secondaryCamera?.id !== props.selectedCameraId ? (
+                      <button className="link-button" type="button" onClick={() => props.onSelectCamera(props.secondaryCamera?.id ?? props.selectedCameraId)}>
+                        Make Primary
+                      </button>
+                    ) : (
+                      <Badge tone="muted">Synced</Badge>
+                    )}
                   </div>
-                </div>
+                  <CameraViewport
+                    camera={props.secondaryCamera}
+                    cameraId={props.secondaryCamera?.id ?? props.selectedCameraId}
+                    row={props.secondaryCameraFocusRow}
+                    settings={props.settings}
+                    compact
+                  />
+                </article>
+
+                <article className="console-overview-card console-overview-card--map">
+                  <div className="console-overview-card__header">
+                    <div>
+                      <p className="eyebrow">Live Map</p>
+                      <h3>Route and Radius</h3>
+                    </div>
+                    <Badge tone={props.withinRadius ? "success" : "cyan"}>{props.withinRadius ? "IN RADIUS" : "EN ROUTE"}</Badge>
+                  </div>
+                  <div className="map-stage map-stage--overview">
+                    <OpsMap
+                      unitPosition={props.unitPosition}
+                      routePath={props.routePath}
+                      rows={props.allRows.slice(0, 8)}
+                      radiusFeet={props.settings.arrivalRadiusFeet}
+                      showRadiusRing={props.settings.showRadiusRing}
+                      selectedRowId={props.selectedDetectionId}
+                      onSelect={props.onSelectDetection}
+                    />
+                    <div className="map-stage__badge">{props.withinRadius ? "IN RADIUS" : "EN ROUTE"}</div>
+                  </div>
+                </article>
               </div>
+            ) : props.stageView === "camera" ? (
+              <CameraViewport camera={props.currentCamera} cameraId={props.selectedCameraId} row={props.cameraFocusRow} settings={props.settings} />
             ) : (
               <div className="map-stage">
                 <OpsMap
                   unitPosition={props.unitPosition}
                   routePath={props.routePath}
                   rows={props.allRows.slice(0, 8)}
+                  radiusFeet={props.settings.arrivalRadiusFeet}
                   showRadiusRing={props.settings.showRadiusRing}
                   selectedRowId={props.selectedDetectionId}
                   onSelect={props.onSelectDetection}
@@ -1887,7 +1988,10 @@ function SearchScreen(props: {
   onCopyPlate: (plate: string) => Promise<void>;
   onDetails: (row: ConsoleDetectionRow) => void;
   onMap: (row: ConsoleDetectionRow) => void;
+  onOpenDashboard: () => void;
+  onOpenHotlists: () => void;
   onSearchSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  onOpenSettings: () => void;
   onToggleExpanded: (plate: string) => void;
   setQuery: (value: string) => void;
   setSearchFromLocal: (value: string) => void;
@@ -1908,6 +2012,19 @@ function SearchScreen(props: {
           <>
             <Badge tone={props.loading ? "warn" : "cyan"}>{props.loading ? "Searching" : "Ready"}</Badge>
             <Badge tone={props.dataSource === "live" ? "success" : "muted"}>{props.dataSource.toUpperCase()}</Badge>
+          </>
+        }
+        actions={
+          <>
+            <button className="btn btn--ghost btn--compact" type="button" onClick={props.onOpenDashboard}>
+              Dashboard
+            </button>
+            <button className="btn btn--ghost btn--compact" type="button" onClick={props.onOpenHotlists}>
+              Hotlists
+            </button>
+            <button className="btn btn--ghost btn--compact" type="button" onClick={props.onOpenSettings}>
+              Settings
+            </button>
           </>
         }
       />
@@ -2055,10 +2172,13 @@ function HotlistsScreen(props: {
   selectedDetectionPlate: string;
   selectedHotlistId: string | null;
   onClearDraft: () => void;
+  onOpenDashboard: () => void;
   onDelete: () => void;
   onDraftChange: (draft: HotlistDraft | ((current: HotlistDraft) => HotlistDraft)) => void;
+  onOpenSearch: () => void;
   onSelect: (entry: DashboardHotlist) => void;
   onSeedFromDetection: () => void;
+  onOpenSettings: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
 }): ReactElement {
   return (
@@ -2070,6 +2190,19 @@ function HotlistsScreen(props: {
           <>
             <Badge tone="critical">{`${props.hotlists.filter((entry) => entry.active).length} active`}</Badge>
             <Badge tone={props.dataSource === "live" ? "success" : "muted"}>{props.dataSource.toUpperCase()}</Badge>
+          </>
+        }
+        actions={
+          <>
+            <button className="btn btn--ghost btn--compact" type="button" onClick={props.onOpenDashboard}>
+              Dashboard
+            </button>
+            <button className="btn btn--ghost btn--compact" type="button" onClick={props.onOpenSearch}>
+              Search
+            </button>
+            <button className="btn btn--ghost btn--compact" type="button" onClick={props.onOpenSettings}>
+              Settings
+            </button>
           </>
         }
       />
@@ -2214,6 +2347,9 @@ function SettingsScreen(props: {
   hotlistWarning: boolean;
   onApiKeyApply: () => void;
   onApiKeyChange: (value: string) => void;
+  onOpenDashboard: () => void;
+  onOpenHotlists: () => void;
+  onOpenSearch: () => void;
   onRefresh: () => void;
   settings: UiSettings;
   updateSetting: <Key extends keyof UiSettings>(key: Key, value: UiSettings[Key]) => void;
@@ -2227,6 +2363,19 @@ function SettingsScreen(props: {
           <>
             {props.hotlistWarning ? <Badge tone="warn">Review alert settings</Badge> : <Badge tone="success">Operational</Badge>}
             <Badge tone={props.dataSource === "live" ? "success" : "muted"}>{props.dataSource.toUpperCase()}</Badge>
+          </>
+        }
+        actions={
+          <>
+            <button className="btn btn--ghost btn--compact" type="button" onClick={props.onOpenDashboard}>
+              Dashboard
+            </button>
+            <button className="btn btn--ghost btn--compact" type="button" onClick={props.onOpenSearch}>
+              Search
+            </button>
+            <button className="btn btn--ghost btn--compact" type="button" onClick={props.onOpenHotlists}>
+              Hotlists
+            </button>
           </>
         }
       />
