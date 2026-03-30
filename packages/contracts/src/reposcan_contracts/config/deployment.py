@@ -171,6 +171,17 @@ class ApiHardeningConfig(BaseModel):
         default_factory=lambda: ["127.0.0.1", "localhost", "testserver"],
         min_length=1,
     )
+    cors_origins: list[str] = Field(
+        default_factory=lambda: [
+            "http://127.0.0.1:3000",
+            "http://localhost:3000",
+            "http://127.0.0.1:4173",
+            "http://localhost:4173",
+            "http://127.0.0.1:5173",
+            "http://localhost:5173",
+        ],
+        min_length=1,
+    )
     add_security_headers: bool = True
     expose_docs: bool = True
 

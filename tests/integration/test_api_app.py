@@ -9,6 +9,7 @@ from reposcan_contracts.alert import AlertRecord
 from reposcan_contracts.config.deployment import DeploymentConfig
 from reposcan_contracts.config.loader import load_deployment_config
 from reposcan_contracts.detection import DetectionRecord
+from reposcan_contracts.followup import FollowUpRecord
 from reposcan_contracts.hotlist import HotlistEntry
 from reposcan_api import create_app
 from reposcan_storage.memory import InMemoryStorageRepository
@@ -172,7 +173,8 @@ def test_missing_detection_media_returns_404(tmp_path):
     crop_response = client.get("/detections/det_media_missing/plate-crop")
 
     assert frame_response.status_code == 404
-    assert crop_response.status_code == 404
+    assert crop_response.status_code == 409
+    assert crop_response.json()["detail"] == "Plate crop unavailable"
 
 
 def test_missing_detection_returns_404(tmp_path):
@@ -181,6 +183,95 @@ def test_missing_detection_returns_404(tmp_path):
     response = client.get("/detections/does-not-exist")
 
     assert response.status_code == 404
+
+
+def test_follow_up_and_assignment_list_and_detail_endpoints(tmp_path):
+    client, _ = _seeded_client(tmp_path)
+
+    follow_up_response = client.post(
+        "/follow-ups",
+        json={
+            "detection_id": "det_20260320_000001",
+            "plate_text": "6BZN220",
+            "priority": "priority",
+            "status": "open",
+            "summary": "Watch for a repeat sighting near the lot exit.",
+        },
+    )
+    assignment_response = client.post(
+        "/assignments",
+        json={
+            "detection_id": "det_20260320_000001",
+            "plate_text": "6BZN220",
+            "priority": "priority",
+            "status": "queued",
+            "assigned_unit_label": "Truck 7",
+            "destination_label": "North overflow lot",
+            "summary": "Hold tow unit near the likely exit path.",
+        },
+    )
+
+    assert follow_up_response.status_code == 201
+    assert assignment_response.status_code == 201
+
+    follow_up_id = follow_up_response.json()["follow_up_id"]
+    assignment_id = assignment_response.json()["assignment_id"]
+
+    follow_up_list = client.get("/follow-ups", params={"detection_id": "det_20260320_000001"})
+    follow_up_detail = client.get(f"/follow-ups/{follow_up_id}")
+    assignment_list = client.get("/assignments", params={"detection_id": "det_20260320_000001"})
+    assignment_detail = client.get(f"/assignments/{assignment_id}")
+
+    assert follow_up_list.status_code == 200
+    assert follow_up_detail.status_code == 200
+    assert assignment_list.status_code == 200
+    assert assignment_detail.status_code == 200
+    assert follow_up_list.json()[0]["follow_up_id"] == follow_up_id
+    assert follow_up_detail.json()["summary"] == "Watch for a repeat sighting near the lot exit."
+    assert assignment_list.json()[0]["assignment_id"] == assignment_id
+    assert assignment_detail.json()["assigned_unit_label"] == "Truck 7"
+
+
+def test_dashboard_overview_uses_expanded_supporting_record_limit(tmp_path):
+    client, service = _seeded_client(tmp_path)
+
+    for index in range(25):
+        service.create_hotlist(
+            HotlistEntry.model_validate(
+                {
+                    "entry_id": f"hl_bulk_{index:03d}",
+                    "plate_text": f"8ABC{index:03d}",
+                    "label": f"Case {index:03d}",
+                    "active": True,
+                    "created_at_utc": "2026-03-20T04:00:00Z",
+                    "updated_at_utc": "2026-03-20T04:00:00Z",
+                }
+            )
+        )
+        service.create_follow_up(
+            FollowUpRecord.model_validate(
+                {
+                    "follow_up_id": f"fu_bulk_{index:03d}",
+                    "detection_id": "det_20260320_000001",
+                    "plate_text": "6BZN220",
+                    "priority": "priority",
+                    "status": "open",
+                    "created_by_operator_id": "operator_demo",
+                    "summary": f"Bulk follow-up {index:03d}",
+                    "created_at_utc": "2026-03-20T04:00:00Z",
+                    "updated_at_utc": "2026-03-20T04:00:00Z",
+                }
+            )
+        )
+
+    response = client.get("/dashboard/overview")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["hotlists"]) == 25
+    assert len(payload["follow_ups"]) == 25
+    assert payload["counts"]["active_hotlists"] == 25
+    assert payload["counts"]["open_follow_ups"] == 25
 
 
 def test_post_review_persists_review(tmp_path):
@@ -801,6 +892,8 @@ def test_secure_api_requires_credentials_and_enforces_roles(tmp_path):
         headers={"X-RepoScan-Api-Key": "viewer-demo-token"},
         json={"detection_id": "det_20260320_000001", "status": "open", "priority": "priority"},
     )
+    viewer_follow_up_read = client.get("/api/v1/follow-ups", headers={"X-RepoScan-Api-Key": "viewer-demo-token"})
+    viewer_assignment_read = client.get("/api/v1/assignments", headers={"X-RepoScan-Api-Key": "viewer-demo-token"})
     operator_assignment_create = client.post(
         "/api/v1/assignments",
         headers={"X-RepoScan-Api-Key": "operator-demo-token"},
@@ -813,8 +906,36 @@ def test_secure_api_requires_credentials_and_enforces_roles(tmp_path):
     assert viewer_hotlist_create.status_code == 403
     assert operator_review.status_code == 201
     assert viewer_follow_up_create.status_code == 403
+    assert viewer_follow_up_read.status_code == 200
+    assert viewer_assignment_read.status_code == 200
     assert operator_assignment_create.status_code == 201
     assert public_health.status_code == 200
+
+
+def test_api_uses_configured_cors_origins(tmp_path):
+    deployment = _secure_deployment(tmp_path)
+    payload = deployment.model_dump(mode="json")
+    payload["api"]["hardening"]["cors_origins"] = ["https://console.example.test"]
+    configured = DeploymentConfig.model_validate(payload)
+
+    repository = InMemoryStorageRepository()
+    service = StorageService(
+        repository=repository,
+        media_root=tmp_path / "media",
+        deployment_config=configured,
+    )
+    client = TestClient(create_app(storage_service=service, deployment_config=configured))
+
+    response = client.options(
+        "/api/v1/detections",
+        headers={
+            "Origin": "https://console.example.test",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "https://console.example.test"
 
 
 def test_secure_api_writes_audit_events_and_exposes_audit_surface(tmp_path):

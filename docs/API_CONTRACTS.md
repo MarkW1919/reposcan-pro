@@ -39,6 +39,27 @@ This document defines the canonical API contract direction for detections, alert
 | `local_only_flag` | boolean | True until sync policy clears it |
 | `sync_status` | string | Pending, synced, failed, or skipped |
 
+## Alert Record Schema
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `alert_id` | string | Stable unique identifier for the alert event |
+| `detection_id` | string | Detection that triggered the alert |
+| `hotlist_entry_id` | string | Matched hotlist identifier |
+| `timestamp_utc` | string | UTC timestamp in ISO 8601 form |
+| `camera_id` | string | Logical camera identifier |
+| `matched_plate_text` | string | Plate text used for the match |
+| `match_confidence` | number | Confidence for the alert match |
+| `match_type` | string | `exact` or `normalized` |
+| `hotlist_label` | string or null | Human-readable label from the hotlist |
+| `notes` | string or null | Operator or workflow notes |
+| `response_operator_id` | string or null | Operator who updated the alert |
+| `response_notes` | string or null | Most recent response note |
+| `updated_at_utc` | string or null | Most recent update time |
+| `status` | string | `active`, `acknowledged`, or `dismissed` |
+| `gps_latitude` | number or null | Latitude when available |
+| `gps_longitude` | number or null | Longitude when available |
+
 ## Canonical Versioning
 
 The canonical external API surface is versioned under:
@@ -65,6 +86,8 @@ to discover the active package version, API version, canonical prefix, and wheth
 - `POST /api/v1/reviews/{id}` and `GET /api/v1/reviews/{id}` for operator review workflows
 - `GET /api/v1/alerts`, `GET /api/v1/alerts/{id}`, and `PUT /api/v1/alerts/{id}` for alert lifecycle management
 - `GET /api/v1/hotlists`, `POST /api/v1/hotlists`, and `PUT /api/v1/hotlists/{id}` for hotlist management
+- `GET /api/v1/follow-ups`, `GET /api/v1/follow-ups/{id}`, `POST /api/v1/follow-ups`, and `PUT /api/v1/follow-ups/{id}` for follow-up workflows
+- `GET /api/v1/assignments`, `GET /api/v1/assignments/{id}`, `POST /api/v1/assignments`, and `PUT /api/v1/assignments/{id}` for dispatch assignment workflows
 - `GET /api/v1/demo/runtime` and `POST /api/v1/demo/runs` for app-driven headless ingest control
 - `GET /api/v1/audit/events` for audit visibility over secured searches and operator mutations
 

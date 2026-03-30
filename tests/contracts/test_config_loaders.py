@@ -291,6 +291,7 @@ class TestDeploymentConfigSchema:
         assert dep.api.audit.enabled is True
         assert dep.api.rate_limit.requests_per_minute == 240
         assert dep.api.versioning.canonical_prefix == "/api/v1"
+        assert "http://127.0.0.1:4173" in dep.api.hardening.cors_origins
 
     def test_all_core_services_enabled(self):
         dep = load_deployment_config(CONFIGS / "deployments" / "local-dev.yaml")

@@ -58,6 +58,8 @@ from .models import (
 from .audit import ApiAuditLogger
 from .security import ApiAccessController, ApiPrincipalContext, principal_details
 
+_DASHBOARD_SUPPORTING_RECORD_LIMIT = 200
+
 
 def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -242,10 +244,7 @@ def create_app(
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=deployment.api.hardening.trusted_hosts)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            "http://127.0.0.1:4173",
-            "http://localhost:4173",
-        ],
+        allow_origins=deployment.api.hardening.cors_origins,
         allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -349,15 +348,13 @@ def create_app(
         limit: int = Query(default=20, ge=1, le=100),
         principal: ApiPrincipalContext = Depends(access_controller.viewer_access),
     ) -> DashboardOverview:
+        supporting_limit = max(limit, _DASHBOARD_SUPPORTING_RECORD_LIMIT)
         detections = service.list_detections(limit=limit)
         alerts = service.list_alerts(limit=limit)
-        follow_ups = service.list_follow_ups(limit=limit)
-        assignments = service.list_assignments(limit=limit)
-        hotlists = service.list_hotlists(limit=limit)
+        follow_ups = service.list_follow_ups(limit=supporting_limit)
+        assignments = service.list_assignments(limit=supporting_limit)
+        hotlists = service.list_hotlists(limit=supporting_limit)
         active_alerts = service.list_alerts(status=AlertStatus.active, limit=500)
-        active_hotlists = service.list_hotlists(active_only=True, limit=500)
-        open_follow_ups = service.list_follow_ups(limit=500)
-        active_assignments = service.list_assignments(limit=500)
         active_sessions = service.list_operator_sessions(limit=100)
         popup_activity = _build_popup_activity(detections=detections, alerts=alerts, limit=limit)
         return DashboardOverview(
@@ -366,12 +363,12 @@ def create_app(
             counts=DashboardCounts(
                 active_alerts=len(active_alerts),
                 recent_detections=len(detections),
-                active_hotlists=len(active_hotlists),
-                open_follow_ups=len([record for record in open_follow_ups if record.status != FollowUpStatus.resolved]),
+                active_hotlists=len([record for record in hotlists if record.active]),
+                open_follow_ups=len([record for record in follow_ups if record.status != FollowUpStatus.resolved]),
                 active_assignments=len(
                     [
                         record
-                        for record in active_assignments
+                        for record in assignments
                         if record.status not in {DispatchAssignmentStatus.completed, DispatchAssignmentStatus.cancelled}
                     ]
                 ),
@@ -583,6 +580,25 @@ def create_app(
         )
         return created
 
+    @api_router.get("/follow-ups", response_model=list[FollowUpRecord])
+    def list_follow_ups(
+        detection_id: str | None = Query(default=None),
+        status_filter: FollowUpStatus | None = Query(default=None, alias="status"),
+        limit: int = Query(default=100, ge=1, le=500),
+        _principal: ApiPrincipalContext = Depends(access_controller.viewer_access),
+    ) -> list[FollowUpRecord]:
+        return service.list_follow_ups(detection_id=detection_id, status=status_filter, limit=limit)
+
+    @api_router.get("/follow-ups/{follow_up_id}", response_model=FollowUpRecord)
+    def get_follow_up(
+        follow_up_id: str,
+        _principal: ApiPrincipalContext = Depends(access_controller.viewer_access),
+    ) -> FollowUpRecord:
+        follow_up = service.get_follow_up(follow_up_id)
+        if follow_up is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Follow-up not found")
+        return follow_up
+
     @api_router.put("/follow-ups/{follow_up_id}", response_model=FollowUpRecord)
     def update_follow_up(
         request: Request,
@@ -683,6 +699,24 @@ def create_app(
         )
         return created
 
+    @api_router.get("/assignments", response_model=list[DispatchAssignmentRecord])
+    def list_assignments(
+        detection_id: str | None = Query(default=None),
+        limit: int = Query(default=100, ge=1, le=500),
+        _principal: ApiPrincipalContext = Depends(access_controller.viewer_access),
+    ) -> list[DispatchAssignmentRecord]:
+        return service.list_assignments(detection_id=detection_id, limit=limit)
+
+    @api_router.get("/assignments/{assignment_id}", response_model=DispatchAssignmentRecord)
+    def get_assignment(
+        assignment_id: str,
+        _principal: ApiPrincipalContext = Depends(access_controller.viewer_access),
+    ) -> DispatchAssignmentRecord:
+        assignment = service.get_assignment(assignment_id)
+        if assignment is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assignment not found")
+        return assignment
+
     @api_router.put("/assignments/{assignment_id}", response_model=DispatchAssignmentRecord)
     def update_assignment(
         request: Request,
@@ -776,9 +810,11 @@ def create_app(
         detection = service.get_detection(detection_id)
         if detection is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Detection not found")
+        if not detection.plate_crop_path:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Plate crop unavailable")
         media_path = _resolve_media_path(detection.plate_crop_path, service.media_layout.root)
         if media_path is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plate crop not found")
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Plate crop unavailable")
         return FileResponse(media_path)
 
     @api_router.post("/reviews/{detection_id}", response_model=ReviewRecord, status_code=status.HTTP_201_CREATED)
