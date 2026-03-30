@@ -997,6 +997,28 @@ select:focus-visible {
   align-content: start;
 }
 
+.search-sidebar-section {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(56, 232, 255, 0.08);
+  background: rgba(12, 22, 29, 0.82);
+}
+
+.search-sidebar-section__header {
+  display: grid;
+  gap: 4px;
+}
+
+.search-sidebar-section__header strong {
+  color: var(--text);
+}
+
+.search-sidebar-section__header span {
+  color: var(--muted);
+}
+
 .search-input-row {
   grid-template-columns: minmax(0, 1fr) auto;
 }

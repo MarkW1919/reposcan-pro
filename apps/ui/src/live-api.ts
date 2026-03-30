@@ -221,6 +221,27 @@ export interface OperatorSessionHeartbeatSubmission {
   navigation_active: boolean;
 }
 
+export type AuditOutcome = "success" | "denied" | "rejected" | "error";
+
+export interface ApiAuditEvent {
+  event_id: string;
+  occurred_at_utc: string;
+  request_id: string;
+  principal_id: string | null;
+  principal_roles: string[];
+  action: string;
+  outcome: AuditOutcome;
+  method: string;
+  path: string;
+  target_type: string | null;
+  target_id: string | null;
+  details: Record<string, unknown>;
+}
+
+export interface AuditEventResponse {
+  events: ApiAuditEvent[];
+}
+
 export interface DashboardPopupActivityEvent {
   event_id: string;
   event_type: "address" | "hotlist";
@@ -322,6 +343,14 @@ export interface DetectionSearchFilters {
 export interface DetectionSearchResult {
   page: SearchPageInfo;
   results: DashboardDetection[];
+}
+
+export interface AuditEventFilters {
+  limit?: number;
+  principal_id?: string;
+  action_prefix?: string;
+  outcome?: AuditOutcome;
+  target_id?: string;
 }
 
 interface ApiClientConfig {
@@ -481,6 +510,32 @@ export async function fetchDashboardOverview(signal?: AbortSignal): Promise<Dash
     throw new Error(await responseErrorMessage(response, `Failed to load dashboard overview (${response.status})`));
   }
   return (await response.json()) as DashboardOverviewResponse;
+}
+
+export async function fetchAuditEvents(filters: AuditEventFilters = {}, signal?: AbortSignal): Promise<ApiAuditEvent[]> {
+  const query = new URLSearchParams();
+  if (typeof filters.limit === "number") {
+    query.set("limit", String(filters.limit));
+  }
+  if (filters.principal_id) {
+    query.set("principal_id", filters.principal_id);
+  }
+  if (filters.action_prefix) {
+    query.set("action_prefix", filters.action_prefix);
+  }
+  if (filters.outcome) {
+    query.set("outcome", filters.outcome);
+  }
+  if (filters.target_id) {
+    query.set("target_id", filters.target_id);
+  }
+
+  const suffix = query.toString();
+  const response = await fetch(apiUrl(`/audit/events${suffix ? `?${suffix}` : ""}`), { signal, headers: authHeaders() });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, `Failed to load audit events (${response.status})`));
+  }
+  return ((await response.json()) as AuditEventResponse).events;
 }
 
 export function buildDetectionFrameUrl(detectionId: string): string {

@@ -5,6 +5,7 @@ import "leaflet/dist/leaflet.css";
 
 import { cameraFeeds, defaultFieldSettings } from "./demo-data";
 import {
+  fetchAuditEvents,
   createDispatchAssignment,
   createFollowUp,
   createHotlist,
@@ -18,6 +19,7 @@ import {
   updateDispatchAssignment,
   updateFollowUp,
   updateHotlist,
+  type ApiAuditEvent,
   type DispatchAssignmentPriority,
   type DispatchAssignmentRecord,
   type DispatchAssignmentStatus,
@@ -811,11 +813,21 @@ function rowMatchesQuery(row: ConsoleDetectionRow, mode: SearchMode, query: stri
 }
 
 function filterRowsLocally(options: {
+  alerts: DashboardAlert[];
   rows: ConsoleDetectionRow[];
   mode: SearchMode;
   query: string;
   fromUtc?: string;
   toUtc?: string;
+  vehicleColor: string;
+  vehicleMake: string;
+  vehicleModel: string;
+  vehicleYear: string;
+  alertStatus: DashboardAlertStatus | "";
+  minLatitude: string;
+  maxLatitude: string;
+  minLongitude: string;
+  maxLongitude: string;
   hotlistOnly: boolean;
   highConfidenceOnly: boolean;
   currentCameraOnly: boolean;
@@ -825,6 +837,14 @@ function filterRowsLocally(options: {
   const shiftCutoff = new Date("2026-03-27T14:00:00Z").valueOf();
   const fromValue = options.fromUtc ? new Date(options.fromUtc).valueOf() : null;
   const toValue = options.toUtc ? new Date(options.toUtc).valueOf() : null;
+  const minLatitude = options.minLatitude.trim() ? Number(options.minLatitude) : null;
+  const maxLatitude = options.maxLatitude.trim() ? Number(options.maxLatitude) : null;
+  const minLongitude = options.minLongitude.trim() ? Number(options.minLongitude) : null;
+  const maxLongitude = options.maxLongitude.trim() ? Number(options.maxLongitude) : null;
+  const colorQuery = options.vehicleColor.trim().toUpperCase();
+  const makeQuery = options.vehicleMake.trim().toUpperCase();
+  const modelQuery = options.vehicleModel.trim().toUpperCase();
+  const yearQuery = options.vehicleYear.trim().toUpperCase();
 
   return options.rows.filter((row) => {
     if (!rowMatchesQuery(row, options.mode, options.query)) {
@@ -836,7 +856,41 @@ function filterRowsLocally(options: {
     if (options.highConfidenceOnly && row.conf < 90) {
       return false;
     }
+    if (colorQuery && !row.vehicle.toUpperCase().includes(colorQuery)) {
+      return false;
+    }
+    if (makeQuery && !row.vehicle.toUpperCase().includes(makeQuery)) {
+      return false;
+    }
+    if (modelQuery && !row.vehicle.toUpperCase().includes(modelQuery)) {
+      return false;
+    }
+    if (yearQuery && !row.vehicle.toUpperCase().includes(yearQuery)) {
+      return false;
+    }
     if (options.currentCameraOnly && row.cameraId !== options.currentCameraId) {
+      return false;
+    }
+    if (options.alertStatus) {
+      const matchingAlert = options.alerts.find(
+        (alert) =>
+          alert.detection_id === row.detectionId ||
+          normalizePlate(alert.matched_plate_text) === normalizePlate(row.plate1),
+      );
+      if (!matchingAlert || matchingAlert.status !== options.alertStatus) {
+        return false;
+      }
+    }
+    if (minLatitude !== null && row.lat < minLatitude) {
+      return false;
+    }
+    if (maxLatitude !== null && row.lat > maxLatitude) {
+      return false;
+    }
+    if (minLongitude !== null && row.lng < minLongitude) {
+      return false;
+    }
+    if (maxLongitude !== null && row.lng > maxLongitude) {
       return false;
     }
 
@@ -1126,11 +1180,23 @@ function App(): ReactElement {
   const [overview, setOverview] = useState<DashboardOverviewResponse | null>(null);
   const [hotlists, setHotlists] = useState<DashboardHotlist[]>(seedHotlists);
   const [dataError, setDataError] = useState<string | null>(null);
+  const [auditEvents, setAuditEvents] = useState<ApiAuditEvent[]>([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditError, setAuditError] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
   const [searchMode, setSearchMode] = useState<SearchMode>("plate");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchFromLocal, setSearchFromLocal] = useState("");
   const [searchToLocal, setSearchToLocal] = useState("");
+  const [searchVehicleColor, setSearchVehicleColor] = useState("");
+  const [searchVehicleMake, setSearchVehicleMake] = useState("");
+  const [searchVehicleModel, setSearchVehicleModel] = useState("");
+  const [searchVehicleYear, setSearchVehicleYear] = useState("");
+  const [searchAlertStatus, setSearchAlertStatus] = useState<DashboardAlertStatus | "">("");
+  const [searchMinLatitude, setSearchMinLatitude] = useState("");
+  const [searchMaxLatitude, setSearchMaxLatitude] = useState("");
+  const [searchMinLongitude, setSearchMinLongitude] = useState("");
+  const [searchMaxLongitude, setSearchMaxLongitude] = useState("");
   const [searchHotlistOnly, setSearchHotlistOnly] = useState(false);
   const [searchHighConfidenceOnly, setSearchHighConfidenceOnly] = useState(false);
   const [searchCurrentCameraOnly, setSearchCurrentCameraOnly] = useState(false);
@@ -1379,8 +1445,52 @@ function App(): ReactElement {
   const canUpdateVehicleAlerts = dataSource !== "live" || overview?.current_principal.capabilities.can_update_alerts === true;
   const canManageFollowUps = dataSource !== "live" || overview?.current_principal.capabilities.can_manage_follow_ups === true;
   const canManageDispatch = dataSource !== "live" || overview?.current_principal.capabilities.can_manage_dispatch === true;
+  const canViewAudit = dataSource === "live" && overview?.current_principal.capabilities.can_view_audit === true;
   const currentPrincipal = overview?.current_principal ?? null;
   const activeSessionRecords = overview?.active_sessions ?? [];
+
+  useEffect(() => {
+    if (dataSource !== "live") {
+      setAuditEvents([]);
+      setAuditError(null);
+      setAuditLoading(false);
+      return;
+    }
+
+    if (!canViewAudit) {
+      setAuditEvents([]);
+      setAuditError(null);
+      setAuditLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+
+    async function loadAuditEvents(): Promise<void> {
+      try {
+        setAuditLoading(true);
+        setAuditError(null);
+        const events = await fetchAuditEvents({ limit: 12 }, controller.signal);
+        if (!controller.signal.aborted) {
+          setAuditEvents(events);
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setAuditError(error instanceof Error ? error.message : "Unable to load audit activity.");
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setAuditLoading(false);
+        }
+      }
+    }
+
+    void loadAuditEvents();
+
+    return () => {
+      controller.abort();
+    };
+  }, [dataSource, canViewAudit, refreshToken]);
 
   function switchScreen(nextScreen: AppScreen): void {
     startTransition(() => setScreen(nextScreen));
@@ -1476,6 +1586,22 @@ function App(): ReactElement {
     setHotlistMessage(null);
   }
 
+  function clearSearchFilters(): void {
+    setSearchVehicleColor("");
+    setSearchVehicleMake("");
+    setSearchVehicleModel("");
+    setSearchVehicleYear("");
+    setSearchAlertStatus("");
+    setSearchMinLatitude("");
+    setSearchMaxLatitude("");
+    setSearchMinLongitude("");
+    setSearchMaxLongitude("");
+    setSearchHotlistOnly(false);
+    setSearchHighConfidenceOnly(false);
+    setSearchCurrentCameraOnly(false);
+    setSearchCurrentShiftOnly(false);
+  }
+
   async function handleSearchSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     setSearchLoading(true);
@@ -1487,11 +1613,21 @@ function App(): ReactElement {
 
     const localFallback = (): void => {
       const nextRows = filterRowsLocally({
+        alerts: overview?.alerts ?? [],
         rows: allRows,
         mode: searchMode,
         query: searchQuery,
         fromUtc,
         toUtc,
+        vehicleColor: searchVehicleColor,
+        vehicleMake: searchVehicleMake,
+        vehicleModel: searchVehicleModel,
+        vehicleYear: searchVehicleYear,
+        alertStatus: searchAlertStatus,
+        minLatitude: searchMinLatitude,
+        maxLatitude: searchMaxLatitude,
+        minLongitude: searchMinLongitude,
+        maxLongitude: searchMaxLongitude,
         hotlistOnly: searchHotlistOnly,
         highConfidenceOnly: searchHighConfidenceOnly,
         currentCameraOnly: searchCurrentCameraOnly,
@@ -1513,6 +1649,37 @@ function App(): ReactElement {
           end_utc: toUtc,
         };
 
+        if (searchCurrentCameraOnly && selectedCameraId) {
+          filters.camera_id = selectedCameraId;
+        }
+        if (searchVehicleColor.trim()) {
+          filters.vehicle_color = searchVehicleColor.trim();
+        }
+        if (searchVehicleMake.trim()) {
+          filters.vehicle_make = searchVehicleMake.trim();
+        }
+        if (searchVehicleModel.trim()) {
+          filters.vehicle_model = searchVehicleModel.trim();
+        }
+        if (searchVehicleYear.trim()) {
+          filters.vehicle_year = searchVehicleYear.trim();
+        }
+        if (searchAlertStatus) {
+          filters.alert_status = searchAlertStatus;
+        }
+        if (searchMinLatitude.trim()) {
+          filters.min_latitude = Number(searchMinLatitude);
+        }
+        if (searchMaxLatitude.trim()) {
+          filters.max_latitude = Number(searchMaxLatitude);
+        }
+        if (searchMinLongitude.trim()) {
+          filters.min_longitude = Number(searchMinLongitude);
+        }
+        if (searchMaxLongitude.trim()) {
+          filters.max_longitude = Number(searchMaxLongitude);
+        }
+
         if (searchMode === "plate") {
           filters.plate = searchQuery.trim();
           filters.plate_match = "contains";
@@ -1526,15 +1693,15 @@ function App(): ReactElement {
           );
           if (matchedCamera?.id) {
             filters.camera_id = matchedCamera.id;
-          } else if (selectedCameraId) {
+          } else if (searchCurrentCameraOnly && selectedCameraId) {
             filters.camera_id = selectedCameraId;
           }
         } else if (searchMode === "vehicle") {
           const [make, ...modelParts] = searchQuery.trim().split(/\s+/).filter(Boolean);
-          if (make) {
+          if (make && !filters.vehicle_make) {
             filters.vehicle_make = make;
           }
-          if (modelParts.length > 0) {
+          if (modelParts.length > 0 && !filters.vehicle_model) {
             filters.vehicle_model = modelParts.join(" ");
           }
         }
@@ -1542,11 +1709,21 @@ function App(): ReactElement {
         const result = await searchDetections(filters);
         const mappedRows = result.results.map((record, index) => mapDetectionToRow(record, index, hotlists));
         const filteredRows = filterRowsLocally({
+          alerts: overview?.alerts ?? [],
           rows: mappedRows,
           mode: searchMode,
           query: searchQuery,
           fromUtc,
           toUtc,
+          vehicleColor: searchVehicleColor,
+          vehicleMake: searchVehicleMake,
+          vehicleModel: searchVehicleModel,
+          vehicleYear: searchVehicleYear,
+          alertStatus: searchAlertStatus,
+          minLatitude: searchMinLatitude,
+          maxLatitude: searchMaxLatitude,
+          minLongitude: searchMinLongitude,
+          maxLongitude: searchMaxLongitude,
           hotlistOnly: searchHotlistOnly,
           highConfidenceOnly: searchHighConfidenceOnly,
           currentCameraOnly: searchCurrentCameraOnly,
@@ -1999,12 +2176,22 @@ function App(): ReactElement {
               searchGroupByPlate={searchGroupByPlate}
               searchHighConfidenceOnly={searchHighConfidenceOnly}
               searchHotlistOnly={searchHotlistOnly}
+              searchMaxLatitude={searchMaxLatitude}
+              searchMaxLongitude={searchMaxLongitude}
               searchMessage={searchMessage}
+              searchMinLatitude={searchMinLatitude}
+              searchMinLongitude={searchMinLongitude}
               searchMode={searchMode}
+              searchAlertStatus={searchAlertStatus}
               searchToLocal={searchToLocal}
+              searchVehicleColor={searchVehicleColor}
+              searchVehicleMake={searchVehicleMake}
+              searchVehicleModel={searchVehicleModel}
+              searchVehicleYear={searchVehicleYear}
               searchCurrentCameraOnly={searchCurrentCameraOnly}
               searchCurrentShiftOnly={searchCurrentShiftOnly}
               onAddToHotlist={sendRowToHotlistWorkspace}
+              onClearFilters={clearSearchFilters}
               onCopyPlate={handleCopyPlate}
               onDetails={openDetail}
               onMap={centerMapOnRow}
@@ -2020,8 +2207,17 @@ function App(): ReactElement {
               setSearchGroupByPlate={setSearchGroupByPlate}
               setSearchHighConfidenceOnly={setSearchHighConfidenceOnly}
               setSearchHotlistOnly={setSearchHotlistOnly}
+              setSearchMaxLatitude={setSearchMaxLatitude}
+              setSearchMaxLongitude={setSearchMaxLongitude}
+              setSearchMinLatitude={setSearchMinLatitude}
+              setSearchMinLongitude={setSearchMinLongitude}
               setSearchMode={setSearchMode}
+              setSearchAlertStatus={setSearchAlertStatus}
               setSearchToLocal={setSearchToLocal}
+              setSearchVehicleColor={setSearchVehicleColor}
+              setSearchVehicleMake={setSearchVehicleMake}
+              setSearchVehicleModel={setSearchVehicleModel}
+              setSearchVehicleYear={setSearchVehicleYear}
               setSearchCurrentCameraOnly={setSearchCurrentCameraOnly}
               setSearchCurrentShiftOnly={setSearchCurrentShiftOnly}
             />
@@ -2078,10 +2274,14 @@ function App(): ReactElement {
             <SettingsScreen
               activeSessions={activeSessions}
               activeSessionRecords={activeSessionRecords}
+              auditError={auditError}
+              auditEvents={auditEvents}
+              auditLoading={auditLoading}
               apiKeyInput={apiKeyInput}
               canManageAccounts={canManageHotlistAccounts}
               canManageDispatch={canManageDispatch}
               canManageFollowUps={canManageFollowUps}
+              canViewAudit={canViewAudit}
               canUpdateAlerts={canUpdateVehicleAlerts}
               currentPrincipal={currentPrincipal}
               dataError={dataError}
@@ -2675,12 +2875,22 @@ function SearchScreen(props: {
   searchGroupByPlate: boolean;
   searchHighConfidenceOnly: boolean;
   searchHotlistOnly: boolean;
+  searchMaxLatitude: string;
+  searchMaxLongitude: string;
   searchMessage: string | null;
+  searchMinLatitude: string;
+  searchMinLongitude: string;
   searchMode: SearchMode;
+  searchAlertStatus: DashboardAlertStatus | "";
   searchToLocal: string;
+  searchVehicleColor: string;
+  searchVehicleMake: string;
+  searchVehicleModel: string;
+  searchVehicleYear: string;
   searchCurrentCameraOnly: boolean;
   searchCurrentShiftOnly: boolean;
   onAddToHotlist: (row: ConsoleDetectionRow) => void;
+  onClearFilters: () => void;
   onCopyPlate: (plate: string) => Promise<void>;
   onDetails: (row: ConsoleDetectionRow) => void;
   onMap: (row: ConsoleDetectionRow) => void;
@@ -2691,14 +2901,34 @@ function SearchScreen(props: {
   setSearchGroupByPlate: (value: boolean) => void;
   setSearchHighConfidenceOnly: (value: boolean) => void;
   setSearchHotlistOnly: (value: boolean) => void;
+  setSearchMaxLatitude: (value: string) => void;
+  setSearchMaxLongitude: (value: string) => void;
+  setSearchMinLatitude: (value: string) => void;
+  setSearchMinLongitude: (value: string) => void;
   setSearchMode: (mode: SearchMode) => void;
+  setSearchAlertStatus: (value: DashboardAlertStatus | "") => void;
   setSearchToLocal: (value: string) => void;
+  setSearchVehicleColor: (value: string) => void;
+  setSearchVehicleMake: (value: string) => void;
+  setSearchVehicleModel: (value: string) => void;
+  setSearchVehicleYear: (value: string) => void;
   setSearchCurrentCameraOnly: (value: boolean) => void;
   setSearchCurrentShiftOnly: (value: boolean) => void;
 }): ReactElement {
   const hotlistMatches = props.results.filter((row) => row.hotlist).length;
   const latestResult = props.results[0] ?? null;
   const modeLabel = titleCase(props.searchMode);
+  const advancedFilterCount = [
+    props.searchVehicleColor,
+    props.searchVehicleMake,
+    props.searchVehicleModel,
+    props.searchVehicleYear,
+    props.searchAlertStatus,
+    props.searchMinLatitude,
+    props.searchMaxLatitude,
+    props.searchMinLongitude,
+    props.searchMaxLongitude,
+  ].filter((value) => value.trim().length > 0).length;
 
   return (
     <section className="screen search-screen">
@@ -2755,6 +2985,78 @@ function SearchScreen(props: {
             </label>
           </div>
 
+          <div className="search-sidebar-section">
+            <div className="search-sidebar-section__header">
+              <strong>Vehicle profile</strong>
+              <span>Backend-aligned make, model, color, and year filters.</span>
+            </div>
+            <div className="search-filter-grid">
+              <label>
+                <span>Color</span>
+                <input className="text-input" type="text" value={props.searchVehicleColor} onChange={(event) => props.setSearchVehicleColor(event.target.value)} />
+              </label>
+              <label>
+                <span>Make</span>
+                <input className="text-input" type="text" value={props.searchVehicleMake} onChange={(event) => props.setSearchVehicleMake(event.target.value)} />
+              </label>
+              <label>
+                <span>Model</span>
+                <input className="text-input" type="text" value={props.searchVehicleModel} onChange={(event) => props.setSearchVehicleModel(event.target.value)} />
+              </label>
+              <label>
+                <span>Year</span>
+                <input className="text-input" type="text" value={props.searchVehicleYear} onChange={(event) => props.setSearchVehicleYear(event.target.value)} />
+              </label>
+            </div>
+          </div>
+
+          <div className="search-sidebar-section">
+            <div className="search-sidebar-section__header">
+              <strong>Alert state</strong>
+              <span>Filter detections by the current alert lifecycle status.</span>
+            </div>
+            <label className="settings-input-row">
+              <span>Status</span>
+              <select className="select-input" value={props.searchAlertStatus} onChange={(event) => props.setSearchAlertStatus(event.target.value as DashboardAlertStatus | "")}>
+                <option value="">Any alert state</option>
+                <option value="active">Active</option>
+                <option value="acknowledged">Acknowledged</option>
+                <option value="dismissed">Dismissed</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="search-sidebar-section">
+            <div className="search-sidebar-section__header">
+              <strong>Geo window</strong>
+              <span>Bound the search to a latitude/longitude box when location is known.</span>
+            </div>
+            <div className="search-filter-grid">
+              <label>
+                <span>Min lat</span>
+                <input className="text-input" type="number" step="0.00001" value={props.searchMinLatitude} onChange={(event) => props.setSearchMinLatitude(event.target.value)} />
+              </label>
+              <label>
+                <span>Max lat</span>
+                <input className="text-input" type="number" step="0.00001" value={props.searchMaxLatitude} onChange={(event) => props.setSearchMaxLatitude(event.target.value)} />
+              </label>
+              <label>
+                <span>Min lon</span>
+                <input className="text-input" type="number" step="0.00001" value={props.searchMinLongitude} onChange={(event) => props.setSearchMinLongitude(event.target.value)} />
+              </label>
+              <label>
+                <span>Max lon</span>
+                <input className="text-input" type="number" step="0.00001" value={props.searchMaxLongitude} onChange={(event) => props.setSearchMaxLongitude(event.target.value)} />
+              </label>
+            </div>
+          </div>
+
+          <div className="button-row">
+            <button className="btn btn--ghost" type="button" onClick={props.onClearFilters}>
+              Clear Filters
+            </button>
+          </div>
+
           <div className="chip-row">
             <button className={`chip ${props.searchHotlistOnly ? "is-active" : ""}`} type="button" onClick={() => props.setSearchHotlistOnly(!props.searchHotlistOnly)}>
               Hotlist
@@ -2791,6 +3093,10 @@ function SearchScreen(props: {
             <div className="search-summary-card">
               <span>Latest sighting</span>
               <strong>{latestResult ? formatDateTime(latestResult.timestampUtc) : "None"}</strong>
+            </div>
+            <div className="search-summary-card">
+              <span>Advanced filters</span>
+              <strong>{advancedFilterCount}</strong>
             </div>
           </div>
 
@@ -3601,10 +3907,14 @@ function HotlistsScreen(props: {
 function SettingsScreen(props: {
   activeSessions: number;
   activeSessionRecords: OperatorSessionRecord[];
+  auditError: string | null;
+  auditEvents: ApiAuditEvent[];
+  auditLoading: boolean;
   apiKeyInput: string;
   canManageAccounts: boolean;
   canManageDispatch: boolean;
   canManageFollowUps: boolean;
+  canViewAudit: boolean;
   canUpdateAlerts: boolean;
   currentPrincipal: OperatorPrincipal | null;
   dataError: string | null;
@@ -3797,6 +4107,48 @@ function SettingsScreen(props: {
                           <div className="settings-session-row__meta">
                             <span>{session.client_label ?? "Local console"}</span>
                             <span>{formatDateTime(session.last_seen_at_utc)}</span>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </section>
+                <section className="settings-subsection">
+                  <div className="panel-card__header">
+                    <div>
+                      <h3>Audit activity</h3>
+                      <p>Recent secured searches and operator mutations from the API audit boundary.</p>
+                    </div>
+                    <Badge tone={props.canViewAudit ? "success" : "muted"}>{props.canViewAudit ? "Visible" : "Restricted"}</Badge>
+                  </div>
+                  {props.auditError ? <div className="feedback feedback--error">{props.auditError}</div> : null}
+                  <div className="settings-session-list">
+                    {!props.canViewAudit ? (
+                      <div className="empty-state">
+                        <strong>Audit access is restricted.</strong>
+                        <p>The current principal does not expose `can_view_audit`.</p>
+                      </div>
+                    ) : props.auditLoading ? (
+                      <div className="empty-state">
+                        <strong>Loading audit activity.</strong>
+                        <p>Refreshing the latest secured searches and operator mutations.</p>
+                      </div>
+                    ) : props.auditEvents.length === 0 ? (
+                      <div className="empty-state">
+                        <strong>No recent audit events.</strong>
+                        <p>Audit records will appear here when protected actions are performed.</p>
+                      </div>
+                    ) : (
+                      props.auditEvents.map((event) => (
+                        <div key={event.event_id} className="settings-session-row">
+                          <div>
+                            <strong>{event.action}</strong>
+                            <span>{`${titleCase(event.outcome)} - ${event.method} ${event.path}`}</span>
+                            <span>{event.target_id ? `${event.target_type ?? "target"} ${event.target_id}` : event.request_id}</span>
+                          </div>
+                          <div className="settings-session-row__meta">
+                            <span>{event.principal_id ?? "system"}</span>
+                            <span>{formatDateTime(event.occurred_at_utc)}</span>
                           </div>
                         </div>
                       ))
