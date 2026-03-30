@@ -49,7 +49,7 @@ import {
 type AppScreen = "console" | "search" | "hotlists" | "settings";
 type StageView = "camera" | "map";
 type ConsoleLayoutMode = "overview" | "focus";
-type SearchMode = "plate" | "camera" | "vehicle" | "time";
+type SearchMode = "plate" | "camera" | "vehicle" | "alert" | "time";
 type DataSource = "demo" | "live" | "fallback";
 type AlertPersistence = "until-dismissed" | "15 sec" | "60 sec";
 type HotlistsWorkspaceTab = "accounts" | "alerts" | "recognition";
@@ -83,6 +83,7 @@ interface UiSettings {
 interface ConsoleDetectionRow {
   id: string;
   detectionId?: string;
+  alertId?: string;
   plate1: string;
   plate2: string;
   plateCandidates: PlateCandidate[];
@@ -102,6 +103,9 @@ interface ConsoleDetectionRow {
   source: string;
   frameNumber?: number;
   syncStatus?: string;
+  alertStatus?: DashboardAlertStatus;
+  alertMatchType?: DashboardAlert["match_type"];
+  alertNotes?: string;
 }
 
 interface CameraUiFeed {
@@ -806,6 +810,56 @@ function mapDetectionToRow(record: DashboardDetection, index: number, hotlists: 
   };
 }
 
+function mapAlertToRow(
+  alert: DashboardAlert,
+  detection: DashboardDetection | undefined,
+  index: number,
+  hotlists: DashboardHotlist[],
+): ConsoleDetectionRow {
+  if (detection) {
+    const baseRow = mapDetectionToRow(detection, index, hotlists);
+    return {
+      ...baseRow,
+      id: `alert-${alert.alert_id}`,
+      alertId: alert.alert_id,
+      alertStatus: alert.status,
+      alertMatchType: alert.match_type,
+      alertNotes: [alert.notes, alert.response_notes].filter(Boolean).join(" · ") || undefined,
+    };
+  }
+
+  const fallback = fallbackPoint(index);
+  const latitude = alert.gps_latitude ?? fallback.lat;
+  const longitude = alert.gps_longitude ?? fallback.lng;
+
+  return {
+    id: `alert-${alert.alert_id}`,
+    detectionId: alert.detection_id,
+    alertId: alert.alert_id,
+    plate1: normalizePlate(alert.matched_plate_text) || "UNKNOWN",
+    plate2: "--",
+    plateCandidates: [{ text: normalizePlate(alert.matched_plate_text) || "UNKNOWN", confidence: alert.match_confidence }],
+    state: "--",
+    camera: buildCameraShortLabel(alert.camera_id),
+    cameraId: alert.camera_id,
+    conf: confidencePercent(alert.match_confidence),
+    time: formatClock(alert.updated_at_utc ?? alert.timestamp_utc),
+    timestampUtc: alert.updated_at_utc ?? alert.timestamp_utc,
+    hotlist: true,
+    vehicle: alert.hotlist_label ?? "Recovery case",
+    gps: `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`,
+    direction: ["Northbound", "Eastbound", "Southbound", "Westbound"][index % 4],
+    lane: ["Left lane", "Center lane", "Right lane", "Shoulder"][index % 4],
+    lat: latitude,
+    lng: longitude,
+    source: buildCameraDisplayName(alert.camera_id),
+    syncStatus: "local",
+    alertStatus: alert.status,
+    alertMatchType: alert.match_type,
+    alertNotes: [alert.notes, alert.response_notes].filter(Boolean).join(" · ") || undefined,
+  };
+}
+
 function buildPlateGroups(rows: ConsoleDetectionRow[]): PlateGroup[] {
   const groups = new Map<string, ConsoleDetectionRow[]>();
   for (const row of rows) {
@@ -847,6 +901,15 @@ function rowMatchesQuery(row: ConsoleDetectionRow, mode: SearchMode, query: stri
   }
   if (mode === "vehicle") {
     return row.vehicle.toUpperCase().includes(normalizedQuery);
+  }
+  if (mode === "alert") {
+    return (
+      normalizePlate(row.plate1).includes(normalizedQuery) ||
+      normalizePlate(row.plate2).includes(normalizedQuery) ||
+      row.source.toUpperCase().includes(normalizedQuery) ||
+      (row.alertNotes ?? "").toUpperCase().includes(normalizedQuery) ||
+      (row.alertMatchType ?? "").toUpperCase().includes(normalizedQuery)
+    );
   }
   return row.timestampUtc.includes(normalizedQuery) || row.time.includes(normalizedQuery);
 }
@@ -1327,6 +1390,10 @@ function App(): ReactElement {
   const [alertActionMessage, setAlertActionMessage] = useState<string | null>(null);
   const [hotlistOverlayId, setHotlistOverlayId] = useState<string | null>(null);
   const [hotlistAudioMuted, setHotlistAudioMuted] = useState(false);
+  const [selectedAlertId, setSelectedAlertId] = useState<string | null>(null);
+  const [detailReviews, setDetailReviews] = useState<ReviewRecord[]>([]);
+  const [detailReviewsLoading, setDetailReviewsLoading] = useState(false);
+  const [detailReviewsError, setDetailReviewsError] = useState<string | null>(null);
   const prevActiveAlertIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -1401,6 +1468,7 @@ function App(): ReactElement {
             client_label: "reposcan-ops-console",
             workspace: screen,
             selected_detection_id: selectedDetectionId ?? undefined,
+            selected_alert_id: screen === "hotlists" ? selectedAlertId ?? undefined : undefined,
             navigation_active: navigationActive,
           },
           controller.signal,
@@ -1417,16 +1485,35 @@ function App(): ReactElement {
       controller.abort();
       clearInterval(intervalId);
     };
-  }, [dataSource, screen, selectedDetectionId, navigationActive]);
+  }, [dataSource, screen, selectedDetectionId, selectedAlertId, navigationActive]);
 
   const allRows = useMemo(() => {
     const rows =
       dataSource === "live"
-        ? (overview?.detections ?? []).map((record, index) => mapDetectionToRow(record, index, hotlists))
+        ? (overview?.detections ?? []).map((record, index) => {
+            const row = mapDetectionToRow(record, index, hotlists);
+            const matchingAlert = (overview?.alerts ?? []).find(
+              (alert) =>
+                alert.detection_id === record.detection_id ||
+                normalizePlate(alert.matched_plate_text) === normalizePlate(row.plate1),
+            );
+
+            if (!matchingAlert) {
+              return row;
+            }
+
+            return {
+              ...row,
+              alertId: matchingAlert.alert_id,
+              alertStatus: matchingAlert.status,
+              alertMatchType: matchingAlert.match_type,
+              alertNotes: [matchingAlert.notes, matchingAlert.response_notes].filter(Boolean).join(" · ") || undefined,
+            };
+          })
         : buildSeedRows(hotlists);
 
     return rows.sort((left, right) => right.timestampUtc.localeCompare(left.timestampUtc));
-  }, [dataSource, overview?.detections, hotlists]);
+  }, [dataSource, overview?.alerts, overview?.detections, hotlists]);
 
   const availableCameraFeeds = useMemo(() => buildCameraUiFeeds(allRows, dataSource), [allRows, dataSource]);
 
@@ -1510,6 +1597,49 @@ function App(): ReactElement {
       }
     };
   }, [detailDetectionId, dataSource, allRows, searchResults]);
+
+  useEffect(() => {
+    const currentDetailRow = [...allRows, ...searchResults].find((row) => row.id === detailDetectionId);
+    if (!currentDetailRow?.detectionId || dataSource !== "live") {
+      setDetailReviews([]);
+      setDetailReviewsError(null);
+      setDetailReviewsLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+
+    async function loadDetailReviews(): Promise<void> {
+      try {
+        setDetailReviewsLoading(true);
+        setDetailReviewsError(null);
+        const detectionId = currentDetailRow?.detectionId;
+        if (!detectionId) {
+          setDetailReviews([]);
+          return;
+        }
+        const reviews = await fetchReviews(detectionId, controller.signal);
+        if (!controller.signal.aborted) {
+          setDetailReviews(reviews);
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setDetailReviews([]);
+          setDetailReviewsError(error instanceof Error ? error.message : "Unable to load review history.");
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setDetailReviewsLoading(false);
+        }
+      }
+    }
+
+    void loadDetailReviews();
+
+    return () => {
+      controller.abort();
+    };
+  }, [detailDetectionId, dataSource, allRows, searchResults, refreshToken]);
 
   const selectedRow = allRows.find((row) => row.id === selectedDetectionId) ?? allRows[0] ?? null;
   const detailRow = [...allRows, ...searchResults].find((row) => row.id === detailDetectionId) ?? null;
@@ -1810,41 +1940,58 @@ function App(): ReactElement {
           start_utc: fromUtc,
           end_utc: toUtc,
         };
+        const alertFilters: AlertSearchFilters = {
+          limit: 200,
+          start_utc: fromUtc,
+          end_utc: toUtc,
+        };
 
         if (searchCurrentCameraOnly && selectedCameraId) {
           filters.camera_id = selectedCameraId;
+          alertFilters.camera_id = selectedCameraId;
         }
         if (searchVehicleColor.trim()) {
           filters.vehicle_color = searchVehicleColor.trim();
+          alertFilters.vehicle_color = searchVehicleColor.trim();
         }
         if (searchVehicleMake.trim()) {
           filters.vehicle_make = searchVehicleMake.trim();
+          alertFilters.vehicle_make = searchVehicleMake.trim();
         }
         if (searchVehicleModel.trim()) {
           filters.vehicle_model = searchVehicleModel.trim();
+          alertFilters.vehicle_model = searchVehicleModel.trim();
         }
         if (searchVehicleYear.trim()) {
           filters.vehicle_year = searchVehicleYear.trim();
+          alertFilters.vehicle_year = searchVehicleYear.trim();
         }
         if (searchAlertStatus) {
           filters.alert_status = searchAlertStatus;
+          alertFilters.status = searchAlertStatus;
         }
         if (searchMinLatitude.trim()) {
           filters.min_latitude = Number(searchMinLatitude);
+          alertFilters.min_latitude = Number(searchMinLatitude);
         }
         if (searchMaxLatitude.trim()) {
           filters.max_latitude = Number(searchMaxLatitude);
+          alertFilters.max_latitude = Number(searchMaxLatitude);
         }
         if (searchMinLongitude.trim()) {
           filters.min_longitude = Number(searchMinLongitude);
+          alertFilters.min_longitude = Number(searchMinLongitude);
         }
         if (searchMaxLongitude.trim()) {
           filters.max_longitude = Number(searchMaxLongitude);
+          alertFilters.max_longitude = Number(searchMaxLongitude);
         }
 
         if (searchMode === "plate") {
           filters.plate = searchQuery.trim();
           filters.plate_match = "contains";
+          alertFilters.plate = searchQuery.trim();
+          alertFilters.plate_match = "contains";
         } else if (searchMode === "camera") {
           const normalizedCameraQuery = searchQuery.trim().toUpperCase();
           const matchedCamera = availableCameraFeeds.find(
@@ -1855,49 +2002,92 @@ function App(): ReactElement {
           );
           if (matchedCamera?.id) {
             filters.camera_id = matchedCamera.id;
+            alertFilters.camera_id = matchedCamera.id;
           } else if (searchCurrentCameraOnly && selectedCameraId) {
             filters.camera_id = selectedCameraId;
+            alertFilters.camera_id = selectedCameraId;
           }
         } else if (searchMode === "vehicle") {
           const [make, ...modelParts] = searchQuery.trim().split(/\s+/).filter(Boolean);
           if (make && !filters.vehicle_make) {
             filters.vehicle_make = make;
+            alertFilters.vehicle_make = make;
           }
           if (modelParts.length > 0 && !filters.vehicle_model) {
             filters.vehicle_model = modelParts.join(" ");
+            alertFilters.vehicle_model = modelParts.join(" ");
           }
+        } else if (searchMode === "alert") {
+          alertFilters.plate = searchQuery.trim();
+          alertFilters.plate_match = "contains";
         }
 
-        const result = await searchDetections(filters);
-        const mappedRows = result.results.map((record, index) => mapDetectionToRow(record, index, hotlists));
-        const filteredRows = filterRowsLocally({
-          alerts: overview?.alerts ?? [],
-          rows: mappedRows,
-          mode: searchMode,
-          query: searchQuery,
-          fromUtc,
-          toUtc,
-          vehicleColor: searchVehicleColor,
-          vehicleMake: searchVehicleMake,
-          vehicleModel: searchVehicleModel,
-          vehicleYear: searchVehicleYear,
-          alertStatus: searchAlertStatus,
-          minLatitude: searchMinLatitude,
-          maxLatitude: searchMaxLatitude,
-          minLongitude: searchMinLongitude,
-          maxLongitude: searchMaxLongitude,
-          hotlistOnly: searchHotlistOnly,
-          highConfidenceOnly: searchHighConfidenceOnly,
-          currentCameraOnly: searchCurrentCameraOnly,
-          currentShiftOnly: searchCurrentShiftOnly,
-          currentCameraId: selectedCameraId,
-        });
+        if (searchMode === "alert") {
+          const result = await searchAlerts(alertFilters);
+          const detectionsById = new Map((overview?.detections ?? []).map((record) => [record.detection_id, record]));
+          const mappedRows = result.results.map((alert, index) =>
+            mapAlertToRow(alert, detectionsById.get(alert.detection_id), index, hotlists),
+          );
+          const filteredRows = filterRowsLocally({
+            alerts: result.results,
+            rows: mappedRows,
+            mode: searchMode,
+            query: searchQuery,
+            fromUtc,
+            toUtc,
+            vehicleColor: searchVehicleColor,
+            vehicleMake: searchVehicleMake,
+            vehicleModel: searchVehicleModel,
+            vehicleYear: searchVehicleYear,
+            alertStatus: searchAlertStatus,
+            minLatitude: searchMinLatitude,
+            maxLatitude: searchMaxLatitude,
+            minLongitude: searchMinLongitude,
+            maxLongitude: searchMaxLongitude,
+            hotlistOnly: searchHotlistOnly,
+            highConfidenceOnly: searchHighConfidenceOnly,
+            currentCameraOnly: searchCurrentCameraOnly,
+            currentShiftOnly: searchCurrentShiftOnly,
+            currentCameraId: selectedCameraId,
+          });
 
-        startTransition(() => {
-          setSearchResults(filteredRows);
-          setSearchTotal(result.page.total_results);
-          setSearchExecuted(true);
-        });
+          startTransition(() => {
+            setSearchResults(filteredRows);
+            setSearchTotal(result.page.total_results);
+            setSearchExecuted(true);
+          });
+        } else {
+          const result = await searchDetections(filters);
+          const mappedRows = result.results.map((record, index) => mapDetectionToRow(record, index, hotlists));
+          const filteredRows = filterRowsLocally({
+            alerts: overview?.alerts ?? [],
+            rows: mappedRows,
+            mode: searchMode,
+            query: searchQuery,
+            fromUtc,
+            toUtc,
+            vehicleColor: searchVehicleColor,
+            vehicleMake: searchVehicleMake,
+            vehicleModel: searchVehicleModel,
+            vehicleYear: searchVehicleYear,
+            alertStatus: searchAlertStatus,
+            minLatitude: searchMinLatitude,
+            maxLatitude: searchMaxLatitude,
+            minLongitude: searchMinLongitude,
+            maxLongitude: searchMaxLongitude,
+            hotlistOnly: searchHotlistOnly,
+            highConfidenceOnly: searchHighConfidenceOnly,
+            currentCameraOnly: searchCurrentCameraOnly,
+            currentShiftOnly: searchCurrentShiftOnly,
+            currentCameraId: selectedCameraId,
+          });
+
+          startTransition(() => {
+            setSearchResults(filteredRows);
+            setSearchTotal(result.page.total_results);
+            setSearchExecuted(true);
+          });
+        }
       } catch (error) {
         localFallback();
         setSearchError(error instanceof Error ? `${error.message}. Showing cached results.` : "Showing cached results.");
@@ -2454,6 +2644,7 @@ function App(): ReactElement {
               deleting={hotlistDeleting}
               selectedDetectionPlate={selectedRow?.plate1 ?? ""}
               selectedHotlistId={selectedHotlistId}
+              selectedAlertId={selectedAlertId}
               alertResponseNotes={alertResponseNotes}
               onAlertResponseNotesChange={setAlertResponseNotes}
               onAlertStatusChange={(alert, status, notes) => void handleAlertStatusChange(alert, status, notes)}
@@ -2465,6 +2656,7 @@ function App(): ReactElement {
               onSaveAssignment={handleSaveAssignment}
               onSaveFollowUp={handleSaveFollowUp}
               onSelect={loadHotlist}
+              onSelectAlert={setSelectedAlertId}
               onSeedFromDetection={() => beginHotlistDraft(selectedRow?.plate1)}
               onSubmit={handleHotlistSubmit}
               onTabChange={setHotlistsTab}
@@ -2525,6 +2717,9 @@ function App(): ReactElement {
           hotlistEntry={hotlistEntryForRow(detailRow, hotlists)}
           detailRow={detailRow}
           detailTimeline={detailTimeline}
+          detailReviews={detailReviews}
+          detailReviewsError={detailReviewsError}
+          detailReviewsLoading={detailReviewsLoading}
           followUps={matchingFollowUpsForRow(detailRow, followUps)}
           reviewError={reviewError}
           reviewMessage={reviewMessage}
@@ -2597,6 +2792,8 @@ function SearchResultCard(props: {
           <div className="search-result-card__badges">
             {props.row.hotlist ? <Badge tone="critical">Hotlist</Badge> : null}
             {props.hotlistLabel ? <Badge tone="warn">{props.hotlistLabel}</Badge> : null}
+            {props.row.alertStatus ? <Badge tone={alertStatusTone(props.row.alertStatus)}>{alertStatusLabel(props.row.alertStatus)}</Badge> : null}
+            {props.row.alertMatchType ? <Badge tone={props.row.alertMatchType === "exact" ? "success" : "warn"}>{`${titleCase(props.row.alertMatchType)} match`}</Badge> : null}
             {props.followUp ? <Badge tone={followUpStatusTone(props.followUp.status)}>{`Follow-up ${titleCase(props.followUp.status)}`}</Badge> : null}
             {props.assignment ? <Badge tone={dispatchStatusTone(props.assignment.status)}>{`Dispatch ${titleCase(props.assignment.status)}`}</Badge> : null}
           </div>
@@ -2621,6 +2818,11 @@ function SearchResultCard(props: {
                 {props.assignment.destination_label ? ` to ${props.assignment.destination_label}` : ""}
               </span>
             ) : null}
+          </div>
+        ) : null}
+        {props.row.alertNotes ? (
+          <div className="search-result-card__workflow">
+            <span>{props.row.alertNotes}</span>
           </div>
         ) : null}
         <div className="search-result-card__actions">
@@ -3155,7 +3357,7 @@ function SearchScreen(props: {
       <div className="search-screen__layout">
         <form className="search-toolbar-card search-toolbar-card--sidebar" onSubmit={(event) => void props.onSearchSubmit(event)}>
           <div className="search-mode-tabs">
-            {(["plate", "camera", "vehicle", "time"] as const).map((mode) => (
+            {(["plate", "camera", "vehicle", "alert", "time"] as const).map((mode) => (
               <button key={mode} className={props.searchMode === mode ? "is-active" : ""} type="button" onClick={() => props.setSearchMode(mode)}>
                 {mode}
               </button>
@@ -3172,6 +3374,8 @@ function SearchScreen(props: {
                     ? "Search current or named camera"
                     : props.searchMode === "vehicle"
                       ? "Search make / model / color"
+                      : props.searchMode === "alert"
+                        ? "Search alert plate, match type, or response notes"
                       : "Optional time keyword"
               }
               type="text"
@@ -3427,6 +3631,7 @@ function HotlistsScreen(props: {
   deleting: boolean;
   selectedDetectionPlate: string;
   selectedHotlistId: string | null;
+  selectedAlertId: string | null;
   alertResponseNotes: string;
   onAlertResponseNotesChange: (notes: string) => void;
   onAlertStatusChange: (alert: DashboardAlert, status: DashboardAlertStatus, responseNotes?: string) => void;
@@ -3438,6 +3643,7 @@ function HotlistsScreen(props: {
   onSaveAssignment: (request: AssignmentSaveRequest) => Promise<void>;
   onSaveFollowUp: (request: FollowUpSaveRequest) => Promise<void>;
   onSelect: (entry: DashboardHotlist) => void;
+  onSelectAlert: (alertId: string | null) => void;
   onSeedFromDetection: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   onTabChange: (tab: HotlistsWorkspaceTab) => void;
@@ -3445,7 +3651,6 @@ function HotlistsScreen(props: {
   const activeAlertCount = props.alerts.filter((item) => item.alert.status === "active").length;
   const acknowledgedAlertCount = props.alerts.filter((item) => item.alert.status === "acknowledged").length;
   const dismissedAlertCount = props.alerts.filter((item) => item.alert.status === "dismissed").length;
-  const [selectedAlertId, setSelectedAlertId] = useState<string | null>(null);
   const alertCases = props.alerts.map(({ alert, row }) => ({
     alert,
     row,
@@ -3463,23 +3668,23 @@ function HotlistsScreen(props: {
         (item.plate_text ? normalizePlate(item.plate_text) === normalizePlate(alert.matched_plate_text) : false),
     ),
   }));
-  const focusedAlertCase = alertCases.find((item) => item.alert.alert_id === selectedAlertId) ?? alertCases[0] ?? null;
+  const focusedAlertCase = alertCases.find((item) => item.alert.alert_id === props.selectedAlertId) ?? alertCases[0] ?? null;
   const [followUpDraft, setFollowUpDraft] = useState<FollowUpDraftState>(() => buildFollowUpDraft(null));
   const [assignmentDraft, setAssignmentDraft] = useState<AssignmentDraftState>(() => buildAssignmentDraft(null, props.activeDestination));
 
   useEffect(() => {
     if (!alertCases[0]) {
-      if (selectedAlertId) {
-        setSelectedAlertId(null);
+      if (props.selectedAlertId) {
+        props.onSelectAlert(null);
       }
       return;
     }
 
-    const stillExists = selectedAlertId ? alertCases.some((item) => item.alert.alert_id === selectedAlertId) : false;
+    const stillExists = props.selectedAlertId ? alertCases.some((item) => item.alert.alert_id === props.selectedAlertId) : false;
     if (!stillExists) {
-      setSelectedAlertId(alertCases[0].alert.alert_id);
+      props.onSelectAlert(alertCases[0].alert.alert_id);
     }
-  }, [alertCases, selectedAlertId]);
+  }, [alertCases, props.onSelectAlert, props.selectedAlertId]);
 
   useEffect(() => {
     setFollowUpDraft(buildFollowUpDraft(focusedAlertCase?.followUps[0] ?? null));
@@ -3698,9 +3903,9 @@ function HotlistsScreen(props: {
                   return (
                     <button
                       key={alert.alert_id}
-                      className={`queue-row ${selectedAlertId === alert.alert_id ? "is-selected" : ""}`}
+                      className={`queue-row ${props.selectedAlertId === alert.alert_id ? "is-selected" : ""}`}
                       type="button"
-                      onClick={() => setSelectedAlertId(alert.alert_id)}
+                      onClick={() => props.onSelectAlert(alert.alert_id)}
                     >
                       <div className="queue-row__header">
                         <div>
@@ -3709,6 +3914,7 @@ function HotlistsScreen(props: {
                         </div>
                         <div className="queue-row__badges">
                           <Badge tone={alertStatusTone(alert.status)}>{alertStatusLabel(alert.status)}</Badge>
+                          <Badge tone={alert.match_type === "exact" ? "success" : "warn"}>{`${titleCase(alert.match_type)} match`}</Badge>
                           <Badge tone="cyan">{matchConfidence}</Badge>
                         </div>
                       </div>
@@ -3733,6 +3939,7 @@ function HotlistsScreen(props: {
                   </div>
                   <div className="record-row__stats">
                     <Badge tone={alertStatusTone(focusedAlertCase.alert.status)}>{alertStatusLabel(focusedAlertCase.alert.status)}</Badge>
+                    <Badge tone={focusedAlertCase.alert.match_type === "exact" ? "success" : "warn"}>{`${titleCase(focusedAlertCase.alert.match_type)} match`}</Badge>
                     <Badge tone="cyan">{confidenceLabel(confidencePercent(focusedAlertCase.alert.match_confidence))}</Badge>
                   </div>
                 </div>
@@ -4394,6 +4601,9 @@ function DetailOverlay(props: {
   currentOperatorId: string | null;
   dataSource: DataSource;
   detailImageUrl: string | null;
+  detailReviews: ReviewRecord[];
+  detailReviewsError: string | null;
+  detailReviewsLoading: boolean;
   detailRow: ConsoleDetectionRow;
   detailTimeline: ConsoleDetectionRow[];
   followUps: FollowUpRecord[];
@@ -4488,6 +4698,10 @@ function DetailOverlay(props: {
               <span>Dispatch</span>
               <strong>{activeAssignment ? titleCase(activeAssignment.status) : "None"}</strong>
             </div>
+            <div className="detail-summary-card">
+              <span>Alert match</span>
+              <strong>{props.detailRow.alertMatchType ? `${titleCase(props.detailRow.alertMatchType)} match` : "No alert"}</strong>
+            </div>
           </div>
 
           <section className="detail-section">
@@ -4536,8 +4750,39 @@ function DetailOverlay(props: {
             <DetailField label="Dispatch destination" value={activeAssignment?.destination_label ?? props.activeDestination} />
             <DetailField label="Time" value={formatDateTime(props.detailRow.timestampUtc)} />
             <DetailField label="Sync" value={props.detailRow.syncStatus ?? "local"} />
+            <DetailField label="Alert state" value={props.detailRow.alertStatus ? alertStatusLabel(props.detailRow.alertStatus) : "None"} />
             <DetailField label="Alt read" value={props.detailRow.plate2 || "--"} />
           </div>
+
+          {props.detailReviewsLoading || props.detailReviews.length > 0 || props.detailReviewsError ? (
+            <section className="detail-section">
+              <div className="detail-section__header">
+                <div className="detail-section__copy">
+                  <h4>Review History</h4>
+                  <p>Stored operator review events for this detection.</p>
+                </div>
+              </div>
+              {props.detailReviewsError ? <div className="feedback feedback--warn">{props.detailReviewsError}</div> : null}
+              {props.detailReviewsLoading ? <div className="feedback">Loading review history...</div> : null}
+              {props.detailReviews.length > 0 ? (
+                <div className="review-history-list">
+                  {props.detailReviews.map((review) => (
+                    <div key={review.review_id} className="review-history-row">
+                      <div className="review-history-row__header">
+                        <strong>{titleCase(review.action)}</strong>
+                        <span>{formatDateTime(review.reviewed_at_utc)}</span>
+                      </div>
+                      <div className="review-history-row__meta">
+                        <span>{review.operator_id ?? props.currentOperatorId ?? "Unknown operator"}</span>
+                        {review.corrected_plate_text ? <span>{`Corrected to ${review.corrected_plate_text}`}</span> : null}
+                      </div>
+                      {review.notes ? <p>{review.notes}</p> : null}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </section>
+          ) : null}
 
           {props.detailRow.detectionId ? (
             <section className="detail-section">

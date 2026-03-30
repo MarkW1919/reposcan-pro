@@ -1851,6 +1851,45 @@ select:focus-visible {
   font-weight: 500;
 }
 
+.review-history-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.review-history-row {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(8, 16, 22, 0.7);
+  border: 1px solid rgba(56, 232, 255, 0.08);
+}
+
+.review-history-row__header,
+.review-history-row__meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.review-history-row__header strong,
+.review-history-row__meta span:first-child {
+  color: var(--text);
+}
+
+.review-history-row__header span,
+.review-history-row__meta span,
+.review-history-row p {
+  color: var(--muted);
+}
+
+.review-history-row p {
+  margin: 0;
+  line-height: 1.45;
+}
+
 /* --- sync cell in detection table --- */
 .sync-cell {
   font-size: 0.72rem;

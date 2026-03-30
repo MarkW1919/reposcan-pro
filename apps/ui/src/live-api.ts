@@ -16,6 +16,7 @@ export interface HealthResponse {
 
 export type ReviewAction = "confirm" | "correct" | "flag" | "dismiss";
 export type DashboardAlertStatus = "active" | "acknowledged" | "dismissed";
+export type DashboardAlertMatchType = "exact" | "normalized";
 export type FollowUpPriority = "routine" | "priority" | "critical";
 export type FollowUpStatus = "open" | "monitoring" | "resolved";
 export type DispatchAssignmentPriority = "watch" | "priority" | "critical";
@@ -87,6 +88,7 @@ export interface DashboardAlert {
   camera_id: string;
   matched_plate_text: string;
   match_confidence: number;
+  match_type: DashboardAlertMatchType;
   hotlist_label: string | null;
   notes: string | null;
   response_operator_id: string | null;
@@ -871,7 +873,7 @@ export function mapOverviewToAlertItems(
     const scenario = alert.status === "active" ? "tow_ready" : alert.status === "acknowledged" ? "visual_match" : "assignment";
     const status = alert.status === "active" ? "monitoring" : alert.status === "acknowledged" ? "onsite" : "cleared";
     const routeAction = alert.status === "active" ? "Acknowledge" : alert.status === "acknowledged" ? "Stand down" : "Re-open";
-    const fieldNotes = [alert.notes, alert.response_notes].filter(Boolean).join(" \u00b7 ");
+    const fieldNotes = [`${titleCase(alert.match_type)} match`, alert.notes, alert.response_notes].filter(Boolean).join(" \u00b7 ");
     return {
       id: alert.alert_id,
       detectionId: alert.detection_id,
