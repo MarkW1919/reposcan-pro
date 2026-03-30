@@ -2710,7 +2710,7 @@ function App(): ReactElement {
         <DetailOverlay
           activeDestination={activeDestination}
           assignments={matchingAssignmentsForRow(detailRow, assignments)}
-          canSubmitReview={dataSource === "live"}
+          canSubmitReview={dataSource !== "live" || overview?.current_principal.capabilities.can_submit_reviews === true}
           currentOperatorId={currentPrincipal?.principal_id ?? null}
           dataSource={dataSource}
           detailImageUrl={detailImageUrl}
