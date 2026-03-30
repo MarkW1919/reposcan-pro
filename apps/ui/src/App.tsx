@@ -1395,6 +1395,7 @@ function App(): ReactElement {
   const [detailReviewsLoading, setDetailReviewsLoading] = useState(false);
   const [detailReviewsError, setDetailReviewsError] = useState<string | null>(null);
   const prevActiveAlertIdsRef = useRef<Set<string>>(new Set());
+  const alertSurfaceInitializedRef = useRef(false);
 
   useEffect(() => {
     setApiClientConfig({ apiKey });
@@ -1452,6 +1453,15 @@ function App(): ReactElement {
       controller.abort();
     };
   }, [apiKey, refreshToken]);
+
+  // Auto-poll live data every 15 seconds when connected to the API.
+  useEffect(() => {
+    if (dataSource !== "live") {
+      return;
+    }
+    const pollId = setInterval(() => setRefreshToken((v) => v + 1), 15_000);
+    return () => clearInterval(pollId);
+  }, [dataSource]);
 
   useEffect(() => {
     if (dataSource !== "live") {
@@ -1761,6 +1771,15 @@ function App(): ReactElement {
       (overview?.alerts ?? []).filter((alert) => alert.status === "active").map((alert) => alert.alert_id),
     );
     const prev = prevActiveAlertIdsRef.current;
+
+    // On the very first data load, seed the ref without triggering the overlay.
+    // Only surface the overlay for alerts that arrive *after* the initial load.
+    if (!alertSurfaceInitializedRef.current) {
+      alertSurfaceInitializedRef.current = true;
+      prevActiveAlertIdsRef.current = currentActiveIds;
+      return;
+    }
+
     const newAlertId = [...currentActiveIds].find((id) => !prev.has(id));
     prevActiveAlertIdsRef.current = currentActiveIds;
 
