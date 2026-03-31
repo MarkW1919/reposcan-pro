@@ -81,6 +81,17 @@ Prepare a vehicle make/model warm-start run from an imported legacy manifest:
   --run-name make_model_warmstart_01
 ```
 
+Build a canonical make/model/year catalog from a markdown seed list before collecting or promoting field data:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\build_vehicle_recognition_catalog.py `
+  --seed .\configs\datasets\example-vehicle-recognition-seed.md `
+  --output .\runtime\vehicle_catalogs\us-vehicle-recognition-catalog.yaml `
+  --labels-csv .\runtime\vehicle_catalogs\us-vehicle-recognition-labels.csv
+```
+
+That workflow caches the official model-year lookups locally, emits a canonical catalog, and expands training-ready labels of the form `Make Model Year`.
+
 Prepare an OCR fine-tuning run:
 
 ```powershell

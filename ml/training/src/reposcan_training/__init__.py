@@ -11,6 +11,16 @@ from .datasets import (
     write_detection_label_index,
 )
 from .field_eval import qualify_field_eval_dataset
+from .vehicle_catalog import (
+    build_vehicle_recognition_catalog,
+    fetch_nhtsa_models_for_make_year,
+    load_vehicle_seed_entries,
+    normalize_vehicle_text,
+    parse_vehicle_seed_csv,
+    parse_vehicle_seed_markdown,
+    write_vehicle_recognition_catalog,
+    write_vehicle_recognition_labels_csv,
+)
 from .workflows import (
     US_PLATE_CHARS,
     build_run_manifest,
@@ -42,4 +52,12 @@ __all__ = [
     "write_detection_label_index",
     "build_run_manifest",
     "qualify_field_eval_dataset",
+    "build_vehicle_recognition_catalog",
+    "fetch_nhtsa_models_for_make_year",
+    "load_vehicle_seed_entries",
+    "normalize_vehicle_text",
+    "parse_vehicle_seed_csv",
+    "parse_vehicle_seed_markdown",
+    "write_vehicle_recognition_catalog",
+    "write_vehicle_recognition_labels_csv",
 ]

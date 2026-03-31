@@ -80,6 +80,12 @@ from .tracking_benchmark import (
     TrackingScenarioMetrics,
     TrackingStrategyBenchmarkReport,
 )
+from .vehicle_catalog import (
+    VehicleCatalogEntry,
+    VehicleCatalogSeedEntry,
+    VehicleRecognitionCatalog,
+    VehicleRecognitionLabel,
+)
 from .logging import configure_logging, get_logger
 from .types import PlateMatchType, UtcTimestamp
 
@@ -178,4 +184,8 @@ __all__ = [
     "ClassifierExportMetadata",
     "build_classifier_export_metadata",
     "parse_vehicle_make_model_year",
+    "VehicleCatalogEntry",
+    "VehicleCatalogSeedEntry",
+    "VehicleRecognitionCatalog",
+    "VehicleRecognitionLabel",
 ]

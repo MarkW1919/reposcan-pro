@@ -176,6 +176,12 @@ Prepare a training run from a profile and dataset manifest with:
 
 The attribute-classifier workflow now exports `model.onnx` plus a `labels.json` metadata sidecar so single-task color or make/model classifiers can plug back into the runtime and promoted bundle flow.
 
+Build a canonical vehicle make/model/year catalog from a markdown seed list with:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\build_vehicle_recognition_catalog.py --seed .\configs\datasets\example-vehicle-recognition-seed.md --output .\runtime\vehicle_catalogs\us-vehicle-recognition-catalog.yaml --labels-csv .\runtime\vehicle_catalogs\us-vehicle-recognition-labels.csv
+```
+
 Supplement a primary OCR dataset with a capped synthetic support manifest through the same prepare workflow:
 
 ```powershell

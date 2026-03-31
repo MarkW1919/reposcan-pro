@@ -33,6 +33,7 @@ testpaths = ["tests"]
 pythonpath = [
     "packages/contracts/src",
     "apps/api/src",
+    "ml/training/src",
     "services/storage/src",
     "services/capture/src",
     "services/preprocessing/src",
