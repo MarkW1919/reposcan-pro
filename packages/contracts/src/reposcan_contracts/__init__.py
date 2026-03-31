@@ -82,6 +82,7 @@ from .tracking_benchmark import (
 )
 from .vehicle_catalog import (
     VehicleCatalogEntry,
+    VehicleCatalogOverrideEntry,
     VehicleCatalogSeedEntry,
     VehicleRecognitionCatalog,
     VehicleRecognitionLabel,
@@ -185,6 +186,7 @@ __all__ = [
     "build_classifier_export_metadata",
     "parse_vehicle_make_model_year",
     "VehicleCatalogEntry",
+    "VehicleCatalogOverrideEntry",
     "VehicleCatalogSeedEntry",
     "VehicleRecognitionCatalog",
     "VehicleRecognitionLabel",

@@ -54,7 +54,7 @@ Use a canonical seed list plus a year-validation pass to build the training taxo
 2. validate model-year availability against a reviewed source
 3. emit a canonical catalog plus expanded per-year labels
 
-The repo now includes `scripts/build_vehicle_recognition_catalog.py` for this step. It accepts the same markdown-table shape the operator team is already compiling and can validate year availability against the official NHTSA vehicle catalog API while caching results locally for repeatable offline use.
+The repo now includes `scripts/build_vehicle_recognition_catalog.py` for this step. It accepts the same markdown-table shape the operator team is already compiling, can expand placeholder rows such as `all models from database coverage`, and validates year availability against the official NHTSA vehicle catalog API while caching results locally for repeatable offline use.
 
 ## Split Strategy
 

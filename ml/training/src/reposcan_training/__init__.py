@@ -13,13 +13,17 @@ from .datasets import (
 from .field_eval import qualify_field_eval_dataset
 from .vehicle_catalog import (
     build_vehicle_recognition_catalog,
+    expand_vehicle_seed_entries,
+    extract_placeholder_models,
     fetch_nhtsa_models_for_make_year,
+    load_vehicle_catalog_overrides,
     load_vehicle_seed_entries,
     normalize_vehicle_text,
     parse_vehicle_seed_csv,
     parse_vehicle_seed_markdown,
     write_vehicle_recognition_catalog,
     write_vehicle_recognition_labels_csv,
+    write_vehicle_seed_entries_csv,
 )
 from .workflows import (
     US_PLATE_CHARS,
@@ -53,11 +57,15 @@ __all__ = [
     "build_run_manifest",
     "qualify_field_eval_dataset",
     "build_vehicle_recognition_catalog",
+    "expand_vehicle_seed_entries",
+    "extract_placeholder_models",
     "fetch_nhtsa_models_for_make_year",
+    "load_vehicle_catalog_overrides",
     "load_vehicle_seed_entries",
     "normalize_vehicle_text",
     "parse_vehicle_seed_csv",
     "parse_vehicle_seed_markdown",
     "write_vehicle_recognition_catalog",
     "write_vehicle_recognition_labels_csv",
+    "write_vehicle_seed_entries_csv",
 ]

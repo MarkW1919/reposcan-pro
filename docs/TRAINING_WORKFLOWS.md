@@ -86,11 +86,14 @@ Build a canonical make/model/year catalog from a markdown seed list before colle
 ```powershell
 .\.venv\Scripts\python.exe .\scripts\build_vehicle_recognition_catalog.py `
   --seed .\configs\datasets\example-vehicle-recognition-seed.md `
+  --overrides .\configs\datasets\example-vehicle-recognition-overrides.yaml `
+  --placeholder-mode make-all-models `
   --output .\runtime\vehicle_catalogs\us-vehicle-recognition-catalog.yaml `
+  --expanded-seed-csv .\runtime\vehicle_catalogs\us-vehicle-recognition-expanded-seed.csv `
   --labels-csv .\runtime\vehicle_catalogs\us-vehicle-recognition-labels.csv
 ```
 
-That workflow caches the official model-year lookups locally, emits a canonical catalog, and expands training-ready labels of the form `Make Model Year`.
+That workflow caches the official model-year lookups locally, can expand placeholder make-coverage rows into explicit model rows, emits a canonical catalog, expands training-ready labels of the form `Make Model Year`, and accepts a narrow alias/override file for source-name mismatches without weakening the year-validation path.
 
 Prepare an OCR fine-tuning run:
 

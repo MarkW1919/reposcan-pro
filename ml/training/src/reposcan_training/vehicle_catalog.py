@@ -12,6 +12,7 @@ import yaml
 
 from reposcan_contracts.vehicle_catalog import (
     VehicleCatalogEntry,
+    VehicleCatalogOverrideEntry,
     VehicleCatalogSeedEntry,
     VehicleRecognitionCatalog,
     VehicleRecognitionLabel,
@@ -19,6 +20,8 @@ from reposcan_contracts.vehicle_catalog import (
 
 _WHITESPACE_RE = re.compile(r"\s+")
 _PUNCTUATION_RE = re.compile(r"[^a-z0-9]+")
+_PLACEHOLDER_SUFFIX_RE = re.compile(r"\s+-\s+full\s+trims.*$", re.IGNORECASE)
+_PLACEHOLDER_ETC_RE = re.compile(r"\s*,?\s*etc\.?\s*$", re.IGNORECASE)
 
 
 def normalize_vehicle_text(value: str) -> str:
@@ -91,6 +94,21 @@ def load_vehicle_seed_entries(path: str | Path) -> list[VehicleCatalogSeedEntry]
     return parse_vehicle_seed_markdown(text)
 
 
+def load_vehicle_catalog_overrides(path: str | Path) -> dict[tuple[str, str], VehicleCatalogOverrideEntry]:
+    override_path = Path(path)
+    data = yaml.safe_load(override_path.read_text(encoding="utf-8")) or {}
+    raw_entries = data.get("entries") if isinstance(data, dict) else data
+    if not isinstance(raw_entries, list):
+        raise ValueError("vehicle catalog overrides must contain a top-level list or an 'entries' list")
+
+    overrides: dict[tuple[str, str], VehicleCatalogOverrideEntry] = {}
+    for raw_entry in raw_entries:
+        entry = VehicleCatalogOverrideEntry.model_validate(raw_entry)
+        key = (normalize_vehicle_text(entry.make), normalize_vehicle_text(entry.model))
+        overrides[key] = entry
+    return overrides
+
+
 def _parse_year_range(value: str) -> tuple[int, int]:
     normalized = value.replace(" ", "")
     if "-" in normalized:
@@ -138,6 +156,28 @@ def _candidate_model_tokens(seed_entry: VehicleCatalogSeedEntry) -> set[str]:
     return {token for token in tokens if token}
 
 
+def extract_placeholder_models(seed_entry: VehicleCatalogSeedEntry) -> list[str]:
+    if not seed_entry.placeholder:
+        return []
+    model_text = seed_entry.model.strip()
+    if ":" not in model_text:
+        return []
+    raw_list = model_text.split(":", 1)[1].strip().rstrip(")")
+    raw_list = _PLACEHOLDER_SUFFIX_RE.sub("", raw_list)
+    raw_list = _PLACEHOLDER_ETC_RE.sub("", raw_list)
+
+    models: list[str] = []
+    seen_tokens: set[str] = set()
+    for candidate in raw_list.split(","):
+        cleaned = candidate.strip().strip(".")
+        token = normalize_vehicle_text(cleaned)
+        if not token or token in seen_tokens:
+            continue
+        seen_tokens.add(token)
+        models.append(cleaned)
+    return models
+
+
 def _model_matches(seed_entry: VehicleCatalogSeedEntry, candidate_model: str) -> bool:
     candidate_token = normalize_vehicle_text(candidate_model)
     if not candidate_token:
@@ -145,16 +185,82 @@ def _model_matches(seed_entry: VehicleCatalogSeedEntry, candidate_model: str) ->
     return candidate_token in _candidate_model_tokens(seed_entry)
 
 
+def _collect_make_models(
+    seed_entry: VehicleCatalogSeedEntry,
+    *,
+    fetch_models_for_make_year_fn,
+) -> list[str]:
+    discovered_models: dict[str, str] = {}
+    for year in range(seed_entry.start_year, seed_entry.end_year + 1):
+        for model in fetch_models_for_make_year_fn(seed_entry.make, year):
+            normalized = normalize_vehicle_text(model)
+            if not normalized or normalized in discovered_models:
+                continue
+            discovered_models[normalized] = model.strip()
+    return sorted(discovered_models.values(), key=normalize_vehicle_text)
+
+
+def expand_vehicle_seed_entries(
+    seed_entries: list[VehicleCatalogSeedEntry],
+    *,
+    fetch_models_for_make_year_fn,
+    placeholder_mode: str = "preserve",
+) -> list[VehicleCatalogSeedEntry]:
+    if placeholder_mode not in {"preserve", "listed", "make-all-models"}:
+        raise ValueError(f"Unsupported placeholder_mode '{placeholder_mode}'")
+
+    expanded_entries: list[VehicleCatalogSeedEntry] = []
+    for seed_entry in seed_entries:
+        if not seed_entry.placeholder or placeholder_mode == "preserve":
+            expanded_entries.append(seed_entry)
+            continue
+
+        listed_models = extract_placeholder_models(seed_entry)
+        if placeholder_mode == "listed":
+            expansion_models = listed_models
+        else:
+            expansion_models = _collect_make_models(
+                seed_entry,
+                fetch_models_for_make_year_fn=fetch_models_for_make_year_fn,
+            )
+            if not expansion_models:
+                expansion_models = listed_models
+
+        if not expansion_models:
+            expanded_entries.append(seed_entry)
+            continue
+
+        for model in expansion_models:
+            expanded_entries.append(
+                VehicleCatalogSeedEntry(
+                    make=seed_entry.make,
+                    model=model,
+                    start_year=seed_entry.start_year,
+                    end_year=seed_entry.end_year,
+                    notes=seed_entry.notes or "Expanded from placeholder coverage row.",
+                    raw_row=seed_entry.raw_row,
+                )
+            )
+
+    return expanded_entries
+
+
 def build_vehicle_recognition_catalog(
     *,
     catalog_name: str,
     seed_entries: list[VehicleCatalogSeedEntry],
     fetch_models_for_make_year_fn,
+    overrides: dict[tuple[str, str], VehicleCatalogOverrideEntry] | None = None,
 ) -> VehicleRecognitionCatalog:
     catalog_entries: list[VehicleCatalogEntry] = []
     labels: list[VehicleRecognitionLabel] = []
+    overrides = overrides or {}
 
     for seed_entry in seed_entries:
+        override = overrides.get((normalize_vehicle_text(seed_entry.make), normalize_vehicle_text(seed_entry.model)))
+        if override is not None:
+            seed_entry = seed_entry.model_copy(update={"aliases": [*seed_entry.aliases, *override.aliases]})
+
         if seed_entry.placeholder:
             catalog_entries.append(
                 VehicleCatalogEntry(
@@ -174,7 +280,18 @@ def build_vehicle_recognition_catalog(
 
         for year in range(seed_entry.start_year, seed_entry.end_year + 1):
             available_models = fetch_models_for_make_year_fn(seed_entry.make, year)
-            year_matches = sorted({model for model in available_models if _model_matches(seed_entry, model)})
+            year_matches = sorted(
+                {
+                    model
+                    for model in available_models
+                    if _model_matches(seed_entry, model)
+                    or (
+                        override is not None
+                        and normalize_vehicle_text(model)
+                        in {normalize_vehicle_text(item) for item in override.source_models}
+                    )
+                }
+            )
             if year_matches:
                 matched_years.append(year)
                 matched_models.update(year_matches)
@@ -199,6 +316,8 @@ def build_vehicle_recognition_catalog(
         notes: list[str] = []
         if missing_years:
             notes.append(f"Unavailable years: {', '.join(str(year) for year in missing_years)}")
+        if override is not None and override.notes:
+            notes.append(override.notes)
 
         catalog_entries.append(
             VehicleCatalogEntry(
@@ -238,3 +357,26 @@ def write_vehicle_recognition_labels_csv(path: str | Path, labels: list[VehicleR
         writer.writerow(["make", "model", "year", "label"])
         for label in labels:
             writer.writerow([label.make, label.model, label.year, label.label])
+
+
+def write_vehicle_seed_entries_csv(path: str | Path, seed_entries: list[VehicleCatalogSeedEntry]) -> None:
+    output_path = Path(path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(["year_range", "make", "model", "aliases", "notes"])
+        for entry in seed_entries:
+            year_range = (
+                str(entry.start_year)
+                if entry.start_year == entry.end_year
+                else f"{entry.start_year}-{entry.end_year}"
+            )
+            writer.writerow(
+                [
+                    year_range,
+                    entry.make,
+                    entry.model,
+                    ";".join(entry.aliases),
+                    entry.notes or "",
+                ]
+            )

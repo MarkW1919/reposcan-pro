@@ -25,6 +25,14 @@ class VehicleCatalogSeedEntry(BaseModel):
         return lowered_model.startswith("(") or "database coverage" in lowered_model
 
 
+class VehicleCatalogOverrideEntry(BaseModel):
+    make: str = Field(..., min_length=1)
+    model: str = Field(..., min_length=1)
+    aliases: list[str] = Field(default_factory=list)
+    source_models: list[str] = Field(default_factory=list)
+    notes: str | None = None
+
+
 class VehicleCatalogEntry(BaseModel):
     make: str = Field(..., min_length=1)
     model: str = Field(..., min_length=1)

@@ -179,7 +179,7 @@ The attribute-classifier workflow now exports `model.onnx` plus a `labels.json` 
 Build a canonical vehicle make/model/year catalog from a markdown seed list with:
 
 ```powershell
-.\.venv\Scripts\python.exe .\scripts\build_vehicle_recognition_catalog.py --seed .\configs\datasets\example-vehicle-recognition-seed.md --output .\runtime\vehicle_catalogs\us-vehicle-recognition-catalog.yaml --labels-csv .\runtime\vehicle_catalogs\us-vehicle-recognition-labels.csv
+.\.venv\Scripts\python.exe .\scripts\build_vehicle_recognition_catalog.py --seed .\configs\datasets\example-vehicle-recognition-seed.md --overrides .\configs\datasets\example-vehicle-recognition-overrides.yaml --placeholder-mode make-all-models --output .\runtime\vehicle_catalogs\us-vehicle-recognition-catalog.yaml --expanded-seed-csv .\runtime\vehicle_catalogs\us-vehicle-recognition-expanded-seed.csv --labels-csv .\runtime\vehicle_catalogs\us-vehicle-recognition-labels.csv
 ```
 
 Supplement a primary OCR dataset with a capped synthetic support manifest through the same prepare workflow:
