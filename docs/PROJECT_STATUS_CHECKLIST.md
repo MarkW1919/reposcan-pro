@@ -143,14 +143,14 @@ Last reviewed against repo state: `2026-03-25`
 - [x] ~~Dataset intake gate exists for provenance, license, and annotation review.~~
 - [x] ~~Annotation standards exist for vehicles, plates, OCR text, attributes, and lighting metadata.~~
 - [x] ~~Train/validation/holdout split strategy is implemented by capture session where possible.~~
-- [ ] Dedicated field-eval holdouts exist for night and long-range regression checks.
+- [x] ~~Dedicated field-eval holdouts exist for night and long-range regression checks.~~
 - [x] ~~Vehicle detector fine-tuning workflow exists.~~
 - [x] ~~Plate detector fine-tuning workflow exists for small, low-light targets.~~
 - [x] ~~OCR fine-tuning workflow exists.~~
 - [x] ~~Color classifier training workflow exists.~~
 - [x] ~~Make/model classifier training workflow exists.~~
 - [x] ~~Realistic augmentation suite exists and is documented.~~
-- [ ] Field-relevant evaluation reports exist for exact match, character accuracy, low light, long range, latency, and export viability.
+- [x] ~~Field-relevant evaluation reports exist for exact match, character accuracy, low light, long range, latency, and export viability.~~
 - [x] ~~Model promotion and rollback process exists with versioned artifacts kept outside git.~~
 
 ## 11. Deployment And Operations

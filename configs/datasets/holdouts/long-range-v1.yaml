@@ -1,0 +1,35 @@
+# Field-eval holdout manifest — Long-range scenario, version 1
+# Validated by: reposcan_contracts.field_eval.FieldEvalHoldoutManifest
+#
+# Status: pending — no field data captured yet.
+# Populate assets as long-range footage is collected and reviewed.
+# Target: plates captured at 80–200 m with deployed optics, moving or stationary.
+
+holdout_name: long-range-v1
+scenario: long_range
+description: >
+  Long-range plate regression holdout.  Plates captured at distances where
+  pixel height is under 20 px before upscaling.  Covers the primary physics
+  constraint: insufficient resolution for reliable OCR without super-resolution
+  or high-quality optics.  Tests both detection (can the system find the plate?)
+  and OCR accuracy (can it read it?).
+holdout_root: data/field-eval/long-range-v1/
+created_at_utc: "2026-03-30T00:00:00Z"
+status: pending
+target_asset_count: 60
+
+assets: []
+
+acceptance:
+  min_exact_match_rate: 0.60
+  min_character_accuracy: 0.80
+  max_average_latency_ms: 150.0
+  max_p95_latency_ms: 250.0
+  min_detection_rate: 0.80
+  min_plate_detection_rate: 0.65
+
+notes: >
+  Lower exact-match and plate-detection thresholds than daylight because plate
+  pixel area is severely constrained at range.  If exact-match falls below 0.60
+  at any promoted model version, re-evaluate optics before blaming the model.
+  Latency budget is higher here to allow super-resolution preprocessing.

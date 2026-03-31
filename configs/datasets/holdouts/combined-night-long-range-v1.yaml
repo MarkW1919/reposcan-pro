@@ -1,0 +1,36 @@
+# Field-eval holdout manifest — Combined night + long-range (hardest scenario)
+# Validated by: reposcan_contracts.field_eval.FieldEvalHoldoutManifest
+#
+# Status: pending — no field data captured yet.
+# This is the worst-case regression gate: long-range plates in darkness.
+# If the system passes this holdout, all other lighting/distance combos
+# are expected to pass at higher accuracy.
+
+holdout_name: combined-night-long-range-v1
+scenario: combined_night_long_range
+description: >
+  Worst-case combined holdout: long-range plates (>80 m) captured at night or
+  in no-light conditions with IR assistance.  This is the physics floor for the
+  system — thresholds reflect the minimum operationally useful performance.
+  Failing this holdout does not block deployment but must be documented with
+  a remediation plan (optics upgrade, IR illumination, sensor change).
+holdout_root: data/field-eval/combined-night-long-range-v1/
+created_at_utc: "2026-03-30T00:00:00Z"
+status: pending
+target_asset_count: 30
+
+assets: []
+
+acceptance:
+  min_exact_match_rate: 0.45
+  min_character_accuracy: 0.70
+  max_average_latency_ms: 180.0
+  max_p95_latency_ms: 300.0
+  min_detection_rate: 0.70
+  min_plate_detection_rate: 0.55
+
+notes: >
+  Thresholds set at the operational minimum — below these rates a dispatcher
+  cannot reliably act on the read.  If results fall below min_exact_match_rate,
+  the correct response is hardware remediation (better IR, shorter range, faster
+  lens), not model tuning.

@@ -33,9 +33,15 @@ from .dataset import (
 from .dispatch import DispatchAssignmentPriority, DispatchAssignmentRecord, DispatchAssignmentStatus
 from .detection import BoundingBox, DetectionRecord, PlateCandidate, SyncStatus
 from .field_eval import (
+    FieldEvalAcceptanceThresholds,
+    FieldEvalAsset,
     FieldEvalCoveragePolicy,
+    FieldEvalDimensionResult,
+    FieldEvalHoldoutManifest,
     FieldEvalQualificationIssue,
     FieldEvalQualificationReport,
+    FieldEvalReport,
+    FieldEvalScenario,
     FieldEvalSubsetSummary,
 )
 from .followup import FollowUpPriority, FollowUpRecord, FollowUpStatus
@@ -78,9 +84,15 @@ __all__ = [
     "BoundingBox",
     "PlateCandidate",
     "SyncStatus",
+    "FieldEvalAcceptanceThresholds",
+    "FieldEvalAsset",
     "FieldEvalCoveragePolicy",
+    "FieldEvalDimensionResult",
+    "FieldEvalHoldoutManifest",
     "FieldEvalQualificationIssue",
     "FieldEvalQualificationReport",
+    "FieldEvalReport",
+    "FieldEvalScenario",
     "FieldEvalSubsetSummary",
     "AlertRecord",
     "AlertStatus",

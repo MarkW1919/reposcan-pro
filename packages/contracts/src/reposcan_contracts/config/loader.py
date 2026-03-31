@@ -23,6 +23,7 @@ from .model import ModelStackConfig
 from .pipeline import PipelineConfig
 from ..benchmark import PromotedModelBenchmarkManifest
 from ..dataset import DatasetSplitManifest, TrainingDatasetManifest
+from ..field_eval import FieldEvalHoldoutManifest, FieldEvalReport
 from ..release import ModelReleaseChannel, ModelReleaseRecord
 from ..training import TrainingProfileConfig
 
@@ -140,5 +141,21 @@ def load_model_release_channel(path: Union[str, Path]) -> ModelReleaseChannel:
     data = _load_yaml(path)
     try:
         return ModelReleaseChannel.model_validate(data)
+    except ValidationError as exc:
+        raise ConfigLoadError(path, str(exc)) from exc
+
+
+def load_field_eval_holdout_manifest(path: Union[str, Path]) -> FieldEvalHoldoutManifest:
+    data = _load_yaml(path)
+    try:
+        return FieldEvalHoldoutManifest.model_validate(data)
+    except ValidationError as exc:
+        raise ConfigLoadError(path, str(exc)) from exc
+
+
+def load_field_eval_report(path: Union[str, Path]) -> FieldEvalReport:
+    data = _load_yaml(path)
+    try:
+        return FieldEvalReport.model_validate(data)
     except ValidationError as exc:
         raise ConfigLoadError(path, str(exc)) from exc
