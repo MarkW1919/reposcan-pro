@@ -1,0 +1,39 @@
+[Unit]
+Description=RepoScan Pro Ingest Runtime (capture → inference → storage)
+Documentation=https://github.com/your-org/reposcan-pro
+After=network.target reposcan-api.service
+Wants=reposcan-api.service
+
+[Service]
+Type=simple
+User=reposcan
+Group=reposcan
+WorkingDirectory=/opt/reposcan-pro
+
+EnvironmentFile=/etc/reposcan/env
+
+# The ingest entry point drives the full capture → preprocessing → inference
+# → tracking → storage → alerting pipeline for all configured cameras.
+# Replace with the real ingest launcher once physical cameras are wired.
+ExecStart=/opt/reposcan-pro/.venv/bin/python -m reposcan_ingest.runtime
+
+# Camera streams may drop at startup; give time for devices to settle.
+TimeoutStartSec=30
+TimeoutStopSec=20
+KillMode=mixed
+KillSignal=SIGTERM
+
+# Aggressive restart — camera feeds must resume after power-loss automatically.
+Restart=always
+RestartSec=8
+StartLimitIntervalSec=120
+StartLimitBurst=10
+
+LimitNOFILE=65536
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=reposcan-ingest
+
+[Install]
+WantedBy=multi-user.target

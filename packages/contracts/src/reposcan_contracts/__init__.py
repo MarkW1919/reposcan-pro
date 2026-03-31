@@ -68,6 +68,7 @@ from .tracking_benchmark import (
     TrackingScenarioMetrics,
     TrackingStrategyBenchmarkReport,
 )
+from .logging import configure_logging, get_logger
 from .types import PlateMatchType, UtcTimestamp
 
 __version__ = "0.1.0"
@@ -153,4 +154,6 @@ __all__ = [
     "TrainingRunManifest",
     "UtcTimestamp",
     "PlateMatchType",
+    "configure_logging",
+    "get_logger",
 ]

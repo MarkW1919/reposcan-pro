@@ -1,0 +1,26 @@
+[Unit]
+Description=RepoScan Pro Service Watchdog
+Documentation=https://github.com/your-org/reposcan-pro
+After=reposcan-api.service reposcan-ingest.service
+
+[Service]
+Type=simple
+User=reposcan
+Group=reposcan
+WorkingDirectory=/opt/reposcan-pro
+
+EnvironmentFile=/etc/reposcan/env
+
+# Lightweight watchdog: polls the API health endpoint every 30 s and restarts
+# the ingest service if the API reports unhealthy or is unreachable.
+ExecStart=/opt/reposcan-pro/deploy/scripts/watchdog.sh
+
+Restart=always
+RestartSec=10
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=reposcan-watchdog
+
+[Install]
+WantedBy=multi-user.target

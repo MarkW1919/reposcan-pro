@@ -158,15 +158,15 @@ Last reviewed against repo state: `2026-03-25`
 - [x] ~~Local workstation deployment profile exists.~~
 - [x] ~~Jetson Orin deployment profile scaffold exists.~~
 - [x] ~~Local development workflow is scriptable from bootstrap through validation.~~
-- [ ] Deterministic multi-service startup exists for target edge hardware.
-- [ ] Watchdog-friendly process supervision exists for deployed services.
-- [ ] Safe restart behavior after power loss or process failure is validated.
-- [ ] Camera reconnect resilience is validated under deployment supervision.
-- [ ] ONNX/TensorRT packaging is finalized for the target edge platform.
-- [ ] Remote update, rollback, and artifact promotion plan is finalized.
-- [ ] Structured logging, metrics, and runtime visibility are implemented across services.
-- [ ] Secrets handling and security hardening are implemented for deployment.
-- [ ] Field installer or packaged deployment workflow exists for laptop and edge-device setup.
+- [x] ~~Deterministic multi-service startup exists for target edge hardware.~~
+- [x] ~~Watchdog-friendly process supervision exists for deployed services.~~
+- [x] ~~Safe restart behavior after power loss or process failure is validated.~~
+- [x] ~~Camera reconnect resilience is validated under deployment supervision.~~
+- [x] ~~ONNX/TensorRT packaging is finalized for the target edge platform.~~
+- [x] ~~Remote update, rollback, and artifact promotion plan is finalized.~~
+- [x] ~~Structured logging, metrics, and runtime visibility are implemented across services.~~
+- [x] ~~Secrets handling and security hardening are implemented for deployment.~~
+- [x] ~~Field installer or packaged deployment workflow exists for laptop and edge-device setup.~~
 
 ## 12. Validation, Demo, And Acceptance
 

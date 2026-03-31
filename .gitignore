@@ -41,3 +41,9 @@ runtime/
 *.db
 postgres_data/
 redis_data/
+
+# Deployment secrets — never commit real env files
+deploy/.env
+deploy/env
+deploy/env.local
+!deploy/env.example
