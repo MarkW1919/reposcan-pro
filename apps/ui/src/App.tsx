@@ -49,7 +49,7 @@ import {
 type AppScreen = "console" | "search" | "hotlists" | "settings";
 type StageView = "camera" | "map";
 type ConsoleLayoutMode = "overview" | "focus";
-type SearchMode = "plate" | "camera" | "vehicle" | "alert" | "time";
+type SearchMode = "plate" | "camera" | "vehicle" | "alert";
 type DataSource = "demo" | "live" | "fallback";
 type AlertPersistence = "until-dismissed" | "15 sec" | "60 sec";
 type HotlistsWorkspaceTab = "accounts" | "alerts" | "recognition";
@@ -1469,6 +1469,10 @@ function App(): ReactElement {
     }
 
     const controller = new AbortController();
+    const overlayAlertId =
+      screen !== "hotlists" && hotlistOverlayId
+        ? (overview?.alerts ?? []).find((alert) => alert.detection_id === hotlistOverlayId.replace(/^live-/, ""))?.alert_id
+        : undefined;
 
     async function sendHeartbeat(): Promise<void> {
       try {
@@ -1478,7 +1482,7 @@ function App(): ReactElement {
             client_label: "reposcan-ops-console",
             workspace: screen,
             selected_detection_id: selectedDetectionId ?? undefined,
-            selected_alert_id: screen === "hotlists" ? selectedAlertId ?? undefined : undefined,
+            selected_alert_id: screen === "hotlists" ? selectedAlertId ?? undefined : overlayAlertId,
             navigation_active: navigationActive,
           },
           controller.signal,
@@ -1495,7 +1499,7 @@ function App(): ReactElement {
       controller.abort();
       clearInterval(intervalId);
     };
-  }, [dataSource, screen, selectedDetectionId, selectedAlertId, navigationActive]);
+  }, [dataSource, screen, selectedDetectionId, selectedAlertId, hotlistOverlayId, overview?.alerts, navigationActive]);
 
   const allRows = useMemo(() => {
     const rows =
@@ -2523,7 +2527,6 @@ function App(): ReactElement {
           navigationActive={navigationActive}
           onDestinationChange={setDestinationInput}
           onOpenAlert={openLatestHotlistAlert}
-          onOpenSearch={() => switchScreen("search")}
           onResolve={() => {
             setActiveDestination(destinationInput.trim() || targetRoute.address);
             setStageView("map");
@@ -2533,7 +2536,6 @@ function App(): ReactElement {
           routeDistance={routeDistance}
           routeEta={routeEta}
           routeStatusLabel={routeStatusLabel}
-          searchCount={searchExecuted ? searchTotal : allRows.length}
           settings={settings}
           systemDetectionCount={totalReads}
           totalReads={totalReads}
@@ -2974,14 +2976,12 @@ function NavPanel(props: {
   navigationActive: boolean;
   onDestinationChange: (value: string) => void;
   onOpenAlert: () => void;
-  onOpenSearch: () => void;
   onResolve: () => void;
   onScreenChange: (screen: AppScreen) => void;
   onToggleNavigation: () => void;
   routeDistance: string;
   routeEta: string;
   routeStatusLabel: string;
-  searchCount: number;
   settings: UiSettings;
   systemDetectionCount: number;
   totalReads: number;
@@ -3020,10 +3020,6 @@ function NavPanel(props: {
       </div>
 
       <div className="nav-action-row">
-        <button className="nav-action nav-action--ghost" type="button" onClick={props.onOpenSearch}>
-          <span>Search Reads</span>
-          <span className="nav-action__count">{props.searchCount > 0 ? props.searchCount : "-"}</span>
-        </button>
         <button className="nav-action nav-action--primary" disabled={props.activeAlerts === 0} type="button" onClick={props.onOpenAlert}>
           <span>Open Alert</span>
           <span className="nav-action__count">{props.activeAlerts}</span>
@@ -3379,7 +3375,7 @@ function SearchScreen(props: {
       <div className="search-screen__layout">
         <form className="search-toolbar-card search-toolbar-card--sidebar" onSubmit={(event) => void props.onSearchSubmit(event)}>
           <div className="search-mode-tabs">
-            {(["plate", "camera", "vehicle", "alert", "time"] as const).map((mode) => (
+            {(["plate", "camera", "vehicle", "alert"] as const).map((mode) => (
               <button key={mode} className={props.searchMode === mode ? "is-active" : ""} type="button" onClick={() => props.setSearchMode(mode)}>
                 {mode}
               </button>
@@ -3396,9 +3392,7 @@ function SearchScreen(props: {
                     ? "Search current or named camera"
                     : props.searchMode === "vehicle"
                       ? "Search make / model / color"
-                      : props.searchMode === "alert"
-                        ? "Search alert plate, match type, or response notes"
-                      : "Optional time keyword"
+                      : "Search alert plate, match type, or response notes"
               }
               type="text"
               value={props.query}
