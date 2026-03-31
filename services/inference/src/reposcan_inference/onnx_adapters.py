@@ -300,7 +300,9 @@ def validate_onnx_artifact(
         if _supports_structured_classifier_outputs(output_names):
             return issues
         if "logits" in output_names:
-            assert isinstance(model_config, ClassifierModelConfig)
+            if not isinstance(model_config, ClassifierModelConfig):
+                issues.append("Logits-output classifier validation requires a ClassifierModelConfig.")
+                return issues
             issues.extend(_validate_classifier_metadata(model_config, metadata_path=metadata_path))
             return issues
         missing = sorted(

@@ -131,17 +131,21 @@ def _build_imagefolder_loaders(profile, manifest, repo_root: Path):
         )
         class_names = list(train_dataset.dataset.classes)
 
+    # num_workers=0 on Windows to avoid spawn-based multiprocessing errors with
+    # DataLoader. On Linux (Jetson) the profile value is used as configured.
+    import platform
+    num_workers = 0 if platform.system() == "Windows" else profile.workers
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
         batch_size=profile.batch_size,
         shuffle=True,
-        num_workers=0,
+        num_workers=num_workers,
     )
     validation_loader = torch.utils.data.DataLoader(
         validation_dataset,
         batch_size=profile.batch_size,
         shuffle=False,
-        num_workers=0,
+        num_workers=num_workers,
     )
     return train_loader, validation_loader, class_names
 
@@ -201,8 +205,10 @@ def _build_stanford_cars_loaders(profile, manifest, repo_root: Path):
         [train_size, val_size],
         generator=torch.Generator().manual_seed(profile.seed),
     )
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=profile.batch_size, shuffle=True, num_workers=0)
-    validation_loader = torch.utils.data.DataLoader(validation_dataset, batch_size=profile.batch_size, shuffle=False, num_workers=0)
+    import platform
+    num_workers = 0 if platform.system() == "Windows" else profile.workers
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=profile.batch_size, shuffle=True, num_workers=num_workers)
+    validation_loader = torch.utils.data.DataLoader(validation_dataset, batch_size=profile.batch_size, shuffle=False, num_workers=num_workers)
     return train_loader, validation_loader, dataset.classes
 
 
@@ -298,7 +304,13 @@ def main() -> int:
     exports_dir.mkdir(parents=True, exist_ok=True)
     best_checkpoint = checkpoints_dir / "best.pt"
 
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=profile.epochs, eta_min=1e-6
+    )
+
     best_val = 0.0
+    epochs_without_improvement = 0
+    patience = profile.patience if hasattr(profile, "patience") and profile.patience else profile.epochs
     for epoch in range(1, profile.epochs + 1):
         model.train()
         for images, labels in train_loader:
@@ -309,13 +321,21 @@ def main() -> int:
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+        scheduler.step()
 
         train_acc = _evaluate(model, train_loader, device)
         val_acc = _evaluate(model, validation_loader, device)
-        print(f"epoch={epoch} train_acc={train_acc:.4f} val_acc={val_acc:.4f}")
+        current_lr = scheduler.get_last_lr()[0]
+        print(f"epoch={epoch} train_acc={train_acc:.4f} val_acc={val_acc:.4f} lr={current_lr:.2e}")
         if val_acc >= best_val:
             best_val = val_acc
+            epochs_without_improvement = 0
             torch.save({"state_dict": model.state_dict(), "classes": class_names}, best_checkpoint)
+        else:
+            epochs_without_improvement += 1
+            if epochs_without_improvement >= patience:
+                print(f"Early stopping at epoch {epoch} (no improvement for {patience} epochs).")
+                break
 
     checkpoint = torch.load(best_checkpoint, map_location="cpu", weights_only=False)
     model.load_state_dict(checkpoint["state_dict"])

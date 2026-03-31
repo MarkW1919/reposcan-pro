@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 
 from reposcan_contracts.alert import AlertRecord
@@ -315,12 +317,20 @@ def test_storage_service_tracks_active_operator_sessions(tmp_path):
         media_root=tmp_path / "media",
     )
 
-    active = service.touch_operator_session(_session_record())
+    # Use dynamic timestamps so the test does not become stale as real time passes.
+    now = datetime.now(timezone.utc)
+    recent_ts = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    # 5 days ago — inside the 1_000_000 s window (~11.6 days) but clearly "older"
+    old_ts = (now - timedelta(days=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    active = service.touch_operator_session(
+        _session_record().model_copy(update={"last_seen_at_utc": recent_ts})
+    )
     stale = service.touch_operator_session(
         _session_record().model_copy(
             update={
                 "session_id": "session_stale",
-                "last_seen_at_utc": "2026-03-20T04:00:00Z",
+                "last_seen_at_utc": old_ts,
             }
         )
     )

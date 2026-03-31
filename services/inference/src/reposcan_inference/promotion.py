@@ -337,6 +337,30 @@ def validate_promoted_model_stack(model_stack: ModelStackConfig) -> PromotedBund
                     )
                 )
 
+        # Validate classifier label metadata sidecar when present.
+        if stage == "classifier" and isinstance(model_config, ClassifierModelConfig) and model_config.label_metadata_path:
+            metadata_file = model_stack.resolve_artifact_path(model_config.label_metadata_path)
+            if not metadata_file.exists():
+                issues.append(
+                    PromotionIssue(
+                        severity="error",
+                        stage=stage,
+                        message=f"Classifier label metadata sidecar '{metadata_file}' does not exist.",
+                    )
+                )
+            else:
+                try:
+                    from reposcan_contracts.classifier_export import ClassifierExportMetadata
+                    ClassifierExportMetadata.model_validate_json(metadata_file.read_text(encoding="utf-8"))
+                except Exception as exc:
+                    issues.append(
+                        PromotionIssue(
+                            severity="error",
+                            stage=stage,
+                            message=f"Classifier label metadata sidecar is invalid: {exc}",
+                        )
+                    )
+
         stage_reports.append(
             PromotedStageValidationReport(
                 stage=stage,

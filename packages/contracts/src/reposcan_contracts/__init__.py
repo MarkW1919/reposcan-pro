@@ -5,6 +5,12 @@ definitions and config loaders - no inference, IO, or business logic.
 """
 
 from .alert import AlertRecord, AlertStatus
+from .classifier_export import (
+    ClassifierExportLabelRecord,
+    ClassifierExportMetadata,
+    build_classifier_export_metadata,
+    parse_vehicle_make_model_year,
+)
 from .benchmark import (
     BenchmarkFrameExpectation,
     BenchmarkSubsetMetrics,
@@ -168,4 +174,8 @@ __all__ = [
     "PlateMatchType",
     "configure_logging",
     "get_logger",
+    "ClassifierExportLabelRecord",
+    "ClassifierExportMetadata",
+    "build_classifier_export_metadata",
+    "parse_vehicle_make_model_year",
 ]

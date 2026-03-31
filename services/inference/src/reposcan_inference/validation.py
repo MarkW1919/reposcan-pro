@@ -74,17 +74,14 @@ def _validate_builtin(stage: str, artifact_path: Path) -> list[ValidationIssue]:
 
 
 def _validate_exported_backend(stage: str, backend: InferenceBackend, artifact_path: Path) -> list[ValidationIssue]:
+    """Validate artifact extension for TensorRT and PyTorch backends.
+
+    Note: ONNX is handled by the caller via ``validate_onnx_artifact`` and is
+    never passed into this function.
+    """
     issues: list[ValidationIssue] = []
     suffix = artifact_path.suffix.lower()
-    if backend == InferenceBackend.onnx and suffix != ".onnx":
-        issues.append(
-            ValidationIssue(
-                severity="warning",
-                stage=stage,
-                message=f"Expected an .onnx artifact for {stage}, found '{artifact_path.name}'.",
-            )
-        )
-    elif backend == InferenceBackend.tensorrt and suffix not in {".engine", ".trt"}:
+    if backend == InferenceBackend.tensorrt and suffix not in {".engine", ".trt"}:
         issues.append(
             ValidationIssue(
                 severity="warning",
@@ -100,8 +97,6 @@ def _validate_exported_backend(stage: str, backend: InferenceBackend, artifact_p
                 message=f"Expected a PyTorch checkpoint for {stage}, found '{artifact_path.name}'.",
             )
         )
-    elif backend == InferenceBackend.onnx:
-        return []
     return issues
 
 
