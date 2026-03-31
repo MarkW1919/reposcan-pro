@@ -30,6 +30,8 @@ def parse_args() -> argparse.Namespace:
 
 def _find_paddle_config(root: Path) -> Path:
     candidates = [
+        root / "configs" / "rec" / "PP-OCRv5" / "en_PP-OCRv5_rec.yml",
+        root / "configs" / "rec" / "PP-OCRv5" / "en_PP-OCRv5_mobile_rec.yml",
         root / "configs" / "rec" / "PP-OCRv4" / "en_PP-OCRv4_rec.yml",
         root / "configs" / "rec" / "PP-OCRv3" / "en_PP-OCRv3_rec.yml",
     ]

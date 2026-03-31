@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import subprocess
 import sys
 from pathlib import Path
@@ -25,6 +24,57 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--execute", action="store_true")
     return parser.parse_args()
+
+
+def _module_from_path(root, path: str):
+    current = root
+    for token in path.split("."):
+        current = current[int(token)] if token.isdigit() else getattr(current, token)
+    return current
+
+
+def _replace_module(root, path: str, new_module) -> None:
+    tokens = path.split(".")
+    parent = root
+    for token in tokens[:-1]:
+        parent = parent[int(token)] if token.isdigit() else getattr(parent, token)
+    final_token = tokens[-1]
+    if final_token.isdigit():
+        parent[int(final_token)] = new_module
+    else:
+        setattr(parent, final_token, new_module)
+
+
+def _build_torchvision_model(base_model: str | None, *, num_classes: int):
+    import torch
+    from torchvision import models
+
+    model_name = (base_model or "resnet18").strip().lower()
+    supported_models = {
+        "resnet18": ("resnet18", "ResNet18_Weights", "fc"),
+        "resnet50": ("resnet50", "ResNet50_Weights", "fc"),
+        "efficientnet_b0": ("efficientnet_b0", "EfficientNet_B0_Weights", "classifier.1"),
+        "mobilenet_v3_large": ("mobilenet_v3_large", "MobileNet_V3_Large_Weights", "classifier.3"),
+        "convnext_tiny": ("convnext_tiny", "ConvNeXt_Tiny_Weights", "classifier.2"),
+    }
+    if model_name not in supported_models:
+        supported = ", ".join(sorted(supported_models))
+        raise ValueError(f"Unsupported torchvision base_model '{model_name}'. Supported models: {supported}")
+
+    constructor_name, weights_name, head_path = supported_models[model_name]
+    constructor = getattr(models, constructor_name)
+    weights_enum = getattr(models, weights_name)
+    try:
+        model = constructor(weights=weights_enum.DEFAULT)
+        print(f"Using torchvision {constructor_name} default pretrained weights.")
+    except Exception:
+        model = constructor(weights=None)
+        print(f"Falling back to randomly initialized {constructor_name} weights.")
+
+    classifier_head = _module_from_path(model, head_path)
+    in_features = classifier_head.in_features
+    _replace_module(model, head_path, torch.nn.Linear(in_features, num_classes))
+    return model
 
 
 def _evaluate(model, loader, device) -> float:
@@ -160,6 +210,7 @@ def main() -> int:
     repo_root = Path(__file__).resolve().parents[1]
     _configure_pythonpath(repo_root)
 
+    from reposcan_contracts.classifier_export import build_classifier_export_metadata
     from reposcan_contracts.config.loader import load_training_dataset_manifest, load_training_profile
     from reposcan_contracts.training import DatasetAdapter
     from reposcan_training import (
@@ -227,7 +278,6 @@ def main() -> int:
 
     try:
         import torch
-        from torchvision import models
     except ImportError as exc:
         raise RuntimeError("torch and torchvision are required to execute attribute-classifier training") from exc
 
@@ -236,19 +286,11 @@ def main() -> int:
     else:
         train_loader, validation_loader, class_names = _build_imagefolder_loaders(profile, dataset_manifest, repo_root)
 
-    try:
-        weights = models.ResNet18_Weights.DEFAULT
-        model = models.resnet18(weights=weights)
-        print("Using torchvision ResNet18 default pretrained weights.")
-    except Exception:
-        model = models.resnet18(weights=None)
-        print("Falling back to randomly initialized ResNet18 weights.")
-
-    model.fc = torch.nn.Linear(model.fc.in_features, len(class_names))
+    model = _build_torchvision_model(profile.base_model, num_classes=len(class_names))
     device = torch.device("cuda" if torch.cuda.is_available() and profile.device != "cpu" else "cpu")
     model = model.to(device)
     criterion = torch.nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=5e-4, weight_decay=1e-4)
 
     checkpoints_dir = workspace_dir / "checkpoints"
     exports_dir = workspace_dir / "exports"
@@ -292,7 +334,13 @@ def main() -> int:
     )
 
     labels_path = exports_dir / "labels.json"
-    labels_path.write_text(json.dumps({"classes": class_names, "image_size": profile.image_size}, indent=2), encoding="utf-8")
+    labels_metadata = build_classifier_export_metadata(
+        task=profile.task,
+        classes=class_names,
+        image_size=profile.image_size,
+        base_model=profile.base_model,
+    )
+    labels_path.write_text(labels_metadata.model_dump_json(indent=2, by_alias=True), encoding="utf-8")
 
     print(f"Best checkpoint: {best_checkpoint}")
     print(f"Exported ONNX: {onnx_path}")

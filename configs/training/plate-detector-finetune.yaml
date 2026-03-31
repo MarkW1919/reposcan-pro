@@ -4,7 +4,7 @@ framework: ultralytics
 output_root: runtime/training
 allow_pending_review: false
 dataset_adapter: manifest_split
-base_model: yolov8s.pt
+base_model: yolo11s.pt
 image_size: 640
 epochs: 120
 batch_size: 16

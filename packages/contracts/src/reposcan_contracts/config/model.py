@@ -61,6 +61,10 @@ class ClassifierModelConfig(BaseModel):
     backend: InferenceBackend = InferenceBackend.onnx
     artifact_path: str = Field(..., description="Path to model artifact resolved according to the stack path_base")
     artifact_manifest_path: str | None = Field(None, description="Optional path to the promoted artifact manifest")
+    label_metadata_path: str | None = Field(
+        None,
+        description="Optional sidecar metadata for classifier exports that emit logits instead of fully expanded attribute outputs",
+    )
     input_width: int = Field(..., gt=0)
     input_height: int = Field(..., gt=0)
     normalization_mean: list[float] = Field(default_factory=lambda: [0.485, 0.456, 0.406])

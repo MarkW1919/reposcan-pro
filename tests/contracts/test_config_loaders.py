@@ -505,6 +505,12 @@ class TestTrainingProfileSchema:
         assert profile.framework == TrainingFramework.torchvision
         assert profile.dataset_adapter == DatasetAdapter.stanford_cars
 
+    def test_efficientnet_color_profile_parses(self):
+        profile = load_training_profile(CONFIGS / "training" / "vehicle-color-classifier-efficientnet.yaml")
+        assert profile.task == DatasetTask.vehicle_color_classification
+        assert profile.framework == TrainingFramework.torchvision
+        assert profile.base_model == "efficientnet_b0"
+
     def test_detection_profile_requires_class_names(self, tmp_path):
         bad = tmp_path / "profile.yaml"
         bad.write_text(

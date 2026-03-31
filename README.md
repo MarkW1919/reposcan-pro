@@ -150,7 +150,7 @@ Package a self-contained promoted ONNX bundle outside git with:
 Assemble a promoted ONNX bundle directly from exported per-stage ONNX artifacts with:
 
 ```powershell
-.\.venv\Scripts\python.exe .\scripts\assemble_promoted_onnx_bundle.py --template-model-config .\configs\models\local-onnx-runtime.yaml --vehicle-detector-artifact C:\exports\vehicle-detector.onnx --plate-detector-artifact C:\exports\plate-detector.onnx --ocr-artifact C:\exports\ocr.onnx --classifier-artifact C:\exports\classifier.onnx --output-dir C:\artifacts\models\promoted\exported-bundle
+.\.venv\Scripts\python.exe .\scripts\assemble_promoted_onnx_bundle.py --template-model-config .\configs\models\local-onnx-runtime.yaml --vehicle-detector-artifact C:\exports\vehicle-detector.onnx --plate-detector-artifact C:\exports\plate-detector.onnx --ocr-artifact C:\exports\ocr.onnx --classifier-artifact C:\exports\classifier.onnx --classifier-label-metadata C:\exports\labels.json --output-dir C:\artifacts\models\promoted\exported-bundle
 ```
 
 For future edge bundles, use [configs/models/promoted-tensorrt-template.yaml](configs/models/promoted-tensorrt-template.yaml) as the contract shape for external TensorRT engine manifests.
@@ -173,6 +173,8 @@ Prepare a training run from a profile and dataset manifest with:
 ```powershell
 .\.venv\Scripts\python.exe .\scripts\train_attribute_classifier.py --profile .\configs\training\vehicle-make-model-warmstart.yaml --dataset-manifest C:\path\to\dataset-manifest.yaml --run-name warmstart_01
 ```
+
+The attribute-classifier workflow now exports `model.onnx` plus a `labels.json` metadata sidecar so single-task color or make/model classifiers can plug back into the runtime and promoted bundle flow.
 
 Supplement a primary OCR dataset with a capped synthetic support manifest through the same prepare workflow:
 

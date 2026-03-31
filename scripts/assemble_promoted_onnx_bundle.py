@@ -30,6 +30,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--plate-detector-artifact", required=True)
     parser.add_argument("--ocr-artifact", required=True)
     parser.add_argument("--classifier-artifact")
+    parser.add_argument("--classifier-label-metadata")
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--bundle-name")
     parser.add_argument("--overwrite", action="store_true")
@@ -78,6 +79,7 @@ def main() -> int:
         plate_detector_artifact=_resolve_path(repo_root, args.plate_detector_artifact),
         ocr_artifact=_resolve_path(repo_root, args.ocr_artifact),
         classifier_artifact=_resolve_path(repo_root, args.classifier_artifact),
+        classifier_label_metadata_path=_resolve_path(repo_root, args.classifier_label_metadata),
         output_dir=output_dir,
         bundle_name=args.bundle_name,
         exported_at_utc=args.exported_at_utc,

@@ -47,6 +47,8 @@ classifier:
   backend: onnx
   artifact_path: artifacts/models/promoted/example-bundle/vehicle-attr-v1.onnx
   artifact_manifest_path: artifacts/models/promoted/example-bundle/vehicle-attr-v1.manifest.json
+  # Optional for metadata-backed single-task classifier exports.
+  # label_metadata_path: artifacts/models/promoted/example-bundle/vehicle-attr-v1.labels.json
   input_width: 224
   input_height: 224
   normalization_mean: [0.485, 0.456, 0.406]

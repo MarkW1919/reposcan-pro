@@ -2,23 +2,28 @@
 
 ## Detection
 
-YOLOv8
+- Ultralytics YOLO11 warm starts for vehicle and plate detector fine-tuning
+- previously exported YOLOv8-family artifacts remain valid if already promoted and benchmarked
 
 ## OCR
 
-LPRNet
+- PaddleOCR recognition training workflow with PP-OCRv5 config discovery
+- synthetic OCR support stays supplemental to reviewed field plate crops
 
 ## Classification
 
-EfficientNet
+- torchvision backbones for single-task attribute training
+- supported warm starts: `resnet18`, `resnet50`, `efficientnet_b0`, `mobilenet_v3_large`, `convnext_tiny`
+- metadata-backed ONNX classifier exports allow modular color and make/model/year models to plug into the current runtime
 
 ## Color
 
-ResNet18
+- baseline: ResNet18
+- stronger warm-start profile available with EfficientNet-B0
 
 ## Tracking
 
-DeepSORT
+- ByteTrack-style tracker in the current edge pipeline
 
 ## Output formats
 

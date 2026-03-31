@@ -9,8 +9,10 @@ from typing import Sequence
 import numpy as np
 from PIL import Image
 
+from reposcan_contracts.classifier_export import ClassifierExportMetadata, parse_vehicle_make_model_year
 from reposcan_contracts.config.model import ClassifierModelConfig, DetectorModelConfig, InferenceBackend, ModelStackConfig, OcrModelConfig
 from reposcan_contracts.config.pipeline import PlateDetectionStrategy
+from reposcan_contracts.dataset import DatasetTask
 from reposcan_contracts.detection import BoundingBox, PlateCandidate
 from reposcan_contracts.frame import FrameEnvelope, PreparedFrame
 from reposcan_contracts.inference import AttributePredictions, PlateDetection, VehicleDetection
@@ -113,12 +115,142 @@ def _first_text(values: object, *, default: str | None = None) -> str | None:
     return str(value)
 
 
+def _softmax(logits: np.ndarray) -> np.ndarray:
+    if logits.size == 0:
+        return logits
+    shifted = logits - np.max(logits)
+    exp_values = np.exp(shifted)
+    total = float(exp_values.sum())
+    if total <= 0.0:
+        return np.zeros_like(logits, dtype=np.float32)
+    return (exp_values / total).astype(np.float32)
+
+
+@lru_cache(maxsize=16)
+def _load_classifier_metadata(path: str) -> ClassifierExportMetadata:
+    return ClassifierExportMetadata.model_validate_json(Path(path).read_text(encoding="utf-8"))
+
+
 def _relative_bbox_to_absolute(relative_xywh: np.ndarray, *, width: int, height: int) -> BoundingBox:
     x = min(int(float(relative_xywh[0]) * width), max(width - 1, 0))
     y = min(int(float(relative_xywh[1]) * height), max(height - 1, 0))
     w = max(1, min(int(float(relative_xywh[2]) * width), max(width - x, 1)))
     h = max(1, min(int(float(relative_xywh[3]) * height), max(height - y, 1)))
     return BoundingBox(x=x, y=y, w=w, h=h)
+
+
+def _validate_classifier_metadata(
+    model_config: ClassifierModelConfig,
+    *,
+    metadata_path: Path | None,
+) -> list[str]:
+    if metadata_path is None:
+        return ["Classifier exports with a 'logits' output require label_metadata_path in the model config."]
+    if not metadata_path.exists():
+        return [f"Classifier label metadata '{metadata_path}' does not exist."]
+    try:
+        metadata = _load_classifier_metadata(str(metadata_path))
+    except Exception as exc:  # pragma: no cover - validation exercised indirectly
+        return [str(exc)]
+    if not metadata.class_records:
+        return [f"Classifier label metadata '{metadata_path}' does not define any class_records."]
+    return []
+
+
+def _supports_structured_classifier_outputs(output_names: set[str]) -> bool:
+    return {
+        "color_indices",
+        "color_confidences",
+        "make_indices",
+        "make_confidences",
+        "model_texts",
+        "model_confidences",
+        "year_texts",
+        "year_confidences",
+    }.issubset(output_names)
+
+
+def _attribute_prediction_from_logits(
+    logits: object,
+    *,
+    metadata: ClassifierExportMetadata | None,
+    model_config: ClassifierModelConfig,
+) -> AttributePredictions:
+    flattened_logits = np.asarray(logits, dtype=np.float32).reshape(-1)
+    probabilities = _softmax(flattened_logits)
+    if probabilities.size == 0:
+        return AttributePredictions()
+
+    best_index = int(np.argmax(probabilities))
+    confidence = float(probabilities[best_index])
+    record = metadata.record_for_index(best_index) if metadata is not None else None
+    task = metadata.task if metadata is not None else None
+
+    if task == DatasetTask.vehicle_color_classification.value:
+        color_label = (record.color if record is not None else None) or (
+            record.label.lower() if record is not None else None
+        )
+        if color_label is None and 0 <= best_index < len(model_config.color_labels):
+            color_label = model_config.color_labels[best_index]
+        return AttributePredictions.model_validate(
+            {
+                "color": color_label,
+                "color_confidence": confidence,
+            }
+        )
+
+    if task == DatasetTask.vehicle_make_model_classification.value:
+        make_label = record.make if record is not None else None
+        model_label = record.model_label if record is not None else None
+        year_label = record.year if record is not None else None
+        if record is not None and (make_label is None or model_label is None):
+            parsed_make, parsed_model, parsed_year = parse_vehicle_make_model_year(record.label)
+            make_label = make_label or parsed_make
+            model_label = model_label or parsed_model
+            year_label = year_label or parsed_year
+        return AttributePredictions.model_validate(
+            {
+                "make": make_label,
+                "make_confidence": confidence,
+                "model": model_label,
+                "model_confidence": confidence,
+                "year": year_label,
+                "year_confidence": confidence if year_label else None,
+            }
+        )
+
+    if task == DatasetTask.vehicle_year_classification.value:
+        year_label = (record.year if record is not None else None) or (record.label if record is not None else None)
+        return AttributePredictions.model_validate(
+            {
+                "year": year_label,
+                "year_confidence": confidence,
+            }
+        )
+
+    if 0 <= best_index < len(model_config.color_labels):
+        return AttributePredictions.model_validate(
+            {
+                "color": model_config.color_labels[best_index],
+                "color_confidence": confidence,
+            }
+        )
+
+    if 0 <= best_index < len(model_config.make_labels):
+        return AttributePredictions.model_validate(
+            {
+                "make": model_config.make_labels[best_index],
+                "make_confidence": confidence,
+            }
+        )
+
+    fallback_label = record.label if record is not None else None
+    return AttributePredictions.model_validate(
+        {
+            "model": fallback_label,
+            "model_confidence": confidence if fallback_label else None,
+        }
+    )
 
 
 @lru_cache(maxsize=16)
@@ -132,6 +264,7 @@ def validate_onnx_artifact(
     model_config: DetectorModelConfig | OcrModelConfig | ClassifierModelConfig,
     *,
     artifact_path: Path | None = None,
+    metadata_path: Path | None = None,
 ) -> list[str]:
     issues: list[str] = []
     if model_config.backend != InferenceBackend.onnx:
@@ -157,22 +290,40 @@ def validate_onnx_artifact(
     except Exception as exc:
         return [str(exc)]
 
+    output_names = set(output_map.keys())
     required_outputs = {
         "vehicle_detector": {"boxes_xywh", "scores", "label_indices"},
         "plate_detector": {"boxes_xywh", "scores", "label_indices"},
         "ocr": {"texts", "confidences"},
-        "classifier": {
-            "color_indices",
-            "color_confidences",
-            "make_indices",
-            "make_confidences",
-            "model_texts",
-            "model_confidences",
-            "year_texts",
-            "year_confidences",
-        },
     }
-    missing = sorted(required_outputs[stage] - set(output_map.keys()))
+    if stage == "classifier":
+        if _supports_structured_classifier_outputs(output_names):
+            return issues
+        if "logits" in output_names:
+            assert isinstance(model_config, ClassifierModelConfig)
+            issues.extend(_validate_classifier_metadata(model_config, metadata_path=metadata_path))
+            return issues
+        missing = sorted(
+            {
+                "color_indices",
+                "color_confidences",
+                "make_indices",
+                "make_confidences",
+                "model_texts",
+                "model_confidences",
+                "year_texts",
+                "year_confidences",
+            }
+            - output_names
+        )
+        issues.append(
+            "Missing required outputs for classifier: "
+            + ", ".join(missing)
+            + " (or provide a metadata-backed 'logits' export)."
+        )
+        return issues
+
+    missing = sorted(required_outputs[stage] - output_names)
     if missing:
         issues.append(f"Missing required outputs for {stage}: {', '.join(missing)}")
     return issues
@@ -364,11 +515,19 @@ class OnnxOcrAdapter:
 
 
 class OnnxClassifierAdapter:
-    def __init__(self, model_config: ClassifierModelConfig, *, artifact_path: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        model_config: ClassifierModelConfig,
+        *,
+        artifact_path: str | Path | None = None,
+        label_metadata_path: str | Path | None = None,
+    ) -> None:
         self.model_config = model_config
         self.artifact_path = str(artifact_path or model_config.artifact_path)
         self.session = _load_session(self.artifact_path)
         self.input_name = self.session.get_inputs()[0].name
+        resolved_metadata_path = label_metadata_path or model_config.label_metadata_path
+        self.metadata = _load_classifier_metadata(str(resolved_metadata_path)) if resolved_metadata_path else None
 
     def predict(
         self,
@@ -399,30 +558,40 @@ class OnnxClassifierAdapter:
                 normalization_std=self.model_config.normalization_std,
             )
             outputs = _session_output_map(self.session, self.session.run(None, {self.input_name: tensor}))
-            color_index = _first_int(outputs["color_indices"])
-            make_index = _first_int(outputs["make_indices"])
-            color_label = (
-                self.model_config.color_labels[color_index]
-                if 0 <= color_index < len(self.model_config.color_labels)
-                else None
-            )
-            make_label = (
-                self.model_config.make_labels[make_index]
-                if 0 <= make_index < len(self.model_config.make_labels)
-                else None
-            )
+            if _supports_structured_classifier_outputs(set(outputs.keys())):
+                color_index = _first_int(outputs["color_indices"])
+                make_index = _first_int(outputs["make_indices"])
+                color_label = (
+                    self.model_config.color_labels[color_index]
+                    if 0 <= color_index < len(self.model_config.color_labels)
+                    else None
+                )
+                make_label = (
+                    self.model_config.make_labels[make_index]
+                    if 0 <= make_index < len(self.model_config.make_labels)
+                    else None
+                )
+                predictions.append(
+                    AttributePredictions.model_validate(
+                        {
+                            "color": color_label,
+                            "color_confidence": _first_float(outputs["color_confidences"]),
+                            "make": make_label,
+                            "make_confidence": _first_float(outputs["make_confidences"]),
+                            "model": _first_text(outputs["model_texts"]),
+                            "model_confidence": _first_float(outputs["model_confidences"]),
+                            "year": _first_text(outputs["year_texts"]),
+                            "year_confidence": _first_float(outputs["year_confidences"]),
+                        }
+                    )
+                )
+                continue
+
             predictions.append(
-                AttributePredictions.model_validate(
-                    {
-                        "color": color_label,
-                        "color_confidence": _first_float(outputs["color_confidences"]),
-                        "make": make_label,
-                        "make_confidence": _first_float(outputs["make_confidences"]),
-                        "model": _first_text(outputs["model_texts"]),
-                        "model_confidence": _first_float(outputs["model_confidences"]),
-                        "year": _first_text(outputs["year_texts"]),
-                        "year_confidence": _first_float(outputs["year_confidences"]),
-                    }
+                _attribute_prediction_from_logits(
+                    outputs.get("logits", np.asarray([], dtype=np.float32)),
+                    metadata=self.metadata,
+                    model_config=self.model_config,
                 )
             )
         return predictions
@@ -451,6 +620,8 @@ def build_onnx_adapter_bundle(
     ]
     if model_stack.classifier is not None:
         artifact_paths.append(model_stack.resolve_artifact_path(model_stack.classifier.artifact_path))
+        if model_stack.classifier.label_metadata_path:
+            artifact_paths.append(model_stack.resolve_artifact_path(model_stack.classifier.label_metadata_path))
     if not all(_artifact_exists(path) for path in artifact_paths):
         return None
 
@@ -459,6 +630,11 @@ def build_onnx_adapter_bundle(
         classifier = OnnxClassifierAdapter(
             model_stack.classifier,
             artifact_path=model_stack.resolve_artifact_path(model_stack.classifier.artifact_path),
+            label_metadata_path=(
+                model_stack.resolve_artifact_path(model_stack.classifier.label_metadata_path)
+                if model_stack.classifier.label_metadata_path
+                else None
+            ),
         )
 
     return ModelAdapterBundle(

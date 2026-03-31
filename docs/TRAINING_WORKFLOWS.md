@@ -26,6 +26,7 @@ These scripts are prepare-first.
 - `configs/training/plate-detector-finetune.yaml`
 - `configs/training/plate-ocr-finetune.yaml`
 - `configs/training/vehicle-color-classifier.yaml`
+- `configs/training/vehicle-color-classifier-efficientnet.yaml`
 - `configs/training/vehicle-make-model-warmstart.yaml`
 
 ## Detection Dataset Promotion
@@ -49,6 +50,13 @@ This keeps detection training, holdout protection, and later regression evaluati
 - `torch` and `torchvision` for attribute classifiers
 - `PaddleOCR` checkout for OCR fine-tuning
 - `scipy` is also required when executing the Stanford Cars warm-start path
+
+Current warm-start defaults:
+
+- vehicle detector: `yolo11n.pt`
+- plate detector: `yolo11s.pt`
+- make/model warm start: `efficientnet_b0`
+- color classifier baseline: `resnet18`, with an `efficientnet_b0` profile available for harder lighting drift cases
 
 ## Example Commands
 
@@ -81,6 +89,8 @@ Prepare an OCR fine-tuning run:
   --dataset-manifest C:\path\to\plate-ocr-dataset.yaml `
   --run-name plate_ocr_run_01
 ```
+
+When a PaddleOCR checkout is supplied, the workflow now prefers a PP-OCRv5 English recognition config if one is available under that checkout and falls back to PP-OCRv4 or PP-OCRv3 otherwise.
 
 Prepare an OCR fine-tuning run with supplemental synthetic support data:
 
@@ -141,3 +151,23 @@ The imported `C:\LPR_Training` manifests fit directly into these workflows:
 - that the resulting trained models outperform the current fixture/demo stack
 - that field-relevant evaluation reports are complete
 - that long-range and low-light holdouts are sufficiently populated yet
+
+## Classifier Export Notes
+
+The attribute-classifier workflow now exports:
+
+- `model.onnx` with a `logits` output for the trained single-task classifier
+- `labels.json` metadata describing the task and class-to-attribute mapping
+
+That metadata sidecar is required when packaging a promoted bundle from a trained single-task classifier export. Use:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\assemble_promoted_onnx_bundle.py `
+  --template-model-config .\configs\models\local-onnx-runtime.yaml `
+  --vehicle-detector-artifact C:\exports\vehicle-detector.onnx `
+  --plate-detector-artifact C:\exports\plate-detector.onnx `
+  --ocr-artifact C:\exports\ocr.onnx `
+  --classifier-artifact C:\exports\classifier.onnx `
+  --classifier-label-metadata C:\exports\labels.json `
+  --output-dir C:\artifacts\models\promoted\exported-bundle
+```

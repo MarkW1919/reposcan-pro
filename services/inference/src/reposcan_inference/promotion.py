@@ -152,6 +152,7 @@ def _build_exported_onnx_stack(
     plate_detector_artifact: str | Path,
     ocr_artifact: str | Path,
     classifier_artifact: str | Path | None = None,
+    classifier_label_metadata_path: str | Path | None = None,
 ) -> ModelStackConfig:
     _require_packagable_onnx_stack(template_stack)
 
@@ -170,6 +171,9 @@ def _build_exported_onnx_stack(
         classifier_config = config_data.get("classifier") or {}
         classifier_config["artifact_path"] = str(Path(classifier_artifact).resolve())
         classifier_config["artifact_manifest_path"] = None
+        classifier_config["label_metadata_path"] = (
+            str(Path(classifier_label_metadata_path).resolve()) if classifier_label_metadata_path else None
+        )
         config_data["classifier"] = classifier_config
 
     return ModelStackConfig.model_validate(config_data)
@@ -392,6 +396,11 @@ def package_promoted_onnx_bundle(
         copied_artifacts[stage] = target_artifact
         config_data[stage]["artifact_path"] = Path("artifacts", target_artifact.name).as_posix()
         config_data[stage]["artifact_manifest_path"] = Path("manifests", f"{stage}.manifest.json").as_posix()
+        if stage == "classifier" and isinstance(stage_config, ClassifierModelConfig) and stage_config.label_metadata_path:
+            source_metadata = model_stack.resolve_artifact_path(stage_config.label_metadata_path)
+            target_metadata = artifacts_dir / source_metadata.name
+            copy2(source_metadata, target_metadata)
+            config_data[stage]["label_metadata_path"] = Path("artifacts", target_metadata.name).as_posix()
 
     config_path = bundle_root / "promoted-onnx.yaml"
     config_path.write_text(yaml.safe_dump(config_data, sort_keys=False), encoding="utf-8")
@@ -434,6 +443,7 @@ def package_exported_onnx_bundle(
     plate_detector_artifact: str | Path,
     ocr_artifact: str | Path,
     classifier_artifact: str | Path | None = None,
+    classifier_label_metadata_path: str | Path | None = None,
     output_dir: str | Path,
     bundle_name: str | None = None,
     exported_at_utc: str | None = None,
@@ -453,6 +463,7 @@ def package_exported_onnx_bundle(
         plate_detector_artifact=plate_detector_artifact,
         ocr_artifact=ocr_artifact,
         classifier_artifact=classifier_artifact,
+        classifier_label_metadata_path=classifier_label_metadata_path,
     )
     return package_promoted_onnx_bundle(
         exported_stack,

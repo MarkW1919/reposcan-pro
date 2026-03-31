@@ -126,9 +126,17 @@ def _stage_report(
     if model_config.backend == InferenceBackend.builtin:
         issues.extend(_validate_builtin(stage, artifact_path))
     elif model_config.backend == InferenceBackend.onnx:
+        metadata_path = None
+        if isinstance(model_config, ClassifierModelConfig) and model_config.label_metadata_path:
+            metadata_path = model_stack.resolve_artifact_path(model_config.label_metadata_path)
         issues.extend(
             ValidationIssue(severity="error", stage=stage, message=message)
-            for message in validate_onnx_artifact(stage, model_config, artifact_path=artifact_path)
+            for message in validate_onnx_artifact(
+                stage,
+                model_config,
+                artifact_path=artifact_path,
+                metadata_path=metadata_path,
+            )
         )
     else:
         issues.extend(_validate_exported_backend(stage, model_config.backend, artifact_path))

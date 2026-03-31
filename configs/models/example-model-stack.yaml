@@ -46,6 +46,8 @@ classifier:
   name: vehicle-attr-v1
   backend: onnx
   artifact_path: artifacts/models/vehicle-attr-v1.onnx
+  # Optional for metadata-backed single-task classifier exports.
+  # label_metadata_path: artifacts/models/vehicle-attr-v1.labels.json
   input_width: 224
   input_height: 224
   normalization_mean: [0.485, 0.456, 0.406]

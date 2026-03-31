@@ -213,6 +213,76 @@ def test_ocr_training_script_prepares_workspace(tmp_path):
     assert "Preparation complete. Training was not started." in result.stdout
 
 
+def test_ocr_training_script_prefers_ppocrv5_when_available(tmp_path):
+    storage_root = tmp_path / "ocr_dataset"
+    for split in ("train", "validation", "holdout"):
+        image_root = storage_root / split / "images"
+        image_root.mkdir(parents=True, exist_ok=True)
+        (image_root / f"{split}_0001.png").write_bytes(b"img")
+        (storage_root / split / "labels.csv").write_text(
+            "image_file,plate_text\nimages/{split}_0001.png,ABC123\n".replace("{split}", split),
+            encoding="utf-8",
+        )
+
+    manifest_path = tmp_path / "ocr-dataset.yaml"
+    manifest_path.write_text(
+        "\n".join(
+            [
+                "dataset_name: tmp-ocr",
+                "dataset_version: 1",
+                "task: plate_ocr",
+                "format: ocr_manifest",
+                f"storage_root: {storage_root.as_posix()}",
+                "review_status: approved",
+                "provenance:",
+                "  source_name: tmp-ocr-dataset",
+                "  source_kind: synthetic",
+                "  license_tier: internal",
+                "  license_name: internal",
+                "  license_reference: internal://tmp-ocr",
+                "annotation_review:",
+                "  reviewer: qa_01",
+                "  reviewed_at_utc: 2026-03-23T08:10:00Z",
+                "  accepted_tasks: [plate_ocr]",
+                "splits:",
+                "  - split: train",
+                "    relative_path: train/images",
+                "    label_path: train/labels.csv",
+                "  - split: validation",
+                "    relative_path: validation/images",
+                "    label_path: validation/labels.csv",
+                "  - split: holdout",
+                "    relative_path: holdout/images",
+                "    label_path: holdout/labels.csv",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    paddle_root = tmp_path / "PaddleOCR"
+    (paddle_root / "configs" / "rec" / "PP-OCRv5").mkdir(parents=True, exist_ok=True)
+    (paddle_root / "configs" / "rec" / "PP-OCRv5" / "en_PP-OCRv5_rec.yml").write_text("Global:\n", encoding="utf-8")
+
+    profile_path = _write_profile("plate-ocr-finetune.yaml", tmp_path / "runs", tmp_path / "ocr-profile.yaml")
+    result = _run_script(
+        "scripts/train_ocr_recognizer.py",
+        "--profile",
+        str(profile_path),
+        "--dataset-manifest",
+        str(manifest_path),
+        "--paddleocr-root",
+        str(paddle_root),
+        "--run-name",
+        "ocr-ppocrv5-smoke",
+        "--dry-run",
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    run_manifest = json.loads((tmp_path / "runs" / "ocr-ppocrv5-smoke" / "run_manifest.json").read_text(encoding="utf-8"))
+    assert any("PP-OCRv5" in token for token in run_manifest["training_command"])
+
+
 def test_ocr_training_script_mixes_synthetic_support_dataset(tmp_path):
     primary_root = tmp_path / "primary_ocr_dataset"
     support_root = tmp_path / "support_ocr_dataset"
