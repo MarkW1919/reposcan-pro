@@ -101,7 +101,20 @@ export interface DashboardAlert {
 
 export interface DashboardHotlist {
   entry_id: string;
-  plate_text: string;
+  plate_text: string | null;
+  vin: string | null;
+  vehicle_year: string | null;
+  vehicle_make: string | null;
+  vehicle_model: string | null;
+  vehicle_color: string | null;
+  address_label: string | null;
+  address_line1: string | null;
+  address_line2: string | null;
+  address_city: string | null;
+  address_state: string | null;
+  address_postal_code: string | null;
+  address_latitude: number | null;
+  address_longitude: number | null;
   label: string | null;
   notes: string | null;
   active: boolean;
@@ -110,7 +123,20 @@ export interface DashboardHotlist {
 }
 
 export interface HotlistSubmission {
-  plate_text: string;
+  plate_text?: string;
+  vin?: string;
+  vehicle_year?: string;
+  vehicle_make?: string;
+  vehicle_model?: string;
+  vehicle_color?: string;
+  address_label?: string;
+  address_line1?: string;
+  address_line2?: string;
+  address_city?: string;
+  address_state?: string;
+  address_postal_code?: string;
+  address_latitude?: number;
+  address_longitude?: number;
   label?: string;
   notes?: string;
   active: boolean;

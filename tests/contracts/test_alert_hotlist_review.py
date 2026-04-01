@@ -100,6 +100,28 @@ class TestHotlistEntry:
         with pytest.raises(ValidationError):
             HotlistEntry.model_validate(self._valid(plate_text="   "))
 
+    def test_vin_only_entry_is_allowed(self):
+        entry = HotlistEntry.model_validate(self._valid(plate_text=None, vin=" 1hgcm82633a004352 "))
+        assert entry.vin == "1HGCM82633A004352"
+        assert entry.plate_text is None
+
+    def test_vehicle_profile_entry_is_allowed_without_plate(self):
+        entry = HotlistEntry.model_validate(
+            self._valid(
+                plate_text=None,
+                vehicle_year="2019",
+                vehicle_make="Ford",
+                vehicle_model="Explorer",
+            )
+        )
+        assert entry.vehicle_year == "2019"
+        assert entry.vehicle_make == "Ford"
+        assert entry.vehicle_model == "Explorer"
+
+    def test_identifier_is_required(self):
+        with pytest.raises(ValidationError):
+            HotlistEntry.model_validate(self._valid(plate_text=None, vin=None, vehicle_make=None, vehicle_model=None))
+
     def test_invalid_timestamp_rejected(self):
         with pytest.raises(ValidationError):
             HotlistEntry.model_validate(self._valid(created_at_utc="not-a-timestamp"))

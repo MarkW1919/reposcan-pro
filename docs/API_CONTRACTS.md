@@ -60,6 +60,37 @@ This document defines the canonical API contract direction for detections, alert
 | `gps_latitude` | number or null | Latitude when available |
 | `gps_longitude` | number or null | Longitude when available |
 
+## Recovery Account Schema
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `entry_id` | string | Stable unique identifier for the recovery account |
+| `plate_text` | string or null | Plate watch value used for live alert matching when present |
+| `vin` | string or null | VIN stored for repo-order intake and manual locate workflows |
+| `vehicle_year` | string or null | Target vehicle year |
+| `vehicle_make` | string or null | Target vehicle make |
+| `vehicle_model` | string or null | Target vehicle model |
+| `vehicle_color` | string or null | Target vehicle color |
+| `address_label` | string or null | Short label for the target address or lot |
+| `address_line1` | string or null | Primary target address line |
+| `address_line2` | string or null | Secondary target address line |
+| `address_city` | string or null | Target address city |
+| `address_state` | string or null | Target address state |
+| `address_postal_code` | string or null | Target address postal code |
+| `address_latitude` | number or null | Optional geocoded latitude |
+| `address_longitude` | number or null | Optional geocoded longitude |
+| `label` | string or null | Repo label, lender label, or case identifier |
+| `notes` | string or null | Recovery instructions and operator notes |
+| `active` | boolean | Whether the account is actively being tracked |
+| `created_at_utc` | string | UTC creation timestamp |
+| `updated_at_utc` | string | UTC update timestamp |
+
+Current alerting behavior:
+
+- live automatic alerting remains plate-driven
+- accounts without `plate_text` are valid for repo intake, address attachment, and manual locate workflows
+- VIN and vehicle-profile fields are persisted so the UI and backend share the same account context even before a confirmed plate exists
+
 ## Canonical Versioning
 
 The canonical external API surface is versioned under:
@@ -85,7 +116,7 @@ to discover the active package version, API version, canonical prefix, and wheth
 - `GET /api/v1/search/alerts` for alert-state and joined detection-attribute filtering
 - `POST /api/v1/reviews/{id}` and `GET /api/v1/reviews/{id}` for operator review workflows
 - `GET /api/v1/alerts`, `GET /api/v1/alerts/{id}`, and `PUT /api/v1/alerts/{id}` for alert lifecycle management
-- `GET /api/v1/hotlists`, `POST /api/v1/hotlists`, and `PUT /api/v1/hotlists/{id}` for hotlist management
+- `GET /api/v1/hotlists`, `POST /api/v1/hotlists`, and `PUT /api/v1/hotlists/{id}` for recovery account management
 - `GET /api/v1/follow-ups`, `GET /api/v1/follow-ups/{id}`, `POST /api/v1/follow-ups`, and `PUT /api/v1/follow-ups/{id}` for follow-up workflows
 - `GET /api/v1/assignments`, `GET /api/v1/assignments/{id}`, `POST /api/v1/assignments`, and `PUT /api/v1/assignments/{id}` for dispatch assignment workflows
 - `GET /api/v1/demo/runtime` and `POST /api/v1/demo/runs` for app-driven headless ingest control

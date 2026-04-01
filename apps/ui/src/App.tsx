@@ -128,6 +128,17 @@ interface RecognitionActivityItem {
 
 interface HotlistDraft {
   plateText: string;
+  vin: string;
+  vehicleYear: string;
+  vehicleMake: string;
+  vehicleModel: string;
+  vehicleColor: string;
+  addressLabel: string;
+  addressLine1: string;
+  addressLine2: string;
+  addressCity: string;
+  addressState: string;
+  addressPostalCode: string;
   label: string;
   notes: string;
   active: boolean;
@@ -241,6 +252,19 @@ const seedHotlists: DashboardHotlist[] = [
   {
     entry_id: "hl_demo_9kpn665",
     plate_text: "9KPN665",
+    vin: null,
+    vehicle_year: null,
+    vehicle_make: null,
+    vehicle_model: null,
+    vehicle_color: null,
+    address_label: "Fulton address",
+    address_line1: "4128 W Fulton St",
+    address_line2: null,
+    address_city: "Chicago",
+    address_state: "IL",
+    address_postal_code: null,
+    address_latitude: null,
+    address_longitude: null,
     label: "Fulton tow-ready",
     notes: "Confirm the rear plate before engaging. Driver reported away from the vehicle.",
     active: true,
@@ -250,6 +274,19 @@ const seedHotlists: DashboardHotlist[] = [
   {
     entry_id: "hl_demo_8abc123",
     plate_text: "8ABC123",
+    vin: null,
+    vehicle_year: null,
+    vehicle_make: null,
+    vehicle_model: null,
+    vehicle_color: null,
+    address_label: "Inbound approach watch",
+    address_line1: null,
+    address_line2: null,
+    address_city: null,
+    address_state: null,
+    address_postal_code: null,
+    address_latitude: null,
+    address_longitude: null,
     label: "High-priority recovery",
     notes: "Escalate immediately if seen on any inbound approach camera.",
     active: true,
@@ -259,6 +296,19 @@ const seedHotlists: DashboardHotlist[] = [
   {
     entry_id: "hl_demo_6ucj466",
     plate_text: "6UCJ466",
+    vin: null,
+    vehicle_year: null,
+    vehicle_make: null,
+    vehicle_model: null,
+    vehicle_color: null,
+    address_label: "Manual review",
+    address_line1: null,
+    address_line2: null,
+    address_city: null,
+    address_state: null,
+    address_postal_code: null,
+    address_latitude: null,
+    address_longitude: null,
     label: "Manual review watch",
     notes: "OCR confusion with 6UCI466 has been seen twice this shift.",
     active: false,
@@ -368,16 +418,56 @@ function normalizePlate(value: string | null | undefined): string {
 
 function matchesHotlist(plate1: string, plate2: string, hotlists: DashboardHotlist[]): boolean {
   const candidates = new Set([normalizePlate(plate1), normalizePlate(plate2)]);
-  return hotlists.some((entry) => entry.active && candidates.has(normalizePlate(entry.plate_text)));
+  return hotlists.some((entry) => entry.active && !!entry.plate_text && candidates.has(normalizePlate(entry.plate_text)));
 }
 
 function hotlistEntryForRow(row: ConsoleDetectionRow, hotlists: DashboardHotlist[]): DashboardHotlist | null {
   const candidates = new Set([normalizePlate(row.plate1), normalizePlate(row.plate2)]);
-  return hotlists.find((entry) => entry.active && candidates.has(normalizePlate(entry.plate_text))) ?? null;
+  return hotlists.find((entry) => entry.active && !!entry.plate_text && candidates.has(normalizePlate(entry.plate_text))) ?? null;
 }
 
 function hotlistLabelForRow(row: ConsoleDetectionRow, hotlists: DashboardHotlist[]): string | null {
   return hotlistEntryForRow(row, hotlists)?.label ?? null;
+}
+
+function normalizeUpperValue(value: string | null | undefined): string {
+  return (value ?? "").trim().toUpperCase();
+}
+
+function trimValue(value: string | null | undefined): string {
+  return (value ?? "").trim();
+}
+
+function hotlistHasProfile(entry: Pick<DashboardHotlist, "vehicle_make" | "vehicle_model">): boolean {
+  return Boolean(trimValue(entry.vehicle_make) && trimValue(entry.vehicle_model));
+}
+
+function hotlistIdentifierSummary(entry: Pick<DashboardHotlist, "plate_text" | "vin" | "vehicle_year" | "vehicle_make" | "vehicle_model">): string {
+  if (trimValue(entry.plate_text)) {
+    return trimValue(entry.plate_text);
+  }
+  if (trimValue(entry.vin)) {
+    return `VIN ${trimValue(entry.vin)}`;
+  }
+  const profile = [trimValue(entry.vehicle_year), trimValue(entry.vehicle_make), trimValue(entry.vehicle_model)].filter(Boolean).join(" ");
+  return profile || "Unidentified vehicle";
+}
+
+function hotlistAddressSummary(
+  entry: Pick<DashboardHotlist, "address_label" | "address_line1" | "address_city" | "address_state">,
+): string {
+  const label = trimValue(entry.address_label);
+  if (label) {
+    return label;
+  }
+  const line = trimValue(entry.address_line1);
+  const city = trimValue(entry.address_city);
+  const state = trimValue(entry.address_state);
+  return [line, [city, state].filter(Boolean).join(", ")].filter(Boolean).join(" - ") || "No target address";
+}
+
+function accountAlertingMode(entry: Pick<DashboardHotlist, "plate_text">): "plate" | "manual" {
+  return trimValue(entry.plate_text) ? "plate" : "manual";
 }
 
 const cameraDirectionTokens = new Set(["north", "south", "east", "west", "front", "rear", "left", "right"]);
@@ -562,6 +652,17 @@ function buildRecognitionVehicleLabel(event: DashboardPopupActivityEvent): strin
 function buildBlankHotlistDraft(seedPlate = ""): HotlistDraft {
   return {
     plateText: normalizePlate(seedPlate),
+    vin: "",
+    vehicleYear: "",
+    vehicleMake: "",
+    vehicleModel: "",
+    vehicleColor: "",
+    addressLabel: "",
+    addressLine1: "",
+    addressLine2: "",
+    addressCity: "",
+    addressState: "",
+    addressPostalCode: "",
     label: "",
     notes: "",
     active: true,
@@ -570,7 +671,18 @@ function buildBlankHotlistDraft(seedPlate = ""): HotlistDraft {
 
 function hotlistDraftFromEntry(entry: DashboardHotlist): HotlistDraft {
   return {
-    plateText: entry.plate_text,
+    plateText: entry.plate_text ?? "",
+    vin: entry.vin ?? "",
+    vehicleYear: entry.vehicle_year ?? "",
+    vehicleMake: entry.vehicle_make ?? "",
+    vehicleModel: entry.vehicle_model ?? "",
+    vehicleColor: entry.vehicle_color ?? "",
+    addressLabel: entry.address_label ?? "",
+    addressLine1: entry.address_line1 ?? "",
+    addressLine2: entry.address_line2 ?? "",
+    addressCity: entry.address_city ?? "",
+    addressState: entry.address_state ?? "",
+    addressPostalCode: entry.address_postal_code ?? "",
     label: entry.label ?? "",
     notes: entry.notes ?? "",
     active: entry.active,
@@ -2168,12 +2280,24 @@ function App(): ReactElement {
       (selectedHotlistId ? hotlists.find((hotlist) => hotlist.entry_id === selectedHotlistId) ?? null : null);
 
     const nextPlateText = normalizePlate(entry?.plate_text ?? hotlistDraft.plateText);
-    const nextLabel = entry?.label ?? hotlistDraft.label;
-    const nextNotes = entry?.notes ?? hotlistDraft.notes;
+    const nextVin = normalizeUpperValue(entry?.vin ?? hotlistDraft.vin);
+    const nextVehicleYear = trimValue(entry?.vehicle_year ?? hotlistDraft.vehicleYear);
+    const nextVehicleMake = trimValue(entry?.vehicle_make ?? hotlistDraft.vehicleMake);
+    const nextVehicleModel = trimValue(entry?.vehicle_model ?? hotlistDraft.vehicleModel);
+    const nextVehicleColor = trimValue(entry?.vehicle_color ?? hotlistDraft.vehicleColor);
+    const nextAddressLabel = trimValue(entry?.address_label ?? hotlistDraft.addressLabel);
+    const nextAddressLine1 = trimValue(entry?.address_line1 ?? hotlistDraft.addressLine1);
+    const nextAddressLine2 = trimValue(entry?.address_line2 ?? hotlistDraft.addressLine2);
+    const nextAddressCity = trimValue(entry?.address_city ?? hotlistDraft.addressCity);
+    const nextAddressState = normalizeUpperValue(entry?.address_state ?? hotlistDraft.addressState);
+    const nextAddressPostalCode = trimValue(entry?.address_postal_code ?? hotlistDraft.addressPostalCode);
+    const nextLabel = trimValue(entry?.label ?? hotlistDraft.label);
+    const nextNotes = trimValue(entry?.notes ?? hotlistDraft.notes);
     const nextActive = activeOverride ?? entry?.active ?? hotlistDraft.active;
+    const hasVehicleProfile = Boolean(nextVehicleMake && nextVehicleModel);
 
-    if (!nextPlateText) {
-      setHotlistError("Plate text is required.");
+    if (!nextPlateText && !nextVin && !hasVehicleProfile) {
+      setHotlistError("Add a plate, VIN, or vehicle make and model before saving this account.");
       return;
     }
 
@@ -2185,14 +2309,36 @@ function App(): ReactElement {
       if (dataSource === "live") {
         if (entry) {
           await updateHotlist(entry.entry_id, {
-            plate_text: nextPlateText,
+            plate_text: nextPlateText || undefined,
+            vin: nextVin || undefined,
+            vehicle_year: nextVehicleYear || undefined,
+            vehicle_make: nextVehicleMake || undefined,
+            vehicle_model: nextVehicleModel || undefined,
+            vehicle_color: nextVehicleColor || undefined,
+            address_label: nextAddressLabel || undefined,
+            address_line1: nextAddressLine1 || undefined,
+            address_line2: nextAddressLine2 || undefined,
+            address_city: nextAddressCity || undefined,
+            address_state: nextAddressState || undefined,
+            address_postal_code: nextAddressPostalCode || undefined,
             label: nextLabel || undefined,
             notes: nextNotes || undefined,
             active: nextActive,
           });
         } else {
           const created = await createHotlist({
-            plate_text: nextPlateText,
+            plate_text: nextPlateText || undefined,
+            vin: nextVin || undefined,
+            vehicle_year: nextVehicleYear || undefined,
+            vehicle_make: nextVehicleMake || undefined,
+            vehicle_model: nextVehicleModel || undefined,
+            vehicle_color: nextVehicleColor || undefined,
+            address_label: nextAddressLabel || undefined,
+            address_line1: nextAddressLine1 || undefined,
+            address_line2: nextAddressLine2 || undefined,
+            address_city: nextAddressCity || undefined,
+            address_state: nextAddressState || undefined,
+            address_postal_code: nextAddressPostalCode || undefined,
             label: nextLabel || undefined,
             notes: nextNotes || undefined,
             active: nextActive,
@@ -2208,7 +2354,20 @@ function App(): ReactElement {
               item.entry_id === entry.entry_id
                 ? {
                     ...item,
-                    plate_text: nextPlateText,
+                    plate_text: nextPlateText || null,
+                    vin: nextVin || null,
+                    vehicle_year: nextVehicleYear || null,
+                    vehicle_make: nextVehicleMake || null,
+                    vehicle_model: nextVehicleModel || null,
+                    vehicle_color: nextVehicleColor || null,
+                    address_label: nextAddressLabel || null,
+                    address_line1: nextAddressLine1 || null,
+                    address_line2: nextAddressLine2 || null,
+                    address_city: nextAddressCity || null,
+                    address_state: nextAddressState || null,
+                    address_postal_code: nextAddressPostalCode || null,
+                    address_latitude: item.address_latitude ?? null,
+                    address_longitude: item.address_longitude ?? null,
                     label: nextLabel || null,
                     notes: nextNotes || null,
                     active: nextActive,
@@ -2220,7 +2379,20 @@ function App(): ReactElement {
         } else {
           const created: DashboardHotlist = {
             entry_id: `hl_local_${Math.random().toString(16).slice(2, 10)}`,
-            plate_text: nextPlateText,
+            plate_text: nextPlateText || null,
+            vin: nextVin || null,
+            vehicle_year: nextVehicleYear || null,
+            vehicle_make: nextVehicleMake || null,
+            vehicle_model: nextVehicleModel || null,
+            vehicle_color: nextVehicleColor || null,
+            address_label: nextAddressLabel || null,
+            address_line1: nextAddressLine1 || null,
+            address_line2: nextAddressLine2 || null,
+            address_city: nextAddressCity || null,
+            address_state: nextAddressState || null,
+            address_postal_code: nextAddressPostalCode || null,
+            address_latitude: null,
+            address_longitude: null,
             label: nextLabel || null,
             notes: nextNotes || null,
             active: nextActive,
@@ -2232,7 +2404,13 @@ function App(): ReactElement {
         }
       }
 
-      setHotlistMessage(action === "recover" ? "Recovery account marked inactive." : entry ? "Recovery account updated." : "Recovery account created.");
+      if (action === "recover") {
+        setHotlistMessage("Recovery account marked inactive.");
+      } else if (!nextPlateText) {
+        setHotlistMessage(entry ? "Recovery account updated. Add a plate to enable automatic plate alerts." : "Recovery account created. Add a plate to enable automatic plate alerts.");
+      } else {
+        setHotlistMessage(entry ? "Recovery account updated." : "Recovery account created.");
+      }
     } catch (error) {
       setHotlistError(error instanceof Error ? error.message : "Unable to save the recovery account.");
     } finally {
@@ -2657,6 +2835,7 @@ function App(): ReactElement {
 
           {screen === "accounts" ? (
             <AccountsScreen
+              activeDestination={activeDestination}
               canManageAccounts={canManageHotlistAccounts}
               dataSource={dataSource}
               deleting={hotlistDeleting}
@@ -2671,6 +2850,13 @@ function App(): ReactElement {
               onDelete={() => void handleDeleteHotlist()}
               onDraftChange={setHotlistDraft}
               onSeedFromDetection={() => beginHotlistDraft(selectedRow?.plate1)}
+              onSeedFromRoute={() =>
+                setHotlistDraft((current) => ({
+                  ...current,
+                  addressLine1: current.addressLine1 || activeDestination,
+                  addressLabel: current.addressLabel || "Route target",
+                }))
+              }
               onSelect={loadHotlist}
               onSubmit={handleHotlistSubmit}
             />
@@ -3646,6 +3832,7 @@ function SearchScreen(props: {
 }
 
 function AccountsScreen(props: {
+  activeDestination: string;
   canManageAccounts: boolean;
   dataSource: DataSource;
   deleting: boolean;
@@ -3660,10 +3847,13 @@ function AccountsScreen(props: {
   onDelete: () => void;
   onDraftChange: (draft: HotlistDraft | ((current: HotlistDraft) => HotlistDraft)) => void;
   onSeedFromDetection: () => void;
+  onSeedFromRoute: () => void;
   onSelect: (entry: DashboardHotlist) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
 }): ReactElement {
   const armedAccounts = props.hotlists.filter((entry) => entry.active).length;
+  const plateAlertingReady = Boolean(trimValue(props.draft.plateText));
+  const profileReady = Boolean(trimValue(props.draft.vehicleMake) && trimValue(props.draft.vehicleModel));
 
   return (
     <section className="screen hotlists-screen">
@@ -3691,6 +3881,10 @@ function AccountsScreen(props: {
           <strong>{props.selectedDetectionPlate || "--"}</strong>
         </div>
         <div className="search-summary-card">
+          <span>Current route</span>
+          <strong>{props.activeDestination || "--"}</strong>
+        </div>
+        <div className="search-summary-card">
           <span>Access</span>
           <strong>{props.canManageAccounts ? "Write" : "Read only"}</strong>
         </div>
@@ -3708,7 +3902,7 @@ function AccountsScreen(props: {
             {props.hotlists.length === 0 ? (
               <div className="empty-state">
                 <strong>No recovery accounts.</strong>
-                <p>Add a plate to begin tracking a repossession target.</p>
+                <p>Add a plate, VIN, or vehicle profile to begin tracking a repossession target.</p>
               </div>
             ) : (
               props.hotlists.map((entry) => (
@@ -3719,11 +3913,14 @@ function AccountsScreen(props: {
                   onClick={() => props.onSelect(entry)}
                 >
                   <div>
-                    <strong>{entry.plate_text}</strong>
-                    <span>{entry.label ?? "Unlabeled account"}</span>
+                    <strong>{hotlistIdentifierSummary(entry)}</strong>
+                    <span>{entry.label ?? hotlistAddressSummary(entry)}</span>
                   </div>
                   <div className="hotlist-row__meta">
                     <Badge tone={entry.active ? "critical" : "muted"}>{entry.active ? "Armed" : "Paused"}</Badge>
+                    <Badge tone={accountAlertingMode(entry) === "plate" ? "success" : "warn"}>
+                      {accountAlertingMode(entry) === "plate" ? "Plate alerting" : "Manual locate"}
+                    </Badge>
                     <span>{formatDateTime(entry.updated_at_utc)}</span>
                   </div>
                 </button>
@@ -3735,26 +3932,227 @@ function AccountsScreen(props: {
         <section className="panel-card hotlist-editor-card">
           <div className="panel-card__header">
             <h3>{props.selectedHotlistId ? "Edit Account" : "Create Account"}</h3>
-            <button className="btn btn--ghost" disabled={!props.canManageAccounts} type="button" onClick={props.onSeedFromDetection}>
-              Use Current Plate
-            </button>
+            <div className="button-row">
+              <button className="btn btn--ghost" disabled={!props.canManageAccounts} type="button" onClick={props.onSeedFromDetection}>
+                Use Current Plate
+              </button>
+              <button className="btn btn--ghost" disabled={!props.canManageAccounts} type="button" onClick={props.onSeedFromRoute}>
+                Use Current Route
+              </button>
+            </div>
           </div>
           <form className="hotlist-form" onSubmit={(event) => void props.onSubmit(event)}>
-            <label>
-              <span>Plate text</span>
-              <input
-                className="text-input"
-                placeholder="8ABC123"
-                type="text"
-                value={props.draft.plateText}
-                onChange={(event) =>
-                  props.onDraftChange((current) => ({
-                    ...current,
-                    plateText: normalizePlate(event.target.value),
-                  }))
-                }
-              />
-            </label>
+            <div className="detail-note-callout">
+              <strong>Repo intake</strong>
+              <p>
+                Add this account by plate, VIN, or vehicle make and model. Automatic live alerts require a plate.
+                VIN and vehicle profile entries still support locate and account management.
+              </p>
+            </div>
+
+            <div className="search-filter-grid">
+              <label>
+                <span>Plate text</span>
+                <input
+                  className="text-input"
+                  placeholder="8ABC123"
+                  type="text"
+                  value={props.draft.plateText}
+                  onChange={(event) =>
+                    props.onDraftChange((current) => ({
+                      ...current,
+                      plateText: normalizePlate(event.target.value),
+                    }))
+                  }
+                />
+              </label>
+
+              <label>
+                <span>VIN</span>
+                <input
+                  className="text-input"
+                  placeholder="1HGCM82633A004352"
+                  type="text"
+                  value={props.draft.vin}
+                  onChange={(event) =>
+                    props.onDraftChange((current) => ({
+                      ...current,
+                      vin: normalizeUpperValue(event.target.value),
+                    }))
+                  }
+                />
+              </label>
+            </div>
+
+            <div className="search-sidebar-section">
+              <div className="search-sidebar-section__header">
+                <strong>Vehicle profile</strong>
+                <Badge tone={profileReady ? "success" : "muted"}>{profileReady ? "Ready" : "Optional"}</Badge>
+              </div>
+              <div className="search-filter-grid">
+                <label>
+                  <span>Year</span>
+                  <input
+                    className="text-input"
+                    placeholder="2019"
+                    type="text"
+                    value={props.draft.vehicleYear}
+                    onChange={(event) =>
+                      props.onDraftChange((current) => ({
+                        ...current,
+                        vehicleYear: trimValue(event.target.value),
+                      }))
+                    }
+                  />
+                </label>
+                <label>
+                  <span>Make</span>
+                  <input
+                    className="text-input"
+                    placeholder="Ford"
+                    type="text"
+                    value={props.draft.vehicleMake}
+                    onChange={(event) =>
+                      props.onDraftChange((current) => ({
+                        ...current,
+                        vehicleMake: trimValue(event.target.value),
+                      }))
+                    }
+                  />
+                </label>
+                <label>
+                  <span>Model</span>
+                  <input
+                    className="text-input"
+                    placeholder="Explorer"
+                    type="text"
+                    value={props.draft.vehicleModel}
+                    onChange={(event) =>
+                      props.onDraftChange((current) => ({
+                        ...current,
+                        vehicleModel: trimValue(event.target.value),
+                      }))
+                    }
+                  />
+                </label>
+                <label>
+                  <span>Color</span>
+                  <input
+                    className="text-input"
+                    placeholder="Black"
+                    type="text"
+                    value={props.draft.vehicleColor}
+                    onChange={(event) =>
+                      props.onDraftChange((current) => ({
+                        ...current,
+                        vehicleColor: trimValue(event.target.value),
+                      }))
+                    }
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div className="search-sidebar-section">
+              <div className="search-sidebar-section__header">
+                <strong>Target address</strong>
+                <Badge tone={trimValue(props.draft.addressLine1) || trimValue(props.draft.addressLabel) ? "success" : "muted"}>
+                  {trimValue(props.draft.addressLine1) || trimValue(props.draft.addressLabel) ? "Attached" : "Optional"}
+                </Badge>
+              </div>
+              <div className="search-filter-grid">
+                <label>
+                  <span>Address label</span>
+                  <input
+                    className="text-input"
+                    placeholder="Debtor home, office lot, or impound"
+                    type="text"
+                    value={props.draft.addressLabel}
+                    onChange={(event) =>
+                      props.onDraftChange((current) => ({
+                        ...current,
+                        addressLabel: trimValue(event.target.value),
+                      }))
+                    }
+                  />
+                </label>
+                <label>
+                  <span>Address line 1</span>
+                  <input
+                    className="text-input"
+                    placeholder="123 Main St"
+                    type="text"
+                    value={props.draft.addressLine1}
+                    onChange={(event) =>
+                      props.onDraftChange((current) => ({
+                        ...current,
+                        addressLine1: trimValue(event.target.value),
+                      }))
+                    }
+                  />
+                </label>
+                <label>
+                  <span>Address line 2</span>
+                  <input
+                    className="text-input"
+                    placeholder="Apt, suite, or lot detail"
+                    type="text"
+                    value={props.draft.addressLine2}
+                    onChange={(event) =>
+                      props.onDraftChange((current) => ({
+                        ...current,
+                        addressLine2: trimValue(event.target.value),
+                      }))
+                    }
+                  />
+                </label>
+                <label>
+                  <span>City</span>
+                  <input
+                    className="text-input"
+                    placeholder="Chicago"
+                    type="text"
+                    value={props.draft.addressCity}
+                    onChange={(event) =>
+                      props.onDraftChange((current) => ({
+                        ...current,
+                        addressCity: trimValue(event.target.value),
+                      }))
+                    }
+                  />
+                </label>
+                <label>
+                  <span>State</span>
+                  <input
+                    className="text-input"
+                    placeholder="IL"
+                    type="text"
+                    value={props.draft.addressState}
+                    onChange={(event) =>
+                      props.onDraftChange((current) => ({
+                        ...current,
+                        addressState: normalizeUpperValue(event.target.value),
+                      }))
+                    }
+                  />
+                </label>
+                <label>
+                  <span>ZIP</span>
+                  <input
+                    className="text-input"
+                    placeholder="60607"
+                    type="text"
+                    value={props.draft.addressPostalCode}
+                    onChange={(event) =>
+                      props.onDraftChange((current) => ({
+                        ...current,
+                        addressPostalCode: trimValue(event.target.value),
+                      }))
+                    }
+                  />
+                </label>
+              </div>
+            </div>
 
             <label>
               <span>Account / repo label</span>
@@ -3790,7 +4188,7 @@ function AccountsScreen(props: {
             <div className="inline-setting">
               <div>
                 <strong>Account armed</strong>
-                <span>Triggers an alert when this plate is scanned.</span>
+                <span>{plateAlertingReady ? "Triggers an alert when this plate is scanned." : "Stored for locate workflow until a plate is added."}</span>
               </div>
               <Toggle
                 checked={props.draft.active}
@@ -3806,6 +4204,11 @@ function AccountsScreen(props: {
 
             {props.error ? <div className="feedback feedback--error">{props.error}</div> : null}
             {props.message ? <div className="feedback feedback--good">{props.message}</div> : null}
+            {!plateAlertingReady ? (
+              <div className="feedback feedback--warn">
+                This account has no plate yet. Live plate alerts stay unavailable until a plate is added.
+              </div>
+            ) : null}
 
             <div className="button-stack">
               <button className="btn btn--primary" disabled={!props.canManageAccounts || props.saving} type="submit">

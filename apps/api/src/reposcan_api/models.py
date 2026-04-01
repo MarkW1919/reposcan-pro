@@ -38,10 +38,37 @@ class ReviewSubmission(BaseModel):
 
 
 class HotlistSubmission(BaseModel):
-    plate_text: str = Field(..., min_length=1, description="Plate text to watch for")
-    label: Optional[str] = Field(None, description="Human-readable label")
-    notes: Optional[str] = Field(None, description="Operator notes")
+    plate_text: Optional[str] = Field(None, min_length=1, description="Plate text to watch for")
+    vin: Optional[str] = Field(None, min_length=1, description="Vehicle identification number")
+    vehicle_year: Optional[str] = Field(None, min_length=1, description="Target vehicle year")
+    vehicle_make: Optional[str] = Field(None, min_length=1, description="Target vehicle make")
+    vehicle_model: Optional[str] = Field(None, min_length=1, description="Target vehicle model")
+    vehicle_color: Optional[str] = Field(None, min_length=1, description="Target vehicle color")
+    address_label: Optional[str] = Field(None, description="Short address or lot label")
+    address_line1: Optional[str] = Field(None, description="Primary target address line")
+    address_line2: Optional[str] = Field(None, description="Secondary target address line")
+    address_city: Optional[str] = Field(None, description="Target address city")
+    address_state: Optional[str] = Field(None, min_length=1, description="Target address state")
+    address_postal_code: Optional[str] = Field(None, min_length=1, description="Target address postal code")
+    address_latitude: Optional[float] = Field(None, ge=-90.0, le=90.0, description="Optional target latitude")
+    address_longitude: Optional[float] = Field(None, ge=-180.0, le=180.0, description="Optional target longitude")
+    label: Optional[str] = Field(None, description="Human-readable repo label")
+    notes: Optional[str] = Field(None, description="Recovery instructions and operator notes")
     active: bool = Field(True, description="Whether this entry should be actively matched")
+
+    @model_validator(mode="after")
+    def validate_lookup_fields(self) -> "HotlistSubmission":
+        has_plate = bool(self.plate_text and self.plate_text.strip())
+        has_vin = bool(self.vin and self.vin.strip())
+        has_vehicle_profile = bool(
+            self.vehicle_make
+            and self.vehicle_make.strip()
+            and self.vehicle_model
+            and self.vehicle_model.strip()
+        )
+        if not (has_plate or has_vin or has_vehicle_profile):
+            raise ValueError("at least one of plate_text, vin, or vehicle_make + vehicle_model is required")
+        return self
 
 
 class AlertUpdateSubmission(BaseModel):

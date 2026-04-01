@@ -345,12 +345,25 @@ def test_hotlist_crud_endpoints(tmp_path):
             "plate_text": "8abc123",
             "label": "Case 42",
             "notes": "Monitor vehicle",
+            "vin": "1hgcm82633a004352",
+            "vehicle_year": "2019",
+            "vehicle_make": "Honda",
+            "vehicle_model": "Accord",
+            "vehicle_color": "Black",
+            "address_label": "Debtor home",
+            "address_line1": "123 Main St",
+            "address_city": "Chicago",
+            "address_state": "il",
+            "address_postal_code": "60607",
         },
     )
 
     assert create_response.status_code == 201
     created = create_response.json()
     assert created["plate_text"] == "8ABC123"
+    assert created["vin"] == "1HGCM82633A004352"
+    assert created["vehicle_make"] == "Honda"
+    assert created["address_state"] == "IL"
 
     list_response = client.get("/hotlists")
     assert list_response.status_code == 200
@@ -362,6 +375,16 @@ def test_hotlist_crud_endpoints(tmp_path):
             "plate_text": "8ABC123",
             "label": "Case 42 Updated",
             "notes": "Escalated",
+            "vin": "1hgcm82633a004352",
+            "vehicle_year": "2020",
+            "vehicle_make": "Honda",
+            "vehicle_model": "Accord",
+            "vehicle_color": "Black",
+            "address_label": "Impound watch",
+            "address_line1": "456 State St",
+            "address_city": "Chicago",
+            "address_state": "il",
+            "address_postal_code": "60616",
             "active": False,
         },
     )
@@ -369,13 +392,34 @@ def test_hotlist_crud_endpoints(tmp_path):
     updated = update_response.json()
     assert updated["label"] == "Case 42 Updated"
     assert updated["active"] is False
+    assert updated["address_line1"] == "456 State St"
+
+    vin_only_response = client.post(
+        "/hotlists",
+        json={
+            "vin": "2fmhk6dt8kba12345",
+            "vehicle_year": "2019",
+            "vehicle_make": "Ford",
+            "vehicle_model": "Explorer",
+            "address_line1": "789 Lake Shore Dr",
+            "address_city": "Chicago",
+            "address_state": "IL",
+            "label": "VIN intake",
+            "notes": "Awaiting confirmed plate.",
+            "active": True,
+        },
+    )
+    assert vin_only_response.status_code == 201
+    assert vin_only_response.json()["plate_text"] is None
 
     delete_response = client.delete(f"/hotlists/{created['entry_id']}")
     assert delete_response.status_code == 204
 
     deleted_list_response = client.get("/hotlists")
     assert deleted_list_response.status_code == 200
-    assert deleted_list_response.json() == []
+    remaining_entries = deleted_list_response.json()
+    assert len(remaining_entries) == 1
+    assert remaining_entries[0]["vin"] == "2FMHK6DT8KBA12345"
 
 
 def test_alert_endpoints_return_seeded_alerts(tmp_path):

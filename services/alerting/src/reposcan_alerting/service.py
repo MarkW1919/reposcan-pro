@@ -35,6 +35,8 @@ class AlertingService:
         for entry in hotlist_entries:
             if not entry.active:
                 continue
+            if not entry.plate_text:
+                continue
             if entry.plate_text == exact_plate:
                 return (
                     HotlistMatchResult(
@@ -48,6 +50,8 @@ class AlertingService:
 
         for entry in hotlist_entries:
             if not entry.active:
+                continue
+            if not entry.plate_text:
                 continue
             if normalize_plate_text(entry.plate_text) == normalized_plate:
                 return (

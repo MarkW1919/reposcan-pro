@@ -948,6 +948,19 @@ def create_app(
         entry = HotlistEntry(
             entry_id=f"hl_{uuid4().hex[:12]}",
             plate_text=submission.plate_text,
+            vin=submission.vin,
+            vehicle_year=submission.vehicle_year,
+            vehicle_make=submission.vehicle_make,
+            vehicle_model=submission.vehicle_model,
+            vehicle_color=submission.vehicle_color,
+            address_label=submission.address_label,
+            address_line1=submission.address_line1,
+            address_line2=submission.address_line2,
+            address_city=submission.address_city,
+            address_state=submission.address_state,
+            address_postal_code=submission.address_postal_code,
+            address_latitude=submission.address_latitude,
+            address_longitude=submission.address_longitude,
             label=submission.label,
             notes=submission.notes,
             active=submission.active,
@@ -955,7 +968,21 @@ def create_app(
             updated_at_utc=now,
         )
         created = service.create_hotlist(entry)
-        record_audit(request, principal=principal, action="hotlist.create", outcome=AuditOutcome.success, target_type="hotlist", target_id=created.entry_id, details={"plate_text": created.plate_text, "active": created.active})
+        record_audit(
+            request,
+            principal=principal,
+            action="hotlist.create",
+            outcome=AuditOutcome.success,
+            target_type="hotlist",
+            target_id=created.entry_id,
+            details={
+                "plate_text": created.plate_text,
+                "vin": created.vin,
+                "vehicle_make": created.vehicle_make,
+                "vehicle_model": created.vehicle_model,
+                "active": created.active,
+            },
+        )
         return created
 
     @api_router.put("/hotlists/{entry_id}", response_model=HotlistEntry)
@@ -972,6 +999,19 @@ def create_app(
         entry = HotlistEntry(
             entry_id=entry_id,
             plate_text=submission.plate_text,
+            vin=submission.vin,
+            vehicle_year=submission.vehicle_year,
+            vehicle_make=submission.vehicle_make,
+            vehicle_model=submission.vehicle_model,
+            vehicle_color=submission.vehicle_color,
+            address_label=submission.address_label,
+            address_line1=submission.address_line1,
+            address_line2=submission.address_line2,
+            address_city=submission.address_city,
+            address_state=submission.address_state,
+            address_postal_code=submission.address_postal_code,
+            address_latitude=submission.address_latitude,
+            address_longitude=submission.address_longitude,
             label=submission.label,
             notes=submission.notes,
             active=submission.active,
@@ -982,7 +1022,22 @@ def create_app(
             updated = service.update_hotlist(entry)
         except HotlistNotFoundError as exc:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Hotlist entry not found") from exc
-        record_audit(request, principal=principal, action="hotlist.update", outcome=AuditOutcome.success, target_type="hotlist", target_id=entry_id, details={"active": updated.active, "label": updated.label})
+        record_audit(
+            request,
+            principal=principal,
+            action="hotlist.update",
+            outcome=AuditOutcome.success,
+            target_type="hotlist",
+            target_id=entry_id,
+            details={
+                "active": updated.active,
+                "label": updated.label,
+                "plate_text": updated.plate_text,
+                "vin": updated.vin,
+                "vehicle_make": updated.vehicle_make,
+                "vehicle_model": updated.vehicle_model,
+            },
+        )
         return updated
 
     @api_router.delete("/hotlists/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
