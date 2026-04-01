@@ -570,11 +570,11 @@ select:focus-visible {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 18px;
+  gap: 14px;
 }
 
 .screen-header h1 {
-  font-size: clamp(1.9rem, 4vw, 2.45rem);
+  font-size: clamp(1.6rem, 3.5vw, 2rem);
   line-height: 1;
 }
 
@@ -719,7 +719,7 @@ select:focus-visible {
 
 .stage-toolbar,
 .table-card__header {
-  padding: 14px 16px;
+  padding: 10px 14px;
   border-bottom: 1px solid var(--line);
   background: rgba(11, 20, 27, 0.94);
 }
@@ -911,7 +911,7 @@ select:focus-visible {
 
 .detection-table th,
 .detection-table td {
-  padding: 14px 16px;
+  padding: 10px 12px;
   text-align: left;
   border-bottom: 1px solid rgba(56, 232, 255, 0.08);
 }
@@ -944,6 +944,7 @@ select:focus-visible {
 }
 
 .thumb-cell {
+  position: relative;
   width: 72px;
   height: 42px;
   border-radius: 12px;
@@ -1912,6 +1913,91 @@ select:focus-visible {
 
 .sync-cell--local {
   color: var(--muted);
+}
+
+.sync-cell--active {
+  color: var(--critical);
+  font-weight: 700;
+}
+
+.sync-cell--acknowledged {
+  color: var(--warn);
+}
+
+.sync-cell--dismissed {
+  color: var(--muted);
+}
+
+/* --- table-card header layout --- */
+.table-card__title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.table-card__title-row h3 {
+  margin: 0;
+}
+
+.table-card__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 11px;
+  background: var(--cyan-soft);
+  color: var(--cyan);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+/* --- alert dot on evidence thumbnail --- */
+.thumb-cell__alert-dot {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--critical);
+  box-shadow: 0 0 6px rgba(255, 77, 94, 0.6);
+  border: 2px solid rgba(11, 20, 27, 0.98);
+}
+
+/* --- plate cell monospace --- */
+.plate-cell {
+  font-family: var(--mono);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+/* --- inline confidence coloring --- */
+.conf-inline {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.conf-inline--high {
+  color: var(--success);
+}
+
+.conf-inline--medium {
+  color: var(--warn);
+}
+
+.conf-inline--low {
+  color: var(--critical);
+}
+
+/* --- vehicle label in detail overlay header --- */
+.detail-overlay__vehicle {
+  font-size: 0.82rem;
+  color: var(--muted);
+  font-weight: 500;
 }
 
 /* --- muted secondary text in table cells --- */
