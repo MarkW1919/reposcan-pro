@@ -174,7 +174,21 @@ Prepare a training run from a profile and dataset manifest with:
 .\.venv\Scripts\python.exe .\scripts\train_attribute_classifier.py --profile .\configs\training\vehicle-make-model-warmstart.yaml --dataset-manifest C:\path\to\dataset-manifest.yaml --run-name warmstart_01
 ```
 
+For CPU-bound development machines, use the lighter profile:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\train_attribute_classifier.py --profile .\configs\training\vehicle-make-model-warmstart-cpu.yaml --dataset-manifest C:\path\to\dataset-manifest.yaml --run-name warmstart_cpu_01
+```
+
 The attribute-classifier workflow now exports `model.onnx` plus a `labels.json` metadata sidecar so single-task color or make/model classifiers can plug back into the runtime and promoted bundle flow.
+
+For long-running training on Windows, launch the prepared run manifest in the background so the job survives terminal closure:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\launch_training_run.py --run-manifest .\runtime\training\warmstart_01\run_manifest.json
+```
+
+Monitor `training_status.json` and `training_events.log` inside the run workspace for progress that does not depend on an open console window.
 
 Build a canonical vehicle make/model/year catalog from a markdown seed list with:
 

@@ -28,6 +28,7 @@ These scripts are prepare-first.
 - `configs/training/vehicle-color-classifier.yaml`
 - `configs/training/vehicle-color-classifier-efficientnet.yaml`
 - `configs/training/vehicle-make-model-warmstart.yaml`
+- `configs/training/vehicle-make-model-warmstart-cpu.yaml`
 
 ## Detection Dataset Promotion
 
@@ -56,6 +57,7 @@ Current warm-start defaults:
 - vehicle detector: `yolo11n.pt`
 - plate detector: `yolo11s.pt`
 - make/model warm start: `efficientnet_b0`
+- make/model CPU fallback: `resnet18` at `192px`
 - color classifier baseline: `resnet18`, with an `efficientnet_b0` profile available for harder lighting drift cases
 
 ## Example Commands
@@ -80,6 +82,29 @@ Prepare a vehicle make/model warm-start run from an imported legacy manifest:
   --dataset-manifest C:\path\to\legacy-stanford-cars-warmstart.yaml `
   --run-name make_model_warmstart_01
 ```
+
+On CPU-bound development machines, use the lighter warm-start profile instead:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\train_attribute_classifier.py `
+  --profile .\configs\training\vehicle-make-model-warmstart-cpu.yaml `
+  --dataset-manifest C:\path\to\legacy-stanford-cars-warmstart.yaml `
+  --run-name make_model_warmstart_cpu_01
+```
+
+Launch a prepared long-running training job in the background so it survives terminal closure:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\launch_training_run.py `
+  --run-manifest .\runtime\training\make_model_warmstart_01\run_manifest.json
+```
+
+For attribute-classifier runs, monitor:
+
+- `runtime/training/<run-name>/training_status.json`
+- `runtime/training/<run-name>/training_events.log`
+- `runtime/training/logs/<run-name>.stdout.log`
+- `runtime/training/logs/<run-name>.stderr.log`
 
 Build a canonical make/model/year catalog from a markdown seed list before collecting or promoting field data:
 

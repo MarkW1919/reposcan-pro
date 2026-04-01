@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import yaml
@@ -148,6 +149,61 @@ def test_attribute_training_script_prepares_workspace(tmp_path):
     assert result.returncode == 0, result.stdout + result.stderr
     assert "class_index.json" in result.stdout
     assert "Preparation complete. Training was not started." in result.stdout
+
+
+def test_launch_training_run_starts_background_process_from_manifest(tmp_path):
+    output_path = tmp_path / "background-result.txt"
+    worker_script = tmp_path / "background_worker.py"
+    worker_script.write_text(
+        "\n".join(
+            [
+                "from pathlib import Path",
+                "import sys",
+                "import time",
+                "time.sleep(1.0)",
+                "Path(sys.argv[1]).write_text('done', encoding='utf-8')",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    manifest_path = tmp_path / "run_manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "run_name": "background-launch-smoke",
+                "training_command": [sys.executable, str(worker_script), str(output_path)],
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    stdout_log = tmp_path / "stdout.log"
+    stderr_log = tmp_path / "stderr.log"
+    pid_file = tmp_path / "run.pid"
+    result = _run_script(
+        "scripts/launch_training_run.py",
+        "--run-manifest",
+        str(manifest_path),
+        "--stdout-log",
+        str(stdout_log),
+        "--stderr-log",
+        str(stderr_log),
+        "--pid-file",
+        str(pid_file),
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert pid_file.exists()
+
+    for _ in range(30):
+        if output_path.exists():
+            break
+        time.sleep(0.2)
+
+    assert output_path.read_text(encoding="utf-8") == "done"
 
 
 def test_ocr_training_script_prepares_workspace(tmp_path):

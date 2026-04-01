@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -24,6 +26,48 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--execute", action="store_true")
     return parser.parse_args()
+
+
+def _utc_now_utc() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _write_training_status(
+    path: Path,
+    *,
+    state: str,
+    run_name: str,
+    total_epochs: int,
+    current_epoch: int = 0,
+    train_accuracy: float | None = None,
+    validation_accuracy: float | None = None,
+    best_validation_accuracy: float | None = None,
+    best_checkpoint: Path | None = None,
+    exported_onnx: Path | None = None,
+    label_metadata: Path | None = None,
+    error_message: str | None = None,
+) -> None:
+    payload = {
+        "run_name": run_name,
+        "state": state,
+        "updated_at_utc": _utc_now_utc(),
+        "current_epoch": current_epoch,
+        "total_epochs": total_epochs,
+        "train_accuracy": train_accuracy,
+        "validation_accuracy": validation_accuracy,
+        "best_validation_accuracy": best_validation_accuracy,
+        "best_checkpoint": str(best_checkpoint) if best_checkpoint is not None else None,
+        "exported_onnx": str(exported_onnx) if exported_onnx is not None else None,
+        "label_metadata": str(label_metadata) if label_metadata is not None else None,
+        "error_message": error_message,
+    }
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _append_training_event(path: Path, message: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(f"{_utc_now_utc()} {message}\n")
 
 
 def _module_from_path(root, path: str):
@@ -242,10 +286,13 @@ def main() -> int:
         output_root = (repo_root / output_root).resolve()
     workspace_dir = output_root / run_name
     workspace_dir.mkdir(parents=True, exist_ok=True)
+    status_path = workspace_dir / "training_status.json"
+    events_path = workspace_dir / "training_events.log"
 
     prepared_files, notes, _ = prepare_classification_workspace(repo_root, profile, dataset_manifest, workspace_dir)
     training_command = [
         str(Path(sys.executable).resolve()),
+        "-u",
         str(Path(__file__).resolve()),
         "--profile",
         str(profile_path),
@@ -303,6 +350,15 @@ def main() -> int:
     checkpoints_dir.mkdir(parents=True, exist_ok=True)
     exports_dir.mkdir(parents=True, exist_ok=True)
     best_checkpoint = checkpoints_dir / "best.pt"
+    last_checkpoint = checkpoints_dir / "last.pt"
+    _write_training_status(
+        status_path,
+        state="running",
+        run_name=run_name,
+        total_epochs=profile.epochs,
+        best_checkpoint=best_checkpoint if best_checkpoint.exists() else None,
+    )
+    _append_training_event(events_path, f"run_started total_epochs={profile.epochs} workspace={workspace_dir}")
 
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=profile.epochs, eta_min=1e-6
@@ -311,61 +367,123 @@ def main() -> int:
     best_val = 0.0
     epochs_without_improvement = 0
     patience = profile.patience if hasattr(profile, "patience") and profile.patience else profile.epochs
-    for epoch in range(1, profile.epochs + 1):
-        model.train()
-        for images, labels in train_loader:
-            images = images.to(device)
-            labels = labels.to(device)
-            logits = model(images)
-            loss = criterion(logits, labels)
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-        scheduler.step()
+    best_epoch = 0
+    try:
+        for epoch in range(1, profile.epochs + 1):
+            print(f"starting_epoch={epoch}/{profile.epochs}")
+            _append_training_event(events_path, f"epoch_started epoch={epoch}/{profile.epochs}")
+            model.train()
+            train_examples = 0
+            train_correct = 0
+            for images, labels in train_loader:
+                images = images.to(device)
+                labels = labels.to(device)
+                logits = model(images)
+                loss = criterion(logits, labels)
+                preds = torch.argmax(logits, dim=1)
+                train_correct += (preds == labels).sum().item()
+                train_examples += labels.size(0)
+                optimizer.zero_grad(set_to_none=True)
+                loss.backward()
+                optimizer.step()
+            scheduler.step()
 
-        train_acc = _evaluate(model, train_loader, device)
-        val_acc = _evaluate(model, validation_loader, device)
-        current_lr = scheduler.get_last_lr()[0]
-        print(f"epoch={epoch} train_acc={train_acc:.4f} val_acc={val_acc:.4f} lr={current_lr:.2e}")
-        if val_acc >= best_val:
-            best_val = val_acc
-            epochs_without_improvement = 0
-            torch.save({"state_dict": model.state_dict(), "classes": class_names}, best_checkpoint)
-        else:
-            epochs_without_improvement += 1
+            train_acc = (train_correct / train_examples) if train_examples else 0.0
+            val_acc = _evaluate(model, validation_loader, device)
+            current_lr = scheduler.get_last_lr()[0]
+            print(f"epoch={epoch} train_acc={train_acc:.4f} val_acc={val_acc:.4f} lr={current_lr:.2e}")
+            torch.save({"state_dict": model.state_dict(), "classes": class_names}, last_checkpoint)
+            if val_acc >= best_val:
+                best_val = val_acc
+                best_epoch = epoch
+                epochs_without_improvement = 0
+                torch.save({"state_dict": model.state_dict(), "classes": class_names}, best_checkpoint)
+            else:
+                epochs_without_improvement += 1
+
+            _write_training_status(
+                status_path,
+                state="running",
+                run_name=run_name,
+                total_epochs=profile.epochs,
+                current_epoch=epoch,
+                train_accuracy=train_acc,
+                validation_accuracy=val_acc,
+                best_validation_accuracy=best_val,
+                best_checkpoint=best_checkpoint if best_checkpoint.exists() else None,
+            )
+            _append_training_event(
+                events_path,
+                (
+                    f"epoch_completed epoch={epoch} "
+                    f"train_acc={train_acc:.4f} val_acc={val_acc:.4f} "
+                    f"best_val={best_val:.4f} lr={current_lr:.2e}"
+                ),
+            )
+
             if epochs_without_improvement >= patience:
                 print(f"Early stopping at epoch {epoch} (no improvement for {patience} epochs).")
+                _append_training_event(events_path, f"early_stopping epoch={epoch} patience={patience}")
                 break
 
-    checkpoint = torch.load(best_checkpoint, map_location="cpu", weights_only=False)
-    model.load_state_dict(checkpoint["state_dict"])
-    model = model.to("cpu")
-    model.eval()
-    dummy = torch.randn(1, 3, profile.image_size, profile.image_size)
-    onnx_path = exports_dir / "model.onnx"
-    torch.onnx.export(
-        model,
-        dummy,
-        onnx_path,
-        input_names=["images"],
-        output_names=["logits"],
-        dynamic_axes={"images": {0: "batch"}, "logits": {0: "batch"}},
-        opset_version=17,
-    )
+        checkpoint = torch.load(best_checkpoint, map_location="cpu", weights_only=False)
+        model.load_state_dict(checkpoint["state_dict"])
+        model = model.to("cpu")
+        model.eval()
+        dummy = torch.randn(1, 3, profile.image_size, profile.image_size)
+        onnx_path = exports_dir / "model.onnx"
+        torch.onnx.export(
+            model,
+            dummy,
+            onnx_path,
+            input_names=["images"],
+            output_names=["logits"],
+            dynamic_axes={"images": {0: "batch"}, "logits": {0: "batch"}},
+            opset_version=17,
+        )
 
-    labels_path = exports_dir / "labels.json"
-    labels_metadata = build_classifier_export_metadata(
-        task=profile.task,
-        classes=class_names,
-        image_size=profile.image_size,
-        base_model=profile.base_model,
-    )
-    labels_path.write_text(labels_metadata.model_dump_json(indent=2, by_alias=True), encoding="utf-8")
+        labels_path = exports_dir / "labels.json"
+        labels_metadata = build_classifier_export_metadata(
+            task=profile.task,
+            classes=class_names,
+            image_size=profile.image_size,
+            base_model=profile.base_model,
+        )
+        labels_path.write_text(labels_metadata.model_dump_json(indent=2, by_alias=True), encoding="utf-8")
 
-    print(f"Best checkpoint: {best_checkpoint}")
-    print(f"Exported ONNX: {onnx_path}")
-    print(f"Labels: {labels_path}")
-    return 0
+        _write_training_status(
+            status_path,
+            state="completed",
+            run_name=run_name,
+            total_epochs=profile.epochs,
+            current_epoch=best_epoch or profile.epochs,
+            best_validation_accuracy=best_val,
+            best_checkpoint=best_checkpoint,
+            exported_onnx=onnx_path,
+            label_metadata=labels_path,
+        )
+        _append_training_event(
+            events_path,
+            f"run_completed best_epoch={best_epoch or profile.epochs} best_val={best_val:.4f} onnx={onnx_path}",
+        )
+
+        print(f"Best checkpoint: {best_checkpoint}")
+        print(f"Exported ONNX: {onnx_path}")
+        print(f"Labels: {labels_path}")
+        return 0
+    except Exception as exc:
+        _write_training_status(
+            status_path,
+            state="failed",
+            run_name=run_name,
+            total_epochs=profile.epochs,
+            current_epoch=best_epoch,
+            best_validation_accuracy=best_val,
+            best_checkpoint=best_checkpoint if best_checkpoint.exists() else None,
+            error_message=str(exc),
+        )
+        _append_training_event(events_path, f"run_failed error={exc}")
+        raise
 
 
 def _entrypoint() -> int:
