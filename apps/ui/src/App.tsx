@@ -46,13 +46,13 @@ import {
   type ReviewRecord,
 } from "./live-api";
 
-type AppScreen = "console" | "search" | "hotlists" | "settings";
+type AppScreen = "console" | "search" | "accounts" | "hotlists" | "settings";
 type StageView = "camera" | "map";
 type ConsoleLayoutMode = "overview" | "focus";
 type SearchMode = "plate" | "camera" | "vehicle" | "alert";
 type DataSource = "demo" | "live" | "fallback";
 type AlertPersistence = "until-dismissed" | "15 sec" | "60 sec";
-type HotlistsWorkspaceTab = "accounts" | "alerts" | "recognition";
+type HotlistsWorkspaceTab = "alerts" | "recognition";
 type SettingsSection = "workspace" | "alerts" | "cameras" | "map" | "system";
 
 interface UiSettings {
@@ -1402,7 +1402,7 @@ function App(): ReactElement {
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [reviewMessage, setReviewMessage] = useState<string | null>(null);
   const [alertResponseNotes, setAlertResponseNotes] = useState("");
-  const [hotlistsTab, setHotlistsTab] = useState<HotlistsWorkspaceTab>("accounts");
+  const [hotlistsTab, setHotlistsTab] = useState<HotlistsWorkspaceTab>("alerts");
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("workspace");
   const [alertActionId, setAlertActionId] = useState<string | null>(null);
   const [alertActionError, setAlertActionError] = useState<string | null>(null);
@@ -1851,10 +1851,10 @@ function App(): ReactElement {
     switchScreen("console");
   }
 
-  function sendRowToHotlistWorkspace(row: ConsoleDetectionRow): void {
+  function openAccountsForRow(row: ConsoleDetectionRow): void {
     setSelectedDetectionId(row.id);
     beginHotlistDraft(row.plate1);
-    switchScreen("hotlists");
+    switchScreen("accounts");
   }
 
   function openRecordForDetectionId(detectionId: string | null | undefined): void {
@@ -1902,6 +1902,7 @@ function App(): ReactElement {
 
     const latestHotlistRow = allRows.find((row) => row.hotlist);
     if (!latestHotlistRow) {
+      setHotlistsTab("alerts");
       switchScreen("hotlists");
       return;
     }
@@ -2621,7 +2622,7 @@ function App(): ReactElement {
               searchVehicleYear={searchVehicleYear}
               searchCurrentCameraOnly={searchCurrentCameraOnly}
               searchCurrentShiftOnly={searchCurrentShiftOnly}
-              onAddToHotlist={sendRowToHotlistWorkspace}
+              onAddToHotlist={openAccountsForRow}
               onClearFilters={clearSearchFilters}
               onCopyPlate={handleCopyPlate}
               onDetails={openDetail}
@@ -2654,6 +2655,27 @@ function App(): ReactElement {
             />
           ) : null}
 
+          {screen === "accounts" ? (
+            <AccountsScreen
+              canManageAccounts={canManageHotlistAccounts}
+              dataSource={dataSource}
+              deleting={hotlistDeleting}
+              draft={hotlistDraft}
+              error={hotlistError}
+              hotlists={hotlists}
+              message={hotlistMessage}
+              saving={hotlistSaving}
+              selectedDetectionPlate={selectedRow?.plate1 ?? ""}
+              selectedHotlistId={selectedHotlistId}
+              onClearDraft={() => beginHotlistDraft()}
+              onDelete={() => void handleDeleteHotlist()}
+              onDraftChange={setHotlistDraft}
+              onSeedFromDetection={() => beginHotlistDraft(selectedRow?.plate1)}
+              onSelect={loadHotlist}
+              onSubmit={handleHotlistSubmit}
+            />
+          ) : null}
+
           {screen === "hotlists" ? (
             <HotlistsScreen
               activeAssignments={activeAssignments}
@@ -2665,13 +2687,10 @@ function App(): ReactElement {
               assignmentActionMessage={assignmentMessage}
               assignmentSaving={assignmentSaving}
               alerts={hotlistAlertItems}
-              canManageAccounts={canManageHotlistAccounts}
               canManageDispatch={canManageDispatch}
               canManageFollowUps={canManageFollowUps}
               canUpdateAlerts={canUpdateVehicleAlerts}
               dataSource={dataSource}
-              draft={hotlistDraft}
-              error={hotlistError}
               followUps={followUps}
               followUpActionError={followUpError}
               followUpActionMessage={followUpMessage}
@@ -2680,27 +2699,16 @@ function App(): ReactElement {
               assignments={assignments}
               activity={recognitionActivityItems}
               activeTab={hotlistsTab}
-              message={hotlistMessage}
               openFollowUps={openFollowUps}
-              saving={hotlistSaving}
-              deleting={hotlistDeleting}
-              selectedDetectionPlate={selectedRow?.plate1 ?? ""}
-              selectedHotlistId={selectedHotlistId}
               selectedAlertId={selectedAlertId}
               alertResponseNotes={alertResponseNotes}
               onAlertResponseNotesChange={setAlertResponseNotes}
               onAlertStatusChange={(alert, status, notes) => void handleAlertStatusChange(alert, status, notes)}
-              onClearDraft={() => beginHotlistDraft()}
-              onDelete={() => void handleDeleteHotlist()}
-              onDraftChange={setHotlistDraft}
               onMapDetection={centerMapOnDetectionId}
               onOpenRecord={openRecordForDetectionId}
               onSaveAssignment={handleSaveAssignment}
               onSaveFollowUp={handleSaveFollowUp}
-              onSelect={loadHotlist}
               onSelectAlert={setSelectedAlertId}
-              onSeedFromDetection={() => beginHotlistDraft(selectedRow?.plate1)}
-              onSubmit={handleHotlistSubmit}
               onTabChange={setHotlistsTab}
             />
           ) : null}
@@ -2768,7 +2776,7 @@ function App(): ReactElement {
           reviewSaving={reviewSaving}
           onAddToHotlist={() => {
             beginHotlistDraft(detailRow.plate1);
-            switchScreen("hotlists");
+            switchScreen("accounts");
             setDetailDetectionId(null);
           }}
           onClose={() => setDetailDetectionId(null)}
@@ -2822,7 +2830,7 @@ function SearchResultCard(props: {
   return (
     <article className="search-result-card">
       <div className={`search-result-card__thumb ${frameUrl ? "search-result-card__thumb--image" : ""}`}>
-        {frameUrl ? <img alt={`${props.row.plate1} evidence`} src={frameUrl} /> : <span>{props.row.camera}</span>}
+        {frameUrl ? <img alt={`${props.row.plate1} capture`} src={frameUrl} /> : <span>{props.row.camera}</span>}
       </div>
       <div className="search-result-card__body">
         <div className="search-result-card__header">
@@ -2869,13 +2877,13 @@ function SearchResultCard(props: {
         ) : null}
         <div className="search-result-card__actions">
           <button className="link-button" type="button" onClick={props.onDetails}>
-            Evidence
+            Open Record
           </button>
           <button className="link-button" type="button" onClick={props.onMap}>
             Last Seen
           </button>
           <button className="link-button" type="button" onClick={props.onAddToHotlist}>
-            Recovery Account
+            {props.hotlistLabel ? "Open Account" : "Create Account"}
           </button>
           <button className="link-button" type="button" onClick={() => void props.onCopy(props.row.plate1)}>
             Copy Tag
@@ -3021,8 +3029,9 @@ function NavPanel(props: {
       <div className="nav-tabs">
         {[
           { id: "console", label: "Dashboard", count: null },
-          { id: "search", label: "Investigation", count: null },
-          { id: "hotlists", label: "Recovery", count: props.activeAlerts > 0 ? props.activeAlerts : null },
+          { id: "search", label: "Locate", count: null },
+          { id: "accounts", label: "Accounts", count: props.activeHotlists > 0 ? props.activeHotlists : null },
+          { id: "hotlists", label: "Cases", count: props.activeAlerts > 0 ? props.activeAlerts : null },
           { id: "settings", label: "Settings", count: null },
         ].map((item) => (
           <button
@@ -3266,7 +3275,7 @@ function ConsoleScreen(props: {
             <table className="detection-table">
               <thead>
                 <tr>
-                  <th>Evidence</th>
+                  <th>Capture</th>
                   <th>Plate</th>
                   <th>Alt</th>
                   <th>Cam</th>
@@ -3386,7 +3395,7 @@ function SearchScreen(props: {
   return (
     <section className="screen search-screen">
       <ScreenHeader
-        title="Vehicle Investigation"
+        title="Locate Search"
         meta={
           <>
             <Badge tone={props.loading ? "warn" : "cyan"}>{props.loading ? "Searching" : "Ready"}</Badge>
@@ -3525,7 +3534,7 @@ function SearchScreen(props: {
               High confidence
             </button>
             <button className={`chip ${props.searchGroupByPlate ? "is-active" : ""}`} type="button" onClick={() => props.setSearchGroupByPlate(!props.searchGroupByPlate)}>
-              Group sightings
+              Group reads
             </button>
           </div>
         </form>
@@ -3533,11 +3542,11 @@ function SearchScreen(props: {
         <div className="search-screen__content">
           <div className="search-summary-strip">
             <div className="search-summary-card">
-              <span>Search</span>
+              <span>Locate mode</span>
               <strong>{modeLabel}</strong>
             </div>
             <div className="search-summary-card">
-              <span>Sightings</span>
+              <span>Reads</span>
               <strong>{props.resultsTotal}</strong>
             </div>
             <div className="search-summary-card">
@@ -3553,7 +3562,7 @@ function SearchScreen(props: {
           <section className="results-panel">
             <div className="results-panel__header">
               <div>
-                <h3>{props.searchExecuted ? `${props.resultsTotal} sighting${props.resultsTotal === 1 ? "" : "s"} found` : "Recent sightings"}</h3>
+                <h3>{props.searchExecuted ? `${props.resultsTotal} read${props.resultsTotal === 1 ? "" : "s"} found` : "Recent reads"}</h3>
               </div>
               <div className="results-panel__feedback">
                 {props.searchError ? <span className="feedback feedback--warn">{props.searchError}</span> : null}
@@ -3564,7 +3573,7 @@ function SearchScreen(props: {
             <div className="search-results">
               {props.results.length === 0 ? (
                 <div className="empty-state">
-                  <strong>No sightings matched.</strong>
+                  <strong>No reads matched.</strong>
                   <p>Widen the plate fragment, adjust the time window, or remove active filters.</p>
                 </div>
               ) : props.searchGroupByPlate ? (
@@ -3579,7 +3588,7 @@ function SearchScreen(props: {
                       <div className="result-group-card__header">
                         <div>
                           <strong>{group.plate}</strong>
-                          <span>{`${lead.vehicle} - ${group.rows.length} sighting${group.rows.length === 1 ? "" : "s"}`}</span>
+                          <span>{`${lead.vehicle} - ${group.rows.length} read${group.rows.length === 1 ? "" : "s"}`}</span>
                         </div>
                         <div className="result-group-card__meta">
                           {lead.hotlist ? <Badge tone="critical">Recovery</Badge> : null}
@@ -3588,7 +3597,7 @@ function SearchScreen(props: {
                           <Badge tone="cyan">{`Last seen ${formatDateTime(lead.timestampUtc)}`}</Badge>
                           {group.rows.length > 1 ? (
                             <button className="link-button" type="button" onClick={() => props.onToggleExpanded(group.plate)}>
-                              {expanded ? "Collapse" : `${group.rows.length} sightings`}
+                              {expanded ? "Collapse" : `${group.rows.length} reads`}
                             </button>
                           ) : null}
                         </div>
@@ -3636,6 +3645,189 @@ function SearchScreen(props: {
   );
 }
 
+function AccountsScreen(props: {
+  canManageAccounts: boolean;
+  dataSource: DataSource;
+  deleting: boolean;
+  draft: HotlistDraft;
+  error: string | null;
+  hotlists: DashboardHotlist[];
+  message: string | null;
+  saving: boolean;
+  selectedDetectionPlate: string;
+  selectedHotlistId: string | null;
+  onClearDraft: () => void;
+  onDelete: () => void;
+  onDraftChange: (draft: HotlistDraft | ((current: HotlistDraft) => HotlistDraft)) => void;
+  onSeedFromDetection: () => void;
+  onSelect: (entry: DashboardHotlist) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+}): ReactElement {
+  const armedAccounts = props.hotlists.filter((entry) => entry.active).length;
+
+  return (
+    <section className="screen hotlists-screen">
+      <ScreenHeader
+        title="Recovery Accounts"
+        meta={
+          <>
+            <Badge tone="critical">{`${armedAccounts} armed`}</Badge>
+            <Badge tone={props.dataSource === "live" ? "success" : "muted"}>{props.dataSource.toUpperCase()}</Badge>
+          </>
+        }
+      />
+
+      <div className="hotlists-summary-strip">
+        <div className="search-summary-card">
+          <span>Armed accounts</span>
+          <strong>{armedAccounts}</strong>
+        </div>
+        <div className="search-summary-card">
+          <span>Total accounts</span>
+          <strong>{props.hotlists.length}</strong>
+        </div>
+        <div className="search-summary-card">
+          <span>Selected plate</span>
+          <strong>{props.selectedDetectionPlate || "--"}</strong>
+        </div>
+        <div className="search-summary-card">
+          <span>Access</span>
+          <strong>{props.canManageAccounts ? "Write" : "Read only"}</strong>
+        </div>
+      </div>
+
+      <div className="hotlists-grid">
+        <section className="panel-card hotlists-list-card">
+          <div className="panel-card__header">
+            <h3>Account List</h3>
+            <button className="btn btn--ghost" disabled={!props.canManageAccounts} type="button" onClick={props.onClearDraft}>
+              New Account
+            </button>
+          </div>
+          <div className="hotlist-list">
+            {props.hotlists.length === 0 ? (
+              <div className="empty-state">
+                <strong>No recovery accounts.</strong>
+                <p>Add a plate to begin tracking a repossession target.</p>
+              </div>
+            ) : (
+              props.hotlists.map((entry) => (
+                <button
+                  key={entry.entry_id}
+                  className={`hotlist-row ${props.selectedHotlistId === entry.entry_id ? "is-selected" : ""}`}
+                  type="button"
+                  onClick={() => props.onSelect(entry)}
+                >
+                  <div>
+                    <strong>{entry.plate_text}</strong>
+                    <span>{entry.label ?? "Unlabeled account"}</span>
+                  </div>
+                  <div className="hotlist-row__meta">
+                    <Badge tone={entry.active ? "critical" : "muted"}>{entry.active ? "Armed" : "Paused"}</Badge>
+                    <span>{formatDateTime(entry.updated_at_utc)}</span>
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </section>
+
+        <section className="panel-card hotlist-editor-card">
+          <div className="panel-card__header">
+            <h3>{props.selectedHotlistId ? "Edit Account" : "Create Account"}</h3>
+            <button className="btn btn--ghost" disabled={!props.canManageAccounts} type="button" onClick={props.onSeedFromDetection}>
+              Use Current Plate
+            </button>
+          </div>
+          <form className="hotlist-form" onSubmit={(event) => void props.onSubmit(event)}>
+            <label>
+              <span>Plate text</span>
+              <input
+                className="text-input"
+                placeholder="8ABC123"
+                type="text"
+                value={props.draft.plateText}
+                onChange={(event) =>
+                  props.onDraftChange((current) => ({
+                    ...current,
+                    plateText: normalizePlate(event.target.value),
+                  }))
+                }
+              />
+            </label>
+
+            <label>
+              <span>Account / repo label</span>
+              <input
+                className="text-input"
+                placeholder="Lender name, case ID, or repo priority"
+                type="text"
+                value={props.draft.label}
+                onChange={(event) =>
+                  props.onDraftChange((current) => ({
+                    ...current,
+                    label: event.target.value,
+                  }))
+                }
+              />
+            </label>
+
+            <label>
+              <span>Recovery instructions</span>
+              <textarea
+                className="text-area"
+                placeholder="Tow instructions, debtor notes, parking pattern, or escalation steps"
+                value={props.draft.notes}
+                onChange={(event) =>
+                  props.onDraftChange((current) => ({
+                    ...current,
+                    notes: event.target.value,
+                  }))
+                }
+              />
+            </label>
+
+            <div className="inline-setting">
+              <div>
+                <strong>Account armed</strong>
+                <span>Triggers an alert when this plate is scanned.</span>
+              </div>
+              <Toggle
+                checked={props.draft.active}
+                label="Account armed"
+                onChange={(checked) =>
+                  props.onDraftChange((current) => ({
+                    ...current,
+                    active: checked,
+                  }))
+                }
+              />
+            </div>
+
+            {props.error ? <div className="feedback feedback--error">{props.error}</div> : null}
+            {props.message ? <div className="feedback feedback--good">{props.message}</div> : null}
+
+            <div className="button-stack">
+              <button className="btn btn--primary" disabled={!props.canManageAccounts || props.saving} type="submit">
+                {props.saving ? "Saving..." : props.selectedHotlistId ? "Save Account" : "Create Account"}
+              </button>
+              <button className="btn btn--ghost" disabled={!props.canManageAccounts} type="button" onClick={props.onClearDraft}>
+                Clear Draft
+              </button>
+              <button className="btn btn--ghost" disabled={!props.canManageAccounts} type="button" onClick={props.onSeedFromDetection}>
+                Seed {props.selectedDetectionPlate || "selection"}
+              </button>
+              <button className="btn btn--danger" disabled={!props.canManageAccounts || !props.selectedHotlistId || props.deleting} type="button" onClick={props.onDelete}>
+                {props.deleting ? "Deleting..." : "Delete Account"}
+              </button>
+            </div>
+          </form>
+        </section>
+      </div>
+    </section>
+  );
+}
+
 function HotlistsScreen(props: {
   activeAssignments: number;
   activeDestination: string;
@@ -3646,42 +3838,28 @@ function HotlistsScreen(props: {
   assignmentActionMessage: string | null;
   assignmentSaving: boolean;
   alerts: HotlistAlertItem[];
-  canManageAccounts: boolean;
   canManageDispatch: boolean;
   canManageFollowUps: boolean;
   canUpdateAlerts: boolean;
   activity: RecognitionActivityItem[];
   activeTab: HotlistsWorkspaceTab;
   dataSource: DataSource;
-  draft: HotlistDraft;
-  error: string | null;
   followUps: FollowUpRecord[];
   followUpActionError: string | null;
   followUpActionMessage: string | null;
   followUpSaving: boolean;
   hotlists: DashboardHotlist[];
   assignments: DispatchAssignmentRecord[];
-  message: string | null;
   openFollowUps: number;
-  saving: boolean;
-  deleting: boolean;
-  selectedDetectionPlate: string;
-  selectedHotlistId: string | null;
   selectedAlertId: string | null;
   alertResponseNotes: string;
   onAlertResponseNotesChange: (notes: string) => void;
   onAlertStatusChange: (alert: DashboardAlert, status: DashboardAlertStatus, responseNotes?: string) => void;
-  onClearDraft: () => void;
-  onDelete: () => void;
-  onDraftChange: (draft: HotlistDraft | ((current: HotlistDraft) => HotlistDraft)) => void;
   onMapDetection: (detectionId: string | null | undefined) => void;
   onOpenRecord: (detectionId: string | null | undefined) => void;
   onSaveAssignment: (request: AssignmentSaveRequest) => Promise<void>;
   onSaveFollowUp: (request: FollowUpSaveRequest) => Promise<void>;
-  onSelect: (entry: DashboardHotlist) => void;
   onSelectAlert: (alertId: string | null) => void;
-  onSeedFromDetection: () => void;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   onTabChange: (tab: HotlistsWorkspaceTab) => void;
 }): ReactElement {
   const activeAlertCount = props.alerts.filter((item) => item.alert.status === "active").length;
@@ -3735,10 +3913,9 @@ function HotlistsScreen(props: {
   return (
     <section className="screen hotlists-screen">
       <ScreenHeader
-        title="Recovery Queue"
+        title="Recovery Cases"
         meta={
           <>
-            <Badge tone="critical">{`${props.hotlists.filter((entry) => entry.active).length} armed`}</Badge>
             <Badge tone={activeAlertCount > 0 ? "warn" : "muted"}>{`${activeAlertCount} active`}</Badge>
             <Badge tone={props.dataSource === "live" ? "success" : "muted"}>{props.dataSource.toUpperCase()}</Badge>
           </>
@@ -3747,12 +3924,12 @@ function HotlistsScreen(props: {
 
       <div className="hotlists-summary-strip">
         <div className="search-summary-card">
-          <span>Accounts armed</span>
-          <strong>{props.hotlists.filter((entry) => entry.active).length}</strong>
+          <span>Open cases</span>
+          <strong>{activeAlertCount}</strong>
         </div>
         <div className="search-summary-card">
-          <span>Active cases</span>
-          <strong>{activeAlertCount}</strong>
+          <span>Acknowledged</span>
+          <strong>{acknowledgedAlertCount}</strong>
         </div>
         <div className="search-summary-card">
           <span>Pending follow-up</span>
@@ -3765,154 +3942,20 @@ function HotlistsScreen(props: {
       </div>
 
       <div className="segmented-control hotlists-toolbar-tabs">
-        <button className={props.activeTab === "accounts" ? "is-active" : ""} type="button" onClick={() => props.onTabChange("accounts")}>
-          {`Accounts (${props.hotlists.length})`}
-        </button>
         <button className={props.activeTab === "alerts" ? "is-active" : ""} type="button" onClick={() => props.onTabChange("alerts")}>
           {`Case Queue (${props.alerts.length})`}
         </button>
         <button className={props.activeTab === "recognition" ? "is-active" : ""} type="button" onClick={() => props.onTabChange("recognition")}>
-          {`Activity (${props.activity.length})`}
+          {`Scan Feed (${props.activity.length})`}
         </button>
       </div>
-
-      {props.activeTab === "accounts" ? (
-        <div className="hotlists-grid">
-          <section className="panel-card hotlists-list-card">
-            <div className="panel-card__header">
-              <h3>Recovery Accounts</h3>
-              <button className="btn btn--ghost" disabled={!props.canManageAccounts} type="button" onClick={props.onClearDraft}>
-                New Account
-              </button>
-            </div>
-            <div className="hotlist-list">
-              {props.hotlists.length === 0 ? (
-                <div className="empty-state">
-                  <strong>No recovery accounts.</strong>
-                  <p>Add a plate to begin tracking a repossession target.</p>
-                </div>
-              ) : (
-                props.hotlists.map((entry) => (
-                  <button
-                    key={entry.entry_id}
-                    className={`hotlist-row ${props.selectedHotlistId === entry.entry_id ? "is-selected" : ""}`}
-                    type="button"
-                    onClick={() => props.onSelect(entry)}
-                  >
-                    <div>
-                      <strong>{entry.plate_text}</strong>
-                      <span>{entry.label ?? "Unlabeled account"}</span>
-                    </div>
-                    <div className="hotlist-row__meta">
-                      <Badge tone={entry.active ? "critical" : "muted"}>{entry.active ? "Armed" : "Paused"}</Badge>
-                      <span>{formatDateTime(entry.updated_at_utc)}</span>
-                    </div>
-                  </button>
-                ))
-              )}
-            </div>
-          </section>
-
-          <section className="panel-card hotlist-editor-card">
-            <div className="panel-card__header">
-              <h3>{props.selectedHotlistId ? "Edit Account" : "Create Account"}</h3>
-              <button className="btn btn--ghost" disabled={!props.canManageAccounts} type="button" onClick={props.onSeedFromDetection}>
-                Use Current Plate
-              </button>
-            </div>
-            <form className="hotlist-form" onSubmit={(event) => void props.onSubmit(event)}>
-              <label>
-                <span>Plate text</span>
-                <input
-                  className="text-input"
-                  placeholder="8ABC123"
-                  type="text"
-                  value={props.draft.plateText}
-                  onChange={(event) =>
-                    props.onDraftChange((current) => ({
-                      ...current,
-                      plateText: normalizePlate(event.target.value),
-                    }))
-                  }
-                />
-              </label>
-
-              <label>
-                <span>Account / repo label</span>
-                <input
-                  className="text-input"
-                  placeholder="Lender name, case ID, or repo priority"
-                  type="text"
-                  value={props.draft.label}
-                  onChange={(event) =>
-                    props.onDraftChange((current) => ({
-                      ...current,
-                      label: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-
-              <label>
-                <span>Recovery instructions</span>
-                <textarea
-                  className="text-area"
-                  placeholder="Tow instructions, debtor notes, parking pattern, or escalation steps"
-                  value={props.draft.notes}
-                  onChange={(event) =>
-                    props.onDraftChange((current) => ({
-                      ...current,
-                      notes: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-
-              <div className="inline-setting">
-                <div>
-                  <strong>Account armed</strong>
-                  <span>Triggers an alert when this plate is scanned.</span>
-                </div>
-                <Toggle
-                  checked={props.draft.active}
-                  label="Account armed"
-                  onChange={(checked) =>
-                    props.onDraftChange((current) => ({
-                      ...current,
-                      active: checked,
-                    }))
-                  }
-                />
-              </div>
-
-              {props.error ? <div className="feedback feedback--error">{props.error}</div> : null}
-              {props.message ? <div className="feedback feedback--good">{props.message}</div> : null}
-
-              <div className="button-stack">
-                <button className="btn btn--primary" disabled={!props.canManageAccounts || props.saving} type="submit">
-                  {props.saving ? "Saving..." : props.selectedHotlistId ? "Save Account" : "Create Account"}
-                </button>
-                <button className="btn btn--ghost" disabled={!props.canManageAccounts} type="button" onClick={props.onClearDraft}>
-                  Clear Draft
-                </button>
-                <button className="btn btn--ghost" disabled={!props.canManageAccounts} type="button" onClick={props.onSeedFromDetection}>
-                  Seed {props.selectedDetectionPlate || "selection"}
-                </button>
-                <button className="btn btn--danger" disabled={!props.canManageAccounts || !props.selectedHotlistId || props.deleting} type="button" onClick={props.onDelete}>
-                  {props.deleting ? "Deleting..." : "Delete Account"}
-                </button>
-              </div>
-            </form>
-          </section>
-        </div>
-      ) : null}
 
       {props.activeTab === "alerts" ? (
         <div className="recovery-queue-grid">
           <section className="panel-card hotlists-workspace-card hotlists-queue-card">
             <div className="panel-card__header">
               <div>
-                <h3>Case Queue</h3>
+                <h3>Active Cases</h3>
               </div>
               <div className="record-row__stats">
                 <Badge tone="critical">{`${activeAlertCount} active`}</Badge>
@@ -4077,7 +4120,7 @@ function HotlistsScreen(props: {
                     </button>
                   ) : null}
                   <button className="btn btn--ghost" disabled={!focusedAlertCase.row} type="button" onClick={() => props.onOpenRecord(focusedAlertCase.alert.detection_id)}>
-                    Evidence
+                    Open Record
                   </button>
                   <button className="btn btn--ghost" disabled={!focusedAlertCase.row} type="button" onClick={() => props.onMapDetection(focusedAlertCase.alert.detection_id)}>
                     Route to Vehicle
@@ -4312,7 +4355,7 @@ function HotlistsScreen(props: {
         <section className="panel-card hotlists-workspace-card">
           <div className="panel-card__header">
             <div>
-              <h3>Scan Activity</h3>
+              <h3>Scan Feed</h3>
             </div>
             <Badge tone="cyan">{`${props.activity.length} events`}</Badge>
           </div>
@@ -4491,7 +4534,7 @@ function SettingsScreen(props: {
 
             {props.settingsSection === "cameras" ? (
               <>
-                <SettingsSelectRow title="Resolution" detail="Frame capture size for evidence." value={props.settings.resolution} options={["1920x1080", "1600x900", "1280x720"]} onChange={(value) => props.updateSetting("resolution", value)} />
+                <SettingsSelectRow title="Resolution" detail="Frame capture size for records." value={props.settings.resolution} options={["1920x1080", "1600x900", "1280x720"]} onChange={(value) => props.updateSetting("resolution", value)} />
                 <SettingsSelectRow title="Stream quality" detail="Balance between latency and image quality." value={props.settings.streamQuality} options={["High", "Balanced", "Low latency"]} onChange={(value) => props.updateSetting("streamQuality", value)} />
                 <SettingsToggleRow title="Night mode" detail="Optimize for low-light plate reads." checked={props.settings.nightMode} onChange={(checked) => props.updateSetting("nightMode", checked)} />
                 <SettingsToggleRow title="IR assist" detail="Enable infrared for stationary scans." checked={props.settings.irControl} onChange={(checked) => props.updateSetting("irControl", checked)} />
@@ -4527,7 +4570,7 @@ function SettingsScreen(props: {
                 />
                 <ReadOnlyRow title="Follow-ups" value={props.canManageFollowUps ? "Write" : "Read only"} detail="Follow-up case management." />
                 <ReadOnlyRow title="Dispatch" value={props.canManageDispatch ? "Write" : "Read only"} detail="Field dispatch assignments." />
-                <ReadOnlyRow title="Export path" value="runtime/exports" detail="Evidence export directory." />
+                <ReadOnlyRow title="Export path" value="runtime/exports" detail="Record export directory." />
                 <SettingsToggleRow title="Auto-delete captures" detail="Clean up temp files after sync." checked={props.settings.autoDeleteTempCaptures} onChange={(checked) => props.updateSetting("autoDeleteTempCaptures", checked)} />
                 <label className="settings-input-row">
                   <span>API key</span>
@@ -4638,7 +4681,7 @@ function DetailOverlay(props: {
   onOpenMap: () => void;
   onSubmitReview: (detectionId: string, action: ReviewAction, correctedPlate?: string, notes?: string) => Promise<void>;
 }): ReactElement {
-  const sightingCount = Math.max(props.detailTimeline.length, 1);
+  const readCount = Math.max(props.detailTimeline.length, 1);
   const activeFollowUp = props.followUps[0] ?? null;
   const activeAssignment = props.assignments[0] ?? null;
   const plateCropUrl = useDetectionPlateCropImage(props.detailRow.detectionId, props.dataSource === "live");
@@ -4666,7 +4709,7 @@ function DetailOverlay(props: {
           <div className="detail-evidence-pair">
             <div className="detail-hero">
               {props.detailImageUrl ? <img alt={`${props.detailRow.plate1} frame`} src={props.detailImageUrl} /> : <div className="detail-hero__placeholder">{props.detailRow.vehicle}</div>}
-              <span className="detail-evidence-label">Source frame</span>
+              <span className="detail-evidence-label">Scan frame</span>
             </div>
             <div className="detail-plate-crop">
               {plateCropUrl ? <img alt={`${props.detailRow.plate1} plate crop`} src={plateCropUrl} /> : <div className="detail-hero__placeholder">{props.detailRow.plate1}</div>}
@@ -4707,8 +4750,8 @@ function DetailOverlay(props: {
               <strong>{props.hotlistEntry ? "Assigned" : "Unassigned"}</strong>
             </div>
             <div className="detail-summary-card">
-              <span>Sightings</span>
-              <strong>{sightingCount}</strong>
+              <span>Reads</span>
+              <strong>{readCount}</strong>
             </div>
             <div className="detail-summary-card">
               <span>Follow-up</span>
@@ -4735,7 +4778,7 @@ function DetailOverlay(props: {
               <p>
                 {props.hotlistEntry?.notes
                   ? props.hotlistEntry.notes
-                  : `No recovery account for ${props.detailRow.plate1}. Add to recovery queue to begin tracking.`}
+                  : `No recovery account for ${props.detailRow.plate1}. Add this plate to an account to begin tracking.`}
               </p>
             </div>
             {activeFollowUp ? (
@@ -4777,7 +4820,7 @@ function DetailOverlay(props: {
             <section className="detail-section">
               <div className="detail-section__header">
                 <div className="detail-section__copy">
-                  <h4>Review History</h4>
+                  <h4>Read History</h4>
                 </div>
               </div>
               {props.detailReviewsError ? <div className="feedback feedback--warn">{props.detailReviewsError}</div> : null}
@@ -4872,7 +4915,7 @@ function DetailOverlay(props: {
           <section className="detail-section">
             <div className="detail-section__header">
               <div className="detail-section__copy">
-                <h4>Sighting History</h4>
+                <h4>Scan History</h4>
               </div>
             </div>
             <div className="timeline-list">
@@ -4885,7 +4928,7 @@ function DetailOverlay(props: {
                   </div>
                 ))
               ) : (
-                <p>No repeat sightings were grouped for this plate.</p>
+                <p>No repeat reads were grouped for this plate.</p>
               )}
             </div>
           </section>
@@ -4896,7 +4939,7 @@ function DetailOverlay(props: {
             Route to Vehicle
           </button>
           <button className="btn btn--ghost" type="button" onClick={props.onAddToHotlist}>
-            Add to Recovery
+            {props.hotlistEntry ? "Open Account" : "Create Account"}
           </button>
           <button className="btn btn--ghost" type="button" onClick={() => void props.onCopyPlate(props.detailRow.plate1)}>
             Copy Tag
@@ -4971,7 +5014,7 @@ function HotlistAlertOverlay(props: {
           Route to Vehicle
         </button>
         <button className="btn btn--ghost" type="button" onClick={props.onViewRecord}>
-          Evidence
+          Open Record
         </button>
         <button className="btn btn--ghost" type="button" onClick={props.onRecover}>
           Mark Recovered
