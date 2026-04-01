@@ -1024,6 +1024,26 @@ function confidenceTone(value: number): "high" | "medium" | "low" {
   return "low";
 }
 
+function readStatusTone(row: ConsoleDetectionRow): "active" | "acknowledged" | "dismissed" | "recovery" | "observed" {
+  if (row.alertStatus) {
+    return row.alertStatus;
+  }
+  if (row.hotlist) {
+    return "recovery";
+  }
+  return "observed";
+}
+
+function readStatusLabel(row: ConsoleDetectionRow): string {
+  if (row.alertStatus) {
+    return alertStatusLabel(row.alertStatus);
+  }
+  if (row.hotlist) {
+    return "Recovery";
+  }
+  return "Observed";
+}
+
 function interpolatePosition(progress: number): { lat: number; lng: number } {
   return {
     lat: routeStart.lat + (targetRoute.lat - routeStart.lat) * progress,
@@ -2211,9 +2231,9 @@ function App(): ReactElement {
         }
       }
 
-      setHotlistMessage(action === "recover" ? "Hotlist entry marked inactive." : entry ? "Hotlist entry updated." : "Hotlist entry created.");
+      setHotlistMessage(action === "recover" ? "Recovery account marked inactive." : entry ? "Recovery account updated." : "Recovery account created.");
     } catch (error) {
-      setHotlistError(error instanceof Error ? error.message : "Unable to save the hotlist entry.");
+      setHotlistError(error instanceof Error ? error.message : "Unable to save the recovery account.");
     } finally {
       setHotlistSaving(false);
     }
@@ -2243,9 +2263,9 @@ function App(): ReactElement {
 
       setSelectedHotlistId(null);
       setHotlistDraft(buildBlankHotlistDraft(selectedRow?.plate1 ?? ""));
-      setHotlistMessage("Hotlist entry deleted.");
+      setHotlistMessage("Recovery account deleted.");
     } catch (error) {
-      setHotlistError(error instanceof Error ? error.message : "Unable to delete the hotlist entry.");
+      setHotlistError(error instanceof Error ? error.message : "Unable to delete the recovery account.");
     } finally {
       setHotlistDeleting(false);
     }
@@ -3252,7 +3272,7 @@ function ConsoleScreen(props: {
                   <th>Cam</th>
                   <th>Conf</th>
                   <th>Time</th>
-                  <th>Status</th>
+                  <th>Case</th>
                 </tr>
               </thead>
               <tbody>
@@ -3273,7 +3293,7 @@ function ConsoleScreen(props: {
                     <td>{row.camera}</td>
                     <td><span className={`conf-inline conf-inline--${confidenceTone(row.conf)}`}>{confidenceLabel(row.conf)}</span></td>
                     <td>{row.time}</td>
-                    <td className={`sync-cell sync-cell--${row.alertStatus ?? row.syncStatus ?? "local"}`}>{row.alertStatus ? alertStatusLabel(row.alertStatus) : (row.syncStatus ?? "local")}</td>
+                    <td className={`sync-cell sync-cell--${readStatusTone(row)}`}>{readStatusLabel(row)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -3344,7 +3364,13 @@ function SearchScreen(props: {
 }): ReactElement {
   const hotlistMatches = props.results.filter((row) => row.hotlist).length;
   const latestResult = props.results[0] ?? null;
-  const modeLabel = titleCase(props.searchMode);
+  const modeLabel =
+    {
+      plate: "Plate / Tag",
+      camera: "Camera",
+      vehicle: "Vehicle Profile",
+      alert: "Recovery Alerts",
+    }[props.searchMode] ?? titleCase(props.searchMode);
   const advancedFilterCount = [
     props.searchVehicleColor,
     props.searchVehicleMake,
@@ -4294,7 +4320,7 @@ function HotlistsScreen(props: {
             {props.activity.length === 0 ? (
               <div className="empty-state">
                 <strong>No scan activity.</strong>
-                <p>LPR reads and hotlist matches will appear here as they occur.</p>
+                <p>LPR reads and recovery matches will appear here as they occur.</p>
               </div>
             ) : (
               props.activity.map(({ event, row }) => {
@@ -4433,7 +4459,7 @@ function SettingsScreen(props: {
               <p>{activeSection.description}</p>
             </div>
             <div className="settings-capability-row">
-              {props.settingsSection === "alerts" ? <Badge tone={props.canManageAccounts ? "success" : "muted"}>{props.canManageAccounts ? "Hotlist write" : "Hotlist read only"}</Badge> : null}
+              {props.settingsSection === "alerts" ? <Badge tone={props.canManageAccounts ? "success" : "muted"}>{props.canManageAccounts ? "Recovery write" : "Recovery read only"}</Badge> : null}
               {props.settingsSection === "alerts" ? <Badge tone={props.canUpdateAlerts ? "success" : "muted"}>{props.canUpdateAlerts ? "Alert updates" : "Alert read only"}</Badge> : null}
               {props.settingsSection === "cameras" ? <Badge tone={props.onlineCameras > 0 ? "success" : "muted"}>{`${props.onlineCameras}/${Math.max(props.totalCameras, 1)} feeds online`}</Badge> : null}
               {props.settingsSection === "system" ? <Badge tone={props.degradedDependencyCount === 0 ? "success" : "warn"}>{titleCase(props.serviceHealthState)}</Badge> : null}

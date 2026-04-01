@@ -1928,6 +1928,15 @@ select:focus-visible {
   color: var(--muted);
 }
 
+.sync-cell--recovery {
+  color: var(--critical);
+  font-weight: 700;
+}
+
+.sync-cell--observed {
+  color: var(--muted);
+}
+
 /* --- table-card header layout --- */
 .table-card__title-row {
   display: flex;
