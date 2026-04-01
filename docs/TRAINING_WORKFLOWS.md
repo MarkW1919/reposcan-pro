@@ -106,6 +106,16 @@ For attribute-classifier runs, monitor:
 - `runtime/training/logs/<run-name>.stdout.log`
 - `runtime/training/logs/<run-name>.stderr.log`
 
+If training completed but export failed, rerun export only from the saved checkpoint:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\train_attribute_classifier.py `
+  --profile .\configs\training\vehicle-make-model-warmstart-cpu.yaml `
+  --dataset-manifest .\data\manifests\legacy\legacy-stanford-cars-warmstart.yaml `
+  --run-name vehicle_make_model_warmstart_cpu_20260401_rerun1 `
+  --export-only
+```
+
 Build a canonical make/model/year catalog from a markdown seed list before collecting or promoting field data:
 
 ```powershell

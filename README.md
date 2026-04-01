@@ -190,6 +190,12 @@ For long-running training on Windows, launch the prepared run manifest in the ba
 
 Monitor `training_status.json` and `training_events.log` inside the run workspace for progress that does not depend on an open console window.
 
+If the training epochs finished but ONNX export failed, rerun export only from the saved checkpoint:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\train_attribute_classifier.py --profile .\configs\training\vehicle-make-model-warmstart-cpu.yaml --dataset-manifest .\data\manifests\legacy\legacy-stanford-cars-warmstart.yaml --run-name vehicle_make_model_warmstart_cpu_20260401_rerun1 --export-only
+```
+
 Build a canonical vehicle make/model/year catalog from a markdown seed list with:
 
 ```powershell

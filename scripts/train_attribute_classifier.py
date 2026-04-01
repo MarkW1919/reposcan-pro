@@ -22,6 +22,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--profile", required=True)
     parser.add_argument("--dataset-manifest", required=True)
     parser.add_argument("--run-name")
+    parser.add_argument("--export-only", action="store_true")
     parser.add_argument("--allow-pending", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--execute", action="store_true")
@@ -68,6 +69,16 @@ def _append_training_event(path: Path, message: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(f"{_utc_now_utc()} {message}\n")
+
+
+def _load_existing_training_status(path: Path) -> dict[str, object]:
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def _module_from_path(root, path: str):
@@ -136,6 +147,45 @@ def _evaluate(model, loader, device) -> float:
             correct += (preds == labels).sum().item()
             total += labels.size(0)
     return (correct / total) if total else 0.0
+
+
+def _export_trained_classifier(
+    *,
+    torch_module,
+    profile,
+    checkpoint_path: Path,
+    exports_dir: Path,
+) -> tuple[Path, Path]:
+    from reposcan_contracts.classifier_export import build_classifier_export_metadata
+
+    checkpoint = torch_module.load(checkpoint_path, map_location="cpu", weights_only=False)
+    class_names = list(checkpoint["classes"])
+    model = _build_torchvision_model(profile.base_model, num_classes=len(class_names))
+    model.load_state_dict(checkpoint["state_dict"])
+    model = model.to("cpu")
+    model.eval()
+    dummy = torch_module.randn(1, 3, profile.image_size, profile.image_size)
+    onnx_path = exports_dir / "model.onnx"
+    torch_module.onnx.export(
+        model,
+        dummy,
+        onnx_path,
+        input_names=["images"],
+        output_names=["logits"],
+        dynamic_axes={"images": {0: "batch"}, "logits": {0: "batch"}},
+        opset_version=17,
+        dynamo=False,
+    )
+
+    labels_path = exports_dir / "labels.json"
+    labels_metadata = build_classifier_export_metadata(
+        task=profile.task,
+        classes=class_names,
+        image_size=profile.image_size,
+        base_model=profile.base_model,
+    )
+    labels_path.write_text(labels_metadata.model_dump_json(indent=2, by_alias=True), encoding="utf-8")
+    return onnx_path, labels_path
 
 
 def _build_imagefolder_loaders(profile, manifest, repo_root: Path):
@@ -322,7 +372,7 @@ def main() -> int:
     for prepared_file in prepared_files:
         print(f"- prepared: {prepared_file}")
 
-    if args.dry_run or not args.execute:
+    if args.dry_run or (not args.execute and not args.export_only):
         print("Training command:")
         print(subprocess.list2cmdline(training_command))
         if not args.execute:
@@ -333,6 +383,52 @@ def main() -> int:
         import torch
     except ImportError as exc:
         raise RuntimeError("torch and torchvision are required to execute attribute-classifier training") from exc
+
+    checkpoints_dir = workspace_dir / "checkpoints"
+    exports_dir = workspace_dir / "exports"
+    checkpoints_dir.mkdir(parents=True, exist_ok=True)
+    exports_dir.mkdir(parents=True, exist_ok=True)
+    best_checkpoint = checkpoints_dir / "best.pt"
+    last_checkpoint = checkpoints_dir / "last.pt"
+
+    if args.export_only:
+        if not best_checkpoint.exists():
+            raise FileNotFoundError(f"best checkpoint not found for export-only run: {best_checkpoint}")
+        existing_status = _load_existing_training_status(status_path)
+        best_validation_accuracy = existing_status.get("best_validation_accuracy")
+        current_epoch = int(existing_status.get("current_epoch") or 0)
+        _write_training_status(
+            status_path,
+            state="exporting",
+            run_name=run_name,
+            total_epochs=profile.epochs,
+            current_epoch=current_epoch,
+            best_validation_accuracy=float(best_validation_accuracy) if isinstance(best_validation_accuracy, (int, float)) else None,
+            best_checkpoint=best_checkpoint,
+        )
+        _append_training_event(events_path, f"export_only_started checkpoint={best_checkpoint}")
+        onnx_path, labels_path = _export_trained_classifier(
+            torch_module=torch,
+            profile=profile,
+            checkpoint_path=best_checkpoint,
+            exports_dir=exports_dir,
+        )
+        _write_training_status(
+            status_path,
+            state="completed",
+            run_name=run_name,
+            total_epochs=profile.epochs,
+            current_epoch=current_epoch,
+            best_validation_accuracy=float(best_validation_accuracy) if isinstance(best_validation_accuracy, (int, float)) else None,
+            best_checkpoint=best_checkpoint,
+            exported_onnx=onnx_path,
+            label_metadata=labels_path,
+        )
+        _append_training_event(events_path, f"run_completed export_only=true onnx={onnx_path}")
+        print(f"Best checkpoint: {best_checkpoint}")
+        print(f"Exported ONNX: {onnx_path}")
+        print(f"Labels: {labels_path}")
+        return 0
 
     if profile.dataset_adapter == DatasetAdapter.stanford_cars:
         train_loader, validation_loader, class_names = _build_stanford_cars_loaders(profile, dataset_manifest, repo_root)
@@ -345,12 +441,6 @@ def main() -> int:
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.AdamW(model.parameters(), lr=5e-4, weight_decay=1e-4)
 
-    checkpoints_dir = workspace_dir / "checkpoints"
-    exports_dir = workspace_dir / "exports"
-    checkpoints_dir.mkdir(parents=True, exist_ok=True)
-    exports_dir.mkdir(parents=True, exist_ok=True)
-    best_checkpoint = checkpoints_dir / "best.pt"
-    last_checkpoint = checkpoints_dir / "last.pt"
     _write_training_status(
         status_path,
         state="running",
@@ -426,30 +516,13 @@ def main() -> int:
                 _append_training_event(events_path, f"early_stopping epoch={epoch} patience={patience}")
                 break
 
-        checkpoint = torch.load(best_checkpoint, map_location="cpu", weights_only=False)
-        model.load_state_dict(checkpoint["state_dict"])
-        model = model.to("cpu")
-        model.eval()
-        dummy = torch.randn(1, 3, profile.image_size, profile.image_size)
-        onnx_path = exports_dir / "model.onnx"
-        torch.onnx.export(
-            model,
-            dummy,
-            onnx_path,
-            input_names=["images"],
-            output_names=["logits"],
-            dynamic_axes={"images": {0: "batch"}, "logits": {0: "batch"}},
-            opset_version=17,
+        _append_training_event(events_path, f"export_started checkpoint={best_checkpoint}")
+        onnx_path, labels_path = _export_trained_classifier(
+            torch_module=torch,
+            profile=profile,
+            checkpoint_path=best_checkpoint,
+            exports_dir=exports_dir,
         )
-
-        labels_path = exports_dir / "labels.json"
-        labels_metadata = build_classifier_export_metadata(
-            task=profile.task,
-            classes=class_names,
-            image_size=profile.image_size,
-            base_model=profile.base_model,
-        )
-        labels_path.write_text(labels_metadata.model_dump_json(indent=2, by_alias=True), encoding="utf-8")
 
         _write_training_status(
             status_path,
