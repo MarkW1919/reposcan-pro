@@ -632,7 +632,7 @@ export async function createHotlist(submission: HotlistSubmission): Promise<Dash
     body: JSON.stringify(submission),
   });
   if (!response.ok) {
-    throw new Error(`Failed to save hotlist (${response.status})`);
+    throw new Error(await responseErrorMessage(response, `Failed to save hotlist (${response.status})`));
   }
   return (await response.json()) as DashboardHotlist;
 }
@@ -647,7 +647,7 @@ export async function updateHotlist(entryId: string, submission: HotlistSubmissi
     body: JSON.stringify(submission),
   });
   if (!response.ok) {
-    throw new Error(`Failed to update hotlist (${response.status})`);
+    throw new Error(await responseErrorMessage(response, `Failed to update hotlist (${response.status})`));
   }
   return (await response.json()) as DashboardHotlist;
 }

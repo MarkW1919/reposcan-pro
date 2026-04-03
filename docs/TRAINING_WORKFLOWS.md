@@ -194,6 +194,25 @@ The imported `C:\LPR_Training` manifests fit directly into these workflows:
 - Oklahoma synthetic OCR renders into the OCR profile
 - Oklahoma staged detection captures into future labeled YOLO datasets after annotation
 
+## Public Real-Data Intake
+
+When public data is needed before synthetic support is mixed in, use real datasets first and keep their provenance explicit.
+
+- Vehicle make/model warm start: Stanford Cars remains the current wired source on this machine and is already represented by `data/manifests/legacy/legacy-stanford-cars-warmstart.yaml`.
+- US plate OCR benchmark: `scripts/import_openalpr_us_ocr_dataset.py` can convert the public OpenALPR US benchmark mirror from `lawrencexli/USLicensePlateOCR/train_data` into a RepoScan `ocr_manifest`.
+- Additional real-data candidates worth reviewing before more synthetic generation: VMMRdb for broader real make/model coverage and the UCSD stills dataset for real vehicle images with make/model and plate metadata, subject to access and license review.
+
+Example import for the public US OCR benchmark:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\import_openalpr_us_ocr_dataset.py `
+  --source-root .\tmp\USLicensePlateOCR\train_data `
+  --output-root .\data\staged\openalpr_us_benchmark `
+  --manifest-path .\data\manifests\public\openalpr-us-benchmark.yaml
+```
+
+That benchmark is small, so it should usually be the primary real OCR dataset plus synthetic support manifests, not the only OCR training source.
+
 ## What This Does Not Prove Yet
 
 - that the required training frameworks are installed on every machine

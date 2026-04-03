@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -198,3 +199,59 @@ def test_import_legacy_training_sources_builds_manifests_from_external_root(tmp_
     assert split_counts[DatasetSplit.train] == 1
     assert split_counts[DatasetSplit.validation] == 1
     assert split_counts[DatasetSplit.holdout] == 1
+
+
+def test_import_openalpr_us_ocr_dataset_builds_repo_manifest(tmp_path):
+    source_root = tmp_path / "openalpr_train_data"
+    images_root = source_root / "usimages"
+    images_root.mkdir(parents=True)
+    for index in range(10):
+        (images_root / f"ok{index:03d}.png").write_bytes(b"img")
+
+    (source_root / "groundtruth.csv").write_text(
+        "\n".join(
+            [
+                "ok000.png,abc123",
+                "ok001.png,xyz987",
+                "ok002.png,12a34",
+                "ok003.png,7B8C9D",
+                "ok004.png,HELLO1",
+                "ok005.png,ROAD42",
+                "ok006.png,PLATE7",
+                "ok007.png,STATE8",
+                "ok008.png,FIELD9",
+                "ok009.png,CAPT10",
+                "missing.png,NOPE1",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    output_root = tmp_path / "staged_openalpr"
+    manifest_path = tmp_path / "openalpr-manifest.yaml"
+    result = _run_script(
+        "scripts/import_openalpr_us_ocr_dataset.py",
+        "--source-root",
+        str(source_root),
+        "--output-root",
+        str(output_root),
+        "--manifest-path",
+        str(manifest_path),
+        "--seed",
+        "7",
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    manifest = load_training_dataset_manifest(manifest_path)
+    split_counts = {split.split: split.sample_count for split in manifest.splits}
+    assert split_counts[DatasetSplit.train] == 8
+    assert split_counts[DatasetSplit.validation] == 1
+    assert split_counts[DatasetSplit.holdout] == 1
+
+    summary = json.loads((output_root / "import_summary.json").read_text(encoding="utf-8"))
+    assert summary["missing_source_image_count"] == 1
+    assert set(summary["character_set"]).issubset(set("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"))
+
+    train_labels = (output_root / "train" / "labels.csv").read_text(encoding="utf-8")
+    assert "ABC123" in train_labels

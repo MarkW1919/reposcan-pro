@@ -206,6 +206,67 @@ def test_attribute_training_script_export_only_requires_checkpoint(tmp_path):
     assert "best checkpoint not found for export-only run" in result.stderr
 
 
+def test_attribute_training_script_includes_initial_checkpoint_in_run_manifest(tmp_path):
+    storage_root = tmp_path / "vehicle_color_dataset"
+    for split in ("train", "validation"):
+        for class_name in ("white", "black"):
+            class_dir = storage_root / split / class_name
+            class_dir.mkdir(parents=True, exist_ok=True)
+            (class_dir / f"{class_name}_0001.jpg").write_bytes(b"img")
+
+    manifest_path = tmp_path / "vehicle-color.yaml"
+    manifest_path.write_text(
+        "\n".join(
+            [
+                "dataset_name: tmp-vehicle-color",
+                "dataset_version: 1",
+                "task: vehicle_color_classification",
+                "format: imagefolder",
+                f"storage_root: {storage_root.as_posix()}",
+                "review_status: approved",
+                "provenance:",
+                "  source_name: tmp-color-dataset",
+                "  source_kind: internal_generated",
+                "  license_tier: internal",
+                "  license_name: internal",
+                "  license_reference: internal://tmp-color",
+                "annotation_review:",
+                "  reviewer: qa_01",
+                "  reviewed_at_utc: 2026-03-23T08:05:00Z",
+                "  accepted_tasks: [vehicle_color]",
+                "splits:",
+                "  - split: train",
+                "    relative_path: train",
+                "  - split: validation",
+                "    relative_path: validation",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    checkpoint_path = tmp_path / "warmstart.pt"
+    checkpoint_path.write_bytes(b"checkpoint")
+    profile_path = _write_profile("vehicle-color-classifier.yaml", tmp_path / "runs", tmp_path / "color-profile.yaml")
+    result = _run_script(
+        "scripts/train_attribute_classifier.py",
+        "--profile",
+        str(profile_path),
+        "--dataset-manifest",
+        str(manifest_path),
+        "--initial-checkpoint",
+        str(checkpoint_path),
+        "--run-name",
+        "vehicle-color-warmstart-smoke",
+        "--dry-run",
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    run_manifest = json.loads((tmp_path / "runs" / "vehicle-color-warmstart-smoke" / "run_manifest.json").read_text(encoding="utf-8"))
+    assert "--initial-checkpoint" in run_manifest["training_command"]
+    assert str(checkpoint_path) in run_manifest["training_command"]
+
+
 def test_launch_training_run_starts_background_process_from_manifest(tmp_path):
     output_path = tmp_path / "background-result.txt"
     worker_script = tmp_path / "background_worker.py"

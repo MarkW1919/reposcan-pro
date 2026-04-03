@@ -21,6 +21,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Prepare or run a RepoScan attribute-classifier training workflow.")
     parser.add_argument("--profile", required=True)
     parser.add_argument("--dataset-manifest", required=True)
+    parser.add_argument("--initial-checkpoint")
     parser.add_argument("--run-name")
     parser.add_argument("--export-only", action="store_true")
     parser.add_argument("--allow-pending", action="store_true")
@@ -79,6 +80,21 @@ def _load_existing_training_status(path: Path) -> dict[str, object]:
     except Exception:
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def _load_initial_checkpoint(*, checkpoint_path: Path, class_names: list[str]):
+    import torch
+
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    if not isinstance(checkpoint, dict) or "state_dict" not in checkpoint:
+        raise ValueError(f"initial checkpoint '{checkpoint_path}' is missing a state_dict payload")
+
+    checkpoint_classes = checkpoint.get("classes")
+    if checkpoint_classes is not None and list(checkpoint_classes) != list(class_names):
+        raise ValueError(
+            "initial checkpoint classes do not match the current dataset classes"
+        )
+    return checkpoint["state_dict"]
 
 
 def _module_from_path(root, path: str):
@@ -325,6 +341,11 @@ def main() -> int:
     dataset_manifest_path = (
         repo_root / args.dataset_manifest if not Path(args.dataset_manifest).is_absolute() else Path(args.dataset_manifest)
     )
+    initial_checkpoint_path = None
+    if args.initial_checkpoint:
+        initial_checkpoint_path = (
+            repo_root / args.initial_checkpoint if not Path(args.initial_checkpoint).is_absolute() else Path(args.initial_checkpoint)
+        ).resolve()
 
     profile = load_training_profile(profile_path)
     dataset_manifest = load_training_dataset_manifest(dataset_manifest_path)
@@ -352,6 +373,8 @@ def main() -> int:
         run_name,
         "--execute",
     ]
+    if initial_checkpoint_path is not None:
+        training_command.extend(["--initial-checkpoint", str(initial_checkpoint_path)])
 
     run_manifest = build_run_manifest(
         profile=profile,
@@ -436,6 +459,10 @@ def main() -> int:
         train_loader, validation_loader, class_names = _build_imagefolder_loaders(profile, dataset_manifest, repo_root)
 
     model = _build_torchvision_model(profile.base_model, num_classes=len(class_names))
+    if initial_checkpoint_path is not None:
+        state_dict = _load_initial_checkpoint(checkpoint_path=initial_checkpoint_path, class_names=class_names)
+        model.load_state_dict(state_dict, strict=True)
+        print(f"Loaded initial checkpoint: {initial_checkpoint_path}")
     device = torch.device("cuda" if torch.cuda.is_available() and profile.device != "cpu" else "cpu")
     model = model.to(device)
     criterion = torch.nn.CrossEntropyLoss()
@@ -449,6 +476,8 @@ def main() -> int:
         best_checkpoint=best_checkpoint if best_checkpoint.exists() else None,
     )
     _append_training_event(events_path, f"run_started total_epochs={profile.epochs} workspace={workspace_dir}")
+    if initial_checkpoint_path is not None:
+        _append_training_event(events_path, f"initial_checkpoint_loaded checkpoint={initial_checkpoint_path}")
 
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=profile.epochs, eta_min=1e-6
