@@ -267,6 +267,82 @@ def test_attribute_training_script_includes_initial_checkpoint_in_run_manifest(t
     assert str(checkpoint_path) in run_manifest["training_command"]
 
 
+def test_attribute_training_script_resume_last_uses_existing_checkpoint(tmp_path):
+    storage_root = tmp_path / "vehicle_color_dataset"
+    for split in ("train", "validation"):
+        for class_name in ("white", "black"):
+            class_dir = storage_root / split / class_name
+            class_dir.mkdir(parents=True, exist_ok=True)
+            (class_dir / f"{class_name}_0001.jpg").write_bytes(b"img")
+
+    manifest_path = tmp_path / "vehicle-color.yaml"
+    manifest_path.write_text(
+        "\n".join(
+            [
+                "dataset_name: tmp-vehicle-color",
+                "dataset_version: 1",
+                "task: vehicle_color_classification",
+                "format: imagefolder",
+                f"storage_root: {storage_root.as_posix()}",
+                "review_status: approved",
+                "provenance:",
+                "  source_name: tmp-color-dataset",
+                "  source_kind: internal_generated",
+                "  license_tier: internal",
+                "  license_name: internal",
+                "  license_reference: internal://tmp-color",
+                "annotation_review:",
+                "  reviewer: qa_01",
+                "  reviewed_at_utc: 2026-03-23T08:05:00Z",
+                "  accepted_tasks: [vehicle_color]",
+                "splits:",
+                "  - split: train",
+                "    relative_path: train",
+                "  - split: validation",
+                "    relative_path: validation",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    profile_path = _write_profile("vehicle-color-classifier.yaml", tmp_path / "runs", tmp_path / "color-profile.yaml")
+    workspace_dir = tmp_path / "runs" / "vehicle-color-resume-smoke"
+    checkpoints_dir = workspace_dir / "checkpoints"
+    checkpoints_dir.mkdir(parents=True, exist_ok=True)
+    (checkpoints_dir / "last.pt").write_bytes(b"checkpoint")
+    (workspace_dir / "training_status.json").write_text(
+        json.dumps(
+            {
+                "run_name": "vehicle-color-resume-smoke",
+                "state": "running",
+                "current_epoch": 3,
+                "total_epochs": 20,
+                "best_validation_accuracy": 0.75,
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    result = _run_script(
+        "scripts/train_attribute_classifier.py",
+        "--profile",
+        str(profile_path),
+        "--dataset-manifest",
+        str(manifest_path),
+        "--run-name",
+        "vehicle-color-resume-smoke",
+        "--resume-last",
+        "--dry-run",
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    run_manifest = json.loads((workspace_dir / "run_manifest.json").read_text(encoding="utf-8"))
+    assert "--resume-last" in run_manifest["training_command"]
+    assert "--initial-checkpoint" not in run_manifest["training_command"]
+
+
 def test_launch_training_run_starts_background_process_from_manifest(tmp_path):
     output_path = tmp_path / "background-result.txt"
     worker_script = tmp_path / "background_worker.py"
@@ -455,6 +531,201 @@ def test_ocr_training_script_prefers_ppocrv5_when_available(tmp_path):
     assert any("PP-OCRv5" in token for token in run_manifest["training_command"])
 
 
+def test_ocr_training_script_detects_ppocrv4_mobile_config(tmp_path):
+    storage_root = tmp_path / "ocr_dataset"
+    for split in ("train", "validation", "holdout"):
+        image_root = storage_root / split / "images"
+        image_root.mkdir(parents=True, exist_ok=True)
+        (image_root / f"{split}_0001.png").write_bytes(b"img")
+        (storage_root / split / "labels.csv").write_text(
+            "image_file,plate_text\nimages/{split}_0001.png,ABC123\n".replace("{split}", split),
+            encoding="utf-8",
+        )
+
+    manifest_path = tmp_path / "ocr-dataset.yaml"
+    manifest_path.write_text(
+        "\n".join(
+            [
+                "dataset_name: tmp-ocr",
+                "dataset_version: 1",
+                "task: plate_ocr",
+                "format: ocr_manifest",
+                f"storage_root: {storage_root.as_posix()}",
+                "review_status: approved",
+                "provenance:",
+                "  source_name: tmp-ocr-dataset",
+                "  source_kind: synthetic",
+                "  license_tier: internal",
+                "  license_name: internal",
+                "  license_reference: internal://tmp-ocr",
+                "annotation_review:",
+                "  reviewer: qa_01",
+                "  reviewed_at_utc: 2026-03-23T08:10:00Z",
+                "  accepted_tasks: [plate_ocr]",
+                "splits:",
+                "  - split: train",
+                "    relative_path: train/images",
+                "    label_path: train/labels.csv",
+                "  - split: validation",
+                "    relative_path: validation/images",
+                "    label_path: validation/labels.csv",
+                "  - split: holdout",
+                "    relative_path: holdout/images",
+                "    label_path: holdout/labels.csv",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    paddle_root = tmp_path / "PaddleOCR"
+    (paddle_root / "configs" / "rec" / "PP-OCRv4").mkdir(parents=True, exist_ok=True)
+    (paddle_root / "configs" / "rec" / "PP-OCRv4" / "en_PP-OCRv4_mobile_rec.yml").write_text("Global:\n", encoding="utf-8")
+
+    profile_path = _write_profile("plate-ocr-finetune.yaml", tmp_path / "runs", tmp_path / "ocr-profile.yaml")
+    result = _run_script(
+        "scripts/train_ocr_recognizer.py",
+        "--profile",
+        str(profile_path),
+        "--dataset-manifest",
+        str(manifest_path),
+        "--paddleocr-root",
+        str(paddle_root),
+        "--run-name",
+        "ocr-ppocrv4-mobile-smoke",
+        "--dry-run",
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    run_manifest = json.loads((tmp_path / "runs" / "ocr-ppocrv4-mobile-smoke" / "run_manifest.json").read_text(encoding="utf-8"))
+    assert run_manifest["training_command"][2].endswith("scripts\\train_ocr_recognizer.py")
+    assert "--execute" in run_manifest["training_command"]
+    assert run_manifest["export_command"][1] == str((paddle_root / "tools" / "export_model.py").resolve())
+    assert any("en_PP-OCRv4_mobile_rec.yml" in token for token in run_manifest["export_command"])
+
+
+def test_ocr_training_script_execute_writes_status_and_exports(tmp_path):
+    storage_root = tmp_path / "ocr_dataset"
+    for split in ("train", "validation", "holdout"):
+        image_root = storage_root / split / "images"
+        image_root.mkdir(parents=True, exist_ok=True)
+        (image_root / f"{split}_0001.png").write_bytes(b"img")
+        (storage_root / split / "labels.csv").write_text(
+            "image_file,plate_text\nimages/{split}_0001.png,ABC123\n".replace("{split}", split),
+            encoding="utf-8",
+        )
+
+    manifest_path = tmp_path / "ocr-dataset.yaml"
+    manifest_path.write_text(
+        "\n".join(
+            [
+                "dataset_name: tmp-ocr",
+                "dataset_version: 1",
+                "task: plate_ocr",
+                "format: ocr_manifest",
+                f"storage_root: {storage_root.as_posix()}",
+                "review_status: approved",
+                "provenance:",
+                "  source_name: tmp-ocr-dataset",
+                "  source_kind: synthetic",
+                "  license_tier: internal",
+                "  license_name: internal",
+                "  license_reference: internal://tmp-ocr",
+                "annotation_review:",
+                "  reviewer: qa_01",
+                "  reviewed_at_utc: 2026-03-23T08:10:00Z",
+                "  accepted_tasks: [plate_ocr]",
+                "splits:",
+                "  - split: train",
+                "    relative_path: train/images",
+                "    label_path: train/labels.csv",
+                "  - split: validation",
+                "    relative_path: validation/images",
+                "    label_path: validation/labels.csv",
+                "  - split: holdout",
+                "    relative_path: holdout/images",
+                "    label_path: holdout/labels.csv",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    paddle_root = tmp_path / "PaddleOCR"
+    (paddle_root / "configs" / "rec" / "PP-OCRv4").mkdir(parents=True, exist_ok=True)
+    (paddle_root / "tools").mkdir(parents=True, exist_ok=True)
+    (paddle_root / "configs" / "rec" / "PP-OCRv4" / "en_PP-OCRv4_mobile_rec.yml").write_text("Global:\n", encoding="utf-8")
+    (paddle_root / "tools" / "train.py").write_text(
+        "\n".join(
+            [
+                "from pathlib import Path",
+                "import sys",
+                "",
+                "save_model_dir = None",
+                "for token in sys.argv:",
+                "    if token.startswith('Global.save_model_dir='):",
+                "        save_model_dir = Path(token.partition('=')[2])",
+                "if save_model_dir is None:",
+                "    raise SystemExit(2)",
+                "save_model_dir.mkdir(parents=True, exist_ok=True)",
+                "(save_model_dir / 'best_accuracy.pdparams').write_text('weights', encoding='utf-8')",
+                "print('fake train complete')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (paddle_root / "tools" / "export_model.py").write_text(
+        "\n".join(
+            [
+                "from pathlib import Path",
+                "import sys",
+                "",
+                "save_inference_dir = None",
+                "for token in sys.argv:",
+                "    if token.startswith('Global.save_inference_dir='):",
+                "        save_inference_dir = Path(token.partition('=')[2])",
+                "if save_inference_dir is None:",
+                "    raise SystemExit(3)",
+                "save_inference_dir.mkdir(parents=True, exist_ok=True)",
+                "(save_inference_dir / 'inference.txt').write_text('ok', encoding='utf-8')",
+                "print('fake export complete')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    profile_path = _write_profile("plate-ocr-finetune.yaml", tmp_path / "runs", tmp_path / "ocr-profile.yaml")
+    result = _run_script(
+        "scripts/train_ocr_recognizer.py",
+        "--profile",
+        str(profile_path),
+        "--dataset-manifest",
+        str(manifest_path),
+        "--paddleocr-root",
+        str(paddle_root),
+        "--run-name",
+        "ocr-execute-smoke",
+        "--execute",
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    workspace_dir = tmp_path / "runs" / "ocr-execute-smoke"
+    status = json.loads((workspace_dir / "training_status.json").read_text(encoding="utf-8"))
+    events = (workspace_dir / "training_events.log").read_text(encoding="utf-8")
+    run_manifest = json.loads((workspace_dir / "run_manifest.json").read_text(encoding="utf-8"))
+
+    assert status["state"] == "completed"
+    assert status["current_epoch"] == 80
+    assert Path(status["exported_inference_dir"]).exists()
+    assert "run_started" in events
+    assert "run_completed" in events
+    assert run_manifest["training_command"][2].endswith("scripts\\train_ocr_recognizer.py")
+    assert "--execute" in run_manifest["training_command"]
+    assert run_manifest["export_command"][1] == str((paddle_root / "tools" / "export_model.py").resolve())
+
+
 def test_ocr_training_script_mixes_synthetic_support_dataset(tmp_path):
     primary_root = tmp_path / "primary_ocr_dataset"
     support_root = tmp_path / "support_ocr_dataset"
@@ -595,6 +866,7 @@ def test_ocr_training_script_mixes_synthetic_support_dataset(tmp_path):
 
     assert len(train_list) == 12
     assert len(validation_list) == 2
+    assert any(line.startswith(support_root.as_posix()) for line in train_list if "SUP" in line)
     assert support_summary["selected_support_train_rows"] == 2
     assert support_summary["max_support_train_rows"] == 2
     assert support_summary["support_datasets"][0]["selected_train_rows"] == 2

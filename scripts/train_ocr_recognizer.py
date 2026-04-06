@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import json
+import math
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -28,12 +31,48 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _utc_now_utc() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _write_training_status(
+    path: Path,
+    *,
+    state: str,
+    run_name: str,
+    total_epochs: int,
+    current_epoch: int = 0,
+    best_checkpoint: Path | None = None,
+    exported_inference_dir: Path | None = None,
+    error_message: str | None = None,
+) -> None:
+    payload = {
+        "run_name": run_name,
+        "state": state,
+        "updated_at_utc": _utc_now_utc(),
+        "current_epoch": current_epoch,
+        "total_epochs": total_epochs,
+        "best_checkpoint": str(best_checkpoint) if best_checkpoint is not None else None,
+        "exported_inference_dir": str(exported_inference_dir) if exported_inference_dir is not None else None,
+        "error_message": error_message,
+    }
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _append_training_event(path: Path, message: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(f"{_utc_now_utc()} {message}\n")
+
+
 def _find_paddle_config(root: Path) -> Path:
     candidates = [
         root / "configs" / "rec" / "PP-OCRv5" / "en_PP-OCRv5_rec.yml",
         root / "configs" / "rec" / "PP-OCRv5" / "en_PP-OCRv5_mobile_rec.yml",
         root / "configs" / "rec" / "PP-OCRv4" / "en_PP-OCRv4_rec.yml",
+        root / "configs" / "rec" / "PP-OCRv4" / "en_PP-OCRv4_mobile_rec.yml",
         root / "configs" / "rec" / "PP-OCRv3" / "en_PP-OCRv3_rec.yml",
+        root / "configs" / "rec" / "PP-OCRv3" / "en_PP-OCRv3_mobile_rec.yml",
     ]
     for candidate in candidates:
         if candidate.exists():
@@ -41,12 +80,66 @@ def _find_paddle_config(root: Path) -> Path:
     raise FileNotFoundError(f"could not find a PaddleOCR English recognition config under {root}")
 
 
-def _build_train_command(config_path: Path, workspace_dir: Path, storage_root: str, train_list: str, validation_list: str, char_dict: str, base_model: str | None) -> list[str]:
+def _resolve_base_model_path(base_model: str | None, paddle_root: Path) -> Path | None:
+    if not base_model:
+        return None
+    model_path = Path(base_model)
+    if model_path.is_absolute():
+        return model_path.resolve()
+    return (paddle_root / model_path).resolve()
+
+
+def _should_use_gpu(profile) -> bool:
+    device = profile.device.strip().lower()
+    if device in {"gpu", "cuda"}:
+        return True
+    if device == "cpu":
+        return False
+    if device != "auto":
+        return False
+    try:
+        import paddle
+    except Exception:
+        return False
+    try:
+        return bool(paddle.is_compiled_with_cuda())
+    except Exception:
+        return False
+
+
+def _loader_workers(profile) -> int:
+    return 0 if sys.platform == "win32" else profile.workers
+
+
+def _estimate_eval_interval(train_list: str, batch_size: int) -> int:
+    train_rows = 0
+    with Path(train_list).open("r", encoding="utf-8") as handle:
+        for _ in handle:
+            train_rows += 1
+    estimated_steps = math.ceil(train_rows / max(batch_size, 1)) if train_rows else 1
+    return min(2000, max(10, estimated_steps))
+
+
+def _build_train_command(
+    *,
+    paddle_root: Path,
+    config_path: Path,
+    workspace_dir: Path,
+    storage_root: str,
+    train_list: str,
+    validation_list: str,
+    char_dict: str,
+    base_model: Path | None,
+    profile,
+) -> list[str]:
+    use_gpu = _should_use_gpu(profile)
+    workers = _loader_workers(profile)
+    eval_interval = _estimate_eval_interval(train_list, profile.batch_size)
     command = [
         str(Path(sys.executable).resolve()),
-        "tools/train.py",
+        str((paddle_root / "tools" / "train.py").resolve()),
         "-c",
-        str(config_path),
+        str(config_path.resolve()),
         "-o",
         f"Global.save_model_dir={(workspace_dir / 'output').as_posix()}",
         f"Global.character_dict_path={Path(char_dict).as_posix()}",
@@ -55,24 +148,74 @@ def _build_train_command(config_path: Path, workspace_dir: Path, storage_root: s
         f"Train.dataset.label_file_list=[\"{Path(train_list).as_posix()}\"]",
         f"Eval.dataset.data_dir={Path(storage_root).as_posix()}",
         f"Eval.dataset.label_file_list=[\"{Path(validation_list).as_posix()}\"]",
+        f"Global.use_gpu={'True' if use_gpu else 'False'}",
+        "Global.distributed=False",
+        f"Global.epoch_num={profile.epochs}",
+        "Global.print_batch_step=1",
+        "Global.save_epoch_step=1",
+        f"Global.eval_batch_step=[0,{eval_interval}]",
+        f"Train.loader.batch_size_per_card={profile.batch_size}",
+        f"Eval.loader.batch_size_per_card={profile.batch_size}",
+        f"Train.loader.num_workers={workers}",
+        f"Eval.loader.num_workers={workers}",
     ]
-    if base_model:
-        command.append(f"Global.pretrained_model={base_model}")
+    if base_model is not None:
+        command.append(f"Global.pretrained_model={base_model.as_posix()}")
     return command
 
 
-def _build_export_command(config_path: Path, workspace_dir: Path, char_dict: str) -> list[str]:
+def _build_export_command(
+    *,
+    paddle_root: Path,
+    config_path: Path,
+    workspace_dir: Path,
+    char_dict: str,
+    profile,
+) -> list[str]:
+    use_gpu = _should_use_gpu(profile)
     return [
         str(Path(sys.executable).resolve()),
-        "tools/export_model.py",
+        str((paddle_root / "tools" / "export_model.py").resolve()),
         "-c",
-        str(config_path),
+        str(config_path.resolve()),
         "-o",
         f"Global.pretrained_model={(workspace_dir / 'output' / 'best_accuracy').as_posix()}",
         f"Global.save_inference_dir={(workspace_dir / 'inference_export').as_posix()}",
         f"Global.character_dict_path={Path(char_dict).as_posix()}",
         "Global.use_space_char=False",
+        f"Global.use_gpu={'True' if use_gpu else 'False'}",
+        "Global.distributed=False",
     ]
+
+
+def _build_wrapper_training_command(
+    *,
+    profile_path: Path,
+    dataset_manifest_path: Path,
+    support_manifest_paths: list[Path],
+    paddle_root: Path,
+    run_name: str,
+    allow_pending: bool,
+) -> list[str]:
+    command = [
+        str(Path(sys.executable).resolve()),
+        "-u",
+        str(Path(__file__).resolve()),
+        "--profile",
+        str(profile_path),
+        "--dataset-manifest",
+        str(dataset_manifest_path),
+        "--paddleocr-root",
+        str(paddle_root),
+        "--run-name",
+        run_name,
+        "--execute",
+    ]
+    for support_manifest_path in support_manifest_paths:
+        command.extend(["--support-dataset-manifest", str(support_manifest_path)])
+    if allow_pending:
+        command.append("--allow-pending")
+    return command
 
 
 def main() -> int:
@@ -112,6 +255,10 @@ def main() -> int:
         output_root = (repo_root / output_root).resolve()
     workspace_dir = output_root / run_name
     workspace_dir.mkdir(parents=True, exist_ok=True)
+    status_path = workspace_dir / "training_status.json"
+    events_path = workspace_dir / "training_events.log"
+    best_checkpoint = workspace_dir / "output" / "best_accuracy"
+    inference_export_dir = workspace_dir / "inference_export"
 
     prepared_files, notes, context = prepare_ocr_workspace(
         repo_root,
@@ -123,19 +270,37 @@ def main() -> int:
     )
     training_command: list[str] = []
     export_command: list[str] = []
+    direct_train_command: list[str] = []
     paddle_root = Path(args.paddleocr_root).resolve() if args.paddleocr_root else None
     if paddle_root is not None:
         config_path = _find_paddle_config(paddle_root)
-        training_command = _build_train_command(
-            config_path,
-            workspace_dir,
-            context["storage_root"],
-            context["train_list"],
-            context["validation_list"],
-            context["char_dict_path"],
-            profile.base_model,
+        base_model_path = _resolve_base_model_path(profile.base_model, paddle_root)
+        direct_train_command = _build_train_command(
+            paddle_root=paddle_root,
+            config_path=config_path,
+            workspace_dir=workspace_dir,
+            storage_root=context["storage_root"],
+            train_list=context["train_list"],
+            validation_list=context["validation_list"],
+            char_dict=context["char_dict_path"],
+            base_model=base_model_path,
+            profile=profile,
         )
-        export_command = _build_export_command(config_path, workspace_dir, context["char_dict_path"])
+        export_command = _build_export_command(
+            paddle_root=paddle_root,
+            config_path=config_path,
+            workspace_dir=workspace_dir,
+            char_dict=context["char_dict_path"],
+            profile=profile,
+        )
+        training_command = _build_wrapper_training_command(
+            profile_path=profile_path.resolve(),
+            dataset_manifest_path=dataset_manifest_path.resolve(),
+            support_manifest_paths=support_manifest_paths,
+            paddle_root=paddle_root,
+            run_name=run_name,
+            allow_pending=profile.allow_pending_review or args.allow_pending,
+        )
     else:
         notes.append("paddleocr_root required for command generation and execution")
 
@@ -161,9 +326,9 @@ def main() -> int:
         print(f"- prepared: {prepared_file}")
 
     if args.dry_run or not args.execute:
-        if training_command:
+        if direct_train_command:
             print("Train command:")
-            print(subprocess.list2cmdline(training_command))
+            print(subprocess.list2cmdline(direct_train_command))
             print("Export command:")
             print(subprocess.list2cmdline(export_command))
         else:
@@ -175,15 +340,55 @@ def main() -> int:
     if paddle_root is None:
         raise ValueError("--paddleocr-root is required when --execute is used")
 
-    train_result = subprocess.run(training_command, cwd=paddle_root, check=False)
+    _write_training_status(
+        status_path,
+        state="running",
+        run_name=run_name,
+        total_epochs=profile.epochs,
+        current_epoch=0,
+        best_checkpoint=best_checkpoint,
+    )
+    _append_training_event(events_path, f"run_started total_epochs={profile.epochs} workspace={workspace_dir}")
+
+    train_result = subprocess.run(direct_train_command, cwd=repo_root, check=False)
     if train_result.returncode != 0:
+        _write_training_status(
+            status_path,
+            state="failed",
+            run_name=run_name,
+            total_epochs=profile.epochs,
+            current_epoch=0,
+            best_checkpoint=best_checkpoint if best_checkpoint.with_suffix(".pdparams").exists() else None,
+            error_message=f"training command exited with code {train_result.returncode}",
+        )
+        _append_training_event(events_path, f"run_failed stage=train exit_code={train_result.returncode}")
         return train_result.returncode
 
-    export_result = subprocess.run(export_command, cwd=paddle_root, check=False)
+    export_result = subprocess.run(export_command, cwd=repo_root, check=False)
     if export_result.returncode != 0:
+        _write_training_status(
+            status_path,
+            state="failed",
+            run_name=run_name,
+            total_epochs=profile.epochs,
+            current_epoch=profile.epochs,
+            best_checkpoint=best_checkpoint if best_checkpoint.with_suffix(".pdparams").exists() else None,
+            error_message=f"export command exited with code {export_result.returncode}",
+        )
+        _append_training_event(events_path, f"run_failed stage=export exit_code={export_result.returncode}")
         return export_result.returncode
 
-    print(f"Exported OCR inference dir: {workspace_dir / 'inference_export'}")
+    _write_training_status(
+        status_path,
+        state="completed",
+        run_name=run_name,
+        total_epochs=profile.epochs,
+        current_epoch=profile.epochs,
+        best_checkpoint=best_checkpoint if best_checkpoint.with_suffix(".pdparams").exists() else best_checkpoint,
+        exported_inference_dir=inference_export_dir,
+    )
+    _append_training_event(events_path, f"run_completed exported_inference_dir={inference_export_dir}")
+    print(f"Exported OCR inference dir: {inference_export_dir}")
     return 0
 
 

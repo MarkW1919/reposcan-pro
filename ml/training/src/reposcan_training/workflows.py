@@ -294,7 +294,10 @@ def prepare_ocr_workspace(
 
             support_storage_root = resolve_storage_root(repo_root, support_manifest.storage_root)
             support_train_split = _require_split(support_manifest, DatasetSplit.train)
-            support_train_rows = _read_ocr_split_rows(support_storage_root, support_train_split)
+            support_train_rows = [
+                ((support_storage_root / relative_path).resolve().as_posix(), text)
+                for relative_path, text in _read_ocr_split_rows(support_storage_root, support_train_split)
+            ]
             synthetic_rows.extend((index, row) for row in support_train_rows)
             support_summary["support_datasets"].append(
                 {

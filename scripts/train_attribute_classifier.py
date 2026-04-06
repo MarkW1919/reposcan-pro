@@ -22,6 +22,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--profile", required=True)
     parser.add_argument("--dataset-manifest", required=True)
     parser.add_argument("--initial-checkpoint")
+    parser.add_argument("--resume-last", action="store_true")
     parser.add_argument("--run-name")
     parser.add_argument("--export-only", action="store_true")
     parser.add_argument("--allow-pending", action="store_true")
@@ -346,6 +347,8 @@ def main() -> int:
         initial_checkpoint_path = (
             repo_root / args.initial_checkpoint if not Path(args.initial_checkpoint).is_absolute() else Path(args.initial_checkpoint)
         ).resolve()
+    if args.resume_last and initial_checkpoint_path is not None:
+        raise ValueError("--resume-last cannot be combined with --initial-checkpoint")
 
     profile = load_training_profile(profile_path)
     dataset_manifest = load_training_dataset_manifest(dataset_manifest_path)
@@ -359,6 +362,26 @@ def main() -> int:
     workspace_dir.mkdir(parents=True, exist_ok=True)
     status_path = workspace_dir / "training_status.json"
     events_path = workspace_dir / "training_events.log"
+    checkpoints_dir = workspace_dir / "checkpoints"
+    exports_dir = workspace_dir / "exports"
+    best_checkpoint = checkpoints_dir / "best.pt"
+    last_checkpoint = checkpoints_dir / "last.pt"
+
+    resume_completed_epochs = 0
+    resume_best_val: float | None = None
+    if args.resume_last:
+        existing_status = _load_existing_training_status(status_path)
+        if not last_checkpoint.exists():
+            raise FileNotFoundError(f"resume checkpoint not found for run '{run_name}': {last_checkpoint}")
+        resume_completed_epochs = int(existing_status.get("current_epoch") or 0)
+        if resume_completed_epochs >= profile.epochs:
+            raise ValueError(
+                f"run '{run_name}' already completed {resume_completed_epochs} epochs, which meets or exceeds the configured total of {profile.epochs}"
+            )
+        best_val_raw = existing_status.get("best_validation_accuracy")
+        if isinstance(best_val_raw, (int, float)):
+            resume_best_val = float(best_val_raw)
+        initial_checkpoint_path = last_checkpoint
 
     prepared_files, notes, _ = prepare_classification_workspace(repo_root, profile, dataset_manifest, workspace_dir)
     training_command = [
@@ -373,8 +396,10 @@ def main() -> int:
         run_name,
         "--execute",
     ]
-    if initial_checkpoint_path is not None:
+    if initial_checkpoint_path is not None and not args.resume_last:
         training_command.extend(["--initial-checkpoint", str(initial_checkpoint_path)])
+    if args.resume_last:
+        training_command.append("--resume-last")
 
     run_manifest = build_run_manifest(
         profile=profile,
@@ -407,12 +432,8 @@ def main() -> int:
     except ImportError as exc:
         raise RuntimeError("torch and torchvision are required to execute attribute-classifier training") from exc
 
-    checkpoints_dir = workspace_dir / "checkpoints"
-    exports_dir = workspace_dir / "exports"
     checkpoints_dir.mkdir(parents=True, exist_ok=True)
     exports_dir.mkdir(parents=True, exist_ok=True)
-    best_checkpoint = checkpoints_dir / "best.pt"
-    last_checkpoint = checkpoints_dir / "last.pt"
 
     if args.export_only:
         if not best_checkpoint.exists():
@@ -462,33 +483,51 @@ def main() -> int:
     if initial_checkpoint_path is not None:
         state_dict = _load_initial_checkpoint(checkpoint_path=initial_checkpoint_path, class_names=class_names)
         model.load_state_dict(state_dict, strict=True)
-        print(f"Loaded initial checkpoint: {initial_checkpoint_path}")
+        if args.resume_last:
+            print(f"Resuming from last checkpoint: {initial_checkpoint_path}")
+        else:
+            print(f"Loaded initial checkpoint: {initial_checkpoint_path}")
     device = torch.device("cuda" if torch.cuda.is_available() and profile.device != "cpu" else "cpu")
     model = model.to(device)
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.AdamW(model.parameters(), lr=5e-4, weight_decay=1e-4)
+
+    start_epoch = resume_completed_epochs + 1 if args.resume_last else 1
+    best_val = resume_best_val if resume_best_val is not None else 0.0
+    completed_epoch = resume_completed_epochs
 
     _write_training_status(
         status_path,
         state="running",
         run_name=run_name,
         total_epochs=profile.epochs,
+        current_epoch=resume_completed_epochs,
+        best_validation_accuracy=best_val if best_val > 0.0 else None,
         best_checkpoint=best_checkpoint if best_checkpoint.exists() else None,
     )
-    _append_training_event(events_path, f"run_started total_epochs={profile.epochs} workspace={workspace_dir}")
-    if initial_checkpoint_path is not None:
+    if args.resume_last:
+        _append_training_event(
+            events_path,
+            (
+                f"run_resumed total_epochs={profile.epochs} "
+                f"completed_epochs={resume_completed_epochs} next_epoch={start_epoch} "
+                f"checkpoint={initial_checkpoint_path}"
+            ),
+        )
+    else:
+        _append_training_event(events_path, f"run_started total_epochs={profile.epochs} workspace={workspace_dir}")
+    if initial_checkpoint_path is not None and not args.resume_last:
         _append_training_event(events_path, f"initial_checkpoint_loaded checkpoint={initial_checkpoint_path}")
 
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=profile.epochs, eta_min=1e-6
     )
 
-    best_val = 0.0
     epochs_without_improvement = 0
     patience = profile.patience if hasattr(profile, "patience") and profile.patience else profile.epochs
     best_epoch = 0
     try:
-        for epoch in range(1, profile.epochs + 1):
+        for epoch in range(start_epoch, profile.epochs + 1):
             print(f"starting_epoch={epoch}/{profile.epochs}")
             _append_training_event(events_path, f"epoch_started epoch={epoch}/{profile.epochs}")
             model.train()
@@ -520,6 +559,7 @@ def main() -> int:
             else:
                 epochs_without_improvement += 1
 
+            completed_epoch = epoch
             _write_training_status(
                 status_path,
                 state="running",
@@ -558,7 +598,7 @@ def main() -> int:
             state="completed",
             run_name=run_name,
             total_epochs=profile.epochs,
-            current_epoch=best_epoch or profile.epochs,
+            current_epoch=completed_epoch,
             best_validation_accuracy=best_val,
             best_checkpoint=best_checkpoint,
             exported_onnx=onnx_path,
@@ -566,7 +606,7 @@ def main() -> int:
         )
         _append_training_event(
             events_path,
-            f"run_completed best_epoch={best_epoch or profile.epochs} best_val={best_val:.4f} onnx={onnx_path}",
+            f"run_completed completed_epoch={completed_epoch} best_val={best_val:.4f} onnx={onnx_path}",
         )
 
         print(f"Best checkpoint: {best_checkpoint}")
@@ -579,7 +619,7 @@ def main() -> int:
             state="failed",
             run_name=run_name,
             total_epochs=profile.epochs,
-            current_epoch=best_epoch,
+            current_epoch=completed_epoch,
             best_validation_accuracy=best_val,
             best_checkpoint=best_checkpoint if best_checkpoint.exists() else None,
             error_message=str(exc),
