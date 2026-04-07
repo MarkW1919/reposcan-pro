@@ -3,7 +3,8 @@ import type { AlertItem, RecoveryLogEntry } from "./demo-data";
 export interface HealthDependency {
   name: string;
   state: string;
-  message: string;
+  latency_ms: number | null;
+  message: string | null;
 }
 
 export interface HealthResponse {
@@ -12,6 +13,17 @@ export interface HealthResponse {
   state: string;
   timestamp_utc: string;
   dependencies: HealthDependency[];
+  uptime_seconds: number | null;
+}
+
+export type CameraHealthStatus = "online" | "offline" | "unknown";
+
+export interface DashboardCameraHealth {
+  camera_id: string;
+  label: string;
+  status: CameraHealthStatus;
+  last_seen_at_utc: string | null;
+  fps: number | null;
 }
 
 export type ReviewAction = "confirm" | "correct" | "flag" | "dismiss";
@@ -323,6 +335,7 @@ export interface DemoRunSubmission {
 export interface DashboardOverviewResponse {
   generated_at_utc: string;
   health: HealthResponse;
+  camera_health: DashboardCameraHealth[];
   counts: {
     active_alerts: number;
     recent_detections: number;
@@ -359,6 +372,12 @@ export interface DetectionSearchFilters {
   max_latitude?: number;
   min_longitude?: number;
   max_longitude?: number;
+  geo_shape?: "circle" | "polygon";
+  geo_center_latitude?: number;
+  geo_center_longitude?: number;
+  geo_radius_meters?: number;
+  geo_polygon_latitude?: number[];
+  geo_polygon_longitude?: number[];
   vehicle_color?: string;
   vehicle_make?: string;
   vehicle_model?: string;
@@ -797,6 +816,14 @@ export async function searchDetections(
     query.set(key, String(value));
   };
 
+  const appendAll = (key: string, values: number[] | undefined): void => {
+    values?.forEach((value) => {
+      if (value !== null && value !== undefined && !Number.isNaN(value)) {
+        query.append(key, String(value));
+      }
+    });
+  };
+
   addIfPresent("plate", filters.plate?.trim());
   addIfPresent("plate_match", filters.plate_match);
   addIfPresent("start_utc", filters.start_utc);
@@ -806,6 +833,12 @@ export async function searchDetections(
   addIfPresent("max_latitude", filters.max_latitude);
   addIfPresent("min_longitude", filters.min_longitude);
   addIfPresent("max_longitude", filters.max_longitude);
+  addIfPresent("geo_shape", filters.geo_shape);
+  addIfPresent("geo_center_latitude", filters.geo_center_latitude);
+  addIfPresent("geo_center_longitude", filters.geo_center_longitude);
+  addIfPresent("geo_radius_meters", filters.geo_radius_meters);
+  appendAll("geo_polygon_latitude", filters.geo_polygon_latitude);
+  appendAll("geo_polygon_longitude", filters.geo_polygon_longitude);
   addIfPresent("vehicle_color", filters.vehicle_color?.trim());
   addIfPresent("vehicle_make", filters.vehicle_make?.trim());
   addIfPresent("vehicle_model", filters.vehicle_model?.trim());
@@ -831,6 +864,12 @@ export interface AlertSearchFilters {
   max_latitude?: number;
   min_longitude?: number;
   max_longitude?: number;
+  geo_shape?: "circle" | "polygon";
+  geo_center_latitude?: number;
+  geo_center_longitude?: number;
+  geo_radius_meters?: number;
+  geo_polygon_latitude?: number[];
+  geo_polygon_longitude?: number[];
   vehicle_color?: string;
   vehicle_make?: string;
   vehicle_model?: string;
@@ -858,6 +897,14 @@ export async function searchAlerts(
     query.set(key, String(value));
   };
 
+  const appendAll = (key: string, values: number[] | undefined): void => {
+    values?.forEach((value) => {
+      if (value !== null && value !== undefined && !Number.isNaN(value)) {
+        query.append(key, String(value));
+      }
+    });
+  };
+
   addIfPresent("plate", filters.plate?.trim());
   addIfPresent("plate_match", filters.plate_match);
   addIfPresent("start_utc", filters.start_utc);
@@ -867,6 +914,12 @@ export async function searchAlerts(
   addIfPresent("max_latitude", filters.max_latitude);
   addIfPresent("min_longitude", filters.min_longitude);
   addIfPresent("max_longitude", filters.max_longitude);
+  addIfPresent("geo_shape", filters.geo_shape);
+  addIfPresent("geo_center_latitude", filters.geo_center_latitude);
+  addIfPresent("geo_center_longitude", filters.geo_center_longitude);
+  addIfPresent("geo_radius_meters", filters.geo_radius_meters);
+  appendAll("geo_polygon_latitude", filters.geo_polygon_latitude);
+  appendAll("geo_polygon_longitude", filters.geo_polygon_longitude);
   addIfPresent("vehicle_color", filters.vehicle_color?.trim());
   addIfPresent("vehicle_make", filters.vehicle_make?.trim());
   addIfPresent("vehicle_model", filters.vehicle_model?.trim());

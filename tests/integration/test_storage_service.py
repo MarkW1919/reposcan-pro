@@ -8,6 +8,7 @@ from reposcan_contracts.alert import AlertRecord
 from reposcan_contracts.dispatch import DispatchAssignmentRecord
 from reposcan_contracts.detection import DetectionRecord
 from reposcan_contracts.followup import FollowUpRecord
+from reposcan_contracts.health import CameraHealthStatus
 from reposcan_contracts.hotlist import HotlistEntry
 from reposcan_contracts.operator import OperatorSessionRecord
 from reposcan_contracts.review import ReviewRecord
@@ -339,6 +340,93 @@ def test_storage_service_tracks_active_operator_sessions(tmp_path):
     assert stale.session_id == "session_stale"
     sessions = service.list_operator_sessions(limit=10, max_age_seconds=1_000_000)
     assert {session.session_id for session in sessions} == {"session_001", "session_stale"}
+
+
+def test_storage_service_derives_camera_health_from_configs_and_detections(tmp_path):
+    service = StorageService(
+        repository=InMemoryStorageRepository(),
+        media_root=tmp_path / "media",
+    )
+    fresh_detection = _detection_record().model_copy(
+        update={"timestamp_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+    )
+    service.store_detection(fresh_detection)
+
+    camera_health = service.list_camera_health()
+    by_camera_id = {record.camera_id: record for record in camera_health}
+
+    assert by_camera_id["cam_north_gate_01"].status == CameraHealthStatus.online
+    assert by_camera_id["cam_north_gate_01"].label == "North Gate Camera 1"
+    assert by_camera_id["cam_north_gate_01"].fps == 30
+    assert by_camera_id["cam_file_demo_01"].status == CameraHealthStatus.offline
+    assert by_camera_id["cam_file_demo_01"].label == "Local File Demo Camera"
+    assert by_camera_id["cam_file_demo_01"].fps == 10
+
+
+def test_storage_service_supports_geo_circle_and_polygon_filters(tmp_path):
+    service = StorageService(
+        repository=InMemoryStorageRepository(),
+        media_root=tmp_path / "media",
+    )
+    service.store_detection(
+        _detection_record().model_copy(
+            update={
+                "detection_id": "det_geo_match",
+                "timestamp_utc": "2026-03-20T04:12:00Z",
+                "gps_latitude": 37.42052,
+                "gps_longitude": -122.08091,
+                "camera_id": "cam_north_gate_01",
+            }
+        )
+    )
+    service.store_detection(
+        _detection_record().model_copy(
+            update={
+                "detection_id": "det_geo_other",
+                "timestamp_utc": "2026-03-20T04:13:00Z",
+                "gps_latitude": 35.10000,
+                "gps_longitude": -120.20000,
+                "camera_id": "cam_lot_east_03",
+            }
+        )
+    )
+    service.store_alert(
+        _alert_record().model_copy(
+            update={
+                "alert_id": "alert_geo_match",
+                "detection_id": "det_geo_match",
+                "timestamp_utc": "2026-03-20T04:12:30Z",
+                "camera_id": "cam_north_gate_01",
+                "gps_latitude": 37.42052,
+                "gps_longitude": -122.08091,
+            }
+        )
+    )
+
+    circle_results, circle_total = service.search_detections(
+        geo_shape_type="circle",
+        geo_center_latitude=37.42052,
+        geo_center_longitude=-122.08091,
+        geo_radius_meters=100.0,
+        limit=10,
+        offset=0,
+    )
+    polygon_results, polygon_total = service.search_alerts(
+        geo_shape_type="polygon",
+        geo_polygon_points=[
+            (37.42040, -122.08110),
+            (37.42040, -122.08070),
+            (37.42070, -122.08070),
+            (37.42070, -122.08110),
+        ],
+        limit=10,
+        offset=0,
+    )
+
+    assert circle_total == 1
+    assert circle_results[0].detection_id == "det_geo_match"
+    assert polygon_total == 1
+    assert polygon_results[0].alert_id == "alert_geo_match"
 
 
 def test_storage_service_rejects_update_for_missing_alert(tmp_path):

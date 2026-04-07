@@ -3,6 +3,8 @@ import { Circle, MapContainer, Marker, Polyline, Popup, TileLayer } from "react-
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
+import { DetectionFeed } from "./components/console/DetectionFeed";
+import { DetectionEvidenceHero } from "./components/detections/DetectionEvidenceHero";
 import { cameraFeeds, defaultFieldSettings } from "./demo-data";
 import {
   fetchAuditEvents,
@@ -31,6 +33,7 @@ import {
   type DispatchAssignmentStatus,
   type DashboardAlert,
   type DashboardAlertStatus,
+  type DashboardCameraHealth,
   type DashboardDetection,
   type DashboardHotlist,
   type DashboardOverviewResponse,
@@ -45,6 +48,7 @@ import {
   type ReviewAction,
   type ReviewRecord,
 } from "./live-api";
+import { detectionSeverityForRow } from "./presentation/detectionSeverity";
 
 type AppScreen = "console" | "search" | "accounts" | "hotlists" | "settings";
 type StageView = "camera" | "map";
@@ -112,8 +116,9 @@ interface CameraUiFeed {
   id: string;
   label: string;
   shortLabel: string;
-  status: "Online" | "Offline";
+  status: "Online" | "Offline" | "Unknown";
   fps: number | null;
+  lastSeenAtUtc?: string | null;
 }
 
 interface HotlistAlertItem {
@@ -563,17 +568,74 @@ function buildVehicleLabel(record: DashboardDetection): string {
   return parts.join(" ") || "Unclassified vehicle";
 }
 
-function buildCameraUiFeeds(rows: ConsoleDetectionRow[], source: DataSource): CameraUiFeed[] {
+function mapCameraHealthStatus(status: DashboardCameraHealth["status"]): CameraUiFeed["status"] {
+  if (status === "online") {
+    return "Online";
+  }
+  if (status === "offline") {
+    return "Offline";
+  }
+  return "Unknown";
+}
+
+function cameraFeedTone(status: CameraUiFeed["status"]): "success" | "warn" | "muted" {
+  if (status === "Online") {
+    return "success";
+  }
+  if (status === "Unknown") {
+    return "warn";
+  }
+  return "muted";
+}
+
+function cameraFeedBadgeLabel(status: CameraUiFeed["status"]): string {
+  if (status === "Online") {
+    return "Scanning";
+  }
+  if (status === "Unknown") {
+    return "Unknown";
+  }
+  return "Offline";
+}
+
+function cameraFeedDotTone(status: CameraUiFeed["status"]): "live" | "warn" | "off" {
+  if (status === "Online") {
+    return "live";
+  }
+  if (status === "Unknown") {
+    return "warn";
+  }
+  return "off";
+}
+
+function buildCameraUiFeeds(
+  rows: ConsoleDetectionRow[],
+  source: DataSource,
+  liveCameraHealth: DashboardCameraHealth[] | undefined,
+): CameraUiFeed[] {
+  if (source === "live" && liveCameraHealth && liveCameraHealth.length > 0) {
+    return liveCameraHealth.map((camera) => ({
+      id: camera.camera_id,
+      label: camera.label,
+      shortLabel: humanizeCameraId(camera.camera_id, "short"),
+      status: mapCameraHealthStatus(camera.status),
+      fps: camera.fps,
+      lastSeenAtUtc: camera.last_seen_at_utc,
+    }));
+  }
+
   if (source === "live") {
     const liveCameraIds = [...new Set(rows.map((row) => row.cameraId))];
     return liveCameraIds.map((cameraId) => {
       const demoFeed = cameraFeeds.find((feed) => feed.id === cameraId);
+      const lastRow = rows.find((row) => row.cameraId === cameraId);
       return {
         id: cameraId,
         label: buildCameraDisplayName(cameraId),
         shortLabel: humanizeCameraId(cameraId, "short"),
         status: "Online",
         fps: demoFeed?.fps ?? null,
+        lastSeenAtUtc: lastRow?.timestampUtc ?? null,
       };
     });
   }
@@ -584,6 +646,7 @@ function buildCameraUiFeeds(rows: ConsoleDetectionRow[], source: DataSource): Ca
     shortLabel: `Cam ${index + 1}`,
     status: feed.status,
     fps: feed.fps,
+    lastSeenAtUtc: null,
   }));
 }
 
@@ -632,16 +695,35 @@ function followUpStatusTone(status: FollowUpStatus): "critical" | "warn" | "succ
 }
 
 function dispatchStatusTone(status: DispatchAssignmentStatus): "critical" | "warn" | "success" | "muted" {
-  if (status === "queued" || status === "assigned") {
+  if (status === "cancelled") {
+    return "critical";
+  }
+  if (status === "queued") {
     return "warn";
   }
   if (status === "en_route" || status === "onsite") {
-    return "critical";
+    return "success";
   }
-  if (status === "completed") {
+  if (status === "assigned") {
     return "success";
   }
   return "muted";
+}
+
+function dispatchStatusLabel(status: DispatchAssignmentStatus): string {
+  if (status === "en_route") {
+    return "En Route";
+  }
+  if (status === "onsite") {
+    return "On Scene";
+  }
+  if (status === "queued") {
+    return "Pending Review";
+  }
+  if (status === "cancelled") {
+    return "Abort";
+  }
+  return titleCase(status);
 }
 
 function buildRecognitionVehicleLabel(event: DashboardPopupActivityEvent): string {
@@ -1134,26 +1216,6 @@ function confidenceTone(value: number): "high" | "medium" | "low" {
     return "medium";
   }
   return "low";
-}
-
-function readStatusTone(row: ConsoleDetectionRow): "active" | "acknowledged" | "dismissed" | "recovery" | "observed" {
-  if (row.alertStatus) {
-    return row.alertStatus;
-  }
-  if (row.hotlist) {
-    return "recovery";
-  }
-  return "observed";
-}
-
-function readStatusLabel(row: ConsoleDetectionRow): string {
-  if (row.alertStatus) {
-    return alertStatusLabel(row.alertStatus);
-  }
-  if (row.hotlist) {
-    return "Recovery";
-  }
-  return "Observed";
 }
 
 function interpolatePosition(progress: number): { lat: number; lng: number } {
@@ -1660,7 +1722,10 @@ function App(): ReactElement {
     return rows.sort((left, right) => right.timestampUtc.localeCompare(left.timestampUtc));
   }, [dataSource, overview?.alerts, overview?.detections, hotlists]);
 
-  const availableCameraFeeds = useMemo(() => buildCameraUiFeeds(allRows, dataSource), [allRows, dataSource]);
+  const availableCameraFeeds = useMemo(
+    () => buildCameraUiFeeds(allRows, dataSource, overview?.camera_health),
+    [allRows, dataSource, overview?.camera_health],
+  );
 
   useEffect(() => {
     const currentRowStillExists = selectedDetectionId ? allRows.some((row) => row.id === selectedDetectionId) : false;
@@ -2979,11 +3044,23 @@ function App(): ReactElement {
         <HotlistAlertOverlay
           activeDestination={activeDestination}
           assignment={matchingAssignmentsForRow(hotlistOverlayRow, assignments)[0] ?? null}
+          canSubmitReview={dataSource !== "live" || overview?.current_principal.capabilities.can_submit_reviews === true}
+          dataSource={dataSource}
           followUp={matchingFollowUpsForRow(hotlistOverlayRow, followUps)[0] ?? null}
           hotlistAudioMuted={hotlistAudioMuted}
           hotlistEntry={hotlistEntryForRow(hotlistOverlayRow, hotlists)}
           hotlistRow={hotlistOverlayRow}
           onDismiss={() => setHotlistOverlayId(null)}
+          onConfirmMatch={() => {
+            if (hotlistOverlayRow.detectionId) {
+              void handleSubmitReview(hotlistOverlayRow.detectionId, "confirm", undefined, "Confirmed from hotlist alert.");
+            }
+          }}
+          onFlagFalsePositive={() => {
+            if (hotlistOverlayRow.detectionId) {
+              void handleSubmitReview(hotlistOverlayRow.detectionId, "dismiss", undefined, "Marked false positive from hotlist alert.");
+            }
+          }}
           onMuteToggle={() => setHotlistAudioMuted((value) => !value)}
           onNavigate={() => {
             centerMapOnRow(hotlistOverlayRow);
@@ -2994,10 +3071,26 @@ function App(): ReactElement {
             openDetail(hotlistOverlayRow);
             setHotlistOverlayId(null);
           }}
+          reviewError={reviewError}
+          reviewMessage={reviewMessage}
+          reviewSaving={reviewSaving}
         />
       ) : null}
     </>
   );
+}
+
+function searchResultSeverity(row: ConsoleDetectionRow): "critical" | "priority" | "watch" | "observed" {
+  if (row.alertStatus === "active") {
+    return "critical";
+  }
+  if (row.alertStatus === "acknowledged") {
+    return "priority";
+  }
+  if (row.alertStatus === "dismissed" || row.hotlist) {
+    return "watch";
+  }
+  return "observed";
 }
 
 function SearchResultCard(props: {
@@ -3012,11 +3105,18 @@ function SearchResultCard(props: {
   onCopy: (plate: string) => Promise<void>;
 }): ReactElement {
   const frameUrl = useDetectionFrameImage(props.row.detectionId, props.dataSource === "live");
+  const plateCropUrl = useDetectionPlateCropImage(props.row.detectionId, props.dataSource === "live");
+  const severity = searchResultSeverity(props.row);
 
   return (
-    <article className="search-result-card">
-      <div className={`search-result-card__thumb ${frameUrl ? "search-result-card__thumb--image" : ""}`}>
-        {frameUrl ? <img alt={`${props.row.plate1} capture`} src={frameUrl} /> : <span>{props.row.camera}</span>}
+    <article className={`search-result-card severity-band severity-band--${severity}`}>
+      <div className="search-result-card__evidence">
+        <div className={`search-result-card__thumb search-result-card__thumb--plate ${plateCropUrl ? "search-result-card__thumb--image" : ""}`}>
+          {plateCropUrl ? <img alt={`${props.row.plate1} plate crop`} src={plateCropUrl} /> : <span>{props.row.plate1 || "OCR"}</span>}
+        </div>
+        <div className={`search-result-card__thumb ${frameUrl ? "search-result-card__thumb--image" : ""}`}>
+          {frameUrl ? <img alt={`${props.row.plate1} capture`} src={frameUrl} /> : <span>{props.row.camera}</span>}
+        </div>
       </div>
       <div className="search-result-card__body">
         <div className="search-result-card__header">
@@ -3026,18 +3126,19 @@ function SearchResultCard(props: {
             <span>{props.row.vehicle}</span>
           </div>
           <div className="search-result-card__badges">
+            <span className={`conf-badge conf-badge--${confidenceTone(confidencePercent(props.row.conf))}`}>{confidenceLabel(props.row.conf)}</span>
             {props.row.hotlist ? <Badge tone="critical">Recovery</Badge> : null}
             {props.hotlistLabel ? <Badge tone="warn">{props.hotlistLabel}</Badge> : null}
             {props.row.alertStatus ? <Badge tone={alertStatusTone(props.row.alertStatus)}>{alertStatusLabel(props.row.alertStatus)}</Badge> : null}
             {props.row.alertMatchType ? <Badge tone={props.row.alertMatchType === "exact" ? "success" : "warn"}>{`${titleCase(props.row.alertMatchType)} match`}</Badge> : null}
             {props.followUp ? <Badge tone={followUpStatusTone(props.followUp.status)}>{`Follow-up ${titleCase(props.followUp.status)}`}</Badge> : null}
-            {props.assignment ? <Badge tone={dispatchStatusTone(props.assignment.status)}>{`Dispatch ${titleCase(props.assignment.status)}`}</Badge> : null}
+            {props.assignment ? <Badge tone={dispatchStatusTone(props.assignment.status)}>{`Dispatch ${dispatchStatusLabel(props.assignment.status)}`}</Badge> : null}
           </div>
         </div>
         <div className="search-result-card__meta">
           <span>{props.row.source}</span>
           <span>{props.row.gps}</span>
-          <span>{`Confidence ${confidenceLabel(props.row.conf)}`}</span>
+          <span>{props.row.direction && props.row.lane ? `${props.row.direction} / ${props.row.lane}` : props.row.direction || ""}</span>
         </div>
         {props.followUp || props.assignment ? (
           <div className="search-result-card__workflow">
@@ -3049,7 +3150,7 @@ function SearchResultCard(props: {
             ) : null}
             {props.assignment ? (
               <span>
-                {props.assignment.summary ?? `Dispatch ${titleCase(props.assignment.status)}`}
+                {props.assignment.summary ?? `Dispatch ${dispatchStatusLabel(props.assignment.status)}`}
                 {props.assignment.assigned_unit_label ? ` - ${props.assignment.assigned_unit_label}` : ""}
                 {props.assignment.destination_label ? ` to ${props.assignment.destination_label}` : ""}
               </span>
@@ -3363,7 +3464,7 @@ function ConsoleScreen(props: {
                   type="button"
                   onClick={() => props.onSelectCamera(feed.id)}
                 >
-                  <span className={`camera-dot camera-dot--${feed.status === "Online" ? "live" : "off"}`} />
+                  <span className={`camera-dot camera-dot--${cameraFeedDotTone(feed.status)}`} />
                   {feed.shortLabel}
                 </button>
               ))}
@@ -3393,7 +3494,7 @@ function ConsoleScreen(props: {
                   </button>
                 </>
               ) : null}
-              <Badge tone={props.currentCamera?.status === "Online" ? "success" : "muted"}>{props.currentCamera?.status === "Online" ? "SCANNING" : "OFFLINE"}</Badge>
+              <Badge tone={cameraFeedTone(props.currentCamera?.status ?? "Unknown")}>{cameraFeedBadgeLabel(props.currentCamera?.status ?? "Unknown").toUpperCase()}</Badge>
             </div>
           </div>
 
@@ -3457,43 +3558,38 @@ function ConsoleScreen(props: {
               {props.activeAlerts > 0 ? <Badge tone="critical">{`${props.activeAlerts} alert${props.activeAlerts === 1 ? "" : "s"}`}</Badge> : null}
             </div>
           </div>
-          <div className="table-scroll">
-            <table className="detection-table">
-              <thead>
-                <tr>
-                  <th>Capture</th>
-                  <th>Plate</th>
-                  <th>Alt</th>
-                  <th>Cam</th>
-                  <th>Conf</th>
-                  <th>Time</th>
-                  <th>Case</th>
-                </tr>
-              </thead>
-              <tbody>
-                {props.allRows.map((row) => (
-                  <tr
-                    key={row.id}
-                    className={`${props.selectedDetectionId === row.id ? "is-selected" : ""} ${row.hotlist ? "is-hotlist" : ""}`}
-                    onClick={() => props.onSelectDetection(row.id)}
-                  >
-                    <td>
-                      <button className="thumb-cell" type="button" onClick={() => props.onOpenDetail(row)}>
-                        {row.hotlist ? <span className="thumb-cell__alert-dot" /> : null}
-                        <span>{row.camera}</span>
-                      </button>
-                    </td>
-                    <td className="plate-cell">{row.plate1}</td>
-                    <td className="muted-cell">{row.plate2}</td>
-                    <td>{row.camera}</td>
-                    <td><span className={`conf-inline conf-inline--${confidenceTone(row.conf)}`}>{confidenceLabel(row.conf)}</span></td>
-                    <td>{row.time}</td>
-                    <td className={`sync-cell sync-cell--${readStatusTone(row)}`}>{readStatusLabel(row)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="camera-health-strip">
+            {props.cameraFeedsList.map((feed) => (
+              <div key={feed.id} className={`camera-health-chip camera-health-chip--${feed.status.toLowerCase()}`}>
+                <span className={`camera-health-chip__dot camera-health-chip__dot--${cameraFeedDotTone(feed.status)}`} />
+                <div className="camera-health-chip__copy">
+                  <strong>{feed.shortLabel}</strong>
+                  <span>
+                    {feed.status === "Online"
+                      ? feed.fps
+                        ? `${Math.round(feed.fps)} fps`
+                        : "Live"
+                      : feed.lastSeenAtUtc
+                        ? `Seen ${formatDateTime(feed.lastSeenAtUtc)}`
+                        : feed.status}
+                  </span>
+                </div>
+              </div>
+            ))}
           </div>
+          <DetectionFeed
+            confidenceLabel={confidenceLabel}
+            confidenceTone={confidenceTone}
+            rows={props.allRows}
+            selectedDetectionId={props.selectedDetectionId}
+            onOpenDetail={(rowId) => {
+              const row = props.allRows.find((item) => item.id === rowId);
+              if (row) {
+                props.onOpenDetail(row);
+              }
+            }}
+            onSelectDetection={props.onSelectDetection}
+          />
         </section>
       </div>
     </section>
@@ -3779,7 +3875,7 @@ function SearchScreen(props: {
                         <div className="result-group-card__meta">
                           {lead.hotlist ? <Badge tone="critical">Recovery</Badge> : null}
                           {leadFollowUp ? <Badge tone={followUpStatusTone(leadFollowUp.status)}>{`Follow-up ${titleCase(leadFollowUp.status)}`}</Badge> : null}
-                          {leadAssignment ? <Badge tone={dispatchStatusTone(leadAssignment.status)}>{`Dispatch ${titleCase(leadAssignment.status)}`}</Badge> : null}
+                          {leadAssignment ? <Badge tone={dispatchStatusTone(leadAssignment.status)}>{`Dispatch ${dispatchStatusLabel(leadAssignment.status)}`}</Badge> : null}
                           <Badge tone="cyan">{`Last seen ${formatDateTime(lead.timestampUtc)}`}</Badge>
                           {group.rows.length > 1 ? (
                             <button className="link-button" type="button" onClick={() => props.onToggleExpanded(group.plate)}>
@@ -3908,7 +4004,7 @@ function AccountsScreen(props: {
               props.hotlists.map((entry) => (
                 <button
                   key={entry.entry_id}
-                  className={`hotlist-row ${props.selectedHotlistId === entry.entry_id ? "is-selected" : ""}`}
+                  className={`hotlist-row severity-band severity-band--${entry.active ? "critical" : "observed"} ${props.selectedHotlistId === entry.entry_id ? "is-selected" : ""}`}
                   type="button"
                   onClick={() => props.onSelect(entry)}
                 >
@@ -4377,10 +4473,14 @@ function HotlistsScreen(props: {
               ) : (
                 alertCases.map(({ alert, row, entry }) => {
                   const matchConfidence = confidenceLabel(confidencePercent(alert.match_confidence));
+                  const queueSeverity = detectionSeverityForRow({
+                    alertStatus: alert.status,
+                    hotlist: row?.hotlist ?? true,
+                  });
                   return (
                     <button
                       key={alert.alert_id}
-                      className={`queue-row ${props.selectedAlertId === alert.alert_id ? "is-selected" : ""}`}
+                      className={`queue-row queue-row--${queueSeverity} ${props.selectedAlertId === alert.alert_id ? "is-selected" : ""}`}
                       type="button"
                       onClick={() => props.onSelectAlert(alert.alert_id)}
                     >
@@ -5109,16 +5209,15 @@ function DetailOverlay(props: {
         </div>
 
         <div className="detail-overlay__body">
-          <div className="detail-evidence-pair">
-            <div className="detail-hero">
-              {props.detailImageUrl ? <img alt={`${props.detailRow.plate1} frame`} src={props.detailImageUrl} /> : <div className="detail-hero__placeholder">{props.detailRow.vehicle}</div>}
-              <span className="detail-evidence-label">Scan frame</span>
-            </div>
-            <div className="detail-plate-crop">
-              {plateCropUrl ? <img alt={`${props.detailRow.plate1} plate crop`} src={plateCropUrl} /> : <div className="detail-hero__placeholder">{props.detailRow.plate1}</div>}
-              <span className="detail-evidence-label">Plate crop</span>
-            </div>
-          </div>
+          <DetectionEvidenceHero
+            frameLabel="Vehicle overview"
+            framePlaceholder={props.detailRow.vehicle}
+            frameUrl={props.detailImageUrl}
+            plateCropLabel="Plate crop"
+            platePlaceholder={props.detailRow.plate1}
+            plateCropUrl={plateCropUrl}
+            plateText={props.detailRow.plate1}
+          />
 
           {props.detailRow.plateCandidates.length > 0 ? (
             <section className="detail-section">
@@ -5162,7 +5261,7 @@ function DetailOverlay(props: {
             </div>
             <div className="detail-summary-card">
               <span>Dispatch</span>
-              <strong>{activeAssignment ? titleCase(activeAssignment.status) : "None"}</strong>
+              <strong>{activeAssignment ? dispatchStatusLabel(activeAssignment.status) : "None"}</strong>
             </div>
             <div className="detail-summary-card">
               <span>Alert match</span>
@@ -5195,7 +5294,7 @@ function DetailOverlay(props: {
             ) : null}
             {activeAssignment ? (
               <div className="detail-note-callout">
-                <strong>{`Dispatch - ${titleCase(activeAssignment.status)}`}</strong>
+                <strong>{`Dispatch - ${dispatchStatusLabel(activeAssignment.status)}`}</strong>
                 <p>
                   {activeAssignment.summary ?? activeAssignment.notes ?? "Dispatch assignment attached to this vehicle."}
                   {activeAssignment.assigned_unit_label ? ` Unit ${activeAssignment.assigned_unit_label}.` : ""}
@@ -5356,16 +5455,26 @@ function DetailOverlay(props: {
 function HotlistAlertOverlay(props: {
   activeDestination: string;
   assignment: DispatchAssignmentRecord | null;
+  canSubmitReview: boolean;
+  dataSource: DataSource;
   followUp: FollowUpRecord | null;
   hotlistAudioMuted: boolean;
   hotlistEntry: DashboardHotlist | null;
   hotlistRow: ConsoleDetectionRow;
+  onConfirmMatch: () => void;
   onDismiss: () => void;
+  onFlagFalsePositive: () => void;
   onMuteToggle: () => void;
   onNavigate: () => void;
   onRecover: () => void;
   onViewRecord: () => void;
+  reviewError: string | null;
+  reviewMessage: string | null;
+  reviewSaving: boolean;
 }): ReactElement {
+  const frameUrl = useDetectionFrameImage(props.hotlistRow.detectionId, props.dataSource === "live");
+  const plateCropUrl = useDetectionPlateCropImage(props.hotlistRow.detectionId, props.dataSource === "live");
+
   return (
     <>
       <div className="hotlist-alert__scrim" onClick={props.onDismiss} />
@@ -5382,7 +5491,16 @@ function HotlistAlertOverlay(props: {
       </div>
 
       <div className="hotlist-alert__hero">
-        <div className="hotlist-alert__snapshot">{props.hotlistRow.vehicle}</div>
+        <DetectionEvidenceHero
+          frameLabel="Color overview"
+          framePlaceholder={props.hotlistRow.vehicle}
+          frameUrl={frameUrl}
+          plateCropLabel="OCR crop"
+          platePlaceholder={props.hotlistRow.plate1}
+          plateCropUrl={plateCropUrl}
+          plateText={props.hotlistRow.plate1}
+          tone="critical"
+        />
         <div className="hotlist-alert__identity">
           <strong>{props.hotlistRow.plate1}</strong>
           <span>{props.hotlistRow.vehicle}</span>
@@ -5401,7 +5519,7 @@ function HotlistAlertOverlay(props: {
       {props.followUp || props.assignment ? (
         <div className="hotlist-alert__workflow">
           {props.followUp ? <Badge tone={followUpStatusTone(props.followUp.status)}>{`Follow-up ${titleCase(props.followUp.status)}`}</Badge> : null}
-          {props.assignment ? <Badge tone={dispatchStatusTone(props.assignment.status)}>{`Dispatch ${titleCase(props.assignment.status)}`}</Badge> : null}
+          {props.assignment ? <Badge tone={dispatchStatusTone(props.assignment.status)}>{`Dispatch ${dispatchStatusLabel(props.assignment.status)}`}</Badge> : null}
         </div>
       ) : null}
 
@@ -5411,6 +5529,33 @@ function HotlistAlertOverlay(props: {
         <DetailField label="GPS" value={props.hotlistRow.gps} />
         <DetailField label="Dispatch destination" value={props.assignment?.destination_label ?? props.activeDestination} />
       </div>
+
+      <div className="hotlist-alert__review-strip">
+        <div className="hotlist-alert__review-copy">
+          <strong>Hit verification</strong>
+          <span>Write the response into the existing review workflow before clearing the alert.</span>
+        </div>
+        <div className="hotlist-alert__review-actions">
+          <button
+            className="btn btn--success"
+            disabled={!props.canSubmitReview || props.reviewSaving || !props.hotlistRow.detectionId}
+            type="button"
+            onClick={props.onConfirmMatch}
+          >
+            {props.reviewSaving ? "Saving..." : "Confirm Match"}
+          </button>
+          <button
+            className="btn btn--danger"
+            disabled={!props.canSubmitReview || props.reviewSaving || !props.hotlistRow.detectionId}
+            type="button"
+            onClick={props.onFlagFalsePositive}
+          >
+            False Positive
+          </button>
+        </div>
+      </div>
+      {props.reviewError ? <div className="feedback feedback--error">{props.reviewError}</div> : null}
+      {props.reviewMessage ? <div className="feedback feedback--good">{props.reviewMessage}</div> : null}
 
       <div className="hotlist-alert__actions">
         <button className="btn btn--primary" type="button" onClick={props.onNavigate}>

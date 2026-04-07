@@ -11,7 +11,7 @@ from reposcan_contracts.alert import AlertRecord
 from reposcan_contracts.dispatch import DispatchAssignmentPriority, DispatchAssignmentRecord, DispatchAssignmentStatus
 from reposcan_contracts.detection import DetectionRecord
 from reposcan_contracts.followup import FollowUpPriority, FollowUpRecord, FollowUpStatus
-from reposcan_contracts.health import HealthResponse
+from reposcan_contracts.health import CameraHealthRecord, HealthResponse
 from reposcan_contracts.hotlist import HotlistEntry
 from reposcan_contracts.operator import OperatorPrincipal, OperatorSessionRecord
 from reposcan_contracts.popup import PopupActivityEvent
@@ -111,6 +111,29 @@ class OperatorSessionHeartbeatSubmission(BaseModel):
     navigation_active: bool = False
 
 
+class GeoShapeType(str, Enum):
+    circle = "circle"
+    polygon = "polygon"
+
+
+class GeoSearchFilters(BaseModel):
+    geo_shape: GeoShapeType | None = Field(None, description="Geo filter type")
+    geo_center_latitude: float | None = Field(None, ge=-90.0, le=90.0)
+    geo_center_longitude: float | None = Field(None, ge=-180.0, le=180.0)
+    geo_radius_meters: float | None = Field(None, gt=0.0)
+    geo_polygon_latitude: list[float] = Field(default_factory=list)
+    geo_polygon_longitude: list[float] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_polygon_coordinate_lengths(self) -> "GeoSearchFilters":
+        if len(self.geo_polygon_latitude) != len(self.geo_polygon_longitude):
+            raise ValueError("geo_polygon_latitude and geo_polygon_longitude must contain the same number of points")
+        return self
+
+    def polygon_points(self) -> list[tuple[float, float]]:
+        return list(zip(self.geo_polygon_latitude, self.geo_polygon_longitude, strict=False))
+
+
 class DemoRunSubmission(BaseModel):
     frames_directory: str = Field(..., min_length=1, description="Local directory containing demo frames")
     start_timestamp_utc: Optional[UtcTimestamp] = Field(
@@ -157,6 +180,7 @@ class DashboardCounts(BaseModel):
 class DashboardOverview(BaseModel):
     generated_at_utc: UtcTimestamp = Field(..., description="Overview generation timestamp")
     health: HealthResponse
+    camera_health: list[CameraHealthRecord]
     counts: DashboardCounts
     detections: list[DetectionRecord]
     alerts: list[AlertRecord]

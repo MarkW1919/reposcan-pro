@@ -49,6 +49,8 @@ from .models import (
     DemoRunSummary,
     DemoRuntimeStatus,
     FollowUpSubmission,
+    GeoSearchFilters,
+    GeoShapeType,
     HotlistSubmission,
     OperatorSessionHeartbeatSubmission,
     ReviewSubmission,
@@ -83,6 +85,79 @@ def _build_alert_popup_note(alert: AlertRecord) -> str | None:
     parts = [alert.notes, alert.response_notes]
     note = " | ".join(part for part in parts if part)
     return note or None
+
+
+def _geo_search_kwargs(geo_filters: GeoSearchFilters) -> dict[str, object]:
+    polygon_points = geo_filters.polygon_points()
+    shape = geo_filters.geo_shape.value if geo_filters.geo_shape is not None else None
+
+    if shape is None:
+        if polygon_points:
+            shape = "polygon"
+        elif any(
+            value is not None
+            for value in (
+                geo_filters.geo_center_latitude,
+                geo_filters.geo_center_longitude,
+                geo_filters.geo_radius_meters,
+            )
+        ):
+            shape = "circle"
+
+    if shape == "circle":
+        if polygon_points:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="polygon points cannot be combined with circle geo filters",
+            )
+        if None in (
+            geo_filters.geo_center_latitude,
+            geo_filters.geo_center_longitude,
+            geo_filters.geo_radius_meters,
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="geo center latitude, geo center longitude, and geo radius meters are required for circle search",
+            )
+    elif shape == "polygon":
+        if any(
+            value is not None
+            for value in (
+                geo_filters.geo_center_latitude,
+                geo_filters.geo_center_longitude,
+                geo_filters.geo_radius_meters,
+            )
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="circle geo filters cannot be combined with polygon geo filters",
+            )
+        if len(polygon_points) < 3:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="at least three geo polygon points are required for polygon search",
+            )
+    elif any(
+        value is not None
+        for value in (
+            geo_filters.geo_center_latitude,
+            geo_filters.geo_center_longitude,
+            geo_filters.geo_radius_meters,
+            *polygon_points,
+        )
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="geo_shape must be circle or polygon when geo filters are supplied",
+        )
+
+    return {
+        "geo_shape_type": shape,
+        "geo_center_latitude": geo_filters.geo_center_latitude,
+        "geo_center_longitude": geo_filters.geo_center_longitude,
+        "geo_radius_meters": geo_filters.geo_radius_meters,
+        "geo_polygon_points": polygon_points,
+    }
 
 
 def _resolve_media_path(media_ref: str | None, media_root: Path) -> Path | None:
@@ -283,7 +358,13 @@ def create_app(
 
     def build_health_response() -> HealthResponse:
         dependencies = service.dependency_health()
-        state = HealthState.ok if all(dep.state == HealthState.ok for dep in dependencies) else HealthState.degraded
+        state = (
+            HealthState.down
+            if any(dep.state == HealthState.down for dep in dependencies)
+            else HealthState.degraded
+            if any(dep.state == HealthState.degraded for dep in dependencies)
+            else HealthState.ok
+        )
         return HealthResponse(
             service="api",
             version=app.version,
@@ -356,10 +437,12 @@ def create_app(
         hotlists = service.list_hotlists(limit=supporting_limit)
         active_alerts = service.list_alerts(status=AlertStatus.active, limit=500)
         active_sessions = service.list_operator_sessions(limit=100)
+        camera_health = service.list_camera_health(limit=supporting_limit)
         popup_activity = _build_popup_activity(detections=detections, alerts=alerts, limit=limit)
         return DashboardOverview(
             generated_at_utc=_utcnow(),
             health=build_health_response(),
+            camera_health=camera_health,
             counts=DashboardCounts(
                 active_alerts=len(active_alerts),
                 recent_detections=len(detections),
@@ -416,6 +499,12 @@ def create_app(
         max_latitude: float | None = Query(default=None),
         min_longitude: float | None = Query(default=None),
         max_longitude: float | None = Query(default=None),
+        geo_shape: GeoShapeType | None = Query(default=None),
+        geo_center_latitude: float | None = Query(default=None),
+        geo_center_longitude: float | None = Query(default=None),
+        geo_radius_meters: float | None = Query(default=None),
+        geo_polygon_latitude: list[float] = Query(default_factory=list),
+        geo_polygon_longitude: list[float] = Query(default_factory=list),
         vehicle_color: str | None = Query(default=None),
         vehicle_make: str | None = Query(default=None),
         vehicle_model: str | None = Query(default=None),
@@ -425,6 +514,15 @@ def create_app(
         offset: int = Query(default=0, ge=0),
         principal: ApiPrincipalContext = Depends(access_controller.viewer_access),
     ) -> DetectionSearchResponse:
+        geo_filters = GeoSearchFilters(
+            geo_shape=geo_shape,
+            geo_center_latitude=geo_center_latitude,
+            geo_center_longitude=geo_center_longitude,
+            geo_radius_meters=geo_radius_meters,
+            geo_polygon_latitude=geo_polygon_latitude,
+            geo_polygon_longitude=geo_polygon_longitude,
+        )
+        geo_kwargs = _geo_search_kwargs(geo_filters)
         results, total = service.search_detections(
             plate_query=plate,
             plate_match_mode=plate_match.value,
@@ -435,6 +533,7 @@ def create_app(
             max_latitude=max_latitude,
             min_longitude=min_longitude,
             max_longitude=max_longitude,
+            **geo_kwargs,
             vehicle_color=vehicle_color,
             vehicle_make=vehicle_make,
             vehicle_model=vehicle_model,
@@ -464,6 +563,12 @@ def create_app(
         max_latitude: float | None = Query(default=None),
         min_longitude: float | None = Query(default=None),
         max_longitude: float | None = Query(default=None),
+        geo_shape: GeoShapeType | None = Query(default=None),
+        geo_center_latitude: float | None = Query(default=None),
+        geo_center_longitude: float | None = Query(default=None),
+        geo_radius_meters: float | None = Query(default=None),
+        geo_polygon_latitude: list[float] = Query(default_factory=list),
+        geo_polygon_longitude: list[float] = Query(default_factory=list),
         vehicle_color: str | None = Query(default=None),
         vehicle_make: str | None = Query(default=None),
         vehicle_model: str | None = Query(default=None),
@@ -473,6 +578,15 @@ def create_app(
         offset: int = Query(default=0, ge=0),
         principal: ApiPrincipalContext = Depends(access_controller.viewer_access),
     ) -> AlertSearchResponse:
+        geo_filters = GeoSearchFilters(
+            geo_shape=geo_shape,
+            geo_center_latitude=geo_center_latitude,
+            geo_center_longitude=geo_center_longitude,
+            geo_radius_meters=geo_radius_meters,
+            geo_polygon_latitude=geo_polygon_latitude,
+            geo_polygon_longitude=geo_polygon_longitude,
+        )
+        geo_kwargs = _geo_search_kwargs(geo_filters)
         results, total = service.search_alerts(
             plate_query=plate,
             plate_match_mode=plate_match.value,
@@ -483,6 +597,7 @@ def create_app(
             max_latitude=max_latitude,
             min_longitude=min_longitude,
             max_longitude=max_longitude,
+            **geo_kwargs,
             vehicle_color=vehicle_color,
             vehicle_make=vehicle_make,
             vehicle_model=vehicle_model,

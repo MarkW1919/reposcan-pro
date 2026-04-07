@@ -52,7 +52,7 @@ from .field_eval import (
 )
 from .followup import FollowUpPriority, FollowUpRecord, FollowUpStatus
 from .frame import CameraProfile, FrameEnvelope, GpsSnapshot, PreparedFrame, PreprocessingMetadata, SourceType
-from .health import DependencyHealth, HealthResponse, HealthState
+from .health import CameraHealthRecord, CameraHealthStatus, DependencyHealth, HealthResponse, HealthState
 from .hotlist import HotlistEntry, HotlistMatchResult
 from .inference import AttributePredictions, InferenceCandidate, ModelVersions, PlateDetection, VehicleDetection
 from .model_artifact import ModelArtifactManifest
@@ -141,6 +141,8 @@ __all__ = [
     "ReviewRecord",
     "ReviewAction",
     "HealthResponse",
+    "CameraHealthRecord",
+    "CameraHealthStatus",
     "DependencyHealth",
     "HealthState",
     "FrameEnvelope",

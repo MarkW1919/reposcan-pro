@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import time
 
 from fastapi.testclient import TestClient
@@ -234,6 +235,18 @@ def test_follow_up_and_assignment_list_and_detail_endpoints(tmp_path):
 
 def test_dashboard_overview_uses_expanded_supporting_record_limit(tmp_path):
     client, service = _seeded_client(tmp_path)
+    service.store_detection(
+        DetectionRecord.model_validate(
+            {
+                "detection_id": "det_north_gate_fresh",
+                "timestamp_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "camera_id": "cam_north_gate_01",
+                "vehicle_bbox": {"x": 410, "y": 220, "w": 300, "h": 184},
+                "image_path": "media/frames/cam_north_gate_01/frame_fresh.jpg",
+                "frame_number": 999,
+            }
+        )
+    )
 
     for index in range(25):
         service.create_hotlist(
@@ -766,6 +779,10 @@ def test_demo_runtime_endpoints_run_headless_ingest_and_update_dashboard(tmp_pat
     assert completed["summary"]["created_alert_ids"][0] in {
         record["alert_id"] for record in overview["alerts"]
     }
+    camera_health = {record["camera_id"]: record for record in overview["camera_health"]}
+    assert camera_health["cam_north_gate_01"]["status"] == "offline"
+    assert camera_health["cam_north_gate_01"]["label"] == "North Gate Camera 1"
+    assert camera_health["cam_file_demo_01"]["status"] == "online"
 
 
 def test_demo_runtime_reports_failures_for_missing_frame_folder(tmp_path):
@@ -914,6 +931,90 @@ def test_versioned_detection_search_supports_plate_time_gps_vehicle_and_alert_fi
     alert_payload = alert_response.json()
     assert alert_payload["page"]["total_results"] == 1
     assert alert_payload["results"][0]["alert_id"] == "alert_search"
+
+
+def test_versioned_search_supports_geo_circle_and_polygon_filters(tmp_path):
+    client, service = _seeded_client(tmp_path)
+    service.store_detection(
+        DetectionRecord.model_validate(
+            {
+                "detection_id": "det_geo_match",
+                "timestamp_utc": "2026-03-20T04:13:00Z",
+                "camera_id": "cam_north_gate_01",
+                "gps_latitude": 37.42052,
+                "gps_longitude": -122.08091,
+                "plate_text": "6BZN220",
+                "plate_confidence": 0.94,
+                "vehicle_bbox": {"x": 412, "y": 220, "w": 301, "h": 184},
+                "image_path": "media/frames/cam_north_gate_01/frame_000544.jpg",
+                "frame_number": 544,
+            }
+        )
+    )
+    service.store_detection(
+        DetectionRecord.model_validate(
+            {
+                "detection_id": "det_geo_other",
+                "timestamp_utc": "2026-03-20T04:14:00Z",
+                "camera_id": "cam_lot_east_03",
+                "gps_latitude": 35.10000,
+                "gps_longitude": -120.20000,
+                "plate_text": "8XYZ999",
+                "plate_confidence": 0.74,
+                "vehicle_bbox": {"x": 404, "y": 218, "w": 314, "h": 186},
+                "image_path": "media/frames/cam_lot_east_03/frame_000645.jpg",
+                "frame_number": 645,
+            }
+        )
+    )
+    service.store_alert(
+        AlertRecord.model_validate(
+            {
+                "alert_id": "alert_geo_match",
+                "detection_id": "det_geo_match",
+                "hotlist_entry_id": "hl_search",
+                "timestamp_utc": "2026-03-20T04:13:30Z",
+                "camera_id": "cam_north_gate_01",
+                "matched_plate_text": "6BZN220",
+                "match_confidence": 0.95,
+                "match_type": "exact",
+                "hotlist_label": "Search target",
+                "gps_latitude": 37.42052,
+                "gps_longitude": -122.08091,
+            }
+        )
+    )
+
+    circle_response = client.get(
+        "/api/v1/search/detections",
+        params={
+            "geo_shape": "circle",
+            "geo_center_latitude": 37.42052,
+            "geo_center_longitude": -122.08091,
+            "geo_radius_meters": 100.0,
+        },
+    )
+    polygon_response = client.get(
+        "/api/v1/search/alerts",
+        params=[
+            ("geo_shape", "polygon"),
+            ("geo_polygon_latitude", 37.42040),
+            ("geo_polygon_latitude", 37.42040),
+            ("geo_polygon_latitude", 37.42070),
+            ("geo_polygon_latitude", 37.42070),
+            ("geo_polygon_longitude", -122.08110),
+            ("geo_polygon_longitude", -122.08070),
+            ("geo_polygon_longitude", -122.08070),
+            ("geo_polygon_longitude", -122.08110),
+        ],
+    )
+
+    assert circle_response.status_code == 200
+    assert circle_response.json()["page"]["total_results"] == 1
+    assert circle_response.json()["results"][0]["detection_id"] == "det_geo_match"
+    assert polygon_response.status_code == 200
+    assert polygon_response.json()["page"]["total_results"] == 1
+    assert polygon_response.json()["results"][0]["alert_id"] == "alert_geo_match"
 
 
 def test_secure_api_requires_credentials_and_enforces_roles(tmp_path):

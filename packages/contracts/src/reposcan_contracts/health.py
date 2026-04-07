@@ -29,6 +29,25 @@ class DependencyHealth(BaseModel):
     message: Optional[str] = Field(None, description="Human-readable status message or error detail")
 
 
+class CameraHealthStatus(str, Enum):
+    online = "online"
+    offline = "offline"
+    unknown = "unknown"
+
+
+class CameraHealthRecord(BaseModel):
+    """Derived health view for a single known camera feed."""
+
+    camera_id: str = Field(..., description="Stable logical camera identifier")
+    label: str = Field(..., description="Human-readable camera label")
+    status: CameraHealthStatus = Field(..., description="Derived camera availability state")
+    last_seen_at_utc: Optional[UtcTimestamp] = Field(
+        None,
+        description="UTC timestamp of the most recent detection seen for this camera",
+    )
+    fps: Optional[float] = Field(None, gt=0.0, description="Configured or observed camera frame rate")
+
+
 class HealthResponse(BaseModel):
     """Response body for GET /health.
 

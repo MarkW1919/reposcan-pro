@@ -7,21 +7,24 @@ import shutil
 import zipfile
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from math import asin, cos, radians, sin, sqrt
 from pathlib import Path
 from typing import TypeVar
 
 from reposcan_contracts.alert import AlertRecord, AlertStatus
+from reposcan_contracts.config.camera import CameraConfig
 from reposcan_contracts.config.deployment import (
     DeploymentConfig,
     MediaRetentionConfig,
     MetadataBackend,
     StoragePressureConfig,
 )
+from reposcan_contracts.config.loader import ConfigLoadError, load_camera_config
 from reposcan_contracts.dispatch import DispatchAssignmentRecord, DispatchAssignmentStatus
 from reposcan_contracts.config.loader import load_deployment_config
 from reposcan_contracts.detection import DetectionRecord
 from reposcan_contracts.followup import FollowUpRecord, FollowUpStatus
-from reposcan_contracts.health import DependencyHealth, HealthState
+from reposcan_contracts.health import CameraHealthRecord, CameraHealthStatus, DependencyHealth, HealthState
 from reposcan_contracts.hotlist import HotlistEntry
 from reposcan_contracts.operator import OperatorSessionRecord
 from reposcan_contracts.review import ReviewRecord
@@ -98,6 +101,67 @@ def _matches_timestamp_window(timestamp_utc: str, start_utc: str | None, end_utc
     return True
 
 
+def _haversine_distance_meters(latitude_a: float, longitude_a: float, latitude_b: float, longitude_b: float) -> float:
+    earth_radius_m = 6_371_000.0
+    delta_lat = radians(latitude_b - latitude_a)
+    delta_lon = radians(longitude_b - longitude_a)
+    lat_a = radians(latitude_a)
+    lat_b = radians(latitude_b)
+    half_chord = sin(delta_lat / 2) ** 2 + cos(lat_a) * cos(lat_b) * sin(delta_lon / 2) ** 2
+    return 2 * earth_radius_m * asin(min(1.0, sqrt(half_chord)))
+
+
+def _point_in_polygon(latitude: float, longitude: float, polygon: list[tuple[float, float]]) -> bool:
+    if len(polygon) < 3:
+        return False
+
+    inside = False
+    x = longitude
+    y = latitude
+    previous_index = len(polygon) - 1
+    for current_index, (point_latitude, point_longitude) in enumerate(polygon):
+        previous_latitude, previous_longitude = polygon[previous_index]
+        y1 = point_latitude
+        x1 = point_longitude
+        y2 = previous_latitude
+        x2 = previous_longitude
+        intersects = ((y1 > y) != (y2 > y)) and (
+            x < ((x2 - x1) * (y - y1)) / ((y2 - y1) or 1e-12) + x1
+        )
+        if intersects:
+            inside = not inside
+        previous_index = current_index
+    return inside
+
+
+def _matches_geo_shape(
+    latitude: float | None,
+    longitude: float | None,
+    *,
+    geo_shape_type: str | None,
+    geo_center_latitude: float | None,
+    geo_center_longitude: float | None,
+    geo_radius_meters: float | None,
+    geo_polygon_points: list[tuple[float, float]] | None,
+) -> bool:
+    if geo_shape_type is None:
+        return True
+    if latitude is None or longitude is None:
+        return False
+    if geo_shape_type == "circle":
+        if None in (geo_center_latitude, geo_center_longitude, geo_radius_meters):
+            return False
+        return (
+            _haversine_distance_meters(latitude, longitude, geo_center_latitude, geo_center_longitude)
+            <= geo_radius_meters
+        )
+    if geo_shape_type == "polygon":
+        if not geo_polygon_points:
+            return False
+        return _point_in_polygon(latitude, longitude, geo_polygon_points)
+    return True
+
+
 def _matches_gps_bounds(
     latitude: float | None,
     longitude: float | None,
@@ -162,10 +226,16 @@ class StorageService:
         media_root: str | Path,
         *,
         deployment_config: DeploymentConfig | None = None,
+        camera_config_dir: str | Path | None = None,
     ) -> None:
         self.repository = repository
         self.media_layout = ensure_media_layout(media_root)
         self.deployment_config = deployment_config
+        self.camera_config_dir = (
+            Path(camera_config_dir)
+            if camera_config_dir is not None
+            else Path(__file__).resolve().parents[4] / "configs" / "cameras"
+        )
 
     def list_detections(self, *, camera_id: str | None = None, limit: int = 100) -> list[DetectionRecord]:
         return self.repository.list_detections(camera_id=camera_id, limit=limit)
@@ -324,6 +394,79 @@ class StorageService:
         ]
         return active_sessions[:limit]
 
+    def _load_camera_configs(self) -> dict[str, CameraConfig]:
+        if not self.camera_config_dir.exists():
+            return {}
+
+        configs: dict[str, CameraConfig] = {}
+        for path in sorted(self.camera_config_dir.glob("*.yaml")):
+            try:
+                config = load_camera_config(path)
+            except (ConfigLoadError, OSError, ValueError):
+                continue
+            configs[config.camera_id] = config
+        return configs
+
+    def list_camera_health(self, *, limit: int = 200) -> list[CameraHealthRecord]:
+        camera_configs = self._load_camera_configs()
+        detections = self.repository.list_detections(limit=100_000)
+        latest_detections: dict[str, DetectionRecord] = {}
+        for detection in detections:
+            latest_detections.setdefault(detection.camera_id, detection)
+
+        camera_ids = sorted(set(camera_configs) | set(latest_detections))
+        if not camera_ids:
+            return []
+
+        now = datetime.now(timezone.utc)
+        health_rows: list[CameraHealthRecord] = []
+        for camera_id in camera_ids:
+            config = camera_configs.get(camera_id)
+            latest_detection = latest_detections.get(camera_id)
+            label = config.display_name if config and config.display_name else camera_id
+            fps = None
+            if config is not None:
+                fps = config.sensor.fps if config.sensor.fps is not None else config.capture.target_fps
+
+            if latest_detection is None:
+                status = CameraHealthStatus.offline if config is not None else CameraHealthStatus.unknown
+                last_seen_at_utc = None
+            else:
+                last_seen_at_utc = latest_detection.timestamp_utc
+                age_seconds = (now - _parse_utc(last_seen_at_utc)).total_seconds()
+                status = (
+                    CameraHealthStatus.offline
+                    if config is not None and not config.enabled
+                    else CameraHealthStatus.online
+                    if age_seconds <= 900.0
+                    else CameraHealthStatus.offline
+                )
+
+            health_rows.append(
+                CameraHealthRecord(
+                    camera_id=camera_id,
+                    label=label,
+                    status=status,
+                    last_seen_at_utc=last_seen_at_utc,
+                    fps=fps,
+                )
+            )
+
+        status_rank = {
+            CameraHealthStatus.online: 0,
+            CameraHealthStatus.unknown: 1,
+            CameraHealthStatus.offline: 2,
+        }
+        ordered = sorted(
+            health_rows,
+            key=lambda record: (
+                status_rank[record.status],
+                (record.label or record.camera_id).lower(),
+                record.camera_id,
+            ),
+        )
+        return ordered[:limit]
+
     def search_detections(
         self,
         *,
@@ -336,6 +479,11 @@ class StorageService:
         max_latitude: float | None = None,
         min_longitude: float | None = None,
         max_longitude: float | None = None,
+        geo_shape_type: str | None = None,
+        geo_center_latitude: float | None = None,
+        geo_center_longitude: float | None = None,
+        geo_radius_meters: float | None = None,
+        geo_polygon_points: list[tuple[float, float]] | None = None,
         vehicle_color: str | None = None,
         vehicle_make: str | None = None,
         vehicle_model: str | None = None,
@@ -376,6 +524,16 @@ class StorageService:
                 max_longitude=max_longitude,
             ):
                 continue
+            if not _matches_geo_shape(
+                detection.gps_latitude,
+                detection.gps_longitude,
+                geo_shape_type=geo_shape_type,
+                geo_center_latitude=geo_center_latitude,
+                geo_center_longitude=geo_center_longitude,
+                geo_radius_meters=geo_radius_meters,
+                geo_polygon_points=geo_polygon_points,
+            ):
+                continue
             if normalized_color is not None and _normalize_search_text(detection.vehicle_color) != normalized_color:
                 continue
             if normalized_make is not None and _normalize_search_text(detection.vehicle_make) != normalized_make:
@@ -400,6 +558,11 @@ class StorageService:
         max_latitude: float | None = None,
         min_longitude: float | None = None,
         max_longitude: float | None = None,
+        geo_shape_type: str | None = None,
+        geo_center_latitude: float | None = None,
+        geo_center_longitude: float | None = None,
+        geo_radius_meters: float | None = None,
+        geo_polygon_points: list[tuple[float, float]] | None = None,
         vehicle_color: str | None = None,
         vehicle_make: str | None = None,
         vehicle_model: str | None = None,
@@ -442,6 +605,16 @@ class StorageService:
                 max_latitude=max_latitude,
                 min_longitude=min_longitude,
                 max_longitude=max_longitude,
+            ):
+                continue
+            if not _matches_geo_shape(
+                latitude,
+                longitude,
+                geo_shape_type=geo_shape_type,
+                geo_center_latitude=geo_center_latitude,
+                geo_center_longitude=geo_center_longitude,
+                geo_radius_meters=geo_radius_meters,
+                geo_polygon_points=geo_polygon_points,
             ):
                 continue
             if normalized_color is not None and _normalize_search_text(detection.vehicle_color if detection else None) != normalized_color:
@@ -631,9 +804,9 @@ class StorageService:
                 state=(
                     HealthState.ok
                     if pressure.status == "ok"
-                    else HealthState.warning
+                    else HealthState.degraded
                     if pressure.status == "warning"
-                    else HealthState.error
+                    else HealthState.down
                 ),
                 message=f"{pressure.status}: {pressure.free_bytes} bytes free",
             ),
