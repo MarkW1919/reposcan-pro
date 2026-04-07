@@ -23,6 +23,7 @@ class DatasetAdapter(str, Enum):
 
 
 class AugmentationPolicy(BaseModel):
+    horizontal_flip: bool = True
     motion_blur: bool = True
     defocus_blur: bool = True
     brightness_contrast: bool = True
@@ -47,6 +48,9 @@ class TrainingProfileConfig(BaseModel):
     workers: int = Field(4, ge=0)
     patience: int = Field(10, ge=0)
     seed: int = 42
+    learning_rate: float = Field(5e-4, gt=0.0)
+    weight_decay: float = Field(1e-4, ge=0.0)
+    label_smoothing: float = Field(0.0, ge=0.0, lt=1.0)
     precision: str = Field("fp32", min_length=1)
     device: str = Field("auto", min_length=1)
     class_names: list[str] = Field(default_factory=list)

@@ -1,8 +1,10 @@
 import type { AlertItem, RecoveryLogEntry } from "./demo-data";
 
+export type HealthState = "ok" | "degraded" | "down";
+
 export interface HealthDependency {
   name: string;
-  state: string;
+  state: HealthState;
   latency_ms: number | null;
   message: string | null;
 }
@@ -10,7 +12,7 @@ export interface HealthDependency {
 export interface HealthResponse {
   service: string;
   version: string;
-  state: string;
+  state: HealthState;
   timestamp_utc: string;
   dependencies: HealthDependency[];
   uptime_seconds: number | null;

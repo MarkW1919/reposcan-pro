@@ -42,6 +42,7 @@ import {
   type FollowUpPriority,
   type FollowUpRecord,
   type FollowUpStatus,
+  type HealthState,
   type OperatorPrincipal,
   type OperatorSessionRecord,
   type PlateCandidate,
@@ -58,6 +59,7 @@ type DataSource = "demo" | "live" | "fallback";
 type AlertPersistence = "until-dismissed" | "15 sec" | "60 sec";
 type HotlistsWorkspaceTab = "alerts" | "recognition";
 type SettingsSection = "workspace" | "alerts" | "cameras" | "map" | "system";
+type ServiceHealthState = HealthState | "demo" | "offline";
 
 interface UiSettings {
   autoArrivalScan: boolean;
@@ -724,6 +726,51 @@ function dispatchStatusLabel(status: DispatchAssignmentStatus): string {
     return "Abort";
   }
   return titleCase(status);
+}
+
+function resolveServiceHealthState(
+  overviewState: HealthState | undefined,
+  dataSource: DataSource,
+): ServiceHealthState {
+  if (overviewState) {
+    return overviewState;
+  }
+  if (dataSource === "demo") {
+    return "demo";
+  }
+  if (dataSource === "fallback") {
+    return "offline";
+  }
+  return "ok";
+}
+
+function serviceHealthLabel(state: ServiceHealthState): string {
+  if (state === "ok") {
+    return "Healthy";
+  }
+  if (state === "degraded") {
+    return "Degraded";
+  }
+  if (state === "down") {
+    return "Down";
+  }
+  if (state === "demo") {
+    return "Demo";
+  }
+  return "Offline";
+}
+
+function serviceHealthTone(state: ServiceHealthState): "success" | "warn" | "critical" | "muted" {
+  if (state === "ok") {
+    return "success";
+  }
+  if (state === "degraded") {
+    return "warn";
+  }
+  if (state === "down") {
+    return "critical";
+  }
+  return "muted";
 }
 
 function buildRecognitionVehicleLabel(event: DashboardPopupActivityEvent): string {
@@ -1890,8 +1937,8 @@ function App(): ReactElement {
   const detailTimeline = detailRow ? allRows.filter((row) => normalizePlate(row.plate1) === normalizePlate(detailRow.plate1)) : [];
   const groupedSearchResults = searchGroupByPlate ? buildPlateGroups(searchResults) : [];
   const hotlistWarning = !settings.hotlistAlerts || !settings.soundEnabled;
-  const serviceHealthState = overview?.health.state ?? (dataSource === "live" ? "healthy" : dataSource === "demo" ? "demo mode" : "offline");
-  const degradedDependencyCount = overview?.health.dependencies.filter((dependency) => dependency.state.toLowerCase() !== "healthy").length ?? 0;
+  const serviceHealthState = resolveServiceHealthState(overview?.health.state, dataSource);
+  const degradedDependencyCount = overview?.health.dependencies.filter((dependency) => dependency.state !== "ok").length ?? 0;
   const hotlistAlertItems = useMemo<HotlistAlertItem[]>(
     () =>
       [...(overview?.alerts ?? [])]
@@ -4779,7 +4826,7 @@ function HotlistsScreen(props: {
                             <option value="queued">Queued</option>
                             <option value="assigned">Assigned</option>
                             <option value="en_route">En route</option>
-                            <option value="onsite">Onsite</option>
+                            <option value="onsite">On Scene</option>
                             <option value="completed">Completed</option>
                             <option value="cancelled">Cancelled</option>
                           </select>
@@ -4932,7 +4979,7 @@ function SettingsScreen(props: {
   onlineCameras: number;
   settings: UiSettings;
   settingsSection: SettingsSection;
-  serviceHealthState: string;
+  serviceHealthState: ServiceHealthState;
   totalCameras: number;
   updateSetting: <Key extends keyof UiSettings>(key: Key, value: UiSettings[Key]) => void;
 }): ReactElement {
@@ -4953,7 +5000,9 @@ function SettingsScreen(props: {
           <>
             {props.hotlistWarning ? <Badge tone="warn">Review alert settings</Badge> : <Badge tone="success">Operational</Badge>}
             <Badge tone={props.dataSource === "live" ? "success" : "muted"}>{props.dataSource.toUpperCase()}</Badge>
-            <Badge tone={props.degradedDependencyCount === 0 ? "success" : "warn"}>{props.degradedDependencyCount === 0 ? "HEALTHY" : `${props.degradedDependencyCount} WARNINGS`}</Badge>
+            <Badge tone={serviceHealthTone(props.serviceHealthState)}>
+              {props.degradedDependencyCount === 0 ? serviceHealthLabel(props.serviceHealthState).toUpperCase() : `${props.degradedDependencyCount} WARNINGS`}
+            </Badge>
           </>
         }
       />
@@ -4965,7 +5014,7 @@ function SettingsScreen(props: {
         </div>
         <div className="settings-summary-tile">
           <span>System</span>
-          <strong>{titleCase(props.serviceHealthState)}</strong>
+          <strong>{serviceHealthLabel(props.serviceHealthState)}</strong>
         </div>
         <div className="settings-summary-tile">
           <span>Alerts</span>
@@ -5008,7 +5057,7 @@ function SettingsScreen(props: {
               {props.settingsSection === "alerts" ? <Badge tone={props.canManageAccounts ? "success" : "muted"}>{props.canManageAccounts ? "Recovery write" : "Recovery read only"}</Badge> : null}
               {props.settingsSection === "alerts" ? <Badge tone={props.canUpdateAlerts ? "success" : "muted"}>{props.canUpdateAlerts ? "Alert updates" : "Alert read only"}</Badge> : null}
               {props.settingsSection === "cameras" ? <Badge tone={props.onlineCameras > 0 ? "success" : "muted"}>{`${props.onlineCameras}/${Math.max(props.totalCameras, 1)} feeds online`}</Badge> : null}
-              {props.settingsSection === "system" ? <Badge tone={props.degradedDependencyCount === 0 ? "success" : "warn"}>{titleCase(props.serviceHealthState)}</Badge> : null}
+              {props.settingsSection === "system" ? <Badge tone={serviceHealthTone(props.serviceHealthState)}>{serviceHealthLabel(props.serviceHealthState)}</Badge> : null}
             </div>
           </div>
 
@@ -5059,7 +5108,7 @@ function SettingsScreen(props: {
 
             {props.settingsSection === "system" ? (
               <>
-                <ReadOnlyRow title="Health" value={titleCase(props.serviceHealthState)} detail={props.degradedDependencyCount === 0 ? "All systems normal." : `${props.degradedDependencyCount} warning${props.degradedDependencyCount === 1 ? "" : "s"}.`} />
+                <ReadOnlyRow title="Health" value={serviceHealthLabel(props.serviceHealthState)} detail={props.degradedDependencyCount === 0 ? "All systems normal." : `${props.degradedDependencyCount} warning${props.degradedDependencyCount === 1 ? "" : "s"}.`} />
                 <ReadOnlyRow title="Data source" value={props.dataSource.toUpperCase()} detail={props.dataError ?? "Connected to live API."} />
                 <ReadOnlyRow title="Sync" value={props.dataSource === "live" ? "Online" : "Offline queue"} detail={`${props.activeSessions} active session${props.activeSessions === 1 ? "" : "s"}.`} />
                 <ReadOnlyRow

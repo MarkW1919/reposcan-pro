@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import subprocess
 import sys
@@ -205,9 +206,100 @@ def _export_trained_classifier(
     return onnx_path, labels_path
 
 
+def _build_classification_transforms(profile, *, train: bool):
+    import random
+
+    import torch
+    from PIL import Image
+    from torchvision import transforms
+
+    class RandomJpegCompression:
+        def __init__(self, *, quality_range: tuple[int, int], p: float):
+            self.quality_range = quality_range
+            self.p = p
+
+        def __call__(self, image):
+            if random.random() > self.p:
+                return image
+            if not isinstance(image, Image.Image):
+                return image
+            quality = random.randint(*self.quality_range)
+            buffer = io.BytesIO()
+            image.save(buffer, format="JPEG", quality=quality, optimize=False)
+            buffer.seek(0)
+            recompressed = Image.open(buffer).convert("RGB")
+            return recompressed.copy()
+
+    class AddGaussianNoise(torch.nn.Module):
+        def __init__(self, *, std: float, p: float):
+            super().__init__()
+            self.std = std
+            self.p = p
+
+        def forward(self, tensor):
+            if torch.rand(1).item() > self.p:
+                return tensor
+            noise = torch.randn_like(tensor) * self.std
+            return (tensor + noise).clamp(0.0, 1.0)
+
+    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+
+    if not train:
+        return transforms.Compose(
+            [
+                transforms.Resize((profile.image_size, profile.image_size)),
+                transforms.ToTensor(),
+                normalize,
+            ]
+        )
+
+    train_transforms: list[object] = [
+        transforms.RandomResizedCrop(profile.image_size, scale=(0.82, 1.0), ratio=(0.9, 1.1)),
+    ]
+    if profile.augmentation.horizontal_flip:
+        train_transforms.append(transforms.RandomHorizontalFlip(p=0.5))
+    if profile.augmentation.brightness_contrast:
+        train_transforms.append(
+            transforms.ColorJitter(brightness=0.18, contrast=0.18, saturation=0.12, hue=0.02)
+        )
+    if profile.augmentation.perspective_distortion:
+        train_transforms.append(transforms.RandomPerspective(distortion_scale=0.15, p=0.2))
+    if profile.augmentation.compression_artifacts:
+        train_transforms.append(RandomJpegCompression(quality_range=(35, 85), p=0.25))
+    if profile.augmentation.motion_blur or profile.augmentation.defocus_blur:
+        train_transforms.append(
+            transforms.RandomApply(
+                [transforms.GaussianBlur(kernel_size=5, sigma=(0.15, 1.75))],
+                p=0.18,
+            )
+        )
+    train_transforms.append(transforms.ToTensor())
+    if profile.augmentation.noise:
+        train_transforms.append(AddGaussianNoise(std=0.02, p=0.25))
+    train_transforms.append(normalize)
+    return transforms.Compose(train_transforms)
+
+
+def _wrap_subset_with_transform(subset, transform):
+    class TransformSubset:
+        def __init__(self, subset, transform):
+            self.subset = subset
+            self.transform = transform
+            self.classes = getattr(getattr(subset, "dataset", None), "classes", None)
+
+        def __len__(self):
+            return len(self.subset)
+
+        def __getitem__(self, index):
+            image, target = self.subset[index]
+            return self.transform(image), target
+
+    return TransformSubset(subset, transform)
+
+
 def _build_imagefolder_loaders(profile, manifest, repo_root: Path):
     import torch
-    from torchvision import datasets, transforms
+    from torchvision import datasets
 
     from reposcan_contracts.dataset import DatasetSplit
     from reposcan_training import resolve_storage_root
@@ -218,29 +310,27 @@ def _build_imagefolder_loaders(profile, manifest, repo_root: Path):
     validation_split = split_map.get(DatasetSplit.validation)
     validation_root = storage_root / validation_split.relative_path if validation_split else None
 
-    transform = transforms.Compose(
-        [
-            transforms.Resize((profile.image_size, profile.image_size)),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        ]
-    )
+    train_transform = _build_classification_transforms(profile, train=True)
+    validation_transform = _build_classification_transforms(profile, train=False)
 
-    train_dataset = datasets.ImageFolder(str(train_root), transform=transform)
+    train_dataset = datasets.ImageFolder(str(train_root), transform=train_transform)
     if validation_root is not None and validation_root.exists():
-        validation_dataset = datasets.ImageFolder(str(validation_root), transform=transform)
+        validation_dataset = datasets.ImageFolder(str(validation_root), transform=validation_transform)
         class_names = list(train_dataset.classes)
     else:
+        raw_dataset = datasets.ImageFolder(str(train_root), transform=None)
         if len(train_dataset) < 10:
             raise ValueError("imagefolder training requires at least 10 samples when no validation split is provided")
-        val_size = max(1, int(len(train_dataset) * 0.1))
-        train_size = len(train_dataset) - val_size
-        train_dataset, validation_dataset = torch.utils.data.random_split(
-            train_dataset,
+        val_size = max(1, int(len(raw_dataset) * 0.1))
+        train_size = len(raw_dataset) - val_size
+        train_subset, validation_subset = torch.utils.data.random_split(
+            raw_dataset,
             [train_size, val_size],
             generator=torch.Generator().manual_seed(profile.seed),
         )
-        class_names = list(train_dataset.dataset.classes)
+        train_dataset = _wrap_subset_with_transform(train_subset, train_transform)
+        validation_dataset = _wrap_subset_with_transform(validation_subset, validation_transform)
+        class_names = list(raw_dataset.classes)
 
     # num_workers=0 on Windows to avoid spawn-based multiprocessing errors with
     # DataLoader. On Linux (Jetson) the profile value is used as configured.
@@ -266,22 +356,17 @@ def _build_stanford_cars_loaders(profile, manifest, repo_root: Path):
     from PIL import Image
     from scipy.io import loadmat
     from torch.utils.data import Dataset, random_split
-    from torchvision import transforms
 
     from reposcan_training import resolve_storage_root
 
     storage_root = resolve_storage_root(repo_root, manifest.storage_root)
+    train_transform = _build_classification_transforms(profile, train=True)
+    validation_transform = _build_classification_transforms(profile, train=False)
 
     class StanfordCarsTrainDataset(Dataset):
-        def __init__(self, root: Path):
+        def __init__(self, root: Path, *, transform):
             self.root = root
-            self.transform = transforms.Compose(
-                [
-                    transforms.Resize((profile.image_size, profile.image_size)),
-                    transforms.ToTensor(),
-                    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-                ]
-            )
+            self.transform = transform
             ann_path = self.root / "devkit" / "cars_train_annos.mat"
             if not ann_path.exists():
                 ann_path = self.root / "cars_train_annos.mat"
@@ -306,16 +391,20 @@ def _build_stanford_cars_loaders(profile, manifest, repo_root: Path):
         def __getitem__(self, index):
             image_path, target = self.samples[index]
             image = Image.open(image_path).convert("RGB")
-            return self.transform(image), target
+            if self.transform is not None:
+                image = self.transform(image)
+            return image, target
 
-    dataset = StanfordCarsTrainDataset(storage_root)
+    dataset = StanfordCarsTrainDataset(storage_root, transform=None)
     val_size = max(1, int(len(dataset) * 0.1))
     train_size = len(dataset) - val_size
-    train_dataset, validation_dataset = random_split(
+    train_subset, validation_subset = random_split(
         dataset,
         [train_size, val_size],
         generator=torch.Generator().manual_seed(profile.seed),
     )
+    train_dataset = _wrap_subset_with_transform(train_subset, train_transform)
+    validation_dataset = _wrap_subset_with_transform(validation_subset, validation_transform)
     import platform
     num_workers = 0 if platform.system() == "Windows" else profile.workers
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=profile.batch_size, shuffle=True, num_workers=num_workers)
@@ -489,8 +578,12 @@ def main() -> int:
             print(f"Loaded initial checkpoint: {initial_checkpoint_path}")
     device = torch.device("cuda" if torch.cuda.is_available() and profile.device != "cpu" else "cpu")
     model = model.to(device)
-    criterion = torch.nn.CrossEntropyLoss()
-    optimizer = torch.optim.AdamW(model.parameters(), lr=5e-4, weight_decay=1e-4)
+    criterion = torch.nn.CrossEntropyLoss(label_smoothing=profile.label_smoothing)
+    optimizer = torch.optim.AdamW(
+        model.parameters(),
+        lr=profile.learning_rate,
+        weight_decay=profile.weight_decay,
+    )
 
     start_epoch = resume_completed_epochs + 1 if args.resume_last else 1
     best_val = resume_best_val if resume_best_val is not None else 0.0

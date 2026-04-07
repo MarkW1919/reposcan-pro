@@ -512,6 +512,15 @@ class TestTrainingProfileSchema:
         assert profile.base_model == "resnet18"
         assert profile.image_size == 192
 
+    def test_make_model_warmstart_regularized_profile_parses(self):
+        profile = load_training_profile(CONFIGS / "training" / "vehicle-make-model-warmstart-regularized.yaml")
+        assert profile.task == DatasetTask.vehicle_make_model_classification
+        assert profile.framework == TrainingFramework.torchvision
+        assert profile.base_model == "efficientnet_b0"
+        assert profile.learning_rate == 0.0002
+        assert profile.weight_decay == 0.0005
+        assert profile.label_smoothing == 0.08
+
     def test_efficientnet_color_profile_parses(self):
         profile = load_training_profile(CONFIGS / "training" / "vehicle-color-classifier-efficientnet.yaml")
         assert profile.task == DatasetTask.vehicle_color_classification
