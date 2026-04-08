@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactElement } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type MouseEvent, type ReactElement } from "react";
 import { Circle, MapContainer, Marker, Polyline, Popup, TileLayer } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -189,6 +189,20 @@ interface AssignmentSaveRequest {
 interface PlateGroup {
   plate: string;
   rows: ConsoleDetectionRow[];
+}
+
+interface SearchActivityPattern {
+  detail: string;
+  label: string;
+  tone: "cyan" | "muted" | "success" | "warn";
+}
+
+interface SearchTimelineMarker {
+  id: string;
+  isLead: boolean;
+  leftPercent: number;
+  severity: ReturnType<typeof searchResultSeverity>;
+  timestampLabel: string;
 }
 
 const uiSettingsStorageKey = "reposcan.ui.desktop-settings.v1";
@@ -1126,6 +1140,122 @@ function buildPlateGroups(rows: ConsoleDetectionRow[]): PlateGroup[] {
       }
       return rightLead.timestampUtc.localeCompare(leftLead.timestampUtc);
     });
+}
+
+function buildSearchActivityScore(rows: ConsoleDetectionRow[], referenceTimeMs = Date.now()): string {
+  const buckets = [0, 0, 0, 0];
+
+  for (const row of rows) {
+    const timestamp = Date.parse(row.timestampUtc);
+    if (Number.isNaN(timestamp)) {
+      continue;
+    }
+
+    const ageDays = Math.max(0, (referenceTimeMs - timestamp) / 86_400_000);
+    if (ageDays <= 30) {
+      buckets[0] += 1;
+    } else if (ageDays <= 90) {
+      buckets[1] += 1;
+    } else if (ageDays <= 180) {
+      buckets[2] += 1;
+    } else {
+      buckets[3] += 1;
+    }
+  }
+
+  return buckets.map((count) => Math.min(count, 9)).join("");
+}
+
+function inferSearchActivityPattern(rows: ConsoleDetectionRow[]): SearchActivityPattern {
+  if (rows.length < 2) {
+    return {
+      label: "Single sighting",
+      detail: "Need repeat reads before routine tagging is reliable.",
+      tone: "muted",
+    };
+  }
+
+  let daytimeReads = 0;
+  let overnightReads = 0;
+
+  for (const row of rows) {
+    const timestamp = new Date(row.timestampUtc);
+    if (Number.isNaN(timestamp.valueOf())) {
+      continue;
+    }
+
+    const hour = timestamp.getHours();
+    if (hour >= 6 && hour < 18) {
+      daytimeReads += 1;
+    } else {
+      overnightReads += 1;
+    }
+  }
+
+  const dominantCount = Math.max(daytimeReads, overnightReads);
+  const share = dominantCount / rows.length;
+  if (dominantCount >= 2 && share >= 0.6) {
+    if (daytimeReads > overnightReads) {
+      return {
+        label: "Likely workplace",
+        detail: `${daytimeReads} of ${rows.length} reads landed between 06:00 and 18:00.`,
+        tone: "cyan",
+      };
+    }
+
+    return {
+      label: "Likely residential",
+      detail: `${overnightReads} of ${rows.length} reads landed between 18:00 and 06:00.`,
+      tone: "success",
+    };
+  }
+
+  return {
+    label: "Mixed routine",
+    detail: "Sightings split across daytime and overnight windows.",
+    tone: "warn",
+  };
+}
+
+function buildSearchTimelineMarkers(rows: ConsoleDetectionRow[]): SearchTimelineMarker[] {
+  if (rows.length === 0) {
+    return [];
+  }
+
+  const chronological = [...rows]
+    .sort((left, right) => left.timestampUtc.localeCompare(right.timestampUtc))
+    .slice(-10);
+
+  const timestamps = chronological
+    .map((row) => Date.parse(row.timestampUtc))
+    .filter((value) => !Number.isNaN(value));
+
+  if (timestamps.length === 0) {
+    return chronological.map((row, index) => ({
+      id: row.id,
+      isLead: index === chronological.length - 1,
+      leftPercent: chronological.length === 1 ? 50 : (index / Math.max(chronological.length - 1, 1)) * 100,
+      severity: searchResultSeverity(row),
+      timestampLabel: formatClock(row.timestampUtc),
+    }));
+  }
+
+  const minTimestamp = Math.min(...timestamps);
+  const maxTimestamp = Math.max(...timestamps);
+  const span = Math.max(maxTimestamp - minTimestamp, 1);
+  const leadId = chronological[chronological.length - 1]?.id;
+
+  return chronological.map((row) => {
+    const timestamp = Date.parse(row.timestampUtc);
+    const leftPercent = Number.isNaN(timestamp) ? 50 : ((timestamp - minTimestamp) / span) * 100;
+    return {
+      id: row.id,
+      isLead: row.id === leadId,
+      leftPercent,
+      severity: searchResultSeverity(row),
+      timestampLabel: formatClock(row.timestampUtc),
+    };
+  });
 }
 
 function rowMatchesQuery(row: ConsoleDetectionRow, mode: SearchMode, query: string): boolean {
@@ -2917,6 +3047,7 @@ function App(): ReactElement {
               onCopyPlate={handleCopyPlate}
               onDetails={openDetail}
               onMap={centerMapOnRow}
+              onSelectDetection={setSelectedDetectionId}
               onSearchSubmit={handleSearchSubmit}
               onToggleExpanded={(plate) =>
                 setExpandedGroups((current) => ({
@@ -2925,6 +3056,7 @@ function App(): ReactElement {
                 }))
               }
               setQuery={setSearchQuery}
+              selectedDetectionId={selectedDetectionId}
               setSearchFromLocal={setSearchFromLocal}
               setSearchGroupByPlate={setSearchGroupByPlate}
               setSearchHighConfidenceOnly={setSearchHighConfidenceOnly}
@@ -3140,13 +3272,220 @@ function searchResultSeverity(row: ConsoleDetectionRow): "critical" | "priority"
   return "observed";
 }
 
+function SearchActivityScore(props: { score: string }): ReactElement {
+  return (
+    <div className="search-activity-score" aria-label={`Activity score ${props.score}`}>
+      {props.score.split("").map((digit, index) => (
+        <span key={`${digit}-${index}`} className={`search-activity-score__digit ${index === 0 && Number(digit) >= 3 ? "is-hot" : ""}`}>
+          {digit}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function SearchTimeline(props: {
+  markers: SearchTimelineMarker[];
+  onSelectRow: (rowId: string) => void;
+  selectedRowId: string;
+}): ReactElement {
+  return (
+    <div className="search-timeline">
+      <div className="search-timeline__rail" aria-hidden="true" />
+      {props.markers.map((marker) => (
+        <button
+          key={marker.id}
+          className={`search-timeline__marker search-timeline__marker--${marker.severity} ${props.selectedRowId === marker.id ? "is-selected" : ""} ${marker.isLead ? "is-lead" : ""}`}
+          style={{ left: `${marker.leftPercent}%` } as CSSProperties}
+          title={marker.timestampLabel}
+          type="button"
+          onClick={() => props.onSelectRow(marker.id)}
+        >
+          <span>{marker.timestampLabel}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function SearchLeadPanel(props: {
+  assignment: DispatchAssignmentRecord | null;
+  dataSource: DataSource;
+  followUp: FollowUpRecord | null;
+  hotlistLabel: string | null;
+  onAddToHotlist: () => void;
+  onCopy: (plate: string) => Promise<void>;
+  onDetails: () => void;
+  onMap: () => void;
+  onSelectRow: (rowId: string) => void;
+  relatedRows: ConsoleDetectionRow[];
+  row: ConsoleDetectionRow | null;
+  selectedRowId: string | null;
+}): ReactElement {
+  const frameUrl = useDetectionFrameImage(props.row?.detectionId, props.dataSource === "live");
+  const plateCropUrl = useDetectionPlateCropImage(props.row?.detectionId, props.dataSource === "live");
+
+  if (!props.row) {
+    return (
+      <aside className="panel-card locate-intelligence-panel">
+        <div className="panel-card__header">
+          <div>
+            <h3>Lead Intelligence</h3>
+          </div>
+        </div>
+        <div className="empty-state">
+          <strong>No lead selected.</strong>
+          <p>Run a locate search or focus a result to open the DRN-style lead workspace.</p>
+        </div>
+      </aside>
+    );
+  }
+  const row = props.row;
+  const activityScore = buildSearchActivityScore(props.relatedRows);
+  const pattern = inferSearchActivityPattern(props.relatedRows);
+  const timelineMarkers = buildSearchTimelineMarkers(props.relatedRows);
+  const historyRows = props.relatedRows.slice(0, 5);
+  const recentReadCount = Number(activityScore[0] ?? "0");
+  const actionLabel = props.hotlistLabel ? "Open Account" : "Create Account";
+
+  return (
+    <aside className="panel-card locate-intelligence-panel">
+      <div className="panel-card__header">
+        <div>
+          <h3>Lead Intelligence</h3>
+          <p>{props.relatedRows.length > 1 ? `${props.relatedRows.length} related reads for this tag` : "Single read in current result set"}</p>
+        </div>
+        <div className="search-result-card__badges">
+          <Badge tone={row.hotlist ? "critical" : "cyan"}>{row.hotlist ? "Recovery hit" : "Lead"}</Badge>
+          <span className={`conf-badge conf-badge--${confidenceTone(confidencePercent(row.conf))}`}>{confidenceLabel(row.conf)}</span>
+        </div>
+      </div>
+
+      <DetectionEvidenceHero
+        framePlaceholder={row.camera}
+        frameUrl={frameUrl}
+        platePlaceholder={row.plate1 || "OCR"}
+        plateCropUrl={plateCropUrl}
+        plateText={row.plate1}
+        tone={row.hotlist ? "critical" : "default"}
+      />
+
+      <div className="locate-intelligence-strip">
+        <div className="locate-intelligence-card">
+          <span>Activity score</span>
+          <SearchActivityScore score={activityScore} />
+          <p>{`${recentReadCount} read${recentReadCount === 1 ? "" : "s"} in the last 30 days`}</p>
+        </div>
+        <div className="locate-intelligence-card">
+          <span>Routine tag</span>
+          <Badge tone={pattern.tone}>{pattern.label}</Badge>
+          <p>{pattern.detail}</p>
+        </div>
+      </div>
+
+      <div className="detail-summary-strip locate-intelligence-summary">
+        <div className="detail-summary-card">
+          <span>Lead plate</span>
+          <strong>{row.plate1}</strong>
+        </div>
+        <div className="detail-summary-card">
+          <span>Vehicle</span>
+          <strong>{row.vehicle}</strong>
+        </div>
+        <div className="detail-summary-card">
+          <span>Camera</span>
+          <strong>{row.camera}</strong>
+        </div>
+        <div className="detail-summary-card">
+          <span>Last seen</span>
+          <strong>{formatDateTime(row.timestampUtc)}</strong>
+        </div>
+      </div>
+
+      <div className="detail-section locate-intelligence-actions">
+        <div className="detail-section__copy">
+          <h4>Decision workflow</h4>
+          <p>Verify the evidence pair first, then move to map, record, or account action without leaving the workspace.</p>
+        </div>
+        <div className="search-result-card__actions">
+          <button className="btn btn--primary" type="button" onClick={props.onDetails}>
+            Open Record
+          </button>
+          <button className="btn btn--ghost" type="button" onClick={props.onMap}>
+            Map It
+          </button>
+          <button className="btn btn--ghost" type="button" onClick={props.onAddToHotlist}>
+            {actionLabel}
+          </button>
+          <button className="btn btn--ghost" type="button" onClick={() => void props.onCopy(row.plate1)}>
+            Copy Tag
+          </button>
+        </div>
+      </div>
+
+      {(props.followUp || props.assignment || row.alertNotes) ? (
+        <div className="detail-section">
+          <div className="detail-section__copy">
+            <h4>Case context</h4>
+            <p>Current operational state tied to this read.</p>
+          </div>
+          <div className="locate-context-list">
+            {props.followUp ? (
+              <div className="locate-context-row">
+                <Badge tone={followUpStatusTone(props.followUp.status)}>{`Follow-up ${titleCase(props.followUp.status)}`}</Badge>
+                <span>{props.followUp.summary ?? "Follow-up queued for operator review."}</span>
+              </div>
+            ) : null}
+            {props.assignment ? (
+              <div className="locate-context-row">
+                <Badge tone={dispatchStatusTone(props.assignment.status)}>{`Dispatch ${dispatchStatusLabel(props.assignment.status)}`}</Badge>
+                <span>{props.assignment.summary ?? "Dispatch case is active for this plate."}</span>
+              </div>
+            ) : null}
+            {row.alertNotes ? (
+              <div className="locate-context-row">
+                <Badge tone="warn">Notes</Badge>
+                <span>{row.alertNotes}</span>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      <div className="detail-section">
+        <div className="detail-section__copy">
+          <h4>Sighting cadence</h4>
+          <p>Recent reads laid out as a simple field timeline.</p>
+        </div>
+        <SearchTimeline markers={timelineMarkers} onSelectRow={props.onSelectRow} selectedRowId={props.selectedRowId ?? row.id} />
+        <div className="locate-history-list">
+          {historyRows.map((historyRow) => (
+            <button
+              key={historyRow.id}
+              className={`locate-history-row ${historyRow.id === (props.selectedRowId ?? row.id) ? "is-selected" : ""}`}
+              type="button"
+              onClick={() => props.onSelectRow(historyRow.id)}
+            >
+              <strong>{historyRow.camera}</strong>
+              <span>{formatDateTime(historyRow.timestampUtc)}</span>
+              <span>{historyRow.gps}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </aside>
+  );
+}
+
 function SearchResultCard(props: {
   assignment: DispatchAssignmentRecord | null;
   dataSource: DataSource;
   followUp: FollowUpRecord | null;
+  selected: boolean;
   row: ConsoleDetectionRow;
   hotlistLabel: string | null;
   onAddToHotlist: () => void;
+  onSelect: () => void;
   onDetails: () => void;
   onMap: () => void;
   onCopy: (plate: string) => Promise<void>;
@@ -3155,8 +3494,27 @@ function SearchResultCard(props: {
   const plateCropUrl = useDetectionPlateCropImage(props.row.detectionId, props.dataSource === "live");
   const severity = searchResultSeverity(props.row);
 
+  function stopEvent<T>(handler: () => T): (event: MouseEvent<HTMLButtonElement>) => void {
+    return (event) => {
+      event.stopPropagation();
+      void handler();
+    };
+  }
+
   return (
-    <article className={`search-result-card severity-band severity-band--${severity}`}>
+    <article
+      aria-selected={props.selected}
+      className={`search-result-card severity-band severity-band--${severity} ${props.selected ? "is-selected" : ""}`}
+      role="button"
+      tabIndex={0}
+      onClick={props.onSelect}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          props.onSelect();
+        }
+      }}
+    >
       <div className="search-result-card__evidence">
         <div className={`search-result-card__thumb search-result-card__thumb--plate ${plateCropUrl ? "search-result-card__thumb--image" : ""}`}>
           {plateCropUrl ? <img alt={`${props.row.plate1} plate crop`} src={plateCropUrl} /> : <span>{props.row.plate1 || "OCR"}</span>}
@@ -3210,16 +3568,16 @@ function SearchResultCard(props: {
           </div>
         ) : null}
         <div className="search-result-card__actions">
-          <button className="link-button" type="button" onClick={props.onDetails}>
+          <button className="link-button" type="button" onClick={stopEvent(props.onDetails)}>
             Open Record
           </button>
-          <button className="link-button" type="button" onClick={props.onMap}>
+          <button className="link-button" type="button" onClick={stopEvent(props.onMap)}>
             Last Seen
           </button>
-          <button className="link-button" type="button" onClick={props.onAddToHotlist}>
+          <button className="link-button" type="button" onClick={stopEvent(props.onAddToHotlist)}>
             {props.hotlistLabel ? "Open Account" : "Create Account"}
           </button>
-          <button className="link-button" type="button" onClick={() => void props.onCopy(props.row.plate1)}>
+          <button className="link-button" type="button" onClick={stopEvent(() => props.onCopy(props.row.plate1))}>
             Copy Tag
           </button>
         </div>
@@ -3498,9 +3856,47 @@ function ConsoleScreen(props: {
   onSelectDetection: (rowId: string) => void;
   onStageViewChange: (view: StageView) => void;
 }): ReactElement {
+  const layoutRef = useRef<HTMLDivElement>(null);
+  const [stageFraction, setStageFraction] = useState<number | null>(null);
+  const draggingRef = useRef(false);
+
+  function handlePointerDown(event: MouseEvent): void {
+    event.preventDefault();
+    draggingRef.current = true;
+    document.body.style.cursor = "row-resize";
+    document.body.style.userSelect = "none";
+
+    function onPointerMove(moveEvent: globalThis.MouseEvent): void {
+      if (!draggingRef.current || !layoutRef.current) return;
+      const rect = layoutRef.current.getBoundingClientRect();
+      const y = moveEvent.clientY - rect.top;
+      const fraction = Math.max(0.2, Math.min(0.8, y / rect.height));
+      setStageFraction(fraction);
+    }
+
+    function onPointerUp(): void {
+      draggingRef.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      document.removeEventListener("mousemove", onPointerMove);
+      document.removeEventListener("mouseup", onPointerUp);
+    }
+
+    document.addEventListener("mousemove", onPointerMove);
+    document.addEventListener("mouseup", onPointerUp);
+  }
+
+  const layoutStyle: CSSProperties | undefined = stageFraction != null
+    ? { gridTemplateRows: `minmax(0, ${stageFraction}fr) auto minmax(0, ${1 - stageFraction}fr)` }
+    : undefined;
+
   return (
     <section className="screen">
-      <div className={`console-layout ${props.consoleLayoutMode === "overview" ? "console-layout--overview" : "console-layout--focus"}`}>
+      <div
+        ref={layoutRef}
+        className={`console-layout ${props.consoleLayoutMode === "overview" ? "console-layout--overview" : "console-layout--focus"}`}
+        style={layoutStyle}
+      >
         <section className="stage-card">
           <div className="stage-toolbar">
             <div className="camera-tab-strip">
@@ -3595,6 +3991,10 @@ function ConsoleScreen(props: {
           </div>
         </section>
 
+        <div className="resize-handle resize-handle--horizontal" onMouseDown={handlePointerDown}>
+          <div className="resize-handle__grip" />
+        </div>
+
         <section className="table-card">
           <div className="table-card__header">
             <div className="table-card__title-row">
@@ -3679,8 +4079,10 @@ function SearchScreen(props: {
   onCopyPlate: (plate: string) => Promise<void>;
   onDetails: (row: ConsoleDetectionRow) => void;
   onMap: (row: ConsoleDetectionRow) => void;
+  onSelectDetection: (rowId: string) => void;
   onSearchSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   onToggleExpanded: (plate: string) => void;
+  selectedDetectionId: string | null;
   setQuery: (value: string) => void;
   setSearchFromLocal: (value: string) => void;
   setSearchGroupByPlate: (value: boolean) => void;
@@ -3702,6 +4104,21 @@ function SearchScreen(props: {
 }): ReactElement {
   const hotlistMatches = props.results.filter((row) => row.hotlist).length;
   const latestResult = props.results[0] ?? null;
+  const focusedRow =
+    props.results.find((row) => row.id === props.selectedDetectionId) ??
+    (props.searchGroupByPlate ? props.groupedResults[0]?.rows[0] : props.results[0]) ??
+    null;
+  const focusedPlate = normalizePlate(focusedRow?.plate1);
+  const focusedRows = focusedRow
+    ? props.results
+        .filter((row) => normalizePlate(row.plate1) === focusedPlate)
+        .sort((left, right) => right.timestampUtc.localeCompare(left.timestampUtc))
+    : [];
+  const focusedActivityScore = focusedRows.length > 0 ? buildSearchActivityScore(focusedRows) : "0000";
+  const focusedPattern = focusedRows.length > 0 ? inferSearchActivityPattern(focusedRows) : null;
+  const focusedFollowUp = focusedRow ? matchingFollowUpsForRow(focusedRow, props.followUps)[0] ?? null : null;
+  const focusedAssignment = focusedRow ? matchingAssignmentsForRow(focusedRow, props.assignments)[0] ?? null : null;
+  const focusedHotlistLabel = focusedRow ? hotlistLabelForRow(focusedRow, props.hotlists) : null;
   const modeLabel =
     {
       plate: "Plate / Tag",
@@ -3883,91 +4300,139 @@ function SearchScreen(props: {
               <strong>{hotlistMatches}</strong>
             </div>
             <div className="search-summary-card">
+              <span>Lead plate</span>
+              <strong>{focusedRow ? focusedRow.plate1 : "--"}</strong>
+            </div>
+            <div className="search-summary-card">
+              <span>Activity score</span>
+              <strong>{focusedActivityScore}</strong>
+            </div>
+            <div className="search-summary-card">
               <span>Last seen</span>
               <strong>{latestResult ? formatDateTime(latestResult.timestampUtc) : "--"}</strong>
             </div>
           </div>
 
-          <section className="results-panel">
-            <div className="results-panel__header">
-              <div>
-                <h3>{props.searchExecuted ? `${props.resultsTotal} read${props.resultsTotal === 1 ? "" : "s"} found` : "Recent reads"}</h3>
-              </div>
-              <div className="results-panel__feedback">
-                {props.searchError ? <span className="feedback feedback--warn">{props.searchError}</span> : null}
-                {props.searchMessage ? <span className="feedback feedback--good">{props.searchMessage}</span> : null}
-              </div>
-            </div>
-
-            <div className="search-results">
-              {props.results.length === 0 ? (
-                <div className="empty-state">
-                  <strong>No reads matched.</strong>
-                  <p>Widen the plate fragment, adjust the time window, or remove active filters.</p>
+          <div className="search-workspace-grid">
+            <section className="results-panel">
+              <div className="results-panel__header">
+                <div>
+                  <h3>{props.searchExecuted ? `${props.resultsTotal} read${props.resultsTotal === 1 ? "" : "s"} found` : "Recent reads"}</h3>
+                  <p className="screen-subtitle">
+                    {focusedRow
+                      ? `Focused lead ${focusedRow.plate1}${focusedPattern ? ` - ${focusedPattern.label}` : ""}`
+                      : "Select a read to open the intelligence rail."}
+                  </p>
                 </div>
-              ) : props.searchGroupByPlate ? (
-                props.groupedResults.map((group) => {
-                  const expanded = props.expandedGroups[group.plate] ?? false;
-                  const rows = expanded ? group.rows : group.rows.slice(0, 1);
-                  const lead = group.rows[0];
-                  const leadFollowUp = matchingFollowUpsForRow(lead, props.followUps)[0] ?? null;
-                  const leadAssignment = matchingAssignmentsForRow(lead, props.assignments)[0] ?? null;
-                  return (
-                    <article key={group.plate} className="result-group-card">
-                      <div className="result-group-card__header">
-                        <div>
-                          <strong>{group.plate}</strong>
-                          <span>{`${lead.vehicle} - ${group.rows.length} read${group.rows.length === 1 ? "" : "s"}`}</span>
+                <div className="results-panel__feedback">
+                  {props.searchError ? <span className="feedback feedback--warn">{props.searchError}</span> : null}
+                  {props.searchMessage ? <span className="feedback feedback--good">{props.searchMessage}</span> : null}
+                </div>
+              </div>
+
+              <div className="search-results">
+                {props.results.length === 0 ? (
+                  <div className="empty-state">
+                    <strong>No reads matched.</strong>
+                    <p>Widen the plate fragment, adjust the time window, or remove active filters.</p>
+                  </div>
+                ) : props.searchGroupByPlate ? (
+                  props.groupedResults.map((group) => {
+                    const expanded = props.expandedGroups[group.plate] ?? false;
+                    const rows = expanded ? group.rows : group.rows.slice(0, 1);
+                    const lead = group.rows[0];
+                    const groupScore = buildSearchActivityScore(group.rows);
+                    const leadFollowUp = matchingFollowUpsForRow(lead, props.followUps)[0] ?? null;
+                    const leadAssignment = matchingAssignmentsForRow(lead, props.assignments)[0] ?? null;
+                    return (
+                      <article key={group.plate} className="result-group-card">
+                        <div className="result-group-card__header">
+                          <div>
+                            <strong>{group.plate}</strong>
+                            <span>{`${lead.vehicle} - ${group.rows.length} read${group.rows.length === 1 ? "" : "s"}`}</span>
+                          </div>
+                          <div className="result-group-card__meta">
+                            <Badge tone="cyan">{`Activity ${groupScore}`}</Badge>
+                            {lead.hotlist ? <Badge tone="critical">Recovery</Badge> : null}
+                            {leadFollowUp ? <Badge tone={followUpStatusTone(leadFollowUp.status)}>{`Follow-up ${titleCase(leadFollowUp.status)}`}</Badge> : null}
+                            {leadAssignment ? <Badge tone={dispatchStatusTone(leadAssignment.status)}>{`Dispatch ${dispatchStatusLabel(leadAssignment.status)}`}</Badge> : null}
+                            <Badge tone="cyan">{`Last seen ${formatDateTime(lead.timestampUtc)}`}</Badge>
+                            {group.rows.length > 1 ? (
+                              <button className="link-button" type="button" onClick={() => props.onToggleExpanded(group.plate)}>
+                                {expanded ? "Collapse" : `${group.rows.length} reads`}
+                              </button>
+                            ) : null}
+                          </div>
                         </div>
-                        <div className="result-group-card__meta">
-                          {lead.hotlist ? <Badge tone="critical">Recovery</Badge> : null}
-                          {leadFollowUp ? <Badge tone={followUpStatusTone(leadFollowUp.status)}>{`Follow-up ${titleCase(leadFollowUp.status)}`}</Badge> : null}
-                          {leadAssignment ? <Badge tone={dispatchStatusTone(leadAssignment.status)}>{`Dispatch ${dispatchStatusLabel(leadAssignment.status)}`}</Badge> : null}
-                          <Badge tone="cyan">{`Last seen ${formatDateTime(lead.timestampUtc)}`}</Badge>
-                          {group.rows.length > 1 ? (
-                            <button className="link-button" type="button" onClick={() => props.onToggleExpanded(group.plate)}>
-                              {expanded ? "Collapse" : `${group.rows.length} reads`}
-                            </button>
-                          ) : null}
+                        <div className="result-group-list">
+                          {rows.map((row) => (
+                            <SearchResultCard
+                              assignment={matchingAssignmentsForRow(row, props.assignments)[0] ?? null}
+                              key={row.id}
+                              dataSource={props.dataSource}
+                              followUp={matchingFollowUpsForRow(row, props.followUps)[0] ?? null}
+                              hotlistLabel={hotlistLabelForRow(row, props.hotlists)}
+                              row={row}
+                              selected={focusedRow?.id === row.id}
+                              onAddToHotlist={() => props.onAddToHotlist(row)}
+                              onCopy={props.onCopyPlate}
+                              onDetails={() => props.onDetails(row)}
+                              onMap={() => props.onMap(row)}
+                              onSelect={() => props.onSelectDetection(row.id)}
+                            />
+                          ))}
                         </div>
-                      </div>
-                      <div className="result-group-list">
-                        {rows.map((row) => (
-                          <SearchResultCard
-                            assignment={matchingAssignmentsForRow(row, props.assignments)[0] ?? null}
-                            key={row.id}
-                            dataSource={props.dataSource}
-                            followUp={matchingFollowUpsForRow(row, props.followUps)[0] ?? null}
-                            row={row}
-                            hotlistLabel={hotlistLabelForRow(row, props.hotlists)}
-                            onAddToHotlist={() => props.onAddToHotlist(row)}
-                            onCopy={props.onCopyPlate}
-                            onDetails={() => props.onDetails(row)}
-                            onMap={() => props.onMap(row)}
-                          />
-                        ))}
-                      </div>
-                    </article>
-                  );
-                })
-              ) : (
-                props.results.map((row) => (
-                  <SearchResultCard
-                    assignment={matchingAssignmentsForRow(row, props.assignments)[0] ?? null}
-                    key={row.id}
-                    dataSource={props.dataSource}
-                    followUp={matchingFollowUpsForRow(row, props.followUps)[0] ?? null}
-                    row={row}
-                    hotlistLabel={hotlistLabelForRow(row, props.hotlists)}
-                    onAddToHotlist={() => props.onAddToHotlist(row)}
-                    onCopy={props.onCopyPlate}
-                    onDetails={() => props.onDetails(row)}
-                    onMap={() => props.onMap(row)}
-                  />
-                ))
-              )}
-            </div>
-          </section>
+                      </article>
+                    );
+                  })
+                ) : (
+                  props.results.map((row) => (
+                    <SearchResultCard
+                      assignment={matchingAssignmentsForRow(row, props.assignments)[0] ?? null}
+                      key={row.id}
+                      dataSource={props.dataSource}
+                      followUp={matchingFollowUpsForRow(row, props.followUps)[0] ?? null}
+                      hotlistLabel={hotlistLabelForRow(row, props.hotlists)}
+                      row={row}
+                      selected={focusedRow?.id === row.id}
+                      onAddToHotlist={() => props.onAddToHotlist(row)}
+                      onCopy={props.onCopyPlate}
+                      onDetails={() => props.onDetails(row)}
+                      onMap={() => props.onMap(row)}
+                      onSelect={() => props.onSelectDetection(row.id)}
+                    />
+                  ))
+                )}
+              </div>
+            </section>
+
+            <SearchLeadPanel
+              assignment={focusedAssignment}
+              dataSource={props.dataSource}
+              followUp={focusedFollowUp}
+              hotlistLabel={focusedHotlistLabel}
+              onAddToHotlist={() => {
+                if (focusedRow) {
+                  props.onAddToHotlist(focusedRow);
+                }
+              }}
+              onCopy={props.onCopyPlate}
+              onDetails={() => {
+                if (focusedRow) {
+                  props.onDetails(focusedRow);
+                }
+              }}
+              onMap={() => {
+                if (focusedRow) {
+                  props.onMap(focusedRow);
+                }
+              }}
+              onSelectRow={props.onSelectDetection}
+              relatedRows={focusedRows}
+              row={focusedRow}
+              selectedRowId={focusedRow?.id ?? props.selectedDetectionId}
+            />
+          </div>
         </div>
       </div>
     </section>
