@@ -1522,6 +1522,34 @@ select:focus-visible {
   padding: 0 14px 14px;
 }
 
+.search-toolbar-card--sidebar details.collapsible-section[open] .collapsible-section__summary::after,
+.search-toolbar-card--sidebar details.collapsible-section .collapsible-section__summary::after {
+  content: none !important;
+}
+
+.collapsible-section__body {
+  display: grid;
+  gap: 12px;
+  padding-top: 12px;
+}
+
+.search-sidebar-section--collapsible,
+.detail-section--collapsible {
+  gap: 0;
+}
+
+.search-sidebar-section--collapsible .collapsible-section__summary {
+  align-items: flex-start;
+}
+
+.detail-section--collapsible .collapsible-section__summary {
+  align-items: center;
+}
+
+.detail-section--collapsible .collapsible-section__body {
+  padding-top: 14px;
+}
+
 .search-input-row {
   grid-template-columns: minmax(0, 1fr) auto;
 }
