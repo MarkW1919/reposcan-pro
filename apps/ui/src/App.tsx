@@ -4264,9 +4264,11 @@ function SearchScreen(props: {
           </div>
 
           <div className="button-row">
-            <button className="btn btn--ghost" type="button" onClick={props.onClearFilters}>
-              Clear Filters
-            </button>
+            <Tooltip text="Reset all search filters to defaults">
+              <button className="btn btn--ghost" type="button" onClick={props.onClearFilters}>
+                Clear Filters
+              </button>
+            </Tooltip>
           </div>
 
           <div className="chip-row">
@@ -4505,9 +4507,11 @@ function AccountsScreen(props: {
         <section className="panel-card hotlists-list-card">
           <div className="panel-card__header">
             <h3>Account List</h3>
-            <button className="btn btn--ghost" disabled={!props.canManageAccounts} type="button" onClick={props.onClearDraft}>
-              New Account
-            </button>
+            <Tooltip text="Start a new recovery account entry">
+              <button className="btn btn--ghost" disabled={!props.canManageAccounts} type="button" onClick={props.onClearDraft}>
+                New Account
+              </button>
+            </Tooltip>
           </div>
           <div className="hotlist-list">
             {props.hotlists.length === 0 ? (
@@ -4822,18 +4826,26 @@ function AccountsScreen(props: {
             ) : null}
 
             <div className="button-stack">
-              <button className="btn btn--primary" disabled={!props.canManageAccounts || props.saving} type="submit">
-                {props.saving ? "Saving..." : props.selectedHotlistId ? "Save Account" : "Create Account"}
-              </button>
-              <button className="btn btn--ghost" disabled={!props.canManageAccounts} type="button" onClick={props.onClearDraft}>
-                Clear Draft
-              </button>
-              <button className="btn btn--ghost" disabled={!props.canManageAccounts} type="button" onClick={props.onSeedFromDetection}>
-                Seed {props.selectedDetectionPlate || "selection"}
-              </button>
-              <button className="btn btn--danger" disabled={!props.canManageAccounts || !props.selectedHotlistId || props.deleting} type="button" onClick={props.onDelete}>
-                {props.deleting ? "Deleting..." : "Delete Account"}
-              </button>
+              <Tooltip text={props.selectedHotlistId ? "Save changes to this account" : "Create a new recovery account"}>
+                <button className="btn btn--primary" disabled={!props.canManageAccounts || props.saving} type="submit">
+                  {props.saving ? "Saving..." : props.selectedHotlistId ? "Save Account" : "Create Account"}
+                </button>
+              </Tooltip>
+              <Tooltip text="Reset the form to start a new entry">
+                <button className="btn btn--ghost" disabled={!props.canManageAccounts} type="button" onClick={props.onClearDraft}>
+                  Clear Draft
+                </button>
+              </Tooltip>
+              <Tooltip text="Fill form with the currently selected detection">
+                <button className="btn btn--ghost" disabled={!props.canManageAccounts} type="button" onClick={props.onSeedFromDetection}>
+                  Seed {props.selectedDetectionPlate || "selection"}
+                </button>
+              </Tooltip>
+              <Tooltip text="Permanently remove this recovery account">
+                <button className="btn btn--danger" disabled={!props.canManageAccounts || !props.selectedHotlistId || props.deleting} type="button" onClick={props.onDelete}>
+                  {props.deleting ? "Deleting..." : "Delete Account"}
+                </button>
+              </Tooltip>
             </div>
           </form>
         </section>
@@ -5108,41 +5120,51 @@ function HotlistsScreen(props: {
 
                 <div className="record-row__actions record-row__actions--case">
                   {focusedAlertCase.alert.status !== "acknowledged" ? (
-                    <button
-                      className="btn btn--primary"
-                      disabled={!props.canUpdateAlerts || props.alertActionId === focusedAlertCase.alert.alert_id}
-                      type="button"
-                      onClick={() => props.onAlertStatusChange(focusedAlertCase.alert, "acknowledged", props.alertResponseNotes || undefined)}
-                    >
-                      {props.alertActionId === focusedAlertCase.alert.alert_id ? "Updating..." : "Acknowledge"}
-                    </button>
+                    <Tooltip text="Acknowledge this alert and begin response">
+                      <button
+                        className="btn btn--primary"
+                        disabled={!props.canUpdateAlerts || props.alertActionId === focusedAlertCase.alert.alert_id}
+                        type="button"
+                        onClick={() => props.onAlertStatusChange(focusedAlertCase.alert, "acknowledged", props.alertResponseNotes || undefined)}
+                      >
+                        {props.alertActionId === focusedAlertCase.alert.alert_id ? "Updating..." : "Acknowledge"}
+                      </button>
+                    </Tooltip>
                   ) : null}
                   {focusedAlertCase.alert.status !== "dismissed" ? (
-                    <button
-                      className="btn btn--ghost"
-                      disabled={!props.canUpdateAlerts || props.alertActionId === focusedAlertCase.alert.alert_id}
-                      type="button"
-                      onClick={() => props.onAlertStatusChange(focusedAlertCase.alert, "dismissed", props.alertResponseNotes || undefined)}
-                    >
-                      {props.alertActionId === focusedAlertCase.alert.alert_id ? "Updating..." : "Stand Down"}
-                    </button>
+                    <Tooltip text="Stand down and dismiss this alert">
+                      <button
+                        className="btn btn--ghost"
+                        disabled={!props.canUpdateAlerts || props.alertActionId === focusedAlertCase.alert.alert_id}
+                        type="button"
+                        onClick={() => props.onAlertStatusChange(focusedAlertCase.alert, "dismissed", props.alertResponseNotes || undefined)}
+                      >
+                        {props.alertActionId === focusedAlertCase.alert.alert_id ? "Updating..." : "Stand Down"}
+                      </button>
+                    </Tooltip>
                   ) : null}
                   {focusedAlertCase.alert.status !== "active" ? (
-                    <button
-                      className="btn btn--ghost"
-                      disabled={!props.canUpdateAlerts || props.alertActionId === focusedAlertCase.alert.alert_id}
-                      type="button"
-                      onClick={() => props.onAlertStatusChange(focusedAlertCase.alert, "active", props.alertResponseNotes || undefined)}
-                    >
-                      {props.alertActionId === focusedAlertCase.alert.alert_id ? "Updating..." : "Reopen"}
-                    </button>
+                    <Tooltip text="Reopen this alert for further response">
+                      <button
+                        className="btn btn--ghost"
+                        disabled={!props.canUpdateAlerts || props.alertActionId === focusedAlertCase.alert.alert_id}
+                        type="button"
+                        onClick={() => props.onAlertStatusChange(focusedAlertCase.alert, "active", props.alertResponseNotes || undefined)}
+                      >
+                        {props.alertActionId === focusedAlertCase.alert.alert_id ? "Updating..." : "Reopen"}
+                      </button>
+                    </Tooltip>
                   ) : null}
-                  <button className="btn btn--ghost" disabled={!focusedAlertCase.row} type="button" onClick={() => props.onOpenRecord(focusedAlertCase.alert.detection_id)}>
-                    Open Record
-                  </button>
-                  <button className="btn btn--ghost" disabled={!focusedAlertCase.row} type="button" onClick={() => props.onMapDetection(focusedAlertCase.alert.detection_id)}>
-                    Route to Vehicle
-                  </button>
+                  <Tooltip text="View full detection record">
+                    <button className="btn btn--ghost" disabled={!focusedAlertCase.row} type="button" onClick={() => props.onOpenRecord(focusedAlertCase.alert.detection_id)}>
+                      Open Record
+                    </button>
+                  </Tooltip>
+                  <Tooltip text="Navigate to this vehicle's last-seen location">
+                    <button className="btn btn--ghost" disabled={!focusedAlertCase.row} type="button" onClick={() => props.onMapDetection(focusedAlertCase.alert.detection_id)}>
+                      Route to Vehicle
+                    </button>
+                  </Tooltip>
                 </div>
 
                 <div className="case-workflow-grid">
@@ -5597,12 +5619,16 @@ function SettingsScreen(props: {
                   <input className="text-input" type="password" value={props.apiKeyInput} onChange={(event) => props.onApiKeyChange(event.target.value)} />
                 </label>
                 <div className="button-row">
-                  <button className="btn btn--primary" type="button" onClick={props.onApiKeyApply}>
-                    Apply Key
-                  </button>
-                  <button className="btn btn--ghost" type="button" onClick={props.onRefresh}>
-                    Refresh Live Data
-                  </button>
+                  <Tooltip text="Save and activate the API key">
+                    <button className="btn btn--primary" type="button" onClick={props.onApiKeyApply}>
+                      Apply Key
+                    </button>
+                  </Tooltip>
+                  <Tooltip text="Re-fetch all data from the backend">
+                    <button className="btn btn--ghost" type="button" onClick={props.onRefresh}>
+                      Refresh Live Data
+                    </button>
+                  </Tooltip>
                 </div>
                 <section className="settings-subsection">
                   <div className="panel-card__header">
@@ -6059,43 +6085,57 @@ function HotlistAlertOverlay(props: {
           <span>Write the response into the existing review workflow before clearing the alert.</span>
         </div>
         <div className="hotlist-alert__review-actions">
-          <button
-            className="btn btn--success"
-            disabled={!props.canSubmitReview || props.reviewSaving || !props.hotlistRow.detectionId}
-            type="button"
-            onClick={props.onConfirmMatch}
-          >
-            {props.reviewSaving ? "Saving..." : "Confirm Match"}
-          </button>
-          <button
-            className="btn btn--danger"
-            disabled={!props.canSubmitReview || props.reviewSaving || !props.hotlistRow.detectionId}
-            type="button"
-            onClick={props.onFlagFalsePositive}
-          >
-            False Positive
-          </button>
+          <Tooltip text="Confirm this is a valid match and log the review">
+            <button
+              className="btn btn--success"
+              disabled={!props.canSubmitReview || props.reviewSaving || !props.hotlistRow.detectionId}
+              type="button"
+              onClick={props.onConfirmMatch}
+            >
+              {props.reviewSaving ? "Saving..." : "Confirm Match"}
+            </button>
+          </Tooltip>
+          <Tooltip text="Flag this hit as a false positive">
+            <button
+              className="btn btn--danger"
+              disabled={!props.canSubmitReview || props.reviewSaving || !props.hotlistRow.detectionId}
+              type="button"
+              onClick={props.onFlagFalsePositive}
+            >
+              False Positive
+            </button>
+          </Tooltip>
         </div>
       </div>
       {props.reviewError ? <div className="feedback feedback--error">{props.reviewError}</div> : null}
       {props.reviewMessage ? <div className="feedback feedback--good">{props.reviewMessage}</div> : null}
 
       <div className="hotlist-alert__actions">
-        <button className="btn btn--primary" type="button" onClick={props.onNavigate}>
-          Route to Vehicle
-        </button>
-        <button className="btn btn--ghost" type="button" onClick={props.onViewRecord}>
-          Open Record
-        </button>
-        <button className="btn btn--ghost" type="button" onClick={props.onRecover}>
-          Mark Recovered
-        </button>
-        <button className="btn btn--ghost" type="button" onClick={props.onMuteToggle}>
-          {props.hotlistAudioMuted ? "Unmute" : "Mute"}
-        </button>
-        <button className="btn btn--danger" type="button" onClick={props.onDismiss}>
-          Dismiss
-        </button>
+        <Tooltip text="Navigate to this vehicle's last-seen location">
+          <button className="btn btn--primary" type="button" onClick={props.onNavigate}>
+            Route to Vehicle
+          </button>
+        </Tooltip>
+        <Tooltip text="View full detection record and evidence">
+          <button className="btn btn--ghost" type="button" onClick={props.onViewRecord}>
+            Open Record
+          </button>
+        </Tooltip>
+        <Tooltip text="Mark this vehicle as recovered and close the case">
+          <button className="btn btn--ghost" type="button" onClick={props.onRecover}>
+            Mark Recovered
+          </button>
+        </Tooltip>
+        <Tooltip text={props.hotlistAudioMuted ? "Re-enable alert audio" : "Silence alert audio"}>
+          <button className="btn btn--ghost" type="button" onClick={props.onMuteToggle}>
+            {props.hotlistAudioMuted ? "Unmute" : "Mute"}
+          </button>
+        </Tooltip>
+        <Tooltip text="Dismiss this alert without action">
+          <button className="btn btn--danger" type="button" onClick={props.onDismiss}>
+            Dismiss
+          </button>
+        </Tooltip>
       </div>
     </div>
     </>

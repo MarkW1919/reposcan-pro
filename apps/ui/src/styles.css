@@ -1872,11 +1872,13 @@ select:focus-visible {
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(232px, 276px) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   gap: 18px;
 }
 
 .settings-nav-card {
   padding: 16px;
+  min-height: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   gap: 14px;
@@ -1885,6 +1887,7 @@ select:focus-visible {
 .settings-nav-list {
   min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
   display: grid;
   gap: 10px;
   padding-right: 4px;
@@ -1911,6 +1914,7 @@ select:focus-visible {
 }
 
 .settings-card--detail {
+  min-height: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
 }
@@ -1918,6 +1922,7 @@ select:focus-visible {
 .settings-detail-stack {
   min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
   display: grid;
   gap: 14px;
   padding-right: 4px;
@@ -3135,6 +3140,7 @@ select:focus-visible {
 
   .settings-workspace {
     grid-template-columns: 1fr;
+    grid-template-rows: auto;
   }
 
   .search-summary-strip {
