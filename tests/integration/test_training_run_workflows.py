@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import subprocess
 import sys
@@ -20,6 +21,14 @@ def _run_script(*args: str) -> subprocess.CompletedProcess[str]:
         text=True,
         check=False,
     )
+
+
+def _load_script_module(name: str, path: Path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _write_profile(example_name: str, output_root: Path, destination: Path) -> Path:
@@ -341,6 +350,43 @@ def test_attribute_training_script_resume_last_uses_existing_checkpoint(tmp_path
     run_manifest = json.loads((workspace_dir / "run_manifest.json").read_text(encoding="utf-8"))
     assert "--resume-last" in run_manifest["training_command"]
     assert "--initial-checkpoint" not in run_manifest["training_command"]
+
+
+def test_attribute_training_console_epoch_start_includes_previous_epoch_summary():
+    module = _load_script_module(
+        "train_attribute_classifier_script",
+        REPO_ROOT / "scripts" / "train_attribute_classifier.py",
+    )
+
+    message = module._format_epoch_start_message(
+        9,
+        16,
+        {
+            "epoch": 8,
+            "train_acc": 0.99236,
+            "val_acc": 0.84521,
+            "best_val": 0.84521,
+            "lr": 1.01e-4,
+        },
+    )
+
+    assert "starting_epoch=9/16" in message
+    assert "prev_epoch=8" in message
+    assert "train_acc=0.9924" in message
+    assert "val_acc=0.8452" in message
+    assert "best_val=0.8452" in message
+    assert "lr=1.01e-04" in message
+
+
+def test_attribute_training_console_progress_reports_batch_position():
+    module = _load_script_module(
+        "train_attribute_classifier_script",
+        REPO_ROOT / "scripts" / "train_attribute_classifier.py",
+    )
+
+    message = module._format_epoch_progress_message(5, 16, 3, 12, 0.98123)
+
+    assert message == "epoch_progress epoch=5/16 batch=3/12 train_acc=0.9812"
 
 
 def test_launch_training_run_starts_background_process_from_manifest(tmp_path):

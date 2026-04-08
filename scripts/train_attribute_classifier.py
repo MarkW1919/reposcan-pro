@@ -74,6 +74,56 @@ def _append_training_event(path: Path, message: str) -> None:
         handle.write(f"{_utc_now_utc()} {message}\n")
 
 
+def _format_epoch_start_message(
+    epoch: int,
+    total_epochs: int,
+    previous_epoch_summary: dict[str, object] | None = None,
+) -> str:
+    message = f"starting_epoch={epoch}/{total_epochs}"
+    if not previous_epoch_summary:
+        return message
+
+    previous_epoch = previous_epoch_summary.get("epoch")
+    train_acc = previous_epoch_summary.get("train_acc")
+    val_acc = previous_epoch_summary.get("val_acc")
+    best_val = previous_epoch_summary.get("best_val")
+    current_lr = previous_epoch_summary.get("lr")
+    parts = [message, f"prev_epoch={previous_epoch}"]
+    if isinstance(train_acc, (int, float)):
+        parts.append(f"train_acc={float(train_acc):.4f}")
+    if isinstance(val_acc, (int, float)):
+        parts.append(f"val_acc={float(val_acc):.4f}")
+    if isinstance(best_val, (int, float)):
+        parts.append(f"best_val={float(best_val):.4f}")
+    if isinstance(current_lr, (int, float)):
+        parts.append(f"lr={float(current_lr):.2e}")
+    return " ".join(parts)
+
+
+def _format_epoch_progress_message(
+    epoch: int,
+    total_epochs: int,
+    batch_index: int,
+    total_batches: int | None,
+    running_train_acc: float,
+) -> str:
+    if total_batches is None:
+        return f"epoch_progress epoch={epoch}/{total_epochs} batch={batch_index} train_acc={running_train_acc:.4f}"
+    return (
+        f"epoch_progress epoch={epoch}/{total_epochs} "
+        f"batch={batch_index}/{total_batches} train_acc={running_train_acc:.4f}"
+    )
+
+
+def _should_emit_epoch_progress(batch_index: int, total_batches: int | None) -> bool:
+    if total_batches is None or total_batches <= 0:
+        return batch_index == 1
+    if batch_index == 1 or batch_index == total_batches:
+        return True
+    interval = max(1, total_batches // 4)
+    return total_batches > 4 and batch_index % interval == 0
+
+
 def _load_existing_training_status(path: Path) -> dict[str, object]:
     if not path.exists():
         return {}
@@ -456,6 +506,7 @@ def main() -> int:
     best_checkpoint = checkpoints_dir / "best.pt"
     last_checkpoint = checkpoints_dir / "last.pt"
 
+    existing_status: dict[str, object] = {}
     resume_completed_epochs = 0
     resume_best_val: float | None = None
     if args.resume_last:
@@ -619,14 +670,27 @@ def main() -> int:
     epochs_without_improvement = 0
     patience = profile.patience if hasattr(profile, "patience") and profile.patience else profile.epochs
     best_epoch = 0
+    previous_epoch_summary: dict[str, object] | None = None
+    if args.resume_last:
+        previous_epoch_summary = {
+            "epoch": resume_completed_epochs,
+            "train_acc": existing_status.get("train_accuracy"),
+            "val_acc": existing_status.get("validation_accuracy"),
+            "best_val": existing_status.get("best_validation_accuracy"),
+            "lr": None,
+        }
     try:
         for epoch in range(start_epoch, profile.epochs + 1):
-            print(f"starting_epoch={epoch}/{profile.epochs}")
+            print(_format_epoch_start_message(epoch, profile.epochs, previous_epoch_summary))
             _append_training_event(events_path, f"epoch_started epoch={epoch}/{profile.epochs}")
             model.train()
             train_examples = 0
             train_correct = 0
-            for images, labels in train_loader:
+            try:
+                total_batches = len(train_loader)
+            except TypeError:
+                total_batches = None
+            for batch_index, (images, labels) in enumerate(train_loader, start=1):
                 images = images.to(device)
                 labels = labels.to(device)
                 logits = model(images)
@@ -637,6 +701,9 @@ def main() -> int:
                 optimizer.zero_grad(set_to_none=True)
                 loss.backward()
                 optimizer.step()
+                running_train_acc = (train_correct / train_examples) if train_examples else 0.0
+                if _should_emit_epoch_progress(batch_index, total_batches):
+                    print(_format_epoch_progress_message(epoch, profile.epochs, batch_index, total_batches, running_train_acc))
             scheduler.step()
 
             train_acc = (train_correct / train_examples) if train_examples else 0.0
@@ -672,6 +739,13 @@ def main() -> int:
                     f"best_val={best_val:.4f} lr={current_lr:.2e}"
                 ),
             )
+            previous_epoch_summary = {
+                "epoch": epoch,
+                "train_acc": train_acc,
+                "val_acc": val_acc,
+                "best_val": best_val,
+                "lr": current_lr,
+            }
 
             if epochs_without_improvement >= patience:
                 print(f"Early stopping at epoch {epoch} (no improvement for {patience} epochs).")
