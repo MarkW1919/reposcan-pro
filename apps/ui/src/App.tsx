@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type MouseEvent, type ReactElement } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type MouseEvent, type ReactElement, type ReactNode } from "react";
 import { Circle, MapContainer, Marker, Polyline, Popup, TileLayer } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -203,6 +203,12 @@ interface SearchTimelineMarker {
   leftPercent: number;
   severity: ReturnType<typeof searchResultSeverity>;
   timestampLabel: string;
+}
+
+interface OperationalSignal {
+  label: string;
+  detail: string;
+  tone: "critical" | "warn" | "success" | "muted" | "cyan";
 }
 
 const uiSettingsStorageKey = "reposcan.ui.desktop-settings.v1";
@@ -742,6 +748,121 @@ function dispatchStatusLabel(status: DispatchAssignmentStatus): string {
   return titleCase(status);
 }
 
+function dispatchOperationalSignal(status: DispatchAssignmentStatus): OperationalSignal {
+  if (status === "cancelled") {
+    return {
+      label: "Cancelled",
+      detail: "Stand down this recovery and clear the field response.",
+      tone: "critical",
+    };
+  }
+  if (status === "completed") {
+    return {
+      label: "Closed",
+      detail: "Recovery workflow is complete for this vehicle.",
+      tone: "muted",
+    };
+  }
+  if (status === "queued") {
+    return {
+      label: "Pending Review",
+      detail: "Verify the hit before sending the field unit forward.",
+      tone: "warn",
+    };
+  }
+  if (status === "onsite") {
+    return {
+      label: "On Scene",
+      detail: "Unit is on scene. Keep the vehicle under visual control.",
+      tone: "success",
+    };
+  }
+  return {
+    label: "Proceed",
+    detail: "Dispatch is active. Route toward the vehicle and maintain updates.",
+    tone: "success",
+  };
+}
+
+function followUpOperationalSignal(record: FollowUpRecord): OperationalSignal {
+  if (record.status === "resolved") {
+    return {
+      label: "Resolved",
+      detail: "No further follow-up is currently required.",
+      tone: "success",
+    };
+  }
+  if (record.status === "monitoring") {
+    return {
+      label: "Monitor",
+      detail: record.summary ?? "Keep the account under watch and verify before advancing.",
+      tone: "warn",
+    };
+  }
+  return {
+    label: "Follow-up Due",
+    detail: record.summary ?? "This read needs operator follow-up before closure.",
+    tone: "critical",
+  };
+}
+
+function buildOperationalSignal(
+  row: ConsoleDetectionRow,
+  followUp: FollowUpRecord | null,
+  assignment: DispatchAssignmentRecord | null,
+): OperationalSignal {
+  if (assignment) {
+    return dispatchOperationalSignal(assignment.status);
+  }
+  if (followUp) {
+    return followUpOperationalSignal(followUp);
+  }
+  if (row.hotlist || row.alertStatus === "active") {
+    return {
+      label: "Route Now",
+      detail: "Verify the evidence pair, then move directly toward the vehicle.",
+      tone: "critical",
+    };
+  }
+  if (row.alertStatus === "acknowledged") {
+    return {
+      label: "Field Review",
+      detail: "A case is already in motion. Confirm the read and keep dispatch updated.",
+      tone: "warn",
+    };
+  }
+  return {
+    label: "Verify Only",
+    detail: "Confirm the plate, vehicle, and location before taking account action.",
+    tone: "cyan",
+  };
+}
+
+function formatDetectionLocationLine(row: ConsoleDetectionRow): string {
+  return row.source || row.camera;
+}
+
+function formatDetectionTimestampGpsLine(row: ConsoleDetectionRow): string {
+  return `${formatDateTime(row.timestampUtc)} • ${row.gps}`;
+}
+
+function formatDetectionCameraLine(row: ConsoleDetectionRow, activityScore?: string): string {
+  return activityScore ? `${row.camera} • Score ${activityScore}` : row.camera;
+}
+
+function dispatchWorkflowTone(status: DispatchAssignmentStatus): "proceed" | "hold" | "cancel" | "completed" {
+  if (status === "cancelled") {
+    return "cancel";
+  }
+  if (status === "queued") {
+    return "hold";
+  }
+  if (status === "completed") {
+    return "completed";
+  }
+  return "proceed";
+}
+
 function resolveServiceHealthState(
   overviewState: HealthState | undefined,
   dataSource: DataSource,
@@ -1217,6 +1338,107 @@ function inferSearchActivityPattern(rows: ConsoleDetectionRow[]): SearchActivity
   };
 }
 
+function summarizeFilterCount(count: number, singular: string, emptyLabel = "Optional"): string {
+  if (count <= 0) {
+    return emptyLabel;
+  }
+  return `${count} ${count === 1 ? singular : `${singular}s`} active`;
+}
+
+function buildLeadResponseCue(
+  row: ConsoleDetectionRow,
+  followUp: FollowUpRecord | null,
+  assignment: DispatchAssignmentRecord | null,
+  hotlistLabel: string | null,
+): OperationalSignal {
+  if (assignment) {
+    if (assignment.status === "cancelled") {
+      return {
+        label: "Stand down",
+        detail: assignment.summary ?? "Dispatch was cancelled. Do not engage again until the case is reopened.",
+        tone: "critical",
+      };
+    }
+    if (assignment.status === "queued") {
+      return {
+        label: "Hold for review",
+        detail: assignment.summary ?? "Dispatch is pending review. Verify the sighting and wait for release before moving in.",
+        tone: "warn",
+      };
+    }
+    if (assignment.status === "assigned") {
+      return {
+        label: "Proceed to target",
+        detail:
+          assignment.summary ??
+          (assignment.destination_label
+            ? `Assignment is active. Stage toward ${assignment.destination_label}.`
+            : "Assignment is active. Move toward the last confirmed sighting."),
+        tone: "success",
+      };
+    }
+    if (assignment.status === "en_route") {
+      return {
+        label: "Route is active",
+        detail:
+          assignment.summary ??
+          (assignment.destination_label
+            ? `Navigation is set for ${assignment.destination_label}. Maintain visual confirmation.`
+            : "Continue en route to the vehicle's last confirmed location."),
+        tone: "success",
+      };
+    }
+    if (assignment.status === "onsite") {
+      return {
+        label: "On scene",
+        detail: assignment.summary ?? "Operator is on scene. Keep evidence and dispatch notes current.",
+        tone: "success",
+      };
+    }
+    return {
+      label: "Dispatch complete",
+      detail: assignment.summary ?? "Dispatch is complete. Review the account before reopening the case.",
+      tone: "muted",
+    };
+  }
+
+  if (followUp) {
+    if (followUp.status === "open") {
+      return {
+        label: "Action required",
+        detail: followUp.summary ?? followUp.notes ?? "An open follow-up is attached. Verify the vehicle and update the case.",
+        tone: "critical",
+      };
+    }
+    if (followUp.status === "monitoring") {
+      return {
+        label: "Monitor target",
+        detail: followUp.summary ?? followUp.notes ?? "Keep the vehicle in sight and wait for a stronger recovery cue.",
+        tone: "warn",
+      };
+    }
+    return {
+      label: "Follow-up resolved",
+      detail: followUp.summary ?? followUp.notes ?? "The follow-up is resolved. Review the record before taking new action.",
+      tone: "muted",
+    };
+  }
+
+  if (row.hotlist || hotlistLabel) {
+    return {
+      label: "Verify and route",
+      detail: "Recovery account match found. Confirm the vehicle, then route or open the account.",
+      tone: "critical",
+    };
+  }
+
+  return {
+    label: "Unassigned lead",
+    detail: "Review the evidence, map the sighting, or create a recovery account for continued tracking.",
+    tone: "cyan",
+  };
+}
+
 function buildSearchTimelineMarkers(rows: ConsoleDetectionRow[]): SearchTimelineMarker[] {
   if (rows.length === 0) {
     return [];
@@ -1534,6 +1756,22 @@ function Toggle(props: { checked: boolean; onChange: (checked: boolean) => void;
 
 function Badge(props: { tone: "cyan" | "critical" | "success" | "warn" | "muted"; children: string }): ReactElement {
   return <span className={`badge badge--${props.tone}`}>{props.children}</span>;
+}
+
+function workflowVariantForTone(tone: OperationalSignal["tone"]): "verify" | "follow-up" | "proceed" | "cancel" | "muted" {
+  if (tone === "critical") {
+    return "cancel";
+  }
+  if (tone === "warn") {
+    return "follow-up";
+  }
+  if (tone === "success") {
+    return "proceed";
+  }
+  if (tone === "cyan") {
+    return "verify";
+  }
+  return "muted";
 }
 
 function useDetectionFrameImage(detectionId: string | null | undefined, enabled: boolean): string | null {
@@ -2967,6 +3205,9 @@ function App(): ReactElement {
           activeScreen={screen}
           activeAlerts={activeAlerts}
           activeHotlists={hotlists.filter((entry) => entry.active).length}
+          cameraOnlineCount={onlineCameraCount}
+          cameraTotalCount={availableCameraFeeds.length}
+          dataSource={dataSource}
           destinationInput={destinationInput}
           navigationActive={navigationActive}
           onDestinationChange={setDestinationInput}
@@ -2981,6 +3222,7 @@ function App(): ReactElement {
           routeEta={routeEta}
           routeStatusLabel={routeStatusLabel}
           settings={settings}
+          totalReads={totalReads}
           withinRadius={withinRadius}
           distanceFeet={distanceFeet}
           onDistanceChange={setDistanceFeet}
@@ -3313,6 +3555,65 @@ function SearchTimeline(props: {
   );
 }
 
+function DispatchStatusPill(props: { status: DispatchAssignmentStatus }): ReactElement {
+  return <span className={`workflow-pill workflow-pill--${dispatchWorkflowTone(props.status)}`}>{dispatchStatusLabel(props.status)}</span>;
+}
+
+function followUpWorkflowTone(status: FollowUpStatus): "follow-up" | "verify" | "completed" {
+  if (status === "resolved") {
+    return "completed";
+  }
+  if (status === "monitoring") {
+    return "verify";
+  }
+  return "follow-up";
+}
+
+function followUpStatusLabel(status: FollowUpStatus): string {
+  if (status === "open") {
+    return "Review First";
+  }
+  if (status === "monitoring") {
+    return "Monitor";
+  }
+  return "Resolved";
+}
+
+function FollowUpStatusPill(props: { status: FollowUpStatus }): ReactElement {
+  return <span className={`workflow-pill workflow-pill--${followUpWorkflowTone(props.status)}`}>{followUpStatusLabel(props.status)}</span>;
+}
+
+function LocateQuickSelectCard(props: {
+  dataSource: DataSource;
+  row: ConsoleDetectionRow;
+  selected: boolean;
+  onSelect: () => void;
+}): ReactElement {
+  const plateCropUrl = useDetectionPlateCropImage(props.row.detectionId, props.dataSource === "live");
+  const severity = searchResultSeverity(props.row);
+
+  return (
+    <button
+      className={`locate-quick-card severity-band severity-band--${severity} ${props.selected ? "is-selected" : ""}`}
+      type="button"
+      onClick={props.onSelect}
+    >
+      <div className={`locate-quick-card__thumb ${plateCropUrl ? "locate-quick-card__thumb--image" : ""}`}>
+        {plateCropUrl ? <img alt={`${props.row.plate1} crop`} src={plateCropUrl} /> : <span>{props.row.plate1}</span>}
+      </div>
+      <div className="locate-quick-card__copy">
+        <strong>{props.row.plate1}</strong>
+        <span>{props.row.vehicle}</span>
+        <span>{formatDateTime(props.row.timestampUtc)}</span>
+      </div>
+      <div className="locate-quick-card__meta">
+        {props.row.hotlist ? <Badge tone="critical">Recovery</Badge> : null}
+        {props.row.alertStatus ? <Badge tone={alertStatusTone(props.row.alertStatus)}>{alertStatusLabel(props.row.alertStatus)}</Badge> : null}
+      </div>
+    </button>
+  );
+}
+
 function SearchLeadPanel(props: {
   assignment: DispatchAssignmentRecord | null;
   dataSource: DataSource;
@@ -3352,6 +3653,7 @@ function SearchLeadPanel(props: {
   const historyRows = props.relatedRows.slice(0, 5);
   const recentReadCount = Number(activityScore[0] ?? "0");
   const actionLabel = props.hotlistLabel ? "Open Account" : "Create Account";
+  const responseCue = buildOperationalSignal(row, props.followUp, props.assignment);
 
   return (
     <aside className="panel-card locate-intelligence-panel">
@@ -3374,6 +3676,19 @@ function SearchLeadPanel(props: {
         plateText={row.plate1}
         tone={row.hotlist ? "critical" : "default"}
       />
+
+      <section className={`lead-status-banner lead-status-banner--${responseCue.tone}`}>
+        <div className="lead-status-banner__copy">
+          <span className="eyebrow">Next action</span>
+          <strong>{responseCue.label}</strong>
+          <p>{responseCue.detail}</p>
+        </div>
+        <div className="lead-status-banner__signals">
+          {props.assignment ? <DispatchStatusPill status={props.assignment.status} /> : null}
+          {props.followUp ? <FollowUpStatusPill status={props.followUp.status} /> : null}
+          {props.hotlistLabel ? <Badge tone="warn">{props.hotlistLabel}</Badge> : null}
+        </div>
+      </section>
 
       <div className="locate-intelligence-strip">
         <div className="locate-intelligence-card">
@@ -3410,17 +3725,17 @@ function SearchLeadPanel(props: {
       <div className="detail-section locate-intelligence-actions">
         <div className="detail-section__copy">
           <h4>Decision workflow</h4>
-          <p>Verify the evidence pair first, then move to map, record, or account action without leaving the workspace.</p>
+          <p>Verify the evidence pair first, then route, review the record, or open the case without losing search context.</p>
         </div>
         <div className="search-result-card__actions">
-          <Tooltip text="View full detection record and evidence">
-            <button className="btn btn--primary" type="button" onClick={props.onDetails}>
-              Open Record
+          <Tooltip text="Center this detection on the map and start routing">
+            <button className="btn btn--primary" type="button" onClick={props.onMap}>
+              Route to Lead
             </button>
           </Tooltip>
-          <Tooltip text="Center this detection on the map">
-            <button className="btn btn--ghost" type="button" onClick={props.onMap}>
-              Map It
+          <Tooltip text="View full detection record and evidence">
+            <button className="btn btn--ghost" type="button" onClick={props.onDetails}>
+              Open Record
             </button>
           </Tooltip>
           <Tooltip text={actionLabel === "Create Account" ? "Create a new recovery account for this plate" : "Open the existing recovery account for this plate"}>
@@ -3445,13 +3760,13 @@ function SearchLeadPanel(props: {
           <div className="locate-context-list">
             {props.followUp ? (
               <div className="locate-context-row">
-                <Badge tone={followUpStatusTone(props.followUp.status)}>{`Follow-up ${titleCase(props.followUp.status)}`}</Badge>
+                <FollowUpStatusPill status={props.followUp.status} />
                 <span>{props.followUp.summary ?? "Follow-up queued for operator review."}</span>
               </div>
             ) : null}
             {props.assignment ? (
               <div className="locate-context-row">
-                <Badge tone={dispatchStatusTone(props.assignment.status)}>{`Dispatch ${dispatchStatusLabel(props.assignment.status)}`}</Badge>
+                <DispatchStatusPill status={props.assignment.status} />
                 <span>{props.assignment.summary ?? "Dispatch case is active for this plate."}</span>
               </div>
             ) : null}
@@ -3506,6 +3821,12 @@ function SearchResultCard(props: {
   const frameUrl = useDetectionFrameImage(props.row.detectionId, props.dataSource === "live");
   const plateCropUrl = useDetectionPlateCropImage(props.row.detectionId, props.dataSource === "live");
   const severity = searchResultSeverity(props.row);
+  const workflowSummary =
+    props.assignment
+      ? props.assignment.summary ?? `Dispatch ${dispatchStatusLabel(props.assignment.status)}`
+      : props.followUp
+        ? props.followUp.summary ?? `Follow-up ${titleCase(props.followUp.status)}`
+        : null;
 
   function stopEvent<T>(handler: () => T): (event: MouseEvent<HTMLButtonElement>) => void {
     return (event) => {
@@ -3538,41 +3859,37 @@ function SearchResultCard(props: {
       </div>
       <div className="search-result-card__body">
         <div className="search-result-card__header">
-          <div>
-            <strong>{props.row.plate1}</strong>
-            <p className="search-result-card__eyebrow">{`Last seen ${formatDateTime(props.row.timestampUtc)}`}</p>
-            <span>{props.row.vehicle}</span>
+          <div className="search-result-card__identity">
+            <div className="search-result-card__plate-line">
+              <strong>{props.row.plate1}</strong>
+              <span className={`conf-badge conf-badge--${confidenceTone(confidencePercent(props.row.conf))}`}>{confidenceLabel(props.row.conf)}</span>
+              {props.row.hotlist ? <Badge tone="critical">Recovery</Badge> : null}
+              {props.hotlistLabel ? <Badge tone="warn">{props.hotlistLabel}</Badge> : null}
+            </div>
+            <p className="search-result-card__vehicle-line">{props.row.vehicle}</p>
+            <p className="search-result-card__location-line">{formatDetectionLocationLine(props.row)}</p>
+            <p className="search-result-card__meta-line">{formatDetectionTimestampGpsLine(props.row)}</p>
+            <p className="search-result-card__meta-line">
+              {formatDetectionCameraLine(props.row)}
+              {props.row.direction ? ` • ${props.row.direction}` : ""}
+              {props.row.lane ? ` / ${props.row.lane}` : ""}
+            </p>
           </div>
           <div className="search-result-card__badges">
-            <span className={`conf-badge conf-badge--${confidenceTone(confidencePercent(props.row.conf))}`}>{confidenceLabel(props.row.conf)}</span>
-            {props.row.hotlist ? <Badge tone="critical">Recovery</Badge> : null}
-            {props.hotlistLabel ? <Badge tone="warn">{props.hotlistLabel}</Badge> : null}
             {props.row.alertStatus ? <Badge tone={alertStatusTone(props.row.alertStatus)}>{alertStatusLabel(props.row.alertStatus)}</Badge> : null}
             {props.row.alertMatchType ? <Badge tone={props.row.alertMatchType === "exact" ? "success" : "warn"}>{`${titleCase(props.row.alertMatchType)} match`}</Badge> : null}
-            {props.followUp ? <Badge tone={followUpStatusTone(props.followUp.status)}>{`Follow-up ${titleCase(props.followUp.status)}`}</Badge> : null}
-            {props.assignment ? <Badge tone={dispatchStatusTone(props.assignment.status)}>{`Dispatch ${dispatchStatusLabel(props.assignment.status)}`}</Badge> : null}
+            {props.followUp ? <FollowUpStatusPill status={props.followUp.status} /> : null}
+            {props.assignment ? <DispatchStatusPill status={props.assignment.status} /> : null}
           </div>
         </div>
-        <div className="search-result-card__meta">
-          <span>{props.row.source}</span>
-          <span>{props.row.gps}</span>
-          <span>{props.row.direction && props.row.lane ? `${props.row.direction} / ${props.row.lane}` : props.row.direction || ""}</span>
-        </div>
-        {props.followUp || props.assignment ? (
+        {workflowSummary ? (
           <div className="search-result-card__workflow">
-            {props.followUp ? (
-              <span>
-                {props.followUp.summary ?? `Follow-up ${titleCase(props.followUp.status)}`}
-                {props.followUp.due_at_utc ? ` - Due ${formatDateTime(props.followUp.due_at_utc)}` : ""}
-              </span>
-            ) : null}
-            {props.assignment ? (
-              <span>
-                {props.assignment.summary ?? `Dispatch ${dispatchStatusLabel(props.assignment.status)}`}
-                {props.assignment.assigned_unit_label ? ` - ${props.assignment.assigned_unit_label}` : ""}
-                {props.assignment.destination_label ? ` to ${props.assignment.destination_label}` : ""}
-              </span>
-            ) : null}
+            <span>
+              {workflowSummary}
+              {props.followUp?.due_at_utc ? ` • Due ${formatDateTime(props.followUp.due_at_utc)}` : ""}
+              {props.assignment?.assigned_unit_label ? ` • ${props.assignment.assigned_unit_label}` : ""}
+              {props.assignment?.destination_label ? ` to ${props.assignment.destination_label}` : ""}
+            </span>
           </div>
         ) : null}
         {props.row.alertNotes ? (
@@ -3581,14 +3898,14 @@ function SearchResultCard(props: {
           </div>
         ) : null}
         <div className="search-result-card__actions">
+          <Tooltip text="Show last-seen location on map and route">
+            <button className="link-button" type="button" onClick={stopEvent(props.onMap)}>
+              Route
+            </button>
+          </Tooltip>
           <Tooltip text="View full detection record">
             <button className="link-button" type="button" onClick={stopEvent(props.onDetails)}>
               Open Record
-            </button>
-          </Tooltip>
-          <Tooltip text="Show last-seen location on map">
-            <button className="link-button" type="button" onClick={stopEvent(props.onMap)}>
-              Last Seen
             </button>
           </Tooltip>
           <Tooltip text={props.hotlistLabel ? "Open existing recovery account" : "Create a new recovery account"}>
@@ -3715,10 +4032,34 @@ function Tooltip(props: { text: string; children: ReactElement }): ReactElement 
   );
 }
 
+function CollapsibleSection(props: {
+  children: ReactNode;
+  className?: string;
+  defaultOpen?: boolean;
+  summary?: string;
+  title: string;
+}): ReactElement {
+  return (
+    <details className={`collapsible-section ${props.className ?? ""}`.trim()} open={props.defaultOpen}>
+      <summary className="collapsible-section__summary">
+        <div className="collapsible-section__copy">
+          <strong>{props.title}</strong>
+          {props.summary ? <span>{props.summary}</span> : null}
+        </div>
+        <span className="collapsible-section__chevron" aria-hidden="true" />
+      </summary>
+      <div className="collapsible-section__body">{props.children}</div>
+    </details>
+  );
+}
+
 function NavPanel(props: {
   activeScreen: AppScreen;
   activeAlerts: number;
   activeHotlists: number;
+  cameraOnlineCount: number;
+  cameraTotalCount: number;
+  dataSource: DataSource;
   destinationInput: string;
   navigationActive: boolean;
   onDestinationChange: (value: string) => void;
@@ -3730,6 +4071,7 @@ function NavPanel(props: {
   routeEta: string;
   routeStatusLabel: string;
   settings: UiSettings;
+  totalReads: number;
   withinRadius: boolean;
   distanceFeet: number;
   onDistanceChange: (value: number) => void;
@@ -3766,6 +4108,39 @@ function NavPanel(props: {
             </button>
           </Tooltip>
         ))}
+      </div>
+
+      <div className="panel-card ops-glance-card">
+        <div className="panel-card__header">
+          <h3>Ops Glance</h3>
+          <Badge tone={props.dataSource === "live" ? "success" : props.dataSource === "fallback" ? "warn" : "muted"}>
+            {props.dataSource.toUpperCase()}
+          </Badge>
+        </div>
+        <div className="ops-glance-grid">
+          <div className="ops-glance-chip">
+            <span>Alerts</span>
+            <strong>{props.activeAlerts}</strong>
+          </div>
+          <div className="ops-glance-chip">
+            <span>Accounts</span>
+            <strong>{props.activeHotlists}</strong>
+          </div>
+          <div className="ops-glance-chip">
+            <span>Reads</span>
+            <strong>{props.totalReads}</strong>
+          </div>
+          <div className="ops-glance-chip">
+            <span>Cameras</span>
+            <strong>{`${props.cameraOnlineCount}/${props.cameraTotalCount}`}</strong>
+          </div>
+        </div>
+        <div className="ops-glance-actions">
+          <span>{props.navigationActive ? `Routing • ETA ${props.routeEta}` : "Navigation idle"}</span>
+          <button className="link-button" disabled={props.activeAlerts === 0} type="button" onClick={props.onOpenAlert}>
+            Open Latest Alert
+          </button>
+        </div>
       </div>
 
       <div className="panel-card">
@@ -4122,6 +4497,7 @@ function SearchScreen(props: {
   const focusedFollowUp = focusedRow ? matchingFollowUpsForRow(focusedRow, props.followUps)[0] ?? null : null;
   const focusedAssignment = focusedRow ? matchingAssignmentsForRow(focusedRow, props.assignments)[0] ?? null : null;
   const focusedHotlistLabel = focusedRow ? hotlistLabelForRow(focusedRow, props.hotlists) : null;
+  const quickLeadRows = (props.searchGroupByPlate ? props.groupedResults.map((group) => group.rows[0]) : props.results).slice(0, 8);
   const modeLabel =
     {
       plate: "Plate / Tag",
@@ -4130,6 +4506,8 @@ function SearchScreen(props: {
       alert: "Recovery Alerts",
     }[props.searchMode] ?? titleCase(props.searchMode);
   const advancedFilterCount = [
+    props.searchFromLocal,
+    props.searchToLocal,
     props.searchVehicleColor,
     props.searchVehicleMake,
     props.searchVehicleModel,
@@ -4140,6 +4518,20 @@ function SearchScreen(props: {
     props.searchMinLongitude,
     props.searchMaxLongitude,
   ].filter((value) => value.trim().length > 0).length;
+  const vehicleFilterCount = [
+    props.searchVehicleColor,
+    props.searchVehicleMake,
+    props.searchVehicleModel,
+    props.searchVehicleYear,
+  ].filter((value) => value.trim().length > 0).length;
+  const recoveryFilterCount = props.searchAlertStatus.trim().length > 0 ? 1 : 0;
+  const geoFilterCount = [
+    props.searchMinLatitude,
+    props.searchMaxLatitude,
+    props.searchMinLongitude,
+    props.searchMaxLongitude,
+  ].filter((value) => value.trim().length > 0).length;
+  const timeFilterCount = [props.searchFromLocal, props.searchToLocal].filter((value) => value.trim().length > 0).length;
 
   return (
     <section className="screen search-screen">
@@ -4189,21 +4581,54 @@ function SearchScreen(props: {
             </button>
           </div>
 
-          <div className="search-filter-grid">
-            <label>
-              <span>From</span>
-              <input className="text-input" type="datetime-local" value={props.searchFromLocal} onChange={(event) => props.setSearchFromLocal(event.target.value)} />
-            </label>
-            <label>
-              <span>To</span>
-              <input className="text-input" type="datetime-local" value={props.searchToLocal} onChange={(event) => props.setSearchToLocal(event.target.value)} />
-            </label>
-          </div>
-
           <div className="search-sidebar-section">
             <div className="search-sidebar-section__header">
-              <strong>Vehicle description</strong>
+              <strong>Quick filters</strong>
+              <span>Common field filters kept within thumb reach.</span>
             </div>
+            <div className="chip-row">
+              <button className={`chip ${props.searchHotlistOnly ? "is-active" : ""}`} type="button" onClick={() => props.setSearchHotlistOnly(!props.searchHotlistOnly)}>
+                Recovery accounts only
+              </button>
+              <button className={`chip ${props.searchCurrentShiftOnly ? "is-active" : ""}`} type="button" onClick={() => props.setSearchCurrentShiftOnly(!props.searchCurrentShiftOnly)}>
+                This shift
+              </button>
+              <button className={`chip ${props.searchCurrentCameraOnly ? "is-active" : ""}`} type="button" onClick={() => props.setSearchCurrentCameraOnly(!props.searchCurrentCameraOnly)}>
+                Active camera
+              </button>
+              <button className={`chip ${props.searchHighConfidenceOnly ? "is-active" : ""}`} type="button" onClick={() => props.setSearchHighConfidenceOnly(!props.searchHighConfidenceOnly)}>
+                High confidence
+              </button>
+              <button className={`chip ${props.searchGroupByPlate ? "is-active" : ""}`} type="button" onClick={() => props.setSearchGroupByPlate(!props.searchGroupByPlate)}>
+                Group reads
+              </button>
+            </div>
+          </div>
+
+          <CollapsibleSection
+            className="search-sidebar-section search-sidebar-section--collapsible"
+            defaultOpen={timeFilterCount > 0}
+            summary={summarizeFilterCount(timeFilterCount, "time filter")}
+            title="Time window"
+          >
+            <div className="search-filter-grid">
+              <label>
+                <span>From</span>
+                <input className="text-input" type="datetime-local" value={props.searchFromLocal} onChange={(event) => props.setSearchFromLocal(event.target.value)} />
+              </label>
+              <label>
+                <span>To</span>
+                <input className="text-input" type="datetime-local" value={props.searchToLocal} onChange={(event) => props.setSearchToLocal(event.target.value)} />
+              </label>
+            </div>
+          </CollapsibleSection>
+
+          <CollapsibleSection
+            className="search-sidebar-section search-sidebar-section--collapsible"
+            defaultOpen={vehicleFilterCount > 0}
+            summary={summarizeFilterCount(vehicleFilterCount, "vehicle filter")}
+            title="Vehicle description"
+          >
             <div className="search-filter-grid">
               <label>
                 <span>Color</span>
@@ -4222,12 +4647,14 @@ function SearchScreen(props: {
                 <input className="text-input" type="text" value={props.searchVehicleYear} onChange={(event) => props.setSearchVehicleYear(event.target.value)} />
               </label>
             </div>
-          </div>
+          </CollapsibleSection>
 
-          <div className="search-sidebar-section">
-            <div className="search-sidebar-section__header">
-              <strong>Recovery status</strong>
-            </div>
+          <CollapsibleSection
+            className="search-sidebar-section search-sidebar-section--collapsible"
+            defaultOpen={recoveryFilterCount > 0}
+            summary={summarizeFilterCount(recoveryFilterCount, "case filter")}
+            title="Recovery status"
+          >
             <label className="settings-input-row">
               <span>Status</span>
               <select className="select-input" value={props.searchAlertStatus} onChange={(event) => props.setSearchAlertStatus(event.target.value as DashboardAlertStatus | "")}>
@@ -4237,12 +4664,14 @@ function SearchScreen(props: {
                 <option value="dismissed">Dismissed</option>
               </select>
             </label>
-          </div>
+          </CollapsibleSection>
 
-          <div className="search-sidebar-section">
-            <div className="search-sidebar-section__header">
-              <strong>Location area</strong>
-            </div>
+          <CollapsibleSection
+            className="search-sidebar-section search-sidebar-section--collapsible"
+            defaultOpen={geoFilterCount > 0}
+            summary={summarizeFilterCount(geoFilterCount, "coordinate")}
+            title="Geo box filter"
+          >
             <div className="search-filter-grid">
               <label>
                 <span>Min lat</span>
@@ -4261,40 +4690,22 @@ function SearchScreen(props: {
                 <input className="text-input" type="number" step="0.00001" value={props.searchMaxLongitude} onChange={(event) => props.setSearchMaxLongitude(event.target.value)} />
               </label>
             </div>
-          </div>
+          </CollapsibleSection>
 
           <div className="button-row">
             <Tooltip text="Reset all search filters to defaults">
               <button className="btn btn--ghost" type="button" onClick={props.onClearFilters}>
-                Clear Filters
+                {advancedFilterCount > 0 ? `Clear ${advancedFilterCount} filter${advancedFilterCount === 1 ? "" : "s"}` : "Clear Filters"}
               </button>
             </Tooltip>
-          </div>
-
-          <div className="chip-row">
-            <button className={`chip ${props.searchHotlistOnly ? "is-active" : ""}`} type="button" onClick={() => props.setSearchHotlistOnly(!props.searchHotlistOnly)}>
-              Recovery accounts only
-            </button>
-            <button className={`chip ${props.searchCurrentShiftOnly ? "is-active" : ""}`} type="button" onClick={() => props.setSearchCurrentShiftOnly(!props.searchCurrentShiftOnly)}>
-              This shift
-            </button>
-            <button className={`chip ${props.searchCurrentCameraOnly ? "is-active" : ""}`} type="button" onClick={() => props.setSearchCurrentCameraOnly(!props.searchCurrentCameraOnly)}>
-              Active camera
-            </button>
-            <button className={`chip ${props.searchHighConfidenceOnly ? "is-active" : ""}`} type="button" onClick={() => props.setSearchHighConfidenceOnly(!props.searchHighConfidenceOnly)}>
-              High confidence
-            </button>
-            <button className={`chip ${props.searchGroupByPlate ? "is-active" : ""}`} type="button" onClick={() => props.setSearchGroupByPlate(!props.searchGroupByPlate)}>
-              Group reads
-            </button>
           </div>
         </form>
 
         <div className="search-screen__content">
           <div className="search-summary-strip">
             <div className="search-summary-card">
-              <span>Locate mode</span>
-              <strong>{modeLabel}</strong>
+              <span>Lead plate</span>
+              <strong>{focusedRow ? focusedRow.plate1 : "--"}</strong>
             </div>
             <div className="search-summary-card">
               <span>Reads</span>
@@ -4305,18 +4716,44 @@ function SearchScreen(props: {
               <strong>{hotlistMatches}</strong>
             </div>
             <div className="search-summary-card">
-              <span>Lead plate</span>
-              <strong>{focusedRow ? focusedRow.plate1 : "--"}</strong>
-            </div>
-            <div className="search-summary-card">
               <span>Activity score</span>
               <strong>{focusedActivityScore}</strong>
+            </div>
+            <div className="search-summary-card">
+              <span>Routine tag</span>
+              <strong>{focusedPattern ? focusedPattern.label : "--"}</strong>
             </div>
             <div className="search-summary-card">
               <span>Last seen</span>
               <strong>{latestResult ? formatDateTime(latestResult.timestampUtc) : "--"}</strong>
             </div>
           </div>
+
+          {quickLeadRows.length > 0 ? (
+            <section className="panel-card locate-quick-strip">
+              <div className="locate-quick-strip__header">
+                <div>
+                  <h3>Focus Queue</h3>
+                  <p>Fast-select the next lead without losing your current search context.</p>
+                </div>
+                <div className="search-result-card__badges">
+                  <Badge tone="cyan">{`${quickLeadRows.length} priority view`}</Badge>
+                  {advancedFilterCount > 0 ? <Badge tone="warn">{`${advancedFilterCount} filters`}</Badge> : null}
+                </div>
+              </div>
+              <div className="locate-quick-strip__rail">
+                {quickLeadRows.map((row) => (
+                  <LocateQuickSelectCard
+                    key={row.id}
+                    dataSource={props.dataSource}
+                    row={row}
+                    selected={focusedRow?.id === row.id}
+                    onSelect={() => props.onSelectDetection(row.id)}
+                  />
+                ))}
+              </div>
+            </section>
+          ) : null}
 
           <div className="search-workspace-grid">
             <section className="results-panel">
@@ -4330,6 +4767,7 @@ function SearchScreen(props: {
                   </p>
                 </div>
                 <div className="results-panel__feedback">
+                  <Badge tone="muted">{modeLabel}</Badge>
                   {props.searchError ? <span className="feedback feedback--warn">{props.searchError}</span> : null}
                   {props.searchMessage ? <span className="feedback feedback--good">{props.searchMessage}</span> : null}
                 </div>
@@ -4349,19 +4787,26 @@ function SearchScreen(props: {
                     const groupScore = buildSearchActivityScore(group.rows);
                     const leadFollowUp = matchingFollowUpsForRow(lead, props.followUps)[0] ?? null;
                     const leadAssignment = matchingAssignmentsForRow(lead, props.assignments)[0] ?? null;
+                    const leadHotlistLabel = hotlistLabelForRow(lead, props.hotlists);
                     return (
                       <article key={group.plate} className="result-group-card">
                         <div className="result-group-card__header">
-                          <div>
-                            <strong>{group.plate}</strong>
-                            <span>{`${lead.vehicle} - ${group.rows.length} read${group.rows.length === 1 ? "" : "s"}`}</span>
+                          <div className="result-group-card__identity">
+                            <div className="result-group-card__plate-line">
+                              <strong>{group.plate}</strong>
+                              <span className={`conf-badge conf-badge--${confidenceTone(confidencePercent(lead.conf))}`}>{confidenceLabel(lead.conf)}</span>
+                              {lead.hotlist ? <Badge tone="critical">Recovery</Badge> : null}
+                              {leadHotlistLabel ? <Badge tone="warn">{leadHotlistLabel}</Badge> : null}
+                            </div>
+                            <p className="result-group-card__vehicle-line">{lead.vehicle}</p>
+                            <p className="result-group-card__location-line">{formatDetectionLocationLine(lead)}</p>
+                            <p className="result-group-card__meta-line">{formatDetectionTimestampGpsLine(lead)}</p>
+                            <p className="result-group-card__meta-line">{`${formatDetectionCameraLine(lead, groupScore)} • ${group.rows.length} reads`}</p>
                           </div>
                           <div className="result-group-card__meta">
-                            <Badge tone="cyan">{`Activity ${groupScore}`}</Badge>
-                            {lead.hotlist ? <Badge tone="critical">Recovery</Badge> : null}
-                            {leadFollowUp ? <Badge tone={followUpStatusTone(leadFollowUp.status)}>{`Follow-up ${titleCase(leadFollowUp.status)}`}</Badge> : null}
-                            {leadAssignment ? <Badge tone={dispatchStatusTone(leadAssignment.status)}>{`Dispatch ${dispatchStatusLabel(leadAssignment.status)}`}</Badge> : null}
-                            <Badge tone="cyan">{`Last seen ${formatDateTime(lead.timestampUtc)}`}</Badge>
+                            {leadFollowUp ? <FollowUpStatusPill status={leadFollowUp.status} /> : null}
+                            {leadAssignment ? <DispatchStatusPill status={leadAssignment.status} /> : null}
+                            {lead.alertStatus ? <Badge tone={alertStatusTone(lead.alertStatus)}>{alertStatusLabel(lead.alertStatus)}</Badge> : null}
                             {group.rows.length > 1 ? (
                               <button className="link-button" type="button" onClick={() => props.onToggleExpanded(group.plate)}>
                                 {expanded ? "Collapse" : `${group.rows.length} reads`}
@@ -5734,6 +6179,9 @@ function DetailOverlay(props: {
   const [reviewAction, setReviewAction] = useState<ReviewAction>("confirm");
   const [reviewCorrectedPlate, setReviewCorrectedPlate] = useState("");
   const [reviewNotes, setReviewNotes] = useState("");
+  const responseCue = buildLeadResponseCue(props.detailRow, activeFollowUp, activeAssignment, props.hotlistEntry?.label ?? null);
+  const detailTimelineRows = props.detailTimeline.length > 0 ? props.detailTimeline : [props.detailRow];
+  const detailTimelineMarkers = buildSearchTimelineMarkers(detailTimelineRows);
 
   return (
     <div className="overlay-shell">
@@ -5813,9 +6261,38 @@ function DetailOverlay(props: {
           </div>
 
           <section className="detail-section">
+            <div className={`lead-status-banner lead-status-banner--${responseCue.tone} detail-workflow-banner`}>
+              <div className="lead-status-banner__copy">
+                <span className="eyebrow">Next action</span>
+                <strong>{responseCue.label}</strong>
+                <p>{responseCue.detail}</p>
+              </div>
+              <div className="lead-status-banner__signals">
+                {activeAssignment ? <DispatchStatusPill status={activeAssignment.status} /> : null}
+                {activeFollowUp ? <FollowUpStatusPill status={activeFollowUp.status} /> : null}
+                {props.hotlistEntry?.label ? <Badge tone="warn">{props.hotlistEntry.label}</Badge> : null}
+              </div>
+            </div>
+          </section>
+
+          <div className="detail-grid">
+            <DetailField label="Plate" value={props.detailRow.plate1} tone={props.detailRow.hotlist ? "critical" : "cyan"} />
+            <DetailField label="Vehicle" value={props.detailRow.vehicle} />
+            <DetailField label="Confidence" value={confidenceLabel(props.detailRow.conf)} />
+            <DetailField label="Camera" value={props.detailRow.source} />
+            <DetailField label="GPS" value={props.detailRow.gps} />
+            <DetailField label="Direction" value={`${props.detailRow.direction} / ${props.detailRow.lane}`} />
+            <DetailField label="Dispatch destination" value={activeAssignment?.destination_label ?? props.activeDestination} />
+            <DetailField label="Time" value={formatDateTime(props.detailRow.timestampUtc)} />
+            <DetailField label="Sync" value={props.detailRow.syncStatus ?? "local"} />
+            <DetailField label="Alert state" value={props.detailRow.alertStatus ? alertStatusLabel(props.detailRow.alertStatus) : "None"} />
+            <DetailField label="Alt read" value={props.detailRow.plate2 || "--"} />
+          </div>
+
+          <section className="detail-section">
             <div className="detail-section__header">
               <div className="detail-section__copy">
-                <h4>Repo Instructions</h4>
+                <h4>Case context</h4>
               </div>
             </div>
             <div className="detail-note-callout">
@@ -5828,7 +6305,7 @@ function DetailOverlay(props: {
             </div>
             {activeFollowUp ? (
               <div className="detail-note-callout">
-                <strong>{`Follow-up - ${titleCase(activeFollowUp.status)}`}</strong>
+                <strong>{followUpStatusLabel(activeFollowUp.status)}</strong>
                 <p>
                   {activeFollowUp.summary ?? activeFollowUp.notes ?? "Follow-up record attached to this vehicle."}
                   {activeFollowUp.due_at_utc ? ` Due ${formatDateTime(activeFollowUp.due_at_utc)}.` : ""}
@@ -5847,27 +6324,42 @@ function DetailOverlay(props: {
             ) : null}
           </section>
 
-          <div className="detail-grid">
-            <DetailField label="Plate" value={props.detailRow.plate1} tone={props.detailRow.hotlist ? "critical" : "cyan"} />
-            <DetailField label="Vehicle" value={props.detailRow.vehicle} />
-            <DetailField label="Confidence" value={confidenceLabel(props.detailRow.conf)} />
-            <DetailField label="Camera" value={props.detailRow.source} />
-            <DetailField label="GPS" value={props.detailRow.gps} />
-            <DetailField label="Direction" value={`${props.detailRow.direction} / ${props.detailRow.lane}`} />
-            <DetailField label="Dispatch destination" value={activeAssignment?.destination_label ?? props.activeDestination} />
-            <DetailField label="Time" value={formatDateTime(props.detailRow.timestampUtc)} />
-            <DetailField label="Sync" value={props.detailRow.syncStatus ?? "local"} />
-            <DetailField label="Alert state" value={props.detailRow.alertStatus ? alertStatusLabel(props.detailRow.alertStatus) : "None"} />
-            <DetailField label="Alt read" value={props.detailRow.plate2 || "--"} />
-          </div>
+          <section className="detail-section">
+            <div className="detail-section__header">
+              <div className="detail-section__copy">
+                <h4>Sighting pattern</h4>
+                <p>Use cadence first, then exact timestamps if you need the full trail.</p>
+              </div>
+            </div>
+            <SearchTimeline markers={detailTimelineMarkers} onSelectRow={() => undefined} selectedRowId={props.detailRow.id} />
+            <div className="timeline-list">
+              {detailTimelineRows.length > 0 ? (
+                detailTimelineRows.map((row) => (
+                  <div key={row.id} className="timeline-row">
+                    <strong>{formatDateTime(row.timestampUtc)}</strong>
+                    <span>{row.source}</span>
+                    <span>{row.gps}</span>
+                  </div>
+                ))
+              ) : (
+                <p>No repeat reads were grouped for this plate.</p>
+              )}
+            </div>
+          </section>
 
           {props.detailReviewsLoading || props.detailReviews.length > 0 || props.detailReviewsError ? (
-            <section className="detail-section">
-              <div className="detail-section__header">
-                <div className="detail-section__copy">
-                  <h4>Read History</h4>
-                </div>
-              </div>
+            <CollapsibleSection
+              className="detail-section detail-section--collapsible"
+              defaultOpen={Boolean(props.detailReviewsError)}
+              summary={
+                props.detailReviewsLoading
+                  ? "Loading review trail"
+                  : props.detailReviews.length > 0
+                    ? `${props.detailReviews.length} review entr${props.detailReviews.length === 1 ? "y" : "ies"}`
+                    : "No prior review actions"
+              }
+              title="Review history"
+            >
               {props.detailReviewsError ? <div className="feedback feedback--warn">{props.detailReviewsError}</div> : null}
               {props.detailReviewsLoading ? <div className="feedback">Loading review history...</div> : null}
               {props.detailReviews.length > 0 ? (
@@ -5887,17 +6379,15 @@ function DetailOverlay(props: {
                   ))}
                 </div>
               ) : null}
-            </section>
+            </CollapsibleSection>
           ) : null}
 
           {props.detailRow.detectionId ? (
-            <section className="detail-section">
-              <div className="detail-section__header">
-                <div className="detail-section__copy">
-                  <h4>OCR Review</h4>
-                </div>
-                <Badge tone={props.canSubmitReview ? "success" : "muted"}>{props.canSubmitReview ? "Writable" : "Read only"}</Badge>
-              </div>
+            <CollapsibleSection
+              className="detail-section detail-section--collapsible"
+              summary={props.canSubmitReview ? "Writable workflow" : "Read only"}
+              title="OCR review"
+            >
               {props.reviewError ? <div className="feedback feedback--error">{props.reviewError}</div> : null}
               {props.reviewMessage ? <div className="feedback feedback--good">{props.reviewMessage}</div> : null}
               <div className="review-form">
@@ -5954,29 +6444,9 @@ function DetailOverlay(props: {
                   {props.reviewSaving ? "Saving..." : "Submit Review"}
                 </button>
               </div>
-            </section>
+            </CollapsibleSection>
           ) : null}
 
-          <section className="detail-section">
-            <div className="detail-section__header">
-              <div className="detail-section__copy">
-                <h4>Scan History</h4>
-              </div>
-            </div>
-            <div className="timeline-list">
-              {props.detailTimeline.length > 0 ? (
-                props.detailTimeline.map((row) => (
-                  <div key={row.id} className="timeline-row">
-                    <strong>{formatDateTime(row.timestampUtc)}</strong>
-                    <span>{row.source}</span>
-                    <span>{row.gps}</span>
-                  </div>
-                ))
-              ) : (
-                <p>No repeat reads were grouped for this plate.</p>
-              )}
-            </div>
-          </section>
         </div>
 
         <div className="detail-overlay__actions">
@@ -6023,6 +6493,7 @@ function HotlistAlertOverlay(props: {
 }): ReactElement {
   const frameUrl = useDetectionFrameImage(props.hotlistRow.detectionId, props.dataSource === "live");
   const plateCropUrl = useDetectionPlateCropImage(props.hotlistRow.detectionId, props.dataSource === "live");
+  const responseCue = buildLeadResponseCue(props.hotlistRow, props.followUp, props.assignment, props.hotlistEntry?.label ?? null);
 
   return (
     <>
@@ -6065,10 +6536,23 @@ function HotlistAlertOverlay(props: {
         <p>{props.hotlistEntry?.notes ?? "Route to location, visually confirm the vehicle, and update the account after recovery."}</p>
       </div>
 
+      <section className={`lead-status-banner lead-status-banner--${responseCue.tone} hotlist-alert__banner`}>
+        <div className="lead-status-banner__copy">
+          <span className="eyebrow">Field directive</span>
+          <strong>{responseCue.label}</strong>
+          <p>{responseCue.detail}</p>
+        </div>
+        <div className="lead-status-banner__signals">
+          {props.followUp ? <FollowUpStatusPill status={props.followUp.status} /> : null}
+          {props.assignment ? <DispatchStatusPill status={props.assignment.status} /> : null}
+          {props.hotlistEntry?.label ? <Badge tone="warn">{props.hotlistEntry.label}</Badge> : null}
+        </div>
+      </section>
+
       {props.followUp || props.assignment ? (
         <div className="hotlist-alert__workflow">
-          {props.followUp ? <Badge tone={followUpStatusTone(props.followUp.status)}>{`Follow-up ${titleCase(props.followUp.status)}`}</Badge> : null}
-          {props.assignment ? <Badge tone={dispatchStatusTone(props.assignment.status)}>{`Dispatch ${dispatchStatusLabel(props.assignment.status)}`}</Badge> : null}
+          {props.followUp ? <FollowUpStatusPill status={props.followUp.status} /> : null}
+          {props.assignment ? <DispatchStatusPill status={props.assignment.status} /> : null}
         </div>
       ) : null}
 
@@ -6111,31 +6595,35 @@ function HotlistAlertOverlay(props: {
       {props.reviewMessage ? <div className="feedback feedback--good">{props.reviewMessage}</div> : null}
 
       <div className="hotlist-alert__actions">
-        <Tooltip text="Navigate to this vehicle's last-seen location">
-          <button className="btn btn--primary" type="button" onClick={props.onNavigate}>
-            Route to Vehicle
-          </button>
-        </Tooltip>
-        <Tooltip text="View full detection record and evidence">
-          <button className="btn btn--ghost" type="button" onClick={props.onViewRecord}>
-            Open Record
-          </button>
-        </Tooltip>
-        <Tooltip text="Mark this vehicle as recovered and close the case">
-          <button className="btn btn--ghost" type="button" onClick={props.onRecover}>
-            Mark Recovered
-          </button>
-        </Tooltip>
-        <Tooltip text={props.hotlistAudioMuted ? "Re-enable alert audio" : "Silence alert audio"}>
-          <button className="btn btn--ghost" type="button" onClick={props.onMuteToggle}>
-            {props.hotlistAudioMuted ? "Unmute" : "Mute"}
-          </button>
-        </Tooltip>
-        <Tooltip text="Dismiss this alert without action">
-          <button className="btn btn--danger" type="button" onClick={props.onDismiss}>
-            Dismiss
-          </button>
-        </Tooltip>
+        <div className="hotlist-alert__actions-primary">
+          <Tooltip text="Navigate to this vehicle's last-seen location">
+            <button className="btn btn--primary" type="button" onClick={props.onNavigate}>
+              Route to Vehicle
+            </button>
+          </Tooltip>
+          <Tooltip text="View full detection record and evidence">
+            <button className="btn btn--ghost" type="button" onClick={props.onViewRecord}>
+              Open Record
+            </button>
+          </Tooltip>
+        </div>
+        <div className="hotlist-alert__actions-secondary">
+          <Tooltip text="Mark this vehicle as recovered and close the case">
+            <button className="btn btn--success" type="button" onClick={props.onRecover}>
+              Mark Recovered
+            </button>
+          </Tooltip>
+          <Tooltip text={props.hotlistAudioMuted ? "Re-enable alert audio" : "Silence alert audio"}>
+            <button className="btn btn--ghost" type="button" onClick={props.onMuteToggle}>
+              {props.hotlistAudioMuted ? "Unmute" : "Mute"}
+            </button>
+          </Tooltip>
+          <Tooltip text="Dismiss this alert without action">
+            <button className="btn btn--danger" type="button" onClick={props.onDismiss}>
+              Dismiss
+            </button>
+          </Tooltip>
+        </div>
       </div>
     </div>
     </>
