@@ -2945,14 +2945,20 @@ function App(): ReactElement {
     }
   }
 
-  const footerIndicators = [
-    { label: "GPS", value: "Locked", tone: "good" },
-    { label: "API", value: dataSource === "live" ? "Live" : dataSource === "fallback" ? "Fallback" : "Demo", tone: dataSource === "live" ? "good" : "off" },
-    { label: "LPR", value: settings.arrivalScanEnabled ? "Scanning" : "Off", tone: settings.arrivalScanEnabled ? "good" : "off" },
-    { label: "Cams", value: `${onlineCameraCount}/${availableCameraFeeds.length}`, tone: onlineCameraCount > 0 ? "good" : "off" },
-    { label: "Reads", value: `${totalReads}`, tone: "good" },
-    { label: "Cases", value: `${activeAlerts}`, tone: activeAlerts > 0 ? "warn" : "good" },
-  ] as const;
+  const footerIndicators: Array<{
+    label: string;
+    value: string;
+    tone: "good" | "off" | "warn";
+    tip: string;
+    action: () => void;
+  }> = [
+    { label: "GPS", value: "Locked", tone: "good", tip: "GPS signal status \u2014 click to open map settings", action: () => { switchScreen("settings"); setSettingsSection("map"); } },
+    { label: "API", value: dataSource === "live" ? "Live" : dataSource === "fallback" ? "Fallback" : "Demo", tone: dataSource === "live" ? "good" : "off", tip: "Backend connection \u2014 click to open system settings", action: () => { switchScreen("settings"); setSettingsSection("system"); } },
+    { label: "LPR", value: settings.arrivalScanEnabled ? "Scanning" : "Off", tone: settings.arrivalScanEnabled ? "good" : "off", tip: "Plate reader status \u2014 click to open scan workflow", action: () => { switchScreen("settings"); setSettingsSection("workspace"); } },
+    { label: "Cams", value: `${onlineCameraCount}/${availableCameraFeeds.length}`, tone: onlineCameraCount > 0 ? "good" : "off", tip: "Camera feeds \u2014 click to open camera settings", action: () => { switchScreen("settings"); setSettingsSection("cameras"); } },
+    { label: "Reads", value: `${totalReads}`, tone: "good", tip: "Total plate reads this session \u2014 click to open search", action: () => { switchScreen("search"); } },
+    { label: "Cases", value: `${activeAlerts}`, tone: activeAlerts > 0 ? "warn" : "good", tip: "Active recovery alerts \u2014 click to view cases", action: () => { switchScreen("hotlists"); } },
+  ];
 
   return (
     <>
@@ -2961,7 +2967,6 @@ function App(): ReactElement {
           activeScreen={screen}
           activeAlerts={activeAlerts}
           activeHotlists={hotlists.filter((entry) => entry.active).length}
-          dataSource={dataSource}
           destinationInput={destinationInput}
           navigationActive={navigationActive}
           onDestinationChange={setDestinationInput}
@@ -2976,8 +2981,6 @@ function App(): ReactElement {
           routeEta={routeEta}
           routeStatusLabel={routeStatusLabel}
           settings={settings}
-          systemDetectionCount={totalReads}
-          totalReads={totalReads}
           withinRadius={withinRadius}
           distanceFeet={distanceFeet}
           onDistanceChange={setDistanceFeet}
@@ -3177,11 +3180,13 @@ function App(): ReactElement {
 
         <footer className="status-footer">
           {footerIndicators.map((indicator) => (
-            <div key={indicator.label} className="status-footer__item">
-              <span className={`status-dot status-dot--${indicator.tone}`} />
-              <strong>{indicator.label}</strong>
-              <span>{indicator.value}</span>
-            </div>
+            <Tooltip key={indicator.label} text={indicator.tip}>
+              <button className="status-footer__item status-footer__item--clickable" type="button" onClick={indicator.action}>
+                <span className={`status-dot status-dot--${indicator.tone}`} />
+                <strong>{indicator.label}</strong>
+                <span>{indicator.value}</span>
+              </button>
+            </Tooltip>
           ))}
         </footer>
       </div>
@@ -3408,18 +3413,26 @@ function SearchLeadPanel(props: {
           <p>Verify the evidence pair first, then move to map, record, or account action without leaving the workspace.</p>
         </div>
         <div className="search-result-card__actions">
-          <button className="btn btn--primary" type="button" onClick={props.onDetails}>
-            Open Record
-          </button>
-          <button className="btn btn--ghost" type="button" onClick={props.onMap}>
-            Map It
-          </button>
-          <button className="btn btn--ghost" type="button" onClick={props.onAddToHotlist}>
-            {actionLabel}
-          </button>
-          <button className="btn btn--ghost" type="button" onClick={() => void props.onCopy(row.plate1)}>
-            Copy Tag
-          </button>
+          <Tooltip text="View full detection record and evidence">
+            <button className="btn btn--primary" type="button" onClick={props.onDetails}>
+              Open Record
+            </button>
+          </Tooltip>
+          <Tooltip text="Center this detection on the map">
+            <button className="btn btn--ghost" type="button" onClick={props.onMap}>
+              Map It
+            </button>
+          </Tooltip>
+          <Tooltip text={actionLabel === "Create Account" ? "Create a new recovery account for this plate" : "Open the existing recovery account for this plate"}>
+            <button className="btn btn--ghost" type="button" onClick={props.onAddToHotlist}>
+              {actionLabel}
+            </button>
+          </Tooltip>
+          <Tooltip text="Copy plate number to clipboard">
+            <button className="btn btn--ghost" type="button" onClick={() => void props.onCopy(row.plate1)}>
+              Copy Tag
+            </button>
+          </Tooltip>
         </div>
       </div>
 
@@ -3568,18 +3581,26 @@ function SearchResultCard(props: {
           </div>
         ) : null}
         <div className="search-result-card__actions">
-          <button className="link-button" type="button" onClick={stopEvent(props.onDetails)}>
-            Open Record
-          </button>
-          <button className="link-button" type="button" onClick={stopEvent(props.onMap)}>
-            Last Seen
-          </button>
-          <button className="link-button" type="button" onClick={stopEvent(props.onAddToHotlist)}>
-            {props.hotlistLabel ? "Open Account" : "Create Account"}
-          </button>
-          <button className="link-button" type="button" onClick={stopEvent(() => props.onCopy(props.row.plate1))}>
-            Copy Tag
-          </button>
+          <Tooltip text="View full detection record">
+            <button className="link-button" type="button" onClick={stopEvent(props.onDetails)}>
+              Open Record
+            </button>
+          </Tooltip>
+          <Tooltip text="Show last-seen location on map">
+            <button className="link-button" type="button" onClick={stopEvent(props.onMap)}>
+              Last Seen
+            </button>
+          </Tooltip>
+          <Tooltip text={props.hotlistLabel ? "Open existing recovery account" : "Create a new recovery account"}>
+            <button className="link-button" type="button" onClick={stopEvent(props.onAddToHotlist)}>
+              {props.hotlistLabel ? "Open Account" : "Create Account"}
+            </button>
+          </Tooltip>
+          <Tooltip text="Copy plate number to clipboard">
+            <button className="link-button" type="button" onClick={stopEvent(() => props.onCopy(props.row.plate1))}>
+              Copy Tag
+            </button>
+          </Tooltip>
         </div>
       </div>
     </article>
@@ -3685,11 +3706,19 @@ function DetailField(props: { label: string; value: string; tone?: "critical" | 
   );
 }
 
+function Tooltip(props: { text: string; children: ReactElement }): ReactElement {
+  return (
+    <span className="tooltip-anchor">
+      {props.children}
+      <span className="tooltip-bubble">{props.text}</span>
+    </span>
+  );
+}
+
 function NavPanel(props: {
   activeScreen: AppScreen;
   activeAlerts: number;
   activeHotlists: number;
-  dataSource: DataSource;
   destinationInput: string;
   navigationActive: boolean;
   onDestinationChange: (value: string) => void;
@@ -3701,12 +3730,18 @@ function NavPanel(props: {
   routeEta: string;
   routeStatusLabel: string;
   settings: UiSettings;
-  systemDetectionCount: number;
-  totalReads: number;
   withinRadius: boolean;
   distanceFeet: number;
   onDistanceChange: (value: number) => void;
 }): ReactElement {
+  const navItems: Array<{ id: AppScreen; label: string; tip: string; count: number | null }> = [
+    { id: "console", label: "Dashboard", tip: "Live camera feeds, map, and detection feed", count: null },
+    { id: "search", label: "Locate", tip: "Search detections by plate, camera, or vehicle", count: null },
+    { id: "accounts", label: "Accounts", tip: "Manage recovery watch-list entries", count: props.activeHotlists > 0 ? props.activeHotlists : null },
+    { id: "hotlists", label: "Cases", tip: "Active alerts, follow-ups, and dispatch", count: props.activeAlerts > 0 ? props.activeAlerts : null },
+    { id: "settings", label: "Settings", tip: "System settings, cameras, and API config", count: null },
+  ];
+
   return (
     <aside className="nav-panel">
       <div className="brand-card">
@@ -3719,62 +3754,18 @@ function NavPanel(props: {
       </div>
 
       <div className="nav-tabs">
-        {[
-          { id: "console", label: "Dashboard", count: null },
-          { id: "search", label: "Locate", count: null },
-          { id: "accounts", label: "Accounts", count: props.activeHotlists > 0 ? props.activeHotlists : null },
-          { id: "hotlists", label: "Cases", count: props.activeAlerts > 0 ? props.activeAlerts : null },
-          { id: "settings", label: "Settings", count: null },
-        ].map((item) => (
-          <button
-            key={item.id}
-            className={`nav-tab ${props.activeScreen === item.id ? "is-active" : ""}`}
-            type="button"
-            onClick={() => props.onScreenChange(item.id as AppScreen)}
-          >
-            <span className="nav-tab__label">{item.label}</span>
-            {typeof item.count === "number" ? <span className="nav-tab__count">{item.count}</span> : null}
-          </button>
+        {navItems.map((item) => (
+          <Tooltip key={item.id} text={item.tip}>
+            <button
+              className={`nav-tab ${props.activeScreen === item.id ? "is-active" : ""}`}
+              type="button"
+              onClick={() => props.onScreenChange(item.id)}
+            >
+              <span className="nav-tab__label">{item.label}</span>
+              {typeof item.count === "number" ? <span className="nav-tab__count">{item.count}</span> : null}
+            </button>
+          </Tooltip>
         ))}
-      </div>
-
-      <div className="nav-action-row">
-        <button className="nav-action nav-action--primary" disabled={props.activeAlerts === 0} type="button" onClick={props.onOpenAlert}>
-          <span>Active Alerts</span>
-          <span className="nav-action__count">{props.activeAlerts}</span>
-        </button>
-      </div>
-
-      <div className="nav-compact-summary" aria-label="Compact route summary">
-        <div className="nav-compact-chip">
-          <span>Status</span>
-          <strong>{props.routeStatusLabel}</strong>
-        </div>
-        <div className="nav-compact-chip">
-          <span>Reads</span>
-          <strong>{props.totalReads}</strong>
-        </div>
-        <div className="nav-compact-chip">
-          <span>ETA</span>
-          <strong>{props.routeEta}</strong>
-        </div>
-        <div className="nav-compact-chip">
-          <span>Radius</span>
-          <strong>{props.settings.arrivalRadiusFeet} ft</strong>
-        </div>
-      </div>
-
-      <div className="panel-card">
-        <div className="panel-card__header">
-          <h3>System</h3>
-          <Badge tone={props.dataSource === "live" ? "success" : "warn"}>{props.dataSource.toUpperCase()}</Badge>
-        </div>
-        <div className="status-list">
-          <StatusRow label="GPS" value="Locked" tone="good" />
-          <StatusRow label="Network" value={props.dataSource === "live" ? "Connected" : "Local cache"} tone={statusTone(props.dataSource === "live")} />
-          <StatusRow label="LPR" value={props.settings.arrivalScanEnabled ? "Active" : "Paused"} tone={statusTone(props.settings.arrivalScanEnabled)} />
-          <StatusRow label="Detections" value={`${props.systemDetectionCount}`} tone="good" />
-        </div>
       </div>
 
       <div className="panel-card">
@@ -3807,12 +3798,16 @@ function NavPanel(props: {
           />
         </div>
         <div className="button-row">
-          <button className="btn btn--ghost" type="button" onClick={props.onResolve}>
-            Resolve
-          </button>
-          <button className={`btn ${props.navigationActive ? "btn--danger" : "btn--primary"}`} type="button" onClick={props.onToggleNavigation}>
-            {props.navigationActive ? "End Route" : "Start Nav"}
-          </button>
+          <Tooltip text="Mark destination as resolved">
+            <button className="btn btn--ghost" type="button" onClick={props.onResolve}>
+              Resolve
+            </button>
+          </Tooltip>
+          <Tooltip text={props.navigationActive ? "Stop turn-by-turn navigation" : "Begin turn-by-turn navigation to target"}>
+            <button className={`btn ${props.navigationActive ? "btn--danger" : "btn--primary"}`} type="button" onClick={props.onToggleNavigation}>
+              {props.navigationActive ? "End Route" : "Start Nav"}
+            </button>
+          </Tooltip>
         </div>
         <div className="target-summary">
           <div>
@@ -3913,28 +3908,36 @@ function ConsoleScreen(props: {
               ))}
             </div>
             <div className="stage-toolbar__right">
-              <button
-                className={`pill-button ${props.consoleLayoutMode === "overview" ? "is-active" : ""}`}
-                type="button"
-                onClick={() => props.onConsoleLayoutChange("overview")}
-              >
-                Overview
-              </button>
-              <button
-                className={`pill-button ${props.consoleLayoutMode === "focus" ? "is-active" : ""}`}
-                type="button"
-                onClick={() => props.onConsoleLayoutChange("focus")}
-              >
-                Focus
-              </button>
+              <Tooltip text="Split view with cameras and map">
+                <button
+                  className={`pill-button ${props.consoleLayoutMode === "overview" ? "is-active" : ""}`}
+                  type="button"
+                  onClick={() => props.onConsoleLayoutChange("overview")}
+                >
+                  Overview
+                </button>
+              </Tooltip>
+              <Tooltip text="Full-size single view">
+                <button
+                  className={`pill-button ${props.consoleLayoutMode === "focus" ? "is-active" : ""}`}
+                  type="button"
+                  onClick={() => props.onConsoleLayoutChange("focus")}
+                >
+                  Focus
+                </button>
+              </Tooltip>
               {props.consoleLayoutMode === "focus" ? (
                 <>
-                  <button className={`pill-button ${props.stageView === "camera" ? "is-active" : ""}`} type="button" onClick={() => props.onStageViewChange("camera")}>
-                    Camera
-                  </button>
-                  <button className={`pill-button ${props.stageView === "map" ? "is-active" : ""}`} type="button" onClick={() => props.onStageViewChange("map")}>
-                    Map
-                  </button>
+                  <Tooltip text="Show live camera feed">
+                    <button className={`pill-button ${props.stageView === "camera" ? "is-active" : ""}`} type="button" onClick={() => props.onStageViewChange("camera")}>
+                      Camera
+                    </button>
+                  </Tooltip>
+                  <Tooltip text="Show route and detection map">
+                    <button className={`pill-button ${props.stageView === "map" ? "is-active" : ""}`} type="button" onClick={() => props.onStageViewChange("map")}>
+                      Map
+                    </button>
+                  </Tooltip>
                 </>
               ) : null}
               <Badge tone={cameraFeedTone(props.currentCamera?.status ?? "Unknown")}>{cameraFeedBadgeLabel(props.currentCamera?.status ?? "Unknown").toUpperCase()}</Badge>
@@ -5951,15 +5954,21 @@ function DetailOverlay(props: {
         </div>
 
         <div className="detail-overlay__actions">
-          <button className="btn btn--primary" type="button" onClick={props.onOpenMap}>
-            Route to Vehicle
-          </button>
-          <button className="btn btn--ghost" type="button" onClick={props.onAddToHotlist}>
-            {props.hotlistEntry ? "Open Account" : "Create Account"}
-          </button>
-          <button className="btn btn--ghost" type="button" onClick={() => void props.onCopyPlate(props.detailRow.plate1)}>
-            Copy Tag
-          </button>
+          <Tooltip text="Navigate to this vehicle's last location">
+            <button className="btn btn--primary" type="button" onClick={props.onOpenMap}>
+              Route to Vehicle
+            </button>
+          </Tooltip>
+          <Tooltip text={props.hotlistEntry ? "Open existing recovery account" : "Create a new recovery account for this plate"}>
+            <button className="btn btn--ghost" type="button" onClick={props.onAddToHotlist}>
+              {props.hotlistEntry ? "Open Account" : "Create Account"}
+            </button>
+          </Tooltip>
+          <Tooltip text="Copy plate number to clipboard">
+            <button className="btn btn--ghost" type="button" onClick={() => void props.onCopyPlate(props.detailRow.plate1)}>
+              Copy Tag
+            </button>
+          </Tooltip>
         </div>
       </aside>
     </div>

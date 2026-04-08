@@ -132,11 +132,71 @@ select:focus-visible {
   color: var(--muted);
 }
 
+.status-footer__item--clickable {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  transition: color 120ms ease;
+}
+
+.status-footer__item--clickable:hover,
+.status-footer__item--clickable:focus-visible {
+  color: var(--text);
+}
+
+.status-footer__item--clickable:focus-visible {
+  outline: 2px solid rgba(56, 232, 255, 0.45);
+  outline-offset: 4px;
+}
+
 .status-footer__item strong {
   color: var(--text);
   font-size: 0.8rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
+}
+
+.tooltip-anchor {
+  position: relative;
+  display: inline-flex;
+  width: fit-content;
+}
+
+.nav-tabs .tooltip-anchor {
+  display: block;
+  width: 100%;
+}
+
+.tooltip-bubble {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 10px);
+  transform: translateX(-50%) translateY(4px);
+  width: max-content;
+  max-width: min(260px, 70vw);
+  padding: 8px 10px;
+  border: 1px solid rgba(56, 232, 255, 0.18);
+  border-radius: 10px;
+  background: rgba(5, 10, 15, 0.96);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.28);
+  color: var(--text);
+  font-size: 0.72rem;
+  line-height: 1.45;
+  text-align: center;
+  white-space: normal;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  z-index: 30;
+  transition: opacity 120ms ease, visibility 120ms ease, transform 120ms ease;
+}
+
+.tooltip-anchor:hover .tooltip-bubble,
+.tooltip-anchor:focus-within .tooltip-bubble {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
 }
 
 .brand-card,
