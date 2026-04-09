@@ -1843,7 +1843,7 @@ function MapStagePanel(props: {
       : "No destination staged";
 
   return (
-    <div className={`map-stage ${compact ? "map-stage--overview map-stage--compact" : ""}`.trim()}>
+    <div className={`map-stage ${compact ? "map-stage--overview" : ""}`.trim()}>
       <OpsMap
         unitPosition={props.unitPosition}
         routePath={props.routePath}
@@ -2577,16 +2577,6 @@ function App(): ReactElement {
       : "En route";
   const routeEta = formatEta(distanceFeet, navigationActive);
   const routeDistance = formatDistance(distanceFeet);
-  const visibleMapLayers = useMemo(
-    () =>
-      [
-        settings.showActiveAlertPins ? "active_alerts" : null,
-        settings.showHistoricalAlertPins ? "historical_alerts" : null,
-        settings.showDetectionPins ? "detections" : null,
-        settings.showRadiusRing ? "arrival_ring" : null,
-      ].filter((value): value is string => value !== null),
-    [settings.showActiveAlertPins, settings.showDetectionPins, settings.showHistoricalAlertPins, settings.showRadiusRing],
-  );
   const detailTimeline = detailRow ? allRows.filter((row) => normalizePlate(row.plate1) === normalizePlate(detailRow.plate1)) : [];
   const groupedSearchResults = searchGroupByPlate ? buildPlateGroups(searchResults) : [];
   const hotlistWarning = !settings.hotlistAlerts || !settings.soundEnabled;
