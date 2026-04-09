@@ -482,6 +482,10 @@ def create_app(
             workspace=submission.workspace,
             selected_detection_id=submission.selected_detection_id,
             selected_alert_id=submission.selected_alert_id,
+            destination_label=submission.destination_label,
+            arrival_radius_feet=submission.arrival_radius_feet,
+            idle_scan_enabled=submission.idle_scan_enabled,
+            visible_map_layers=submission.visible_map_layers,
             navigation_active=submission.navigation_active,
             last_seen_at_utc=_utcnow(),
         )

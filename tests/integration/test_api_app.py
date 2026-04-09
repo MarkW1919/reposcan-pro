@@ -684,6 +684,10 @@ def test_follow_up_assignment_and_operator_presence_surface_in_dashboard(tmp_pat
             "workspace": "alerts",
             "selected_detection_id": "det_20260320_000001",
             "selected_alert_id": "alert_follow_up",
+            "destination_label": "Shoreline Marina south lot",
+            "arrival_radius_feet": 50,
+            "idle_scan_enabled": False,
+            "visible_map_layers": ["active_alerts", "historical_alerts", "detections"],
             "navigation_active": True,
         },
     )
@@ -727,6 +731,9 @@ def test_follow_up_assignment_and_operator_presence_surface_in_dashboard(tmp_pat
     assert payload["follow_ups"][0]["summary"] == "Pin the target until the tow team is on scene."
     assert payload["assignments"][0]["assigned_unit_label"] == "Truck 4"
     assert payload["active_sessions"][0]["workspace"] == "alerts"
+    assert payload["active_sessions"][0]["destination_label"] == "Shoreline Marina south lot"
+    assert payload["active_sessions"][0]["arrival_radius_feet"] == 50
+    assert payload["active_sessions"][0]["visible_map_layers"] == ["active_alerts", "historical_alerts", "detections"]
     assert service.list_operator_sessions(limit=10)[0].session_id == "session_001"
 
 

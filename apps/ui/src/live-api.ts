@@ -250,6 +250,10 @@ export interface OperatorSessionRecord {
   workspace: string;
   selected_detection_id: string | null;
   selected_alert_id: string | null;
+  destination_label: string | null;
+  arrival_radius_feet: number | null;
+  idle_scan_enabled: boolean;
+  visible_map_layers: string[];
   navigation_active: boolean;
   last_seen_at_utc: string;
 }
@@ -260,6 +264,10 @@ export interface OperatorSessionHeartbeatSubmission {
   workspace: string;
   selected_detection_id?: string;
   selected_alert_id?: string;
+  destination_label?: string;
+  arrival_radius_feet?: number;
+  idle_scan_enabled?: boolean;
+  visible_map_layers?: string[];
   navigation_active: boolean;
 }
 

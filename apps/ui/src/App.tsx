@@ -82,6 +82,9 @@ interface UiSettings {
   mapMode: string;
   autoCenterVehicle: boolean;
   showRadiusRing: boolean;
+  showActiveAlertPins: boolean;
+  showHistoricalAlertPins: boolean;
+  showDetectionPins: boolean;
   navProvider: string;
   showTraffic: boolean;
 }
@@ -131,6 +134,18 @@ interface HotlistAlertItem {
 interface RecognitionActivityItem {
   event: DashboardPopupActivityEvent;
   row: ConsoleDetectionRow | null;
+}
+
+interface MapAlertMarker {
+  id: string;
+  alertId: string;
+  plate: string;
+  label: string;
+  camera: string;
+  lat: number;
+  lng: number;
+  status: DashboardAlertStatus;
+  timestampUtc: string;
 }
 
 interface HotlistDraft {
@@ -253,7 +268,7 @@ const routeStart = {
 const defaultUiSettings: UiSettings = {
   autoArrivalScan: true,
   arrivalScanEnabled: true,
-  arrivalRadiusFeet: defaultFieldSettings.arrivalTriggerDistance,
+  arrivalRadiusFeet: 50,
   duplicateSuppressionSeconds: 90,
   minConfidence: Math.round(defaultFieldSettings.ocrConfidenceThreshold * 100),
   hotlistAlerts: true,
@@ -271,6 +286,9 @@ const defaultUiSettings: UiSettings = {
   mapMode: "Dark route",
   autoCenterVehicle: true,
   showRadiusRing: true,
+  showActiveAlertPins: true,
+  showHistoricalAlertPins: true,
+  showDetectionPins: true,
   navProvider: "Internal",
   showTraffic: defaultFieldSettings.routeTrafficOverlay,
 };
@@ -1684,13 +1702,23 @@ function makePlateIcon(plate: string, critical: boolean): L.DivIcon {
 
 const unitIcon = makeDotIcon("#38E8FF", 14);
 const targetIcon = makeDotIcon("#F0F4F8", 12);
+const activeAlertIcon = makeDotIcon("#FF4D5E", 12);
+const acknowledgedAlertIcon = makeDotIcon("#FFBF48", 10);
+const historicalAlertIcon = makeDotIcon("#91A6B3", 10);
 
 function OpsMap(props: {
   unitPosition: { lat: number; lng: number };
   routePath: [number, number][];
   rows: ConsoleDetectionRow[];
+  alertMarkers: MapAlertMarker[];
+  destinationLabel: string;
   radiusFeet: number;
+  showRoute: boolean;
+  showDestination: boolean;
   showRadiusRing: boolean;
+  showActiveAlertPins: boolean;
+  showHistoricalAlertPins: boolean;
+  showDetectionPins: boolean;
   selectedRowId: string | null;
   onSelect: (rowId: string) => void;
 }): ReactElement {
@@ -1702,11 +1730,13 @@ function OpsMap(props: {
         <Popup>Recovery unit</Popup>
       </Marker>
 
-      <Marker position={[targetRoute.lat, targetRoute.lng]} icon={targetIcon}>
-        <Popup>{targetRoute.address}</Popup>
-      </Marker>
+      {props.showDestination ? (
+        <Marker position={[targetRoute.lat, targetRoute.lng]} icon={targetIcon}>
+          <Popup>{props.destinationLabel || targetRoute.address}</Popup>
+        </Marker>
+      ) : null}
 
-      {props.showRadiusRing ? (
+      {props.showDestination && props.showRadiusRing ? (
         <Circle
           center={[targetRoute.lat, targetRoute.lng]}
           radius={props.radiusFeet * 0.3048}
@@ -1720,27 +1750,243 @@ function OpsMap(props: {
         />
       ) : null}
 
-      <Polyline positions={props.routePath} pathOptions={{ color: "#38E8FF", opacity: 0.8, weight: 4 }} />
+      {props.showRoute ? <Polyline positions={props.routePath} pathOptions={{ color: "#38E8FF", opacity: 0.8, weight: 4 }} /> : null}
 
-      {props.rows.map((row) => (
-        <Marker
-          key={row.id}
-          position={[row.lat, row.lng]}
-          icon={makePlateIcon(row.plate1, row.hotlist || row.id === props.selectedRowId)}
-          eventHandlers={{
-            click: () => props.onSelect(row.id),
-          }}
-        >
-          <Popup>
-            <strong>{row.plate1}</strong>
-            <br />
-            {row.vehicle}
-            <br />
-            {row.gps}
-          </Popup>
-        </Marker>
-      ))}
+      {props.showDetectionPins
+        ? props.rows.map((row) => (
+            <Marker
+              key={row.id}
+              position={[row.lat, row.lng]}
+              icon={makePlateIcon(row.plate1, row.hotlist || row.id === props.selectedRowId)}
+              eventHandlers={{
+                click: () => props.onSelect(row.id),
+              }}
+            >
+              <Popup>
+                <strong>{row.plate1}</strong>
+                <br />
+                {row.vehicle}
+                <br />
+                {row.gps}
+              </Popup>
+            </Marker>
+          ))
+        : null}
+
+      {props.alertMarkers
+        .filter((marker) => (marker.status === "active" ? props.showActiveAlertPins : props.showHistoricalAlertPins))
+        .map((marker) => (
+          <Marker
+            key={marker.id}
+            position={[marker.lat, marker.lng]}
+            icon={marker.status === "active" ? activeAlertIcon : marker.status === "acknowledged" ? acknowledgedAlertIcon : historicalAlertIcon}
+          >
+            <Popup>
+              <strong>{marker.plate}</strong>
+              <br />
+              {marker.label}
+              <br />
+              {titleCase(marker.status)}
+            </Popup>
+          </Marker>
+        ))}
     </MapContainer>
+  );
+}
+
+function MapStagePanel(props: {
+  compact?: boolean;
+  alertMarkers: MapAlertMarker[];
+  activeDestination: string;
+  destinationInput: string;
+  destinationModalOpen: boolean;
+  idleScanEnabled: boolean;
+  layerMenuOpen: boolean;
+  navigationActive: boolean;
+  routeDistance: string;
+  routeEta: string;
+  routePath: [number, number][];
+  routeStatusLabel: string;
+  rows: ConsoleDetectionRow[];
+  selectedRowId: string | null;
+  settings: UiSettings;
+  unitPosition: { lat: number; lng: number };
+  withinRadius: boolean;
+  onCloseDestinationModal: () => void;
+  onDestinationChange: (value: string) => void;
+  onEndRoute: () => void;
+  onOpenDestinationModal: () => void;
+  onSelect: (rowId: string) => void;
+  onStageDestination: () => void;
+  onStartRoute: () => void;
+  onToggleActiveAlertPins: () => void;
+  onToggleDetectionPins: () => void;
+  onToggleHistoricalAlertPins: () => void;
+  onToggleLayerMenu: () => void;
+  onToggleRadiusRing: () => void;
+}): ReactElement {
+  const compact = props.compact === true;
+  const hasDestination = props.activeDestination.trim().length > 0;
+  const activeAlertCount = props.alertMarkers.filter((marker) => marker.status === "active").length;
+  const historicalAlertCount = props.alertMarkers.filter((marker) => marker.status !== "active").length;
+  const scanStatusLabel = props.navigationActive
+    ? props.settings.autoArrivalScan
+      ? `Auto-scan ${props.settings.arrivalRadiusFeet} ft`
+      : "Auto-scan off"
+    : props.idleScanEnabled
+      ? "Idle scan on"
+      : "Idle scan off";
+  const routeSummaryLabel = props.navigationActive
+    ? `${props.routeDistance} • ETA ${props.routeEta}`
+    : hasDestination
+      ? "Target staged"
+      : "No destination staged";
+
+  return (
+    <div className={`map-stage ${compact ? "map-stage--overview map-stage--compact" : ""}`.trim()}>
+      <OpsMap
+        unitPosition={props.unitPosition}
+        routePath={props.routePath}
+        rows={props.rows}
+        alertMarkers={props.alertMarkers}
+        destinationLabel={props.activeDestination}
+        radiusFeet={props.settings.arrivalRadiusFeet}
+        showRoute={props.navigationActive}
+        showDestination={hasDestination}
+        showRadiusRing={props.settings.showRadiusRing}
+        showActiveAlertPins={props.settings.showActiveAlertPins}
+        showHistoricalAlertPins={props.settings.showHistoricalAlertPins}
+        showDetectionPins={props.settings.showDetectionPins}
+        selectedRowId={props.selectedRowId}
+        onSelect={props.onSelect}
+      />
+
+      <div
+        className={`map-stage__badge ${
+          props.withinRadius ? "map-stage__badge--success" : props.navigationActive ? "map-stage__badge--cyan" : "map-stage__badge--muted"
+        }`.trim()}
+      >
+        {props.routeStatusLabel}
+      </div>
+
+      <div className={`map-stage__overlay ${compact ? "map-stage__overlay--compact" : ""}`.trim()}>
+        <div className="map-stage__route-card">
+          <span className="map-stage__route-label">{props.navigationActive ? "Active route" : "Map workspace"}</span>
+          <strong>{hasDestination ? props.activeDestination : "No destination staged"}</strong>
+          <div className="map-stage__route-meta">
+            <span>{routeSummaryLabel}</span>
+            <span>{scanStatusLabel}</span>
+            {props.navigationActive ? <span>{props.withinRadius ? "Arrival window open" : "Tracking to destination"}</span> : null}
+          </div>
+        </div>
+
+        <div className="map-stage__toolbar-actions">
+          <Tooltip text="Stage or update the route destination from the map">
+            <button className="pill-button is-active" type="button" onClick={props.onOpenDestinationModal}>
+              {hasDestination ? "Change Destination" : "Set Destination"}
+            </button>
+          </Tooltip>
+          {!props.navigationActive && hasDestination ? (
+            <Tooltip text="Begin navigation to the staged destination">
+              <button className="pill-button" type="button" onClick={props.onStartRoute}>
+                Start Route
+              </button>
+            </Tooltip>
+          ) : null}
+          {props.navigationActive ? (
+            <Tooltip text="End the current route and return to idle map mode">
+              <button className="pill-button" type="button" onClick={props.onEndRoute}>
+                End Route
+              </button>
+            </Tooltip>
+          ) : null}
+          <Tooltip text="Toggle alert and read layers">
+            <button className={`pill-button ${props.layerMenuOpen ? "is-active" : ""}`.trim()} type="button" onClick={props.onToggleLayerMenu}>
+              Layers
+            </button>
+          </Tooltip>
+        </div>
+      </div>
+
+      {props.layerMenuOpen ? (
+        <div className="map-stage__layer-menu">
+          <strong>Map Layers</strong>
+          <button className={`map-stage__layer-toggle ${props.settings.showActiveAlertPins ? "is-active" : ""}`.trim()} type="button" onClick={props.onToggleActiveAlertPins}>
+            <span>Active alerts</span>
+            <strong>{props.settings.showActiveAlertPins ? "On" : "Off"}</strong>
+          </button>
+          <button className={`map-stage__layer-toggle ${props.settings.showHistoricalAlertPins ? "is-active" : ""}`.trim()} type="button" onClick={props.onToggleHistoricalAlertPins}>
+            <span>Prior alerts</span>
+            <strong>{props.settings.showHistoricalAlertPins ? "On" : "Off"}</strong>
+          </button>
+          <button className={`map-stage__layer-toggle ${props.settings.showDetectionPins ? "is-active" : ""}`.trim()} type="button" onClick={props.onToggleDetectionPins}>
+            <span>Live reads</span>
+            <strong>{props.settings.showDetectionPins ? "On" : "Off"}</strong>
+          </button>
+          <button className={`map-stage__layer-toggle ${props.settings.showRadiusRing ? "is-active" : ""}`.trim()} type="button" onClick={props.onToggleRadiusRing}>
+            <span>Arrival ring</span>
+            <strong>{props.settings.showRadiusRing ? "On" : "Off"}</strong>
+          </button>
+        </div>
+      ) : null}
+
+      <div className="map-stage__dock">
+        <button className={`map-stage__dock-chip ${props.settings.showDetectionPins ? "is-active" : ""}`.trim()} type="button" onClick={props.onToggleDetectionPins}>
+          <span>Reads</span>
+          <strong>{props.rows.length}</strong>
+        </button>
+        <button className={`map-stage__dock-chip ${props.settings.showActiveAlertPins ? "is-active" : ""}`.trim()} type="button" onClick={props.onToggleActiveAlertPins}>
+          <span>Active Alerts</span>
+          <strong>{activeAlertCount}</strong>
+        </button>
+        <button className={`map-stage__dock-chip ${props.settings.showHistoricalAlertPins ? "is-active" : ""}`.trim()} type="button" onClick={props.onToggleHistoricalAlertPins}>
+          <span>Prior Alerts</span>
+          <strong>{historicalAlertCount}</strong>
+        </button>
+        <div className="map-stage__dock-status">
+          <span>{scanStatusLabel}</span>
+        </div>
+      </div>
+
+      {props.destinationModalOpen ? (
+        <div className="map-stage__modal-scrim" role="presentation" onClick={props.onCloseDestinationModal}>
+          <div className="map-stage__modal" role="dialog" aria-modal="true" aria-label="Set destination" onClick={(event) => event.stopPropagation()}>
+            <div className="map-stage__modal-header">
+              <div>
+                <span className="eyebrow">Map Route</span>
+                <h3>Set Destination</h3>
+              </div>
+              <button className="map-stage__modal-close" type="button" onClick={props.onCloseDestinationModal}>
+                Close
+              </button>
+            </div>
+            <label className="field-label" htmlFor="map-destination-input">
+              Destination address
+            </label>
+            <input
+              id="map-destination-input"
+              className="text-input"
+              placeholder="4128 W Fulton St, Chicago, IL"
+              type="text"
+              value={props.destinationInput}
+              onChange={(event) => props.onDestinationChange(event.target.value)}
+            />
+            <div className="map-stage__modal-copy">
+              <span>{hasDestination ? "Save the destination only, or start the route immediately from the map." : "Enter an address, then stage it or start navigation."}</span>
+              <strong>{`Arrival auto-scan defaults to ${props.settings.arrivalRadiusFeet} ft.`}</strong>
+            </div>
+            <div className="button-row">
+              <button className="btn btn--ghost" type="button" onClick={props.onStageDestination}>
+                Save Target
+              </button>
+              <button className="btn btn--primary" type="button" onClick={props.onStartRoute}>
+                Start Route
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -1936,9 +2182,11 @@ function App(): ReactElement {
   const [settings, setSettings] = useState<UiSettings>(() => loadStoredSettings());
   const [apiKey, setApiKey] = useState<string>(() => loadStoredString(apiKeyStorageKey));
   const [apiKeyInput, setApiKeyInput] = useState<string>(() => loadStoredString(apiKeyStorageKey));
-  const [activeDestination, setActiveDestination] = useState<string>(() => loadStoredString(targetAddressStorageKey, targetRoute.address));
-  const [destinationInput, setDestinationInput] = useState<string>(() => loadStoredString(targetAddressStorageKey, targetRoute.address));
-  const [navigationActive, setNavigationActive] = useState(true);
+  const [activeDestination, setActiveDestination] = useState<string>(() => loadStoredString(targetAddressStorageKey));
+  const [destinationInput, setDestinationInput] = useState<string>(() => loadStoredString(targetAddressStorageKey));
+  const [destinationModalOpen, setDestinationModalOpen] = useState(false);
+  const [mapLayerMenuOpen, setMapLayerMenuOpen] = useState(false);
+  const [navigationActive, setNavigationActive] = useState(false);
   const [distanceFeet, setDistanceFeet] = useState(1400);
   const [dataSource, setDataSource] = useState<DataSource>("demo");
   const [overview, setOverview] = useState<DashboardOverviewResponse | null>(null);
@@ -2091,6 +2339,15 @@ function App(): ReactElement {
             workspace: screen,
             selected_detection_id: selectedDetectionId ?? undefined,
             selected_alert_id: screen === "hotlists" ? selectedAlertId ?? undefined : overlayAlertId,
+            destination_label: activeDestination || undefined,
+            arrival_radius_feet: settings.arrivalRadiusFeet,
+            idle_scan_enabled: !navigationActive && settings.arrivalScanEnabled,
+            visible_map_layers: [
+              settings.showActiveAlertPins ? "active_alerts" : null,
+              settings.showHistoricalAlertPins ? "historical_alerts" : null,
+              settings.showDetectionPins ? "detections" : null,
+              settings.showRadiusRing ? "arrival_ring" : null,
+            ].filter((value): value is string => value !== null),
             navigation_active: navigationActive,
           },
           controller.signal,
@@ -2107,7 +2364,22 @@ function App(): ReactElement {
       controller.abort();
       clearInterval(intervalId);
     };
-  }, [dataSource, screen, selectedDetectionId, selectedAlertId, hotlistOverlayId, overview?.alerts, navigationActive]);
+  }, [
+    activeDestination,
+    dataSource,
+    hotlistOverlayId,
+    navigationActive,
+    overview?.alerts,
+    screen,
+    selectedAlertId,
+    selectedDetectionId,
+    settings.arrivalRadiusFeet,
+    settings.arrivalScanEnabled,
+    settings.showActiveAlertPins,
+    settings.showDetectionPins,
+    settings.showHistoricalAlertPins,
+    settings.showRadiusRing,
+  ]);
 
   const allRows = useMemo(() => {
     const rows =
@@ -2283,6 +2555,7 @@ function App(): ReactElement {
   const unitPosition = interpolatePosition(routeProgress);
   const routePath = buildRoutePath(unitPosition);
   const withinRadius = navigationActive && distanceFeet <= settings.arrivalRadiusFeet;
+  const idleScanEnabled = !navigationActive && settings.arrivalScanEnabled;
   const totalReads = overview?.counts.recent_detections ?? 142;
   const activeAlerts = overview?.counts.active_alerts ?? allRows.filter((row) => row.hotlist).length;
   const activeSessions = overview?.counts.active_sessions ?? 3;
@@ -2294,14 +2567,26 @@ function App(): ReactElement {
     assignments.filter((item) => item.status !== "completed" && item.status !== "cancelled").length;
   const onlineCameraCount = availableCameraFeeds.filter((feed) => feed.status === "Online").length;
   const routeStatusLabel = !navigationActive
-    ? "Route idle"
+    ? idleScanEnabled
+      ? "Idle scan live"
+      : "Route idle"
     : withinRadius
-      ? settings.arrivalScanEnabled
-        ? "Within radius - scan armed"
+      ? settings.autoArrivalScan
+        ? "Within radius - auto scan"
         : "Within radius - scan off"
       : "En route";
   const routeEta = formatEta(distanceFeet, navigationActive);
   const routeDistance = formatDistance(distanceFeet);
+  const visibleMapLayers = useMemo(
+    () =>
+      [
+        settings.showActiveAlertPins ? "active_alerts" : null,
+        settings.showHistoricalAlertPins ? "historical_alerts" : null,
+        settings.showDetectionPins ? "detections" : null,
+        settings.showRadiusRing ? "arrival_ring" : null,
+      ].filter((value): value is string => value !== null),
+    [settings.showActiveAlertPins, settings.showDetectionPins, settings.showHistoricalAlertPins, settings.showRadiusRing],
+  );
   const detailTimeline = detailRow ? allRows.filter((row) => normalizePlate(row.plate1) === normalizePlate(detailRow.plate1)) : [];
   const groupedSearchResults = searchGroupByPlate ? buildPlateGroups(searchResults) : [];
   const hotlistWarning = !settings.hotlistAlerts || !settings.soundEnabled;
@@ -2316,6 +2601,53 @@ function App(): ReactElement {
           row: allRows.find((row) => row.detectionId === alert.detection_id) ?? null,
         })),
     [overview?.alerts, allRows],
+  );
+  const mapAlertMarkers = useMemo<MapAlertMarker[]>(
+    () => {
+      const liveMarkers = hotlistAlertItems.flatMap(({ alert, row }) => {
+        const latitude = row?.lat ?? alert.gps_latitude;
+        const longitude = row?.lng ?? alert.gps_longitude;
+        if (latitude == null || longitude == null) {
+          return [];
+        }
+
+        return [
+          {
+            id: `map-alert-${alert.alert_id}`,
+            alertId: alert.alert_id,
+            plate: row?.plate1 ?? (normalizePlate(alert.matched_plate_text) || "UNKNOWN"),
+            label: row?.vehicle ?? alert.hotlist_label ?? "Recovery case",
+            camera: row?.source ?? buildCameraDisplayName(alert.camera_id),
+            lat: latitude,
+            lng: longitude,
+            status: alert.status,
+            timestampUtc: alert.updated_at_utc ?? alert.timestamp_utc,
+          },
+        ];
+      });
+
+      const knownMarkerIds = new Set(liveMarkers.map((marker) => marker.id));
+      const fallbackMarkers = allRows.flatMap((row) =>
+        row.alertStatus
+          ? [
+              {
+                id: `map-alert-${row.alertId ?? row.id}`,
+                alertId: row.alertId ?? row.id,
+                plate: row.plate1,
+                label: row.vehicle,
+                camera: row.source,
+                lat: row.lat,
+                lng: row.lng,
+                status: row.alertStatus,
+                timestampUtc: row.timestampUtc,
+              },
+            ]
+          : [],
+      );
+
+      return [...liveMarkers, ...fallbackMarkers.filter((marker) => !knownMarkerIds.has(marker.id))];
+    },
+    [hotlistAlertItems, allRows],
   );
   const recognitionActivityItems = useMemo<RecognitionActivityItem[]>(
     () =>
@@ -2430,6 +2762,59 @@ function App(): ReactElement {
       ...current,
       [key]: value,
     }));
+  }
+
+  function openDestinationModal(): void {
+    setDestinationInput(activeDestination || targetRoute.address);
+    setMapLayerMenuOpen(false);
+    setStageView("map");
+    switchScreen("console");
+    setDestinationModalOpen(true);
+  }
+
+  function closeDestinationModal(): void {
+    setDestinationModalOpen(false);
+    setDestinationInput(activeDestination || targetRoute.address);
+  }
+
+  function stageDestination(): void {
+    const nextDestination = destinationInput.trim() || targetRoute.address;
+    setActiveDestination(nextDestination);
+    setDestinationInput(nextDestination);
+    setMapLayerMenuOpen(false);
+    setDestinationModalOpen(false);
+    setStageView("map");
+    switchScreen("console");
+  }
+
+  function startRoute(): void {
+    const nextDestination = destinationInput.trim() || activeDestination || targetRoute.address;
+    setActiveDestination(nextDestination);
+    setDestinationInput(nextDestination);
+    setMapLayerMenuOpen(false);
+    setDestinationModalOpen(false);
+    setNavigationActive(true);
+    setStageView("map");
+    switchScreen("console");
+  }
+
+  function endRoute(): void {
+    setMapLayerMenuOpen(false);
+    setNavigationActive(false);
+    setStageView("map");
+    switchScreen("console");
+  }
+
+  function armIdleScan(): void {
+    setSettings((current) => ({
+      ...current,
+      arrivalScanEnabled: !current.arrivalScanEnabled,
+    }));
+    setMapLayerMenuOpen(false);
+    setDestinationModalOpen(false);
+    setNavigationActive(false);
+    setStageView("map");
+    switchScreen("console");
   }
 
   function openDetail(row: ConsoleDetectionRow): void {
@@ -3192,7 +3577,7 @@ function App(): ReactElement {
   }> = [
     { label: "GPS", value: "Locked", tone: "good", tip: "GPS signal status \u2014 click to open map settings", action: () => { switchScreen("settings"); setSettingsSection("map"); } },
     { label: "API", value: dataSource === "live" ? "Live" : dataSource === "fallback" ? "Fallback" : "Demo", tone: dataSource === "live" ? "good" : "off", tip: "Backend connection \u2014 click to open system settings", action: () => { switchScreen("settings"); setSettingsSection("system"); } },
-    { label: "LPR", value: settings.arrivalScanEnabled ? "Scanning" : "Off", tone: settings.arrivalScanEnabled ? "good" : "off", tip: "Plate reader status \u2014 click to open scan workflow", action: () => { switchScreen("settings"); setSettingsSection("workspace"); } },
+    { label: "LPR", value: navigationActive ? `Auto ${settings.arrivalRadiusFeet}ft` : settings.arrivalScanEnabled ? "Scanning" : "Off", tone: navigationActive || settings.arrivalScanEnabled ? "good" : "off", tip: "Plate reader status \u2014 click to open map settings", action: () => { switchScreen("settings"); setSettingsSection("map"); } },
     { label: "Cams", value: `${onlineCameraCount}/${availableCameraFeeds.length}`, tone: onlineCameraCount > 0 ? "good" : "off", tip: "Camera feeds \u2014 click to open camera settings", action: () => { switchScreen("settings"); setSettingsSection("cameras"); } },
     { label: "Reads", value: `${totalReads}`, tone: "good", tip: "Total plate reads this session \u2014 click to open search", action: () => { switchScreen("search"); } },
     { label: "Cases", value: `${activeAlerts}`, tone: activeAlerts > 0 ? "warn" : "good", tip: "Active recovery alerts \u2014 click to view cases", action: () => { switchScreen("hotlists"); } },
@@ -3204,54 +3589,90 @@ function App(): ReactElement {
         <NavPanel
           activeScreen={screen}
           activeAlerts={activeAlerts}
+          activeDestination={activeDestination}
           activeHotlists={hotlists.filter((entry) => entry.active).length}
           cameraOnlineCount={onlineCameraCount}
           cameraTotalCount={availableCameraFeeds.length}
           dataSource={dataSource}
-          destinationInput={destinationInput}
+          idleScanEnabled={idleScanEnabled}
           navigationActive={navigationActive}
-          onDestinationChange={setDestinationInput}
+          onEndRoute={endRoute}
           onOpenAlert={openLatestHotlistAlert}
-          onResolve={() => {
-            setActiveDestination(destinationInput.trim() || targetRoute.address);
+          onOpenDestinationModal={openDestinationModal}
+          onOpenRoute={() => {
             setStageView("map");
+            switchScreen("console");
           }}
           onScreenChange={switchScreen}
-          onToggleNavigation={() => setNavigationActive((current) => !current)}
+          onToggleIdleScan={() => {
+            if (idleScanEnabled) {
+              updateSetting("arrivalScanEnabled", false);
+            } else {
+              armIdleScan();
+            }
+          }}
+          onToggleNavigation={() => {
+            if (navigationActive) {
+              endRoute();
+            } else if (!activeDestination.trim()) {
+              openDestinationModal();
+            } else {
+              startRoute();
+            }
+          }}
           routeDistance={routeDistance}
           routeEta={routeEta}
           routeStatusLabel={routeStatusLabel}
           settings={settings}
           totalReads={totalReads}
           withinRadius={withinRadius}
-          distanceFeet={distanceFeet}
-          onDistanceChange={setDistanceFeet}
         />
 
         <main className="workspace">
           {screen === "console" ? (
             <ConsoleScreen
               activeAlerts={activeAlerts}
+              activeDestination={activeDestination}
+              alertMarkers={mapAlertMarkers}
               allRows={allRows}
               cameraFeedsList={availableCameraFeeds}
               cameraFocusRow={cameraFocusRow}
               currentCamera={currentCamera}
               dataSource={dataSource}
+              destinationInput={destinationInput}
+              destinationModalOpen={destinationModalOpen}
+              idleScanEnabled={idleScanEnabled}
+              layerMenuOpen={mapLayerMenuOpen}
+              navigationActive={navigationActive}
               selectedCameraId={primaryCameraId}
               selectedDetectionId={selectedDetectionId}
               settings={settings}
               stageView={stageView}
               consoleLayoutMode={consoleLayoutMode}
               unitPosition={unitPosition}
+              routeDistance={routeDistance}
+              routeEta={routeEta}
               routePath={routePath}
+              routeStatusLabel={routeStatusLabel}
               withinRadius={withinRadius}
               secondaryCamera={secondaryCamera}
               secondaryCameraFocusRow={secondaryCameraFocusRow}
+              onCloseDestinationModal={closeDestinationModal}
+              onDestinationChange={setDestinationInput}
+              onEndRoute={endRoute}
               onOpenDetail={openDetail}
+              onOpenDestinationModal={openDestinationModal}
               onConsoleLayoutChange={setConsoleLayoutMode}
               onSelectCamera={setSelectedCameraId}
               onSelectDetection={setSelectedDetectionId}
+              onStageDestination={stageDestination}
+              onStartRoute={startRoute}
               onStageViewChange={setStageView}
+              onToggleActiveAlertPins={() => updateSetting("showActiveAlertPins", !settings.showActiveAlertPins)}
+              onToggleDetectionPins={() => updateSetting("showDetectionPins", !settings.showDetectionPins)}
+              onToggleHistoricalAlertPins={() => updateSetting("showHistoricalAlertPins", !settings.showHistoricalAlertPins)}
+              onToggleLayerMenu={() => setMapLayerMenuOpen((current) => !current)}
+              onToggleRadiusRing={() => updateSetting("showRadiusRing", !settings.showRadiusRing)}
             />
           ) : null}
 
@@ -4056,16 +4477,19 @@ function CollapsibleSection(props: {
 function NavPanel(props: {
   activeScreen: AppScreen;
   activeAlerts: number;
+  activeDestination: string;
   activeHotlists: number;
   cameraOnlineCount: number;
   cameraTotalCount: number;
   dataSource: DataSource;
-  destinationInput: string;
+  idleScanEnabled: boolean;
   navigationActive: boolean;
-  onDestinationChange: (value: string) => void;
+  onEndRoute: () => void;
   onOpenAlert: () => void;
-  onResolve: () => void;
+  onOpenDestinationModal: () => void;
+  onOpenRoute: () => void;
   onScreenChange: (screen: AppScreen) => void;
+  onToggleIdleScan: () => void;
   onToggleNavigation: () => void;
   routeDistance: string;
   routeEta: string;
@@ -4073,8 +4497,6 @@ function NavPanel(props: {
   settings: UiSettings;
   totalReads: number;
   withinRadius: boolean;
-  distanceFeet: number;
-  onDistanceChange: (value: number) => void;
 }): ReactElement {
   const navItems: Array<{ id: AppScreen; label: string; tip: string; count: number | null }> = [
     { id: "console", label: "Dashboard", tip: "Live camera feeds, map, and detection feed", count: null },
@@ -4136,53 +4558,31 @@ function NavPanel(props: {
           </div>
         </div>
         <div className="ops-glance-actions">
-          <span>{props.navigationActive ? `Routing • ETA ${props.routeEta}` : "Navigation idle"}</span>
-          <button className="link-button" disabled={props.activeAlerts === 0} type="button" onClick={props.onOpenAlert}>
-            Open Latest Alert
-          </button>
+          <span>{props.navigationActive ? `Routing • ETA ${props.routeEta}` : props.idleScanEnabled ? "Idle scan live" : "Idle scan paused"}</span>
+          <div className="nav-action-row">
+            <button className="nav-action nav-action--primary" type="button" onClick={props.navigationActive ? props.onOpenRoute : props.onToggleIdleScan}>
+              <span>{props.navigationActive ? "Open Route" : props.idleScanEnabled ? "Pause Scan" : "Start Scan"}</span>
+            </button>
+            <button className="nav-action nav-action--ghost" disabled={props.activeAlerts === 0} type="button" onClick={props.onOpenAlert}>
+              <span>Open Alert</span>
+            </button>
+          </div>
         </div>
       </div>
 
       <div className="panel-card">
         <div className="panel-card__header">
-          <h3>Destination</h3>
+          <h3>Route Watch</h3>
           <Badge tone={props.withinRadius ? "success" : props.navigationActive ? "cyan" : "muted"}>{props.routeStatusLabel}</Badge>
         </div>
-        <label className="field-label" htmlFor="destination-input">
-          Target address
-        </label>
-        <input
-          id="destination-input"
-          className="text-input"
-          placeholder="4128 W Fulton St, Chicago, IL"
-          type="text"
-          value={props.destinationInput}
-          onChange={(event) => props.onDestinationChange(event.target.value)}
-        />
-        <div className="range-row">
-          <div>
-            <strong>Distance to target</strong>
-            <span>{props.routeDistance}</span>
+        <div className="route-watch-card">
+          <span className="route-watch-card__label">{props.navigationActive ? "Destination in play" : "Staged destination"}</span>
+          <strong>{props.activeDestination || "No destination staged"}</strong>
+          <div className="route-watch-card__meta">
+            <span>{props.navigationActive ? `ETA ${props.routeEta}` : "Set destination from map"}</span>
+            <span>{props.navigationActive ? props.routeDistance : "Navigation idle"}</span>
+            <span>{props.settings.autoArrivalScan ? `Auto-scan ${props.settings.arrivalRadiusFeet} ft` : "Auto-scan off"}</span>
           </div>
-          <input
-            max="5280"
-            min="0"
-            type="range"
-            value={props.distanceFeet}
-            onChange={(event) => props.onDistanceChange(Number(event.target.value))}
-          />
-        </div>
-        <div className="button-row">
-          <Tooltip text="Mark destination as resolved">
-            <button className="btn btn--ghost" type="button" onClick={props.onResolve}>
-              Resolve
-            </button>
-          </Tooltip>
-          <Tooltip text={props.navigationActive ? "Stop turn-by-turn navigation" : "Begin turn-by-turn navigation to target"}>
-            <button className={`btn ${props.navigationActive ? "btn--danger" : "btn--primary"}`} type="button" onClick={props.onToggleNavigation}>
-              {props.navigationActive ? "End Route" : "Start Nav"}
-            </button>
-          </Tooltip>
         </div>
         <div className="target-summary">
           <div>
@@ -4190,13 +4590,58 @@ function NavPanel(props: {
             <strong>{props.routeEta}</strong>
           </div>
           <div>
-            <span>Radius</span>
-            <strong>{props.settings.arrivalRadiusFeet} ft</strong>
+            <span>Status</span>
+            <strong>{props.routeStatusLabel}</strong>
           </div>
           <div>
-            <span>Scan</span>
-            <strong>{props.settings.arrivalScanEnabled ? "ON" : "OFF"}</strong>
+            <span>Arrival</span>
+            <strong>{props.settings.arrivalRadiusFeet} ft</strong>
           </div>
+        </div>
+        <div className="button-row">
+          <Tooltip text="Open the map planner to set or change destination">
+            <button className="btn btn--ghost" type="button" onClick={props.onOpenDestinationModal}>
+              {props.activeDestination ? "Change Destination" : "Set Destination"}
+            </button>
+          </Tooltip>
+          {!props.navigationActive ? (
+            <Tooltip text={props.activeDestination ? "Begin navigation to the staged destination" : "Open the map planner before starting a route"}>
+              <button className="btn btn--primary" type="button" onClick={props.onToggleNavigation}>
+                {props.activeDestination ? "Start Route" : "Set Destination"}
+              </button>
+            </Tooltip>
+          ) : (
+            <Tooltip text="End the active route">
+              <button className="btn btn--danger" type="button" onClick={props.onEndRoute}>
+                End Route
+              </button>
+            </Tooltip>
+          )}
+        </div>
+      </div>
+
+      <div className="panel-card">
+        <div className="panel-card__header">
+          <h3>Scan Control</h3>
+          <Badge tone={!props.navigationActive && props.idleScanEnabled ? "success" : props.navigationActive ? "cyan" : "muted"}>
+            {props.navigationActive ? "AUTO" : props.idleScanEnabled ? "LIVE" : "OFF"}
+          </Badge>
+        </div>
+        <p className="brand-copy">
+          {props.navigationActive
+            ? `Arrival auto-scan is ${props.settings.autoArrivalScan ? "armed" : "disabled"} and will trigger at ${props.settings.arrivalRadiusFeet} ft.`
+            : "When you are not routing to a destination, scanning is controlled from this dashboard CTA."}
+        </p>
+        <div className="button-row">
+          {!props.navigationActive ? (
+            <button className={`btn ${props.idleScanEnabled ? "btn--danger" : "btn--primary"}`} type="button" onClick={props.onToggleIdleScan}>
+              {props.idleScanEnabled ? "Pause Scanning" : "Start Scanning"}
+            </button>
+          ) : (
+            <button className="btn btn--ghost" type="button" onClick={props.onOpenRoute}>
+              Open Route
+            </button>
+          )}
         </div>
       </div>
     </aside>
@@ -4205,12 +4650,19 @@ function NavPanel(props: {
 
 function ConsoleScreen(props: {
   activeAlerts: number;
+  activeDestination: string;
+  alertMarkers: MapAlertMarker[];
   allRows: ConsoleDetectionRow[];
   cameraFeedsList: CameraUiFeed[];
   cameraFocusRow: ConsoleDetectionRow | null;
   consoleLayoutMode: ConsoleLayoutMode;
   currentCamera: CameraUiFeed | undefined;
   dataSource: DataSource;
+  destinationInput: string;
+  destinationModalOpen: boolean;
+  idleScanEnabled: boolean;
+  layerMenuOpen: boolean;
+  navigationActive: boolean;
   secondaryCamera: CameraUiFeed | undefined;
   secondaryCameraFocusRow: ConsoleDetectionRow | null;
   selectedCameraId: string;
@@ -4218,13 +4670,27 @@ function ConsoleScreen(props: {
   settings: UiSettings;
   stageView: StageView;
   unitPosition: { lat: number; lng: number };
+  routeDistance: string;
+  routeEta: string;
   routePath: [number, number][];
+  routeStatusLabel: string;
   withinRadius: boolean;
+  onCloseDestinationModal: () => void;
+  onDestinationChange: (value: string) => void;
+  onEndRoute: () => void;
   onOpenDetail: (row: ConsoleDetectionRow) => void;
+  onOpenDestinationModal: () => void;
   onConsoleLayoutChange: (mode: ConsoleLayoutMode) => void;
   onSelectCamera: (cameraId: string) => void;
   onSelectDetection: (rowId: string) => void;
+  onStageDestination: () => void;
+  onStartRoute: () => void;
   onStageViewChange: (view: StageView) => void;
+  onToggleActiveAlertPins: () => void;
+  onToggleDetectionPins: () => void;
+  onToggleHistoricalAlertPins: () => void;
+  onToggleLayerMenu: () => void;
+  onToggleRadiusRing: () => void;
 }): ReactElement {
   const layoutRef = useRef<HTMLDivElement>(null);
   const [stageFraction, setStageFraction] = useState<number | null>(null);
@@ -4336,35 +4802,72 @@ function ConsoleScreen(props: {
                 </article>
 
                 <article className="console-overview-card console-overview-card--map">
-                  <div className="map-stage map-stage--overview">
-                    <OpsMap
-                      unitPosition={props.unitPosition}
-                      routePath={props.routePath}
-                      rows={props.allRows.slice(0, 8)}
-                      radiusFeet={props.settings.arrivalRadiusFeet}
-                      showRadiusRing={props.settings.showRadiusRing}
-                      selectedRowId={props.selectedDetectionId}
-                      onSelect={props.onSelectDetection}
-                    />
-                    <div className="map-stage__badge">{props.withinRadius ? "IN RADIUS" : "EN ROUTE"}</div>
-                  </div>
+                  <MapStagePanel
+                    compact
+                    alertMarkers={props.alertMarkers}
+                    activeDestination={props.activeDestination}
+                    destinationInput={props.destinationInput}
+                    destinationModalOpen={props.destinationModalOpen}
+                    idleScanEnabled={props.idleScanEnabled}
+                    layerMenuOpen={props.layerMenuOpen}
+                    navigationActive={props.navigationActive}
+                    routeDistance={props.routeDistance}
+                    routeEta={props.routeEta}
+                    routePath={props.routePath}
+                    routeStatusLabel={props.routeStatusLabel}
+                    rows={props.allRows.slice(0, 8)}
+                    selectedRowId={props.selectedDetectionId}
+                    settings={props.settings}
+                    unitPosition={props.unitPosition}
+                    withinRadius={props.withinRadius}
+                    onCloseDestinationModal={props.onCloseDestinationModal}
+                    onDestinationChange={props.onDestinationChange}
+                    onEndRoute={props.onEndRoute}
+                    onOpenDestinationModal={props.onOpenDestinationModal}
+                    onSelect={props.onSelectDetection}
+                    onStageDestination={props.onStageDestination}
+                    onStartRoute={props.onStartRoute}
+                    onToggleActiveAlertPins={props.onToggleActiveAlertPins}
+                    onToggleDetectionPins={props.onToggleDetectionPins}
+                    onToggleHistoricalAlertPins={props.onToggleHistoricalAlertPins}
+                    onToggleLayerMenu={props.onToggleLayerMenu}
+                    onToggleRadiusRing={props.onToggleRadiusRing}
+                  />
                 </article>
               </div>
             ) : props.stageView === "camera" ? (
               <CameraViewport cameraId={props.selectedCameraId} row={props.cameraFocusRow} dataSource={props.dataSource} />
             ) : (
-              <div className="map-stage">
-                <OpsMap
-                  unitPosition={props.unitPosition}
-                  routePath={props.routePath}
-                  rows={props.allRows.slice(0, 8)}
-                  radiusFeet={props.settings.arrivalRadiusFeet}
-                  showRadiusRing={props.settings.showRadiusRing}
-                  selectedRowId={props.selectedDetectionId}
-                  onSelect={props.onSelectDetection}
-                />
-                <div className="map-stage__badge">{props.withinRadius ? "IN RADIUS" : "EN ROUTE"}</div>
-              </div>
+              <MapStagePanel
+                alertMarkers={props.alertMarkers}
+                activeDestination={props.activeDestination}
+                destinationInput={props.destinationInput}
+                destinationModalOpen={props.destinationModalOpen}
+                idleScanEnabled={props.idleScanEnabled}
+                layerMenuOpen={props.layerMenuOpen}
+                navigationActive={props.navigationActive}
+                routeDistance={props.routeDistance}
+                routeEta={props.routeEta}
+                routePath={props.routePath}
+                routeStatusLabel={props.routeStatusLabel}
+                rows={props.allRows.slice(0, 8)}
+                selectedRowId={props.selectedDetectionId}
+                settings={props.settings}
+                unitPosition={props.unitPosition}
+                withinRadius={props.withinRadius}
+                onCloseDestinationModal={props.onCloseDestinationModal}
+                onDestinationChange={props.onDestinationChange}
+                onEndRoute={props.onEndRoute}
+                onOpenDestinationModal={props.onOpenDestinationModal}
+                onSelect={props.onSelectDetection}
+                onStageDestination={props.onStageDestination}
+                onStartRoute={props.onStartRoute}
+                onToggleActiveAlertPins={props.onToggleActiveAlertPins}
+                onToggleDetectionPins={props.onToggleDetectionPins}
+                onToggleHistoricalAlertPins={props.onToggleHistoricalAlertPins}
+                onToggleLayerMenu={props.onToggleLayerMenu}
+                onToggleRadiusRing={props.onToggleRadiusRing}
+              />
             )}
           </div>
         </section>
@@ -5999,11 +6502,10 @@ function SettingsScreen(props: {
           <div className="settings-detail-stack">
             {props.settingsSection === "workspace" ? (
               <>
-                <SettingsToggleRow title="Auto-arm on arrival" detail="Start scanning when unit enters the geofence radius." checked={props.settings.autoArrivalScan} onChange={(checked) => props.updateSetting("autoArrivalScan", checked)} />
-                <SettingsToggleRow title="Arrival scan active" detail="Master switch for address-proximity scanning." checked={props.settings.arrivalScanEnabled} onChange={(checked) => props.updateSetting("arrivalScanEnabled", checked)} />
                 <SettingsRangeRow title="Duplicate suppression" detail={`${props.settings.duplicateSuppressionSeconds} sec`} min={15} max={300} step={15} value={props.settings.duplicateSuppressionSeconds} onChange={(value) => props.updateSetting("duplicateSuppressionSeconds", value)} />
                 <SettingsRangeRow title="Min OCR confidence" detail={`${props.settings.minConfidence}%`} min={60} max={99} step={1} value={props.settings.minConfidence} onChange={(value) => props.updateSetting("minConfidence", value)} />
-                <ReadOnlyRow title="Scan mode" value={props.settings.autoArrivalScan ? "Arrival assist" : "Manual"} detail="Based on auto-arm setting above." />
+                <ReadOnlyRow title="Idle scan control" value="Dashboard CTA" detail="Idle scanning is toggled from the dashboard, not from the map." />
+                <ReadOnlyRow title="Arrival scan behavior" value={props.settings.autoArrivalScan ? "Auto at destination" : "Disabled"} detail="Configured in Map and geofence settings." />
               </>
             ) : null}
 
@@ -6032,10 +6534,14 @@ function SettingsScreen(props: {
 
             {props.settingsSection === "map" ? (
               <>
-                <SettingsRangeRow title="Arrival radius" detail={`${props.settings.arrivalRadiusFeet} ft`} min={100} max={1000} step={25} value={props.settings.arrivalRadiusFeet} onChange={(value) => props.updateSetting("arrivalRadiusFeet", value)} />
+                <SettingsToggleRow title="Auto-scan on arrival" detail="Automatically begin scanning when the unit enters the destination radius." checked={props.settings.autoArrivalScan} onChange={(checked) => props.updateSetting("autoArrivalScan", checked)} />
+                <SettingsRangeRow title="Arrival auto-scan radius" detail={`${props.settings.arrivalRadiusFeet} ft`} min={25} max={500} step={25} value={props.settings.arrivalRadiusFeet} onChange={(value) => props.updateSetting("arrivalRadiusFeet", value)} />
                 <SettingsSelectRow title="Map style" detail="Route map visualization." value={props.settings.mapMode} options={["Dark route", "Street", "Satellite-style"]} onChange={(value) => props.updateSetting("mapMode", value)} />
                 <SettingsToggleRow title="Auto-center" detail="Keep map centered on the unit." checked={props.settings.autoCenterVehicle} onChange={(checked) => props.updateSetting("autoCenterVehicle", checked)} />
                 <SettingsToggleRow title="Geofence ring" detail="Show arrival radius on map." checked={props.settings.showRadiusRing} onChange={(checked) => props.updateSetting("showRadiusRing", checked)} />
+                <SettingsToggleRow title="Active alert pins" detail="Show active recovery alerts while navigating or browsing the map." checked={props.settings.showActiveAlertPins} onChange={(checked) => props.updateSetting("showActiveAlertPins", checked)} />
+                <SettingsToggleRow title="Prior alert pins" detail="Show previous acknowledged or dismissed alerts on the map." checked={props.settings.showHistoricalAlertPins} onChange={(checked) => props.updateSetting("showHistoricalAlertPins", checked)} />
+                <SettingsToggleRow title="Live read pins" detail="Show recent detections as map markers." checked={props.settings.showDetectionPins} onChange={(checked) => props.updateSetting("showDetectionPins", checked)} />
                 <SettingsToggleRow title="Traffic overlay" detail="Show route congestion data." checked={props.settings.showTraffic} onChange={(checked) => props.updateSetting("showTraffic", checked)} />
                 <SettingsSelectRow title="Navigation" detail="Route to target method." value={props.settings.navProvider} options={["Internal", "External"]} onChange={(value) => props.updateSetting("navProvider", value)} />
               </>

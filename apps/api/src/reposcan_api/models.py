@@ -108,6 +108,10 @@ class OperatorSessionHeartbeatSubmission(BaseModel):
     workspace: str = Field(..., min_length=1)
     selected_detection_id: Optional[str] = Field(None, min_length=1)
     selected_alert_id: Optional[str] = Field(None, min_length=1)
+    destination_label: Optional[str] = None
+    arrival_radius_feet: Optional[int] = Field(None, ge=1)
+    idle_scan_enabled: bool = False
+    visible_map_layers: list[str] = Field(default_factory=list)
     navigation_active: bool = False
 
 

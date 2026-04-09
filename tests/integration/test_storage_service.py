@@ -121,6 +121,10 @@ def _session_record() -> OperatorSessionRecord:
             "client_label": "cab_console_01",
             "workspace": "dashboard",
             "selected_detection_id": "det_20260320_000001",
+            "destination_label": "4128 W Fulton St, Chicago, IL",
+            "arrival_radius_feet": 50,
+            "idle_scan_enabled": True,
+            "visible_map_layers": ["active_alerts", "historical_alerts", "detections"],
             "last_seen_at_utc": "2026-03-20T04:20:00Z",
         }
     )
