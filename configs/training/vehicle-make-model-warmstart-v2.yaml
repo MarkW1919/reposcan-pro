@@ -1,0 +1,37 @@
+profile_name: vehicle-make-model-warmstart-v2
+task: vehicle_make_model_classification
+framework: torchvision
+output_root: runtime/training
+allow_pending_review: true
+dataset_adapter: stanford_cars
+base_model: efficientnet_b0
+image_size: 260
+epochs: 40
+batch_size: 32
+workers: 4
+patience: 10
+seed: 42
+learning_rate: 0.0002
+weight_decay: 0.0005
+label_smoothing: 0.08
+dropout: 0.3
+freeze_backbone_epochs: 5
+validation_fraction: 0.15
+precision: fp32
+device: auto
+augmentation:
+  horizontal_flip: true
+  motion_blur: true
+  defocus_blur: true
+  brightness_contrast: true
+  noise: true
+  compression_artifacts: true
+  perspective_distortion: true
+  random_erasing: true
+  mixup_alpha: 0.2
+  synthetic_support_ratio: 0.0
+  notes:
+    - V2 training with graduated unfreezing, dropout, Mixup, and RandomErasing.
+    - Targeting >88% validation accuracy on Stanford Cars 196-class split.
+    - Trains from ImageNet pretrained weights with full regularization stack active.
+    - Backbone frozen for first 5 epochs to stabilize the new classifier head.

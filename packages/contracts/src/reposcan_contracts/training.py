@@ -30,6 +30,8 @@ class AugmentationPolicy(BaseModel):
     noise: bool = True
     compression_artifacts: bool = True
     perspective_distortion: bool = True
+    random_erasing: bool = False
+    mixup_alpha: float = Field(0.0, ge=0.0, le=1.0)
     synthetic_support_ratio: float = Field(0.0, ge=0.0, le=1.0)
     notes: list[str] = Field(default_factory=list)
 
@@ -51,6 +53,9 @@ class TrainingProfileConfig(BaseModel):
     learning_rate: float = Field(5e-4, gt=0.0)
     weight_decay: float = Field(1e-4, ge=0.0)
     label_smoothing: float = Field(0.0, ge=0.0, lt=1.0)
+    dropout: float = Field(0.0, ge=0.0, lt=1.0)
+    freeze_backbone_epochs: int = Field(0, ge=0)
+    validation_fraction: float = Field(0.1, gt=0.0, lt=1.0)
     precision: str = Field("fp32", min_length=1)
     device: str = Field("auto", min_length=1)
     class_names: list[str] = Field(default_factory=list)

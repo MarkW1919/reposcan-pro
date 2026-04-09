@@ -168,7 +168,7 @@ def _replace_module(root, path: str, new_module) -> None:
         setattr(parent, final_token, new_module)
 
 
-def _build_torchvision_model(base_model: str | None, *, num_classes: int):
+def _build_torchvision_model(base_model: str | None, *, num_classes: int, dropout: float = 0.0):
     import torch
     from torchvision import models
 
@@ -196,8 +196,15 @@ def _build_torchvision_model(base_model: str | None, *, num_classes: int):
 
     classifier_head = _module_from_path(model, head_path)
     in_features = classifier_head.in_features
-    _replace_module(model, head_path, torch.nn.Linear(in_features, num_classes))
-    return model
+    if dropout > 0.0:
+        new_head = torch.nn.Sequential(
+            torch.nn.Dropout(p=dropout),
+            torch.nn.Linear(in_features, num_classes),
+        )
+    else:
+        new_head = torch.nn.Linear(in_features, num_classes)
+    _replace_module(model, head_path, new_head)
+    return model, head_path
 
 
 def _evaluate(model, loader, device) -> float:
@@ -228,7 +235,10 @@ def _export_trained_classifier(
 
     checkpoint = torch_module.load(checkpoint_path, map_location="cpu", weights_only=False)
     class_names = list(checkpoint["classes"])
-    model = _build_torchvision_model(profile.base_model, num_classes=len(class_names))
+    model, _ = _build_torchvision_model(
+        profile.base_model, num_classes=len(class_names),
+        dropout=getattr(profile, 'dropout', 0.0),
+    )
     model.load_state_dict(checkpoint["state_dict"])
     model = model.to("cpu")
     model.eval()
@@ -327,6 +337,8 @@ def _build_classification_transforms(profile, *, train: bool):
     if profile.augmentation.noise:
         train_transforms.append(AddGaussianNoise(std=0.02, p=0.25))
     train_transforms.append(normalize)
+    if getattr(profile.augmentation, 'random_erasing', False):
+        train_transforms.append(transforms.RandomErasing(p=0.25, scale=(0.02, 0.2)))
     return transforms.Compose(train_transforms)
 
 
@@ -371,7 +383,8 @@ def _build_imagefolder_loaders(profile, manifest, repo_root: Path):
         raw_dataset = datasets.ImageFolder(str(train_root), transform=None)
         if len(train_dataset) < 10:
             raise ValueError("imagefolder training requires at least 10 samples when no validation split is provided")
-        val_size = max(1, int(len(raw_dataset) * 0.1))
+        val_fraction = getattr(profile, 'validation_fraction', 0.1)
+        val_size = max(1, int(len(raw_dataset) * val_fraction))
         train_size = len(raw_dataset) - val_size
         train_subset, validation_subset = torch.utils.data.random_split(
             raw_dataset,
@@ -446,7 +459,8 @@ def _build_stanford_cars_loaders(profile, manifest, repo_root: Path):
             return image, target
 
     dataset = StanfordCarsTrainDataset(storage_root, transform=None)
-    val_size = max(1, int(len(dataset) * 0.1))
+    val_fraction = getattr(profile, 'validation_fraction', 0.1)
+    val_size = max(1, int(len(dataset) * val_fraction))
     train_size = len(dataset) - val_size
     train_subset, validation_subset = random_split(
         dataset,
@@ -619,7 +633,10 @@ def main() -> int:
     else:
         train_loader, validation_loader, class_names = _build_imagefolder_loaders(profile, dataset_manifest, repo_root)
 
-    model = _build_torchvision_model(profile.base_model, num_classes=len(class_names))
+    model, head_path = _build_torchvision_model(
+        profile.base_model, num_classes=len(class_names),
+        dropout=getattr(profile, 'dropout', 0.0),
+    )
     if initial_checkpoint_path is not None:
         state_dict = _load_initial_checkpoint(checkpoint_path=initial_checkpoint_path, class_names=class_names)
         model.load_state_dict(state_dict, strict=True)
@@ -663,9 +680,24 @@ def main() -> int:
     if initial_checkpoint_path is not None and not args.resume_last:
         _append_training_event(events_path, f"initial_checkpoint_loaded checkpoint={initial_checkpoint_path}")
 
+    scheduler_last_epoch = start_epoch - 1
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=profile.epochs, eta_min=1e-6
+        optimizer, T_max=profile.epochs, eta_min=1e-6,
+        last_epoch=scheduler_last_epoch if scheduler_last_epoch > 0 else -1,
     )
+
+    # Graduated unfreezing: freeze backbone for the first N epochs
+    freeze_backbone_epochs = getattr(profile, 'freeze_backbone_epochs', 0)
+    if freeze_backbone_epochs > 0 and start_epoch <= freeze_backbone_epochs:
+        head_prefix = head_path.split(".")[0] + "."
+        frozen_count = 0
+        for name, param in model.named_parameters():
+            if not name.startswith(head_prefix):
+                param.requires_grad = False
+                frozen_count += 1
+        print(f"Backbone frozen for first {freeze_backbone_epochs} epochs ({frozen_count} params frozen)")
+
+    mixup_alpha = getattr(profile.augmentation, 'mixup_alpha', 0.0)
 
     epochs_without_improvement = 0
     patience = profile.patience if hasattr(profile, "patience") and profile.patience else profile.epochs
@@ -684,6 +716,11 @@ def main() -> int:
             print(_format_epoch_start_message(epoch, profile.epochs, previous_epoch_summary))
             _append_training_event(events_path, f"epoch_started epoch={epoch}/{profile.epochs}")
             model.train()
+            # Graduated unfreezing: unfreeze backbone after freeze period
+            if freeze_backbone_epochs > 0 and epoch == freeze_backbone_epochs + 1:
+                for param in model.parameters():
+                    param.requires_grad = True
+                print(f"Backbone unfrozen at epoch {epoch}")
             train_examples = 0
             train_correct = 0
             try:
@@ -693,10 +730,19 @@ def main() -> int:
             for batch_index, (images, labels) in enumerate(train_loader, start=1):
                 images = images.to(device)
                 labels = labels.to(device)
-                logits = model(images)
-                loss = criterion(logits, labels)
-                preds = torch.argmax(logits, dim=1)
-                train_correct += (preds == labels).sum().item()
+                if mixup_alpha > 0.0:
+                    lam = torch.distributions.Beta(mixup_alpha, mixup_alpha).sample().item()
+                    index = torch.randperm(images.size(0), device=device)
+                    images = lam * images + (1 - lam) * images[index]
+                    logits = model(images)
+                    loss = lam * criterion(logits, labels) + (1 - lam) * criterion(logits, labels[index])
+                    preds = torch.argmax(logits, dim=1)
+                    train_correct += lam * (preds == labels).sum().item() + (1 - lam) * (preds == labels[index]).sum().item()
+                else:
+                    logits = model(images)
+                    loss = criterion(logits, labels)
+                    preds = torch.argmax(logits, dim=1)
+                    train_correct += (preds == labels).sum().item()
                 train_examples += labels.size(0)
                 optimizer.zero_grad(set_to_none=True)
                 loss.backward()
