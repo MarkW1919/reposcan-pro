@@ -526,8 +526,7 @@ select:focus-visible {
   background: rgba(145, 166, 179, 0.54);
 }
 
-.status-list,
-.target-summary {
+.status-list {
   display: grid;
   gap: 6px;
 }
@@ -569,7 +568,6 @@ select:focus-visible {
 
 .field-label,
 .range-row strong,
-.target-summary span,
 .settings-row span,
 .detail-field span,
 .camera-feed__hud span,
@@ -619,18 +617,6 @@ select:focus-visible {
 .settings-row input[type="range"] {
   width: 100%;
   accent-color: var(--cyan);
-}
-
-.target-summary {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  padding-top: 4px;
-}
-
-.target-summary strong {
-  display: block;
-  margin-top: 4px;
-  font-family: var(--mono);
-  color: var(--text);
 }
 
 .hotlist-mini-list,
@@ -1123,6 +1109,7 @@ select:focus-visible {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+  flex-wrap: wrap;
   pointer-events: none;
   z-index: 8;
 }
@@ -1323,36 +1310,6 @@ select:focus-visible {
   gap: 6px;
   color: var(--muted);
   font-size: 0.84rem;
-}
-
-.route-watch-card {
-  padding: 12px;
-  border-radius: 16px;
-  border: 1px solid rgba(56, 232, 255, 0.08);
-  background: rgba(10, 18, 24, 0.88);
-  display: grid;
-  gap: 6px;
-}
-
-.route-watch-card__label {
-  color: var(--cyan);
-  font-size: 0.72rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  font-weight: 700;
-}
-
-.route-watch-card strong {
-  color: var(--text);
-  font-family: var(--mono);
-}
-
-.route-watch-card__meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 10px;
-  color: var(--muted);
-  font-size: 0.76rem;
 }
 
 .map-shell {
@@ -4602,10 +4559,6 @@ select:focus-visible {
     font-size: 0.8rem;
   }
 
-  .target-summary {
-    gap: 6px;
-  }
-
   .screen {
     gap: 10px;
   }
@@ -4810,10 +4763,6 @@ select:focus-visible {
 
   .search-result-card__thumb {
     min-height: 84px;
-  }
-
-  .target-summary {
-    padding-top: 4px;
   }
 
   .status-footer {
@@ -5022,7 +4971,6 @@ select:focus-visible {
   }
 
   .status-list,
-  .target-summary,
   .range-row {
     gap: 4px;
   }
@@ -5036,7 +4984,6 @@ select:focus-visible {
   }
 
   .field-label,
-  .target-summary span,
   .range-row strong {
     font-size: 0.72rem;
   }
@@ -5050,15 +4997,6 @@ select:focus-visible {
 
   .button-row {
     gap: 6px;
-  }
-
-  .target-summary {
-    padding-top: 2px;
-  }
-
-  .target-summary strong {
-    margin-top: 2px;
-    font-size: 0.78rem;
   }
 
   .console-layout--overview {
@@ -5151,7 +5089,6 @@ select:focus-visible {
   }
 
   .search-filter-grid,
-  .target-summary,
   .search-summary-strip,
   .locate-intelligence-strip,
   .locate-intelligence-summary,

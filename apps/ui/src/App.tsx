@@ -3579,16 +3579,13 @@ function App(): ReactElement {
         <NavPanel
           activeScreen={screen}
           activeAlerts={activeAlerts}
-          activeDestination={activeDestination}
           activeHotlists={hotlists.filter((entry) => entry.active).length}
           cameraOnlineCount={onlineCameraCount}
           cameraTotalCount={availableCameraFeeds.length}
           dataSource={dataSource}
           idleScanEnabled={idleScanEnabled}
           navigationActive={navigationActive}
-          onEndRoute={endRoute}
           onOpenAlert={openLatestHotlistAlert}
-          onOpenDestinationModal={openDestinationModal}
           onOpenRoute={() => {
             setStageView("map");
             switchScreen("console");
@@ -3601,21 +3598,9 @@ function App(): ReactElement {
               armIdleScan();
             }
           }}
-          onToggleNavigation={() => {
-            if (navigationActive) {
-              endRoute();
-            } else if (!activeDestination.trim()) {
-              openDestinationModal();
-            } else {
-              startRoute();
-            }
-          }}
-          routeDistance={routeDistance}
           routeEta={routeEta}
-          routeStatusLabel={routeStatusLabel}
           settings={settings}
           totalReads={totalReads}
-          withinRadius={withinRadius}
         />
 
         <main className="workspace">
@@ -4467,26 +4452,19 @@ function CollapsibleSection(props: {
 function NavPanel(props: {
   activeScreen: AppScreen;
   activeAlerts: number;
-  activeDestination: string;
   activeHotlists: number;
   cameraOnlineCount: number;
   cameraTotalCount: number;
   dataSource: DataSource;
   idleScanEnabled: boolean;
   navigationActive: boolean;
-  onEndRoute: () => void;
   onOpenAlert: () => void;
-  onOpenDestinationModal: () => void;
   onOpenRoute: () => void;
   onScreenChange: (screen: AppScreen) => void;
   onToggleIdleScan: () => void;
-  onToggleNavigation: () => void;
-  routeDistance: string;
   routeEta: string;
-  routeStatusLabel: string;
   settings: UiSettings;
   totalReads: number;
-  withinRadius: boolean;
 }): ReactElement {
   const navItems: Array<{ id: AppScreen; label: string; tip: string; count: number | null }> = [
     { id: "console", label: "Dashboard", tip: "Live camera feeds, map, and detection feed", count: null },
@@ -4557,56 +4535,6 @@ function NavPanel(props: {
               <span>Open Alert</span>
             </button>
           </div>
-        </div>
-      </div>
-
-      <div className="panel-card">
-        <div className="panel-card__header">
-          <h3>Route Watch</h3>
-          <Badge tone={props.withinRadius ? "success" : props.navigationActive ? "cyan" : "muted"}>{props.routeStatusLabel}</Badge>
-        </div>
-        <div className="route-watch-card">
-          <span className="route-watch-card__label">{props.navigationActive ? "Destination in play" : "Staged destination"}</span>
-          <strong>{props.activeDestination || "No destination staged"}</strong>
-          <div className="route-watch-card__meta">
-            <span>{props.navigationActive ? `ETA ${props.routeEta}` : "Set destination from map"}</span>
-            <span>{props.navigationActive ? props.routeDistance : "Navigation idle"}</span>
-            <span>{props.settings.autoArrivalScan ? `Auto-scan ${props.settings.arrivalRadiusFeet} ft` : "Auto-scan off"}</span>
-          </div>
-        </div>
-        <div className="target-summary">
-          <div>
-            <span>ETA</span>
-            <strong>{props.routeEta}</strong>
-          </div>
-          <div>
-            <span>Status</span>
-            <strong>{props.routeStatusLabel}</strong>
-          </div>
-          <div>
-            <span>Arrival</span>
-            <strong>{props.settings.arrivalRadiusFeet} ft</strong>
-          </div>
-        </div>
-        <div className="button-row">
-          <Tooltip text="Open the map planner to set or change destination">
-            <button className="btn btn--ghost" type="button" onClick={props.onOpenDestinationModal}>
-              {props.activeDestination ? "Change Destination" : "Set Destination"}
-            </button>
-          </Tooltip>
-          {!props.navigationActive ? (
-            <Tooltip text={props.activeDestination ? "Begin navigation to the staged destination" : "Open the map planner before starting a route"}>
-              <button className="btn btn--primary" type="button" onClick={props.onToggleNavigation}>
-                {props.activeDestination ? "Start Route" : "Set Destination"}
-              </button>
-            </Tooltip>
-          ) : (
-            <Tooltip text="End the active route">
-              <button className="btn btn--danger" type="button" onClick={props.onEndRoute}>
-                End Route
-              </button>
-            </Tooltip>
-          )}
         </div>
       </div>
 
