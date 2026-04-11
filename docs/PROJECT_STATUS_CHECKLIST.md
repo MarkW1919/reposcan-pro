@@ -6,7 +6,7 @@ Status convention:
 - completed items use `- [x] ~~item~~`
 - incomplete items use `- [ ] item`
 
-Last reviewed against repo state: `2026-03-25`
+Last reviewed against repo state: `2026-04-11`
 
 ## 1. Program Foundations
 
@@ -29,7 +29,7 @@ Last reviewed against repo state: `2026-03-25`
 - [x] ~~RTSP ingest path is implemented.~~
 - [x] ~~USB ingest path is implemented.~~
 - [x] ~~Live camera reconnect behavior is implemented and validated.~~
-- [ ] Live GPS ingestion is wired from deployment hardware.
+- [x] ~~Live GPS ingestion is wired from deployment hardware.~~
 - [x] ~~Camera discovery and registration workflow is implemented for deployed rigs.~~
 - [x] ~~Camera placement, vibration, and angle-of-incidence validation workflow is documented and repeatable.~~
 - [ ] Required long-distance imaging validation scenes are captured and reviewed.

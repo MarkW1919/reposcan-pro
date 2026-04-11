@@ -35,6 +35,13 @@ mounting:
   gps_longitude: null
   gps_accuracy_m: null
 
+gps:
+  provider: nmea_serial
+  serial_port: COM5
+  baud_rate: 9600
+  timeout_s: 1.0
+  max_snapshot_age_s: 10.0
+
 capture:
   target_fps: 30
   reconnect_delay_s: 2.0

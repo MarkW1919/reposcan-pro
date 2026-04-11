@@ -71,7 +71,7 @@ The target deployment rig is for:
 
 - [jetson-orin-edge](../configs/deployments/jetson-orin-edge.yaml) validation
 - camera reconnect and power-loss behavior on deployment-intended hardware
-- live GPS ingestion
+- validation of the live GPS ingest path on deployment hardware
 - TensorRT bundle validation
 - latency and memory benchmarking on the actual edge target
 
@@ -126,7 +126,6 @@ On the GPU training environment:
 
 The remaining high-value gates are:
 
-- live GPS ingestion from deployment hardware
 - hardware-in-the-loop capture validation
 - long-range plate-readability acceptance run
 - low-light / no-light acceptance run

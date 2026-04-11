@@ -33,6 +33,11 @@ class Orientation(str, Enum):
     ptz = "ptz"
 
 
+class GpsProviderType(str, Enum):
+    disabled = "disabled"
+    nmea_serial = "nmea_serial"
+
+
 class SensorConfig(BaseModel):
     type: Optional[str] = Field(None, description="Sensor model identifier, e.g. 'sony_imx335'")
     resolution_w: Optional[int] = Field(None, gt=0)
@@ -71,6 +76,20 @@ class CaptureConfig(BaseModel):
     max_reconnect_attempts: int = Field(0, ge=0, description="0 = unlimited")
 
 
+class GpsConfig(BaseModel):
+    provider: GpsProviderType = GpsProviderType.disabled
+    serial_port: Optional[str] = Field(None, min_length=1, description="Serial device path such as COM5 or /dev/ttyUSB0")
+    baud_rate: int = Field(9600, gt=0)
+    timeout_s: float = Field(1.0, gt=0.0)
+    max_snapshot_age_s: float = Field(10.0, gt=0.0)
+
+    @model_validator(mode="after")
+    def validate_provider_requirements(self) -> "GpsConfig":
+        if self.provider == GpsProviderType.nmea_serial and not self.serial_port:
+            raise ValueError("serial_port is required when gps.provider='nmea_serial'")
+        return self
+
+
 class CameraConfig(BaseModel):
     """Complete camera configuration loaded from configs/cameras/*.yaml."""
 
@@ -84,6 +103,7 @@ class CameraConfig(BaseModel):
     exposure: ExposureConfig = Field(default_factory=ExposureConfig)
     mounting: MountingConfig = Field(default_factory=MountingConfig)
     capture: CaptureConfig = Field(default_factory=CaptureConfig)
+    gps: GpsConfig = Field(default_factory=GpsConfig)
     enabled: bool = True
 
     @model_validator(mode="after")

@@ -47,9 +47,10 @@ def main() -> int:
     for registration in registrations:
         status = "enabled" if registration.enabled else "disabled"
         display_name = f" ({registration.display_name})" if registration.display_name else ""
+        gps_suffix = f" gps={registration.gps_binding}" if registration.gps_binding else ""
         print(
             f"- {registration.camera_id}{display_name}: "
-            f"{registration.source_type} -> {registration.binding} [{status}]"
+            f"{registration.source_type} -> {registration.binding}{gps_suffix} [{status}]"
         )
     return 0
 

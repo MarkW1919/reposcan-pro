@@ -11,8 +11,11 @@ from reposcan_capture import (
     CaptureReconnectError,
     CaptureSourceError,
     CapturedImage,
+    NmeaSerialGpsProvider,
     RtspFrameSource,
     UsbFrameSource,
+    build_gps_provider,
+    parse_nmea_sentence,
 )
 from reposcan_contracts.config.camera import CameraConfig
 from reposcan_contracts.frame import GpsSnapshot
@@ -44,6 +47,20 @@ class _FakeGrabber:
         if isinstance(event, Exception):
             raise event
         return event
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class _FakeLineReader:
+    def __init__(self, lines: list[str]) -> None:
+        self._lines = deque(lines)
+        self.closed = False
+
+    def readline(self) -> str:
+        if not self._lines:
+            return ""
+        return self._lines.popleft()
 
     def close(self) -> None:
         self.closed = True
@@ -151,6 +168,135 @@ def test_rtsp_frame_source_writes_frames_and_applies_live_gps_provider(tmp_path)
     assert frames[0].gps_snapshot.latitude == pytest.approx(34.123)
     assert frames[1].gps_snapshot is not None
     assert frames[1].gps_snapshot.longitude == pytest.approx(-118.457)
+
+
+def test_parse_nmea_sentence_supports_rmc_and_gga():
+    rmc = parse_nmea_sentence("$GPRMC,123519,A,3407.3800,N,11827.3600,W,022.4,084.4,230394,003.1,W*6A")
+    gga = parse_nmea_sentence("$GPGGA,123520,3407.4400,N,11827.4200,W,1,08,0.9,545.4,M,46.9,M,,*47")
+
+    assert rmc is not None
+    assert rmc.latitude == pytest.approx(34.123, rel=1e-4)
+    assert rmc.longitude == pytest.approx(-118.456, rel=1e-4)
+    assert gga is not None
+    assert gga.latitude == pytest.approx(34.124, rel=1e-4)
+    assert gga.longitude == pytest.approx(-118.457, rel=1e-4)
+
+
+def test_build_gps_provider_from_camera_config_reads_nmea_sentences():
+    camera = _camera_config(
+        "usb",
+        gps={
+            "provider": "nmea_serial",
+            "serial_port": "COM7",
+            "baud_rate": 9600,
+            "timeout_s": 0.1,
+            "max_snapshot_age_s": 2.0,
+        },
+    )
+    provider = build_gps_provider(
+        camera,
+        line_reader_factory=lambda *_: _FakeLineReader(
+            [
+                "$GPRMC,123519,A,3407.3800,N,11827.3600,W,022.4,084.4,230394,003.1,W*6A\n",
+            ]
+        ),
+    )
+
+    snapshot = provider.current_snapshot()
+
+    assert snapshot is not None
+    assert snapshot.latitude == pytest.approx(34.123, rel=1e-4)
+    assert snapshot.longitude == pytest.approx(-118.456, rel=1e-4)
+    provider.close()
+
+
+def test_nmea_serial_provider_returns_cached_snapshot_when_no_new_line():
+    provider = NmeaSerialGpsProvider(
+        serial_port="COM7",
+        timeout_s=0.1,
+        max_snapshot_age_s=5.0,
+        line_reader_factory=lambda *_: _FakeLineReader(
+            [
+                "$GPRMC,123519,A,3407.3800,N,11827.3600,W,022.4,084.4,230394,003.1,W*6A\n",
+                "",
+            ]
+        ),
+    )
+
+    first = provider.current_snapshot()
+    second = provider.current_snapshot()
+
+    assert first is not None
+    assert second is not None
+    assert second.latitude == pytest.approx(first.latitude)
+    assert second.longitude == pytest.approx(first.longitude)
+    provider.close()
+
+
+def test_rtsp_frame_source_auto_wires_live_gps_provider_from_camera_config(tmp_path):
+    camera = _camera_config(
+        "rtsp",
+        capture={"reconnect_delay_s": 0.01, "max_reconnect_attempts": 1},
+        gps={
+            "provider": "nmea_serial",
+            "serial_port": "COM7",
+            "baud_rate": 9600,
+            "timeout_s": 0.1,
+            "max_snapshot_age_s": 2.0,
+        },
+    )
+
+    source = RtspFrameSource(
+        camera,
+        output_root=tmp_path / "frames",
+        gps_line_reader_factory=lambda *_: _FakeLineReader(
+            [
+                "$GPRMC,123519,A,3407.3800,N,11827.3600,W,022.4,084.4,230394,003.1,W*6A\n",
+            ]
+        ),
+        max_frames=1,
+        grabber_factory=lambda _: _FakeGrabber(
+            [
+                _captured_image(color=(24, 24, 24), timestamp_utc="2026-03-21T11:00:00Z"),
+            ]
+        ),
+    )
+
+    frames = list(source)
+
+    assert len(frames) == 1
+    assert frames[0].gps_snapshot is not None
+    assert frames[0].gps_snapshot.latitude == pytest.approx(34.123, rel=1e-4)
+
+
+def test_live_frame_source_drops_failed_gps_provider_without_blocking_capture(tmp_path):
+    camera = _camera_config(
+        "rtsp",
+        gps={
+            "provider": "nmea_serial",
+            "serial_port": "COM7",
+        },
+    )
+
+    def _broken_line_reader(*_args):
+        raise RuntimeError("serial unavailable")
+
+    source = RtspFrameSource(
+        camera,
+        output_root=tmp_path / "frames",
+        gps_line_reader_factory=_broken_line_reader,
+        max_frames=1,
+        grabber_factory=lambda _: _FakeGrabber(
+            [
+                _captured_image(color=(24, 24, 24), timestamp_utc="2026-03-21T11:00:00Z"),
+            ]
+        ),
+    )
+
+    frames = list(source)
+
+    assert len(frames) == 1
+    assert frames[0].gps_snapshot is None
 
 
 def test_usb_frame_source_reconnects_after_transient_failure(tmp_path):

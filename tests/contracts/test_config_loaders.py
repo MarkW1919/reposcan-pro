@@ -26,7 +26,7 @@ from reposcan_contracts.config.loader import (
     load_training_dataset_manifest,
     load_training_profile,
 )
-from reposcan_contracts.config.camera import CameraConfig, SourceType, ColorMode
+from reposcan_contracts.config.camera import CameraConfig, ColorMode, GpsProviderType, SourceType
 from reposcan_contracts.dataset import (
     DatasetFormat,
     DatasetReviewStatus,
@@ -58,6 +58,8 @@ class TestCameraConfigSchema:
         assert cam.camera_id == "cam_cab_usb_01"
         assert cam.source_type == SourceType.usb
         assert cam.device_index == 0
+        assert cam.gps.provider == GpsProviderType.nmea_serial
+        assert cam.gps.serial_port == "COM5"
 
     def test_sensor_fields(self):
         cam = load_camera_config(CONFIGS / "cameras" / "example-camera.yaml")
@@ -128,6 +130,17 @@ class TestCameraConfigSchema:
                 "source_type": "usb",
                 "device_index": 0,
                 "stream_url": "rtsp://10.0.0.1/stream",
+            })
+
+    def test_live_gps_provider_requires_serial_port(self):
+        with pytest.raises(ValidationError):
+            CameraConfig.model_validate({
+                "camera_id": "cam_usb",
+                "source_type": "usb",
+                "device_index": 0,
+                "gps": {
+                    "provider": "nmea_serial",
+                },
             })
 
 

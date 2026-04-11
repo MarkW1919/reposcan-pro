@@ -13,3 +13,5 @@ Current integrated slice:
 - in-process queue handoff into the headless ingest runner so capture can feed downstream stages without hardware
 - RTSP and USB live-source adapters with reconnect handling and local evidence writes
 - optional live GPS provider hook for runtime capture sources
+- NMEA serial live GPS wiring from camera config for deployment hardware paths
+- fail-safe GPS degradation so GPS loss does not block frame capture

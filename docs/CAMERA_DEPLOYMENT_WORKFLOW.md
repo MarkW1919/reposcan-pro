@@ -76,10 +76,10 @@ The current repo now supports:
 - registry loading from a directory of camera configs
 - local registry validation through `scripts/validate_camera_registry.py`
 - RTSP and USB source adapters through the capture service with reconnect handling
+- NMEA serial live GPS ingest wiring through camera config for deployed rigs that expose GPS over a serial device
 
 The current repo does not yet complete the hardware-only acceptance work:
 
-- live GPS ingest from deployment hardware
 - captured and reviewed long-range acceptance scenes
 - captured and reviewed low-light / no-light acceptance scenes
 

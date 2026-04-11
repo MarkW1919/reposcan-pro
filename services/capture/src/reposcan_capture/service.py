@@ -25,6 +25,7 @@ class RegisteredCamera:
     source_type: str
     enabled: bool
     binding: str
+    gps_binding: str | None = None
 
 
 class CameraRegistry:
@@ -79,6 +80,9 @@ class CameraRegistry:
         registrations: list[RegisteredCamera] = []
         for camera in self.list_cameras():
             binding = camera.stream_url if camera.stream_url is not None else f"device:{camera.device_index}"
+            gps_binding = None
+            if camera.gps.provider.value == "nmea_serial" and camera.gps.serial_port:
+                gps_binding = f"{camera.gps.provider.value}:{camera.gps.serial_port}"
             registrations.append(
                 RegisteredCamera(
                     camera_id=camera.camera_id,
@@ -86,6 +90,7 @@ class CameraRegistry:
                     source_type=camera.source_type.value,
                     enabled=camera.enabled,
                     binding=binding,
+                    gps_binding=gps_binding,
                 )
             )
         return registrations

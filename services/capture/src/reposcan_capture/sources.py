@@ -13,6 +13,8 @@ from PIL import Image
 from reposcan_contracts.config.camera import CameraConfig, SourceType as CameraSourceType
 from reposcan_contracts.frame import GpsSnapshot
 
+from .gps import GpsProviderError, TextLineReader, build_gps_provider
+
 
 def _parse_utc_timestamp(timestamp_utc: str) -> datetime:
     return datetime.fromisoformat(timestamp_utc.replace("Z", "+00:00")).astimezone(timezone.utc)
@@ -193,6 +195,7 @@ class LiveFrameSource(Iterable[CapturedFrame]):
         output_root: str | Path,
         grabber_factory: Callable[[CameraConfig], ImageGrabber] | None = None,
         gps_provider: GpsProvider | None = None,
+        gps_line_reader_factory: Callable[[str, int, float], TextLineReader] | None = None,
         start_frame_number: int = 0,
         sequence_id: str | None = None,
         max_frames: int | None = None,
@@ -206,7 +209,7 @@ class LiveFrameSource(Iterable[CapturedFrame]):
         self.camera = camera
         self.output_root = Path(output_root)
         self.grabber_factory = grabber_factory or _default_grabber_factory
-        self.gps_provider = gps_provider
+        self.gps_provider = gps_provider or build_gps_provider(camera, line_reader_factory=gps_line_reader_factory)
         self.start_frame_number = start_frame_number
         self.sequence_id = sequence_id
         self.max_frames = max_frames
@@ -228,7 +231,13 @@ class LiveFrameSource(Iterable[CapturedFrame]):
             return captured.gps_snapshot
         if self.gps_provider is None:
             return None
-        return self.gps_provider.current_snapshot()
+        try:
+            return self.gps_provider.current_snapshot()
+        except GpsProviderError:
+            if hasattr(self.gps_provider, "close"):
+                self.gps_provider.close()
+            self.gps_provider = None
+            return None
 
     def _reconnect_or_raise(
         self,
@@ -285,6 +294,8 @@ class LiveFrameSource(Iterable[CapturedFrame]):
         finally:
             if grabber is not None:
                 grabber.close()
+            if self.gps_provider is not None and hasattr(self.gps_provider, "close"):
+                self.gps_provider.close()
 
 
 class RtspFrameSource(LiveFrameSource):
