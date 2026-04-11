@@ -946,9 +946,9 @@ function alertResponseGuidance(status: DashboardAlertStatus): string {
     return "Route to the vehicle immediately. Visually confirm the tag and VIN before engaging. Keep the account armed until confirmed.";
   }
   if (status === "acknowledged") {
-    return "Vehicle under active field review. Maintain visual contact and update dispatch when ready to hook or when the debtor moves.";
+    return "Vehicle under active field review. Maintain visual contact and update the assignment when ready to hook or when the debtor moves.";
   }
-  return "Case dismissed. Reopen only if the vehicle needs active repo attention again.";
+  return "Recovery dismissed. Reopen only if the vehicle needs active repo attention again.";
 }
 
 function followUpStatusTone(status: FollowUpStatus): "critical" | "warn" | "success" {
@@ -1011,7 +1011,7 @@ function dispatchOperationalSignal(status: DispatchAssignmentStatus): Operationa
   if (status === "queued") {
     return {
       label: "Pending Review",
-      detail: "Verify the hit before sending the field unit forward.",
+      detail: "Verify the sighting before sending the assigned unit forward.",
       tone: "warn",
     };
   }
@@ -1024,7 +1024,7 @@ function dispatchOperationalSignal(status: DispatchAssignmentStatus): Operationa
   }
   return {
     label: "Proceed",
-    detail: "Dispatch is active. Route toward the vehicle and maintain updates.",
+    detail: "Assignment is active. Move toward the vehicle and keep field updates current.",
     tone: "success",
   };
 }
@@ -1072,7 +1072,7 @@ function buildOperationalSignal(
   if (row.alertStatus === "acknowledged") {
     return {
       label: "Field Review",
-      detail: "A case is already in motion. Confirm the read and keep dispatch updated.",
+      detail: "A recovery is already in motion. Confirm the read and keep the assignment updated.",
       tone: "warn",
     };
   }
@@ -1600,14 +1600,14 @@ function buildLeadResponseCue(
     if (assignment.status === "cancelled") {
       return {
         label: "Stand down",
-        detail: assignment.summary ?? "Dispatch was cancelled. Do not engage again until the case is reopened.",
+        detail: assignment.summary ?? "The assignment was cancelled. Do not engage again until the recovery is reopened.",
         tone: "critical",
       };
     }
     if (assignment.status === "queued") {
       return {
         label: "Hold for review",
-        detail: assignment.summary ?? "Dispatch is pending review. Verify the sighting and wait for release before moving in.",
+        detail: assignment.summary ?? "The assignment is pending review. Verify the sighting and wait for release before moving in.",
         tone: "warn",
       };
     }
@@ -1636,13 +1636,13 @@ function buildLeadResponseCue(
     if (assignment.status === "onsite") {
       return {
         label: "On scene",
-        detail: assignment.summary ?? "Operator is on scene. Keep evidence and dispatch notes current.",
+        detail: assignment.summary ?? "Operator is on scene. Keep evidence and assignment notes current.",
         tone: "success",
       };
     }
     return {
-      label: "Dispatch complete",
-      detail: assignment.summary ?? "Dispatch is complete. Review the account before reopening the case.",
+      label: "Assignment complete",
+      detail: assignment.summary ?? "The assignment is complete. Review the account before reopening the recovery.",
       tone: "muted",
     };
   }
@@ -1918,6 +1918,10 @@ function MapViewportSync(props: {
   const map = useMap();
 
   useEffect(() => {
+    if (!props.autoCenter) {
+      return;
+    }
+
     if (props.showRoute && props.destinationCoords) {
       map.fitBounds(
         [
@@ -1926,10 +1930,6 @@ function MapViewportSync(props: {
         ],
         { padding: [40, 40], maxZoom: 15 },
       );
-      return;
-    }
-
-    if (!props.autoCenter) {
       return;
     }
 
@@ -2285,6 +2285,7 @@ function DestinationModal(props: {
 
   const trimmed = props.destinationInput.trim();
   const canCommit = trimmed.length > 0;
+  const canStartRoute = canCommit && props.destinationPreview != null;
   const groupedTargets = {
     alert: props.destinationTargets.filter((target) => target.source === "alert"),
     read: props.destinationTargets.filter((target) => target.source === "read"),
@@ -2293,7 +2294,7 @@ function DestinationModal(props: {
   };
 
   function handleInputKeyDown(event: ReactKeyboardEvent<HTMLInputElement>): void {
-    if (event.key === "Enter" && canCommit) {
+    if (event.key === "Enter" && canStartRoute) {
       event.preventDefault();
       props.onStartRoute();
     }
@@ -2313,7 +2314,7 @@ function DestinationModal(props: {
             <span className="eyebrow">Route Planner</span>
             <h3 id="destination-modal-title">{props.hasDestination ? "Change Destination" : "Set Destination"}</h3>
             <p className="destination-modal__hint">
-              Pick a recent, alert, or account address, or type a new one. Press Enter to start the route.
+              Pick a recovery account, recent stop, or last-seen point. Free-typed addresses can be saved, but route start requires a mapped location.
             </p>
           </div>
           <button
@@ -2375,16 +2376,16 @@ function DestinationModal(props: {
 
         <div className="destination-modal__targets">
           <TargetGroup
-            label="Latest alert"
+            label="Latest recovery match"
             targets={groupedTargets.alert}
             onApply={props.onApplyTarget}
-            emptyHint="No active alert with a mapped location"
+            emptyHint="No active recovery match with a mapped location"
           />
           <TargetGroup
-            label="Latest read"
+            label="Last-seen vehicles"
             targets={groupedTargets.read}
             onApply={props.onApplyTarget}
-            emptyHint="No recent plate reads with GPS"
+            emptyHint="No recent last-seen points with GPS"
           />
           <TargetGroup
             label="Recovery accounts"
@@ -2393,11 +2394,11 @@ function DestinationModal(props: {
             emptyHint="Add address details on account cards to see them here"
           />
           <TargetGroup
-            label="Recent destinations"
+            label="Recent stops"
             targets={groupedTargets.recent}
             onApply={props.onApplyTarget}
             onRemove={props.onRemoveRecent}
-            emptyHint="Staged destinations show up here after you use them"
+            emptyHint="Saved stops show up here after you use them"
           />
         </div>
 
@@ -2414,7 +2415,7 @@ function DestinationModal(props: {
             className="btn btn--primary"
             type="button"
             onClick={props.onStartRoute}
-            disabled={!canCommit}
+            disabled={!canStartRoute}
           >
             Start Route
           </button>
@@ -3546,6 +3547,7 @@ function App(): ReactElement {
     const nextDestination = destinationInput.trim() || activeDestination;
     if (!nextDestination) return;
     const nextCoords = destinationDraftCoords ?? activeDestinationCoords;
+    if (!nextCoords) return;
     setActiveDestination(nextDestination);
     setActiveDestinationCoords(nextCoords);
     setDestinationInput(nextDestination);
@@ -3582,6 +3584,27 @@ function App(): ReactElement {
     setDetailDetectionId(row.id);
   }
 
+  function routeToRow(row: ConsoleDetectionRow): void {
+    setSelectedDetectionId(row.id);
+    if (typeof row.lat === "number" && typeof row.lng === "number") {
+      const destinationAddress = row.gps || `${row.lat.toFixed(5)}, ${row.lng.toFixed(5)}`;
+      const destinationCoords = { lat: row.lat, lng: row.lng };
+      setActiveDestination(destinationAddress);
+      setActiveDestinationCoords(destinationCoords);
+      setDestinationInput(destinationAddress);
+      setDestinationDraftCoords(destinationCoords);
+      setDestinationInitialInput(destinationAddress);
+      rememberDestination(destinationAddress, destinationCoords, `Last seen - ${row.plate1}`);
+      setNavigationActive(true);
+    } else {
+      setNavigationActive(false);
+    }
+    setMapLayerMenuOpen(false);
+    setDestinationModalOpen(false);
+    setStageView("map");
+    switchScreen("console");
+  }
+
   function centerMapOnRow(row: ConsoleDetectionRow): void {
     setSelectedDetectionId(row.id);
     setStageView("map");
@@ -3614,6 +3637,17 @@ function App(): ReactElement {
       return;
     }
     centerMapOnRow(row);
+  }
+
+  function routeToDetectionId(detectionId: string | null | undefined): void {
+    if (!detectionId) {
+      return;
+    }
+    const row = allRows.find((item) => item.detectionId === detectionId);
+    if (!row) {
+      return;
+    }
+    routeToRow(row);
   }
 
   function openLatestHotlistAlert(): void {
@@ -4320,10 +4354,10 @@ function App(): ReactElement {
 
       setAlertActionMessage(
         status === "acknowledged"
-          ? "Vehicle alert acknowledged."
+          ? "Recovery match acknowledged."
           : status === "dismissed"
-            ? "Vehicle alert dismissed."
-            : "Vehicle alert reopened.",
+            ? "Recovery match dismissed."
+            : "Recovery match reopened.",
       );
     } catch (error) {
       setAlertActionError(error instanceof Error ? error.message : "Unable to update the alert.");
@@ -4345,7 +4379,7 @@ function App(): ReactElement {
     { label: "LPR", value: navigationActive ? `Auto ${settings.arrivalRadiusFeet}ft` : settings.arrivalScanEnabled ? "Scanning" : "Off", tone: navigationActive || settings.arrivalScanEnabled ? "good" : "off", tip: "Plate reader status \u2014 click to open map settings", action: () => { switchScreen("settings"); setSettingsSection("map"); } },
     { label: "Cams", value: `${onlineCameraCount}/${availableCameraFeeds.length}`, tone: onlineCameraCount > 0 ? "good" : "off", tip: "Camera feeds \u2014 click to open camera settings", action: () => { switchScreen("settings"); setSettingsSection("cameras"); } },
     { label: "Reads", value: `${totalReads}`, tone: "good", tip: "Total plate reads this session \u2014 click to open search", action: () => { switchScreen("search"); } },
-    { label: "Cases", value: `${activeAlerts}`, tone: activeAlerts > 0 ? "warn" : "good", tip: "Active recovery alerts \u2014 click to view cases", action: () => { switchScreen("hotlists"); } },
+    { label: "Recoveries", value: `${activeAlerts}`, tone: activeAlerts > 0 ? "warn" : "good", tip: "Active recovery matches - click to view the queue", action: () => { switchScreen("hotlists"); } },
   ];
 
   return (
@@ -4464,7 +4498,7 @@ function App(): ReactElement {
               onClearFilters={clearSearchFilters}
               onCopyPlate={handleCopyPlate}
               onDetails={openDetail}
-              onMap={centerMapOnRow}
+              onMap={routeToRow}
               onRetrySearch={() => void runSearch()}
               onSelectDetection={setSelectedDetectionId}
               onSearchSubmit={handleSearchSubmit}
@@ -4553,7 +4587,7 @@ function App(): ReactElement {
               alertResponseNotes={alertResponseNotes}
               onAlertResponseNotesChange={setAlertResponseNotes}
               onAlertStatusChange={(alert, status, notes) => void handleAlertStatusChange(alert, status, notes)}
-              onMapDetection={centerMapOnDetectionId}
+              onMapDetection={routeToDetectionId}
               onOpenRecord={openRecordForDetectionId}
               onSaveAssignment={handleSaveAssignment}
               onSaveFollowUp={handleSaveFollowUp}
@@ -4633,7 +4667,7 @@ function App(): ReactElement {
           onClose={() => setDetailDetectionId(null)}
           onCopyPlate={handleCopyPlate}
           onOpenMap={() => {
-            centerMapOnRow(detailRow);
+            routeToRow(detailRow);
             setDetailDetectionId(null);
           }}
           onSubmitReview={handleSubmitReview}
@@ -4663,7 +4697,7 @@ function App(): ReactElement {
           }}
           onMuteToggle={() => setHotlistAudioMuted((value) => !value)}
           onNavigate={() => {
-            centerMapOnRow(hotlistOverlayRow);
+            routeToRow(hotlistOverlayRow);
             setHotlistOverlayId(null);
           }}
           onRecover={() => void handleRecoverFromAlert()}
@@ -4899,12 +4933,12 @@ function SearchLeadPanel(props: {
       <div className="detail-section locate-intelligence-actions">
         <div className="detail-section__copy">
           <h4>Decision workflow</h4>
-          <p>Verify the evidence pair first, then route, review the record, or open the case without losing search context.</p>
+          <p>Verify the evidence pair first, then route to the last-seen point, review the record, or open the account without losing search context.</p>
         </div>
         <div className="search-result-card__actions">
-          <Tooltip text="Center this detection on the map and start routing">
+          <Tooltip text="Route to this vehicle's last-seen point">
             <button className="btn btn--primary" type="button" onClick={props.onMap}>
-              Route to Lead
+              Route to Last Seen
             </button>
           </Tooltip>
           <Tooltip text="View full detection record and evidence">
@@ -4997,7 +5031,7 @@ function SearchResultCard(props: {
   const severity = searchResultSeverity(props.row);
   const workflowSummary =
     props.assignment
-      ? props.assignment.summary ?? `Dispatch ${dispatchStatusLabel(props.assignment.status)}`
+      ? props.assignment.summary ?? `Assignment ${dispatchStatusLabel(props.assignment.status)}`
       : props.followUp
         ? props.followUp.summary ?? `Follow-up ${titleCase(props.followUp.status)}`
         : null;
@@ -5072,7 +5106,7 @@ function SearchResultCard(props: {
           </div>
         ) : null}
         <div className="search-result-card__actions">
-          <Tooltip text="Show last-seen location on map and route">
+          <Tooltip text="Route to this vehicle's last-seen point">
             <button className="link-button" type="button" onClick={stopEvent(props.onMap)}>
               Route
             </button>
@@ -5244,10 +5278,10 @@ function NavPanel(props: {
   totalReads: number;
 }): ReactElement {
   const navItems: Array<{ id: AppScreen; label: string; tip: string; count: number | null }> = [
-    { id: "console", label: "Dashboard", tip: "Live camera feeds, map, and detection feed", count: null },
-    { id: "search", label: "Locate", tip: "Search detections by plate, camera, or vehicle", count: null },
-    { id: "accounts", label: "Accounts", tip: "Manage recovery watch-list entries", count: props.activeHotlists > 0 ? props.activeHotlists : null },
-    { id: "hotlists", label: "Cases", tip: "Active alerts, follow-ups, and dispatch", count: props.activeAlerts > 0 ? props.activeAlerts : null },
+    { id: "console", label: "Console", tip: "Live cameras, map routing, and plate reads", count: null },
+    { id: "search", label: "Locate", tip: "Search sightings by plate, camera, or vehicle", count: null },
+    { id: "accounts", label: "Accounts", tip: "Manage recovery accounts and skip addresses", count: props.activeHotlists > 0 ? props.activeHotlists : null },
+    { id: "hotlists", label: "Recoveries", tip: "Recovery matches, follow-ups, and assigned units", count: props.activeAlerts > 0 ? props.activeAlerts : null },
     { id: "settings", label: "Settings", tip: "System settings, cameras, and API config", count: null },
   ];
 
@@ -5286,7 +5320,7 @@ function NavPanel(props: {
         </div>
         <div className="ops-glance-grid">
           <div className="ops-glance-chip">
-            <span>Alerts</span>
+            <span>Recoveries</span>
             <strong>{props.activeAlerts}</strong>
           </div>
           <div className="ops-glance-chip">
@@ -5309,7 +5343,7 @@ function NavPanel(props: {
               <span>{props.navigationActive ? "Open Route" : props.idleScanEnabled ? "Pause Scan" : "Start Scan"}</span>
             </button>
             <button className="nav-action nav-action--ghost" disabled={props.activeAlerts === 0} type="button" onClick={props.onOpenAlert}>
-              <span>Open Alert</span>
+              <span>Open Recovery</span>
             </button>
           </div>
         </div>
@@ -5622,7 +5656,7 @@ function SearchScreen(props: {
       plate: "Plate / Tag",
       camera: "Camera",
       vehicle: "Vehicle Profile",
-      alert: "Recovery Alerts",
+      alert: "Recovery Matches",
     }[props.searchMode] ?? titleCase(props.searchMode);
   const advancedFilterCount = [
     props.searchFromLocal,
@@ -5651,11 +5685,16 @@ function SearchScreen(props: {
     props.searchMaxLongitude,
   ].filter((value) => value.trim().length > 0).length;
   const timeFilterCount = [props.searchFromLocal, props.searchToLocal].filter((value) => value.trim().length > 0).length;
+  const resultsHeadline = props.searchExecuted
+    ? props.results.length !== props.resultsTotal
+      ? `${props.results.length} shown of ${props.resultsTotal} read${props.resultsTotal === 1 ? "" : "s"}`
+      : `${props.resultsTotal} read${props.resultsTotal === 1 ? "" : "s"} found`
+    : "Recent reads";
 
   return (
     <section className="screen search-screen">
       <ScreenHeader
-        title="Locate Search"
+        title="Locate Vehicles"
         meta={
           <>
             <Badge tone={props.loading ? "warn" : "cyan"}>{props.loading ? "Searching" : "Ready"}</Badge>
@@ -5671,7 +5710,7 @@ function SearchScreen(props: {
               { id: "plate" as const, label: "Plate / Tag" },
               { id: "camera" as const, label: "Camera" },
               { id: "vehicle" as const, label: "Vehicle Profile" },
-              { id: "alert" as const, label: "Recovery Alerts" },
+              { id: "alert" as const, label: "Recovery Matches" },
             ]).map((mode) => (
               <button key={mode.id} className={props.searchMode === mode.id ? "is-active" : ""} type="button" onClick={() => props.setSearchMode(mode.id)}>
                 {mode.label}
@@ -5878,7 +5917,7 @@ function SearchScreen(props: {
             <section className="results-panel">
               <div className="results-panel__header">
                 <div>
-                  <h3>{props.searchExecuted ? `${props.resultsTotal} read${props.resultsTotal === 1 ? "" : "s"} found` : "Recent reads"}</h3>
+                  <h3>{resultsHeadline}</h3>
                   <p className="screen-subtitle">
                     {focusedRow
                       ? `Focused lead ${focusedRow.plate1}${focusedPattern ? ` - ${focusedPattern.label}` : ""}`
@@ -5912,7 +5951,7 @@ function SearchScreen(props: {
                     description={
                       props.searchExecuted
                         ? "Widen the plate fragment, adjust the time window, or remove active filters."
-                        : "Enter a plate fragment or hotlist filter above to pull matching reads."
+                        : "Enter a plate fragment or recovery filter above to pull matching reads."
                     }
                     action={props.searchExecuted ? { label: "Clear filters", onClick: props.onClearFilters, tone: "ghost" } : undefined}
                   />
@@ -6522,7 +6561,7 @@ function HotlistsScreen(props: {
   return (
     <section className="screen hotlists-screen">
       <ScreenHeader
-        title="Recovery Cases"
+        title="Recovery Queue"
         meta={
           <>
             <Badge tone={activeAlertCount > 0 ? "warn" : "muted"}>{`${activeAlertCount} active`}</Badge>
@@ -6533,7 +6572,7 @@ function HotlistsScreen(props: {
 
       <div className="hotlists-summary-strip">
         <div className="search-summary-card">
-          <span>Open cases</span>
+          <span>Open recoveries</span>
           <strong>{activeAlertCount}</strong>
         </div>
         <div className="search-summary-card">
@@ -6545,17 +6584,17 @@ function HotlistsScreen(props: {
           <strong>{props.openFollowUps}</strong>
         </div>
         <div className="search-summary-card">
-          <span>Dispatched</span>
+          <span>Assigned units</span>
           <strong>{props.activeAssignments}</strong>
         </div>
       </div>
 
       <div className="segmented-control hotlists-toolbar-tabs">
         <button className={props.activeTab === "alerts" ? "is-active" : ""} type="button" onClick={() => props.onTabChange("alerts")}>
-          {`Case Queue (${props.alerts.length})`}
+          {`Recovery Queue (${props.alerts.length})`}
         </button>
         <button className={props.activeTab === "recognition" ? "is-active" : ""} type="button" onClick={() => props.onTabChange("recognition")}>
-          {`Scan Feed (${props.activity.length})`}
+          {`Sightings (${props.activity.length})`}
         </button>
       </div>
 
@@ -6564,7 +6603,7 @@ function HotlistsScreen(props: {
           <section className="panel-card hotlists-workspace-card hotlists-queue-card">
             <div className="panel-card__header">
               <div>
-                <h3>Active Cases</h3>
+                <h3>Active Recoveries</h3>
               </div>
               <div className="record-row__stats">
                 <Badge tone="critical">{`${activeAlertCount} active`}</Badge>
@@ -6645,7 +6684,7 @@ function HotlistsScreen(props: {
                     <strong>{focusedAlertCase.followUps.length}</strong>
                   </div>
                   <div className="detail-summary-card">
-                    <span>Dispatch</span>
+                    <span>Assignment</span>
                     <strong>{focusedAlertCase.assignments.length}</strong>
                   </div>
                 </div>
@@ -6670,9 +6709,9 @@ function HotlistsScreen(props: {
                   ) : null}
                   {focusedAlertCase.assignments[0] ? (
                     <div className="detail-note-callout">
-                      <strong>{`Dispatch - ${titleCase(focusedAlertCase.assignments[0].status)}`}</strong>
+                    <strong>{`Assignment - ${titleCase(focusedAlertCase.assignments[0].status)}`}</strong>
                       <p>
-                        {focusedAlertCase.assignments[0].summary ?? focusedAlertCase.assignments[0].notes ?? "Dispatch assignment exists for this case."}
+                        {focusedAlertCase.assignments[0].summary ?? focusedAlertCase.assignments[0].notes ?? "An assignment exists for this recovery."}
                         {focusedAlertCase.assignments[0].destination_label ? ` Destination ${focusedAlertCase.assignments[0].destination_label}.` : ""}
                       </p>
                     </div>
@@ -6683,14 +6722,14 @@ function HotlistsScreen(props: {
                   <DetailField label="Vehicle" value={focusedAlertCase.row?.vehicle ?? "Unclassified vehicle"} />
                   <DetailField label="GPS" value={focusedAlertCase.row?.gps ?? formatGpsValue(focusedAlertCase.alert.gps_latitude, focusedAlertCase.alert.gps_longitude)} />
                   <DetailField
-                    label="Dispatch destination"
+                    label="Recovery address"
                     value={focusedAlertCase.assignments[0]?.destination_label ?? props.activeDestination}
                   />
-                  <DetailField label="Permissions" value={`${props.canManageFollowUps ? "Follow-up" : "Read-only"} / ${props.canManageDispatch ? "Dispatch" : "Read-only"}`} />
+                  <DetailField label="Permissions" value={`${props.canManageFollowUps ? "Follow-up" : "Read-only"} / ${props.canManageDispatch ? "Assignments" : "Read-only"}`} />
                 </div>
 
                 <div className="form-row">
-                  <label className="form-label" htmlFor="alert-response-notes">Response notes</label>
+                  <label className="form-label" htmlFor="alert-response-notes">Recovery notes</label>
                   <textarea
                     className="form-input"
                     id="alert-response-notes"
@@ -6743,9 +6782,9 @@ function HotlistsScreen(props: {
                       Open Record
                     </button>
                   </Tooltip>
-                  <Tooltip text="Navigate to this vehicle's last-seen location">
+                  <Tooltip text="Route to this vehicle's last-seen point">
                     <button className="btn btn--ghost" disabled={!focusedAlertCase.row} type="button" onClick={() => props.onMapDetection(focusedAlertCase.alert.detection_id)}>
-                      Route to Vehicle
+                      Route to Last Seen
                     </button>
                   </Tooltip>
                 </div>
@@ -6854,7 +6893,7 @@ function HotlistsScreen(props: {
                   <section className="case-workflow-card">
                     <div className="panel-card__header">
                       <div>
-                        <h3>Dispatch</h3>
+                        <h3>Assignment</h3>
                       </div>
                       <Badge tone={props.canManageDispatch ? "success" : "muted"}>
                         {props.canManageDispatch ? "Writable" : "Read only"}
@@ -6958,7 +6997,7 @@ function HotlistsScreen(props: {
                           })
                         }
                       >
-                        {props.assignmentSaving ? "Saving..." : focusedAlertCase.assignments[0] ? "Update Dispatch" : "Create Dispatch"}
+                        {props.assignmentSaving ? "Saving..." : focusedAlertCase.assignments[0] ? "Update Assignment" : "Create Assignment"}
                       </button>
                     </div>
                   </section>
@@ -7058,7 +7097,7 @@ function SettingsScreen(props: {
 }): ReactElement {
   const sections: Array<{ id: SettingsSection; title: string; description: string }> = [
     { id: "workspace", title: "Scan workflow", description: "Arrival scan, suppression, and confidence thresholds." },
-    { id: "alerts", title: "Recovery alerts", description: "Alert behavior, audio, and permissions." },
+    { id: "alerts", title: "Recovery notifications", description: "Recovery match behavior, audio, and permissions." },
     { id: "cameras", title: "Cameras", description: "Resolution, night mode, and feed controls." },
     { id: "map", title: "Map and geofence", description: "Radius, route display, and navigation." },
     { id: "system", title: "System and API", description: "Health, connection, sessions, and audit." },
@@ -7071,7 +7110,7 @@ function SettingsScreen(props: {
         title="System Settings"
         meta={
           <>
-            {props.hotlistWarning ? <Badge tone="warn">Review alert settings</Badge> : <Badge tone="success">Operational</Badge>}
+            {props.hotlistWarning ? <Badge tone="warn">Review recovery settings</Badge> : <Badge tone="success">Operational</Badge>}
             <Badge tone={props.dataSource === "live" ? "success" : "muted"}>{props.dataSource.toUpperCase()}</Badge>
             <Badge tone={serviceHealthTone(props.serviceHealthState)}>
               {props.degradedDependencyCount === 0 ? serviceHealthLabel(props.serviceHealthState).toUpperCase() : `${props.degradedDependencyCount} WARNINGS`}
@@ -7139,14 +7178,14 @@ function SettingsScreen(props: {
               <>
                 <SettingsRangeRow title="Duplicate suppression" detail={`${props.settings.duplicateSuppressionSeconds} sec`} min={15} max={300} step={15} value={props.settings.duplicateSuppressionSeconds} onChange={(value) => props.updateSetting("duplicateSuppressionSeconds", value)} />
                 <SettingsRangeRow title="Min OCR confidence" detail={`${props.settings.minConfidence}%`} min={60} max={99} step={1} value={props.settings.minConfidence} onChange={(value) => props.updateSetting("minConfidence", value)} />
-                <ReadOnlyRow title="Idle scan control" value="Dashboard CTA" detail="Idle scanning is toggled from the dashboard, not from the map." />
+                <ReadOnlyRow title="Idle scan control" value="Console CTA" detail="Idle scanning is toggled from the console, not from the map." />
                 <ReadOnlyRow title="Arrival scan behavior" value={props.settings.autoArrivalScan ? "Auto at destination" : "Disabled"} detail="Configured in Map and geofence settings." />
               </>
             ) : null}
 
             {props.settingsSection === "alerts" ? (
               <>
-                <SettingsToggleRow title="Recovery alerts" detail="Show full-screen alert when a repo target is scanned." checked={props.settings.hotlistAlerts} onChange={(checked) => props.updateSetting("hotlistAlerts", checked)} />
+                <SettingsToggleRow title="Recovery notifications" detail="Show a full-screen recovery notice when an assigned plate is scanned." checked={props.settings.hotlistAlerts} onChange={(checked) => props.updateSetting("hotlistAlerts", checked)} />
                 <SettingsToggleRow title="Audible alerts" detail="Play tone on recovery match." checked={props.settings.soundEnabled} onChange={(checked) => props.updateSetting("soundEnabled", checked)} />
                 <SettingsToggleRow title="Vibration" detail="Haptic feedback for field devices." checked={props.settings.vibrationEnabled} onChange={(checked) => props.updateSetting("vibrationEnabled", checked)} />
                 <SettingsRangeRow title="Alert volume" detail={`${props.settings.alertVolume}%`} min={0} max={100} step={5} value={props.settings.alertVolume} onChange={(value) => props.updateSetting("alertVolume", value)} />
@@ -7197,7 +7236,7 @@ function SettingsScreen(props: {
                   }
                 />
                 <ReadOnlyRow title="Follow-ups" value={props.canManageFollowUps ? "Write" : "Read only"} detail="Follow-up case management." />
-                <ReadOnlyRow title="Dispatch" value={props.canManageDispatch ? "Write" : "Read only"} detail="Field dispatch assignments." />
+                <ReadOnlyRow title="Assignments" value={props.canManageDispatch ? "Write" : "Read only"} detail="Field recovery assignments." />
                 <ReadOnlyRow title="Export path" value="runtime/exports" detail="Record export directory." />
                 <SettingsToggleRow title="Auto-delete captures" detail="Clean up temp files after sync." checked={props.settings.autoDeleteTempCaptures} onChange={(checked) => props.updateSetting("autoDeleteTempCaptures", checked)} />
                 <label className="settings-input-row">
@@ -7408,12 +7447,12 @@ function DetailOverlay(props: {
               <strong>{activeFollowUp ? titleCase(activeFollowUp.status) : "None"}</strong>
             </div>
             <div className="detail-summary-card">
-              <span>Dispatch</span>
+              <span>Assignment</span>
               <strong>{activeAssignment ? dispatchStatusLabel(activeAssignment.status) : "None"}</strong>
             </div>
             <div className="detail-summary-card">
-              <span>Alert match</span>
-              <strong>{props.detailRow.alertMatchType ? `${titleCase(props.detailRow.alertMatchType)} match` : "No alert"}</strong>
+              <span>Recovery match</span>
+              <strong>{props.detailRow.alertMatchType ? `${titleCase(props.detailRow.alertMatchType)} match` : "No recovery match"}</strong>
             </div>
           </div>
 
@@ -7439,10 +7478,10 @@ function DetailOverlay(props: {
             <DetailField label="Camera" value={props.detailRow.source} />
             <DetailField label="GPS" value={props.detailRow.gps} />
             <DetailField label="Direction" value={`${props.detailRow.direction} / ${props.detailRow.lane}`} />
-            <DetailField label="Dispatch destination" value={activeAssignment?.destination_label ?? props.activeDestination} />
+            <DetailField label="Recovery address" value={activeAssignment?.destination_label ?? props.activeDestination} />
             <DetailField label="Time" value={formatDateTime(props.detailRow.timestampUtc)} />
             <DetailField label="Sync" value={props.detailRow.syncStatus ?? "local"} />
-            <DetailField label="Alert state" value={props.detailRow.alertStatus ? alertStatusLabel(props.detailRow.alertStatus) : "None"} />
+            <DetailField label="Recovery status" value={props.detailRow.alertStatus ? alertStatusLabel(props.detailRow.alertStatus) : "None"} />
             <DetailField label="Alt read" value={props.detailRow.plate2 || "--"} />
           </div>
 
@@ -7471,9 +7510,9 @@ function DetailOverlay(props: {
             ) : null}
             {activeAssignment ? (
               <div className="detail-note-callout">
-                <strong>{`Dispatch - ${dispatchStatusLabel(activeAssignment.status)}`}</strong>
+                <strong>{`Assignment - ${dispatchStatusLabel(activeAssignment.status)}`}</strong>
                 <p>
-                  {activeAssignment.summary ?? activeAssignment.notes ?? "Dispatch assignment attached to this vehicle."}
+                  {activeAssignment.summary ?? activeAssignment.notes ?? "An assignment is attached to this vehicle."}
                   {activeAssignment.assigned_unit_label ? ` Unit ${activeAssignment.assigned_unit_label}.` : ""}
                   {activeAssignment.destination_label ? ` Destination ${activeAssignment.destination_label}.` : ""}
                 </p>
@@ -7607,9 +7646,9 @@ function DetailOverlay(props: {
         </div>
 
         <div className="detail-overlay__actions">
-          <Tooltip text="Navigate to this vehicle's last location">
+          <Tooltip text="Route to this vehicle's last-seen point">
             <button className="btn btn--primary" type="button" onClick={props.onOpenMap}>
-              Route to Vehicle
+              Route to Last Seen
             </button>
           </Tooltip>
           <Tooltip text={props.hotlistEntry ? "Open existing recovery account" : "Create a new recovery account for this plate"}>
@@ -7659,7 +7698,7 @@ function HotlistAlertOverlay(props: {
       <div className="hotlist-alert__header">
         <div>
           <p className="eyebrow">Recovery Alert</p>
-          <h2>Repo Target Located</h2>
+          <h2>Recovery Match Located</h2>
         </div>
         <div className="hotlist-alert__header-right">
           <Badge tone="critical">{props.hotlistAudioMuted ? "Muted" : "Audio + visual"}</Badge>
@@ -7717,7 +7756,7 @@ function HotlistAlertOverlay(props: {
         <DetailField label="Last seen" value={formatDateTime(props.hotlistRow.timestampUtc)} />
         <DetailField label="Camera" value={props.hotlistRow.source} />
         <DetailField label="GPS" value={props.hotlistRow.gps} />
-        <DetailField label="Dispatch destination" value={props.assignment?.destination_label ?? props.activeDestination} />
+        <DetailField label="Recovery address" value={props.assignment?.destination_label ?? props.activeDestination} />
       </div>
 
       <div className="hotlist-alert__review-strip">
@@ -7753,9 +7792,9 @@ function HotlistAlertOverlay(props: {
 
       <div className="hotlist-alert__actions">
         <div className="hotlist-alert__actions-primary">
-          <Tooltip text="Navigate to this vehicle's last-seen location">
+          <Tooltip text="Route to this vehicle's last-seen point">
             <button className="btn btn--primary" type="button" onClick={props.onNavigate}>
-              Route to Vehicle
+              Route to Last Seen
             </button>
           </Tooltip>
           <Tooltip text="View full detection record and evidence">
