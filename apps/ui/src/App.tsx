@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type MouseEvent, type ReactElement, type ReactNode } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type ReactElement, type ReactNode } from "react";
 import { Circle, MapContainer, Marker, Polyline, Popup, TileLayer } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -126,6 +126,32 @@ interface CameraUiFeed {
   lastSeenAtUtc?: string | null;
 }
 
+interface DestinationCoords {
+  lat: number;
+  lng: number;
+}
+
+interface RecentDestination {
+  id: string;
+  address: string;
+  label?: string;
+  coords: DestinationCoords | null;
+  lastUsedAtUtc: string;
+}
+
+type DestinationTargetSource = "recent" | "account" | "alert" | "read" | "manual";
+
+interface DestinationTarget {
+  id: string;
+  source: DestinationTargetSource;
+  address: string;
+  label: string;
+  subtitle?: string;
+  coords: DestinationCoords | null;
+  accent?: "critical" | "warn" | "success" | "cyan" | "muted";
+  relativeTime?: string;
+}
+
 interface HotlistAlertItem {
   alert: DashboardAlert;
   row: ConsoleDetectionRow | null;
@@ -229,6 +255,9 @@ interface OperationalSignal {
 const uiSettingsStorageKey = "reposcan.ui.desktop-settings.v1";
 const apiKeyStorageKey = "reposcan.ui.api-key.v2";
 const targetAddressStorageKey = "reposcan.ui.target-address.v1";
+const targetCoordsStorageKey = "reposcan.ui.target-coords.v1";
+const recentDestinationsStorageKey = "reposcan.ui.recent-destinations.v1";
+const recentDestinationsLimit = 6;
 const sessionIdStorageKey = "reposcan.ui.session-id.v1";
 
 function loadOrCreateSessionId(): string {
@@ -372,6 +401,69 @@ function loadStoredString(key: string, fallback = ""): string {
   } catch {
     return fallback;
   }
+}
+
+function loadStoredCoords(key: string): DestinationCoords | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<DestinationCoords>;
+    if (typeof parsed.lat === "number" && typeof parsed.lng === "number") {
+      return { lat: parsed.lat, lng: parsed.lng };
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function loadRecentDestinations(): RecentDestination[] {
+  if (typeof window === "undefined") {
+    return [];
+  }
+  try {
+    const raw = window.localStorage.getItem(recentDestinationsStorageKey);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as RecentDestination[];
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((entry): entry is RecentDestination =>
+        typeof entry?.id === "string" && typeof entry.address === "string" && typeof entry.lastUsedAtUtc === "string",
+      )
+      .slice(0, recentDestinationsLimit);
+  } catch {
+    return [];
+  }
+}
+
+function haversineFeet(a: DestinationCoords, b: DestinationCoords): number {
+  const earthRadiusMeters = 6371000;
+  const toRad = (value: number): number => (value * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  const meters = 2 * earthRadiusMeters * Math.asin(Math.min(1, Math.sqrt(h)));
+  return Math.round(meters * 3.28084);
+}
+
+function formatRelativeTime(timestampUtc: string, now: number = Date.now()): string {
+  const ts = Date.parse(timestampUtc);
+  if (Number.isNaN(ts)) return "";
+  const diffSec = Math.round((now - ts) / 1000);
+  if (diffSec < 45) return "just now";
+  if (diffSec < 90) return "1 min ago";
+  const diffMin = Math.round(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} min ago`;
+  const diffHr = Math.round(diffMin / 60);
+  if (diffHr < 24) return `${diffHr} hr ago`;
+  const diffDay = Math.round(diffHr / 24);
+  if (diffDay < 7) return `${diffDay} day${diffDay === 1 ? "" : "s"} ago`;
+  return new Date(ts).toLocaleDateString();
 }
 
 function loadStoredSettings(): UiSettings {
@@ -1800,6 +1892,8 @@ function MapStagePanel(props: {
   activeDestination: string;
   destinationInput: string;
   destinationModalOpen: boolean;
+  destinationTargets: DestinationTarget[];
+  destinationPreview: { distance: string; eta: string; feet: number } | null;
   idleScanEnabled: boolean;
   layerMenuOpen: boolean;
   navigationActive: boolean;
@@ -1812,10 +1906,13 @@ function MapStagePanel(props: {
   settings: UiSettings;
   unitPosition: { lat: number; lng: number };
   withinRadius: boolean;
+  onApplyDestinationTarget: (target: DestinationTarget) => void;
+  onClearDestinationDraft: () => void;
   onCloseDestinationModal: () => void;
   onDestinationChange: (value: string) => void;
   onEndRoute: () => void;
   onOpenDestinationModal: () => void;
+  onRemoveRecentDestination: (id: string) => void;
   onSelect: (rowId: string) => void;
   onStageDestination: () => void;
   onStartRoute: () => void;
@@ -1949,44 +2046,246 @@ function MapStagePanel(props: {
       </div>
 
       {props.destinationModalOpen ? (
-        <div className="map-stage__modal-scrim" role="presentation" onClick={props.onCloseDestinationModal}>
-          <div className="map-stage__modal" role="dialog" aria-modal="true" aria-label="Set destination" onClick={(event) => event.stopPropagation()}>
-            <div className="map-stage__modal-header">
-              <div>
-                <span className="eyebrow">Map Route</span>
-                <h3>Set Destination</h3>
-              </div>
-              <button className="map-stage__modal-close" type="button" onClick={props.onCloseDestinationModal}>
-                Close
-              </button>
-            </div>
-            <label className="field-label" htmlFor="map-destination-input">
-              Destination address
-            </label>
-            <input
-              id="map-destination-input"
-              className="text-input"
-              placeholder="4128 W Fulton St, Chicago, IL"
-              type="text"
-              value={props.destinationInput}
-              onChange={(event) => props.onDestinationChange(event.target.value)}
-            />
-            <div className="map-stage__modal-copy">
-              <span>{hasDestination ? "Save the destination only, or start the route immediately from the map." : "Enter an address, then stage it or start navigation."}</span>
-              <strong>{`Arrival auto-scan defaults to ${props.settings.arrivalRadiusFeet} ft.`}</strong>
-            </div>
-            <div className="button-row">
-              <button className="btn btn--ghost" type="button" onClick={props.onStageDestination}>
-                Save Target
-              </button>
-              <button className="btn btn--primary" type="button" onClick={props.onStartRoute}>
-                Start Route
-              </button>
-            </div>
-          </div>
-        </div>
+        <DestinationModal
+          destinationInput={props.destinationInput}
+          destinationTargets={props.destinationTargets}
+          destinationPreview={props.destinationPreview}
+          hasDestination={hasDestination}
+          arrivalRadiusFeet={props.settings.arrivalRadiusFeet}
+          onApplyTarget={props.onApplyDestinationTarget}
+          onClearDraft={props.onClearDestinationDraft}
+          onClose={props.onCloseDestinationModal}
+          onDestinationChange={props.onDestinationChange}
+          onRemoveRecent={props.onRemoveRecentDestination}
+          onStageDestination={props.onStageDestination}
+          onStartRoute={props.onStartRoute}
+        />
       ) : null}
     </div>
+  );
+}
+
+function DestinationModal(props: {
+  destinationInput: string;
+  destinationTargets: DestinationTarget[];
+  destinationPreview: { distance: string; eta: string; feet: number } | null;
+  hasDestination: boolean;
+  arrivalRadiusFeet: number;
+  onApplyTarget: (target: DestinationTarget) => void;
+  onClearDraft: () => void;
+  onClose: () => void;
+  onDestinationChange: (value: string) => void;
+  onRemoveRecent: (id: string) => void;
+  onStageDestination: () => void;
+  onStartRoute: () => void;
+}): ReactElement {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, []);
+
+  useEffect(() => {
+    function handleKey(event: KeyboardEvent): void {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        props.onClose();
+      }
+    }
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [props.onClose]);
+
+  const trimmed = props.destinationInput.trim();
+  const canCommit = trimmed.length > 0;
+  const groupedTargets = {
+    alert: props.destinationTargets.filter((target) => target.source === "alert"),
+    read: props.destinationTargets.filter((target) => target.source === "read"),
+    account: props.destinationTargets.filter((target) => target.source === "account"),
+    recent: props.destinationTargets.filter((target) => target.source === "recent"),
+  };
+
+  function handleInputKeyDown(event: ReactKeyboardEvent<HTMLInputElement>): void {
+    if (event.key === "Enter" && canCommit) {
+      event.preventDefault();
+      props.onStartRoute();
+    }
+  }
+
+  return (
+    <div className="destination-modal__scrim" role="presentation" onClick={props.onClose}>
+      <div
+        className="destination-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="destination-modal-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="destination-modal__header">
+          <div>
+            <span className="eyebrow">Route Planner</span>
+            <h3 id="destination-modal-title">{props.hasDestination ? "Change Destination" : "Set Destination"}</h3>
+            <p className="destination-modal__hint">
+              Pick a recent, alert, or account address, or type a new one. Press Enter to start the route.
+            </p>
+          </div>
+          <button
+            className="destination-modal__close"
+            type="button"
+            onClick={props.onClose}
+            aria-label="Close destination planner"
+          >
+            Close
+          </button>
+        </div>
+
+        <div className="destination-modal__field">
+          <label className="field-label" htmlFor="destination-modal-input">
+            Destination address
+          </label>
+          <div className="destination-modal__input-row">
+            <input
+              ref={inputRef}
+              id="destination-modal-input"
+              className="text-input destination-modal__input"
+              placeholder="Street, city, state"
+              type="text"
+              value={props.destinationInput}
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(event) => props.onDestinationChange(event.target.value)}
+              onKeyDown={handleInputKeyDown}
+            />
+            {trimmed.length > 0 ? (
+              <button
+                className="destination-modal__clear"
+                type="button"
+                onClick={props.onClearDraft}
+                aria-label="Clear destination"
+              >
+                Clear
+              </button>
+            ) : null}
+          </div>
+        </div>
+
+        {props.destinationPreview ? (
+          <div className="destination-modal__preview">
+            <div>
+              <span className="eyebrow">Route preview</span>
+              <strong>{props.destinationPreview.distance}</strong>
+              <span className="destination-modal__preview-sub">ETA {props.destinationPreview.eta}</span>
+            </div>
+            <div className="destination-modal__preview-meta">
+              <span>Auto-scan arms at {props.arrivalRadiusFeet} ft</span>
+            </div>
+          </div>
+        ) : canCommit ? (
+          <div className="destination-modal__preview destination-modal__preview--pending">
+            <span>Location coordinates not available — route preview will appear once coordinates resolve.</span>
+          </div>
+        ) : null}
+
+        <div className="destination-modal__targets">
+          <TargetGroup
+            label="Latest alert"
+            targets={groupedTargets.alert}
+            onApply={props.onApplyTarget}
+            emptyHint="No active alert with a mapped location"
+          />
+          <TargetGroup
+            label="Latest read"
+            targets={groupedTargets.read}
+            onApply={props.onApplyTarget}
+            emptyHint="No recent plate reads with GPS"
+          />
+          <TargetGroup
+            label="Recovery accounts"
+            targets={groupedTargets.account}
+            onApply={props.onApplyTarget}
+            emptyHint="Add address details on account cards to see them here"
+          />
+          <TargetGroup
+            label="Recent destinations"
+            targets={groupedTargets.recent}
+            onApply={props.onApplyTarget}
+            onRemove={props.onRemoveRecent}
+            emptyHint="Staged destinations show up here after you use them"
+          />
+        </div>
+
+        <div className="destination-modal__actions">
+          <button
+            className="btn btn--ghost"
+            type="button"
+            onClick={props.onStageDestination}
+            disabled={!canCommit}
+          >
+            Save Target
+          </button>
+          <button
+            className="btn btn--primary"
+            type="button"
+            onClick={props.onStartRoute}
+            disabled={!canCommit}
+          >
+            Start Route
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TargetGroup(props: {
+  label: string;
+  targets: DestinationTarget[];
+  onApply: (target: DestinationTarget) => void;
+  onRemove?: (id: string) => void;
+  emptyHint: string;
+}): ReactElement {
+  return (
+    <section className="target-group" aria-label={props.label}>
+      <header className="target-group__header">
+        <span className="eyebrow">{props.label}</span>
+      </header>
+      {props.targets.length === 0 ? (
+        <p className="target-group__empty">{props.emptyHint}</p>
+      ) : (
+        <ul className="target-group__list">
+          {props.targets.map((target) => (
+            <li key={target.id} className={`target-card target-card--${target.accent ?? "muted"}`}>
+              <button
+                type="button"
+                className="target-card__body"
+                onClick={() => props.onApply(target)}
+              >
+                <div className="target-card__headline">
+                  <strong>{target.label}</strong>
+                  {target.relativeTime ? <span className="target-card__time">{target.relativeTime}</span> : null}
+                </div>
+                <span className="target-card__address">{target.address}</span>
+                {target.subtitle ? <span className="target-card__subtitle">{target.subtitle}</span> : null}
+                {target.coords == null ? (
+                  <span className="target-card__badge">Address only</span>
+                ) : null}
+              </button>
+              {props.onRemove ? (
+                <button
+                  type="button"
+                  className="target-card__remove"
+                  aria-label={`Remove ${target.label}`}
+                  onClick={() => props.onRemove?.(target.id)}
+                >
+                  ×
+                </button>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
@@ -2183,8 +2482,12 @@ function App(): ReactElement {
   const [apiKey, setApiKey] = useState<string>(() => loadStoredString(apiKeyStorageKey));
   const [apiKeyInput, setApiKeyInput] = useState<string>(() => loadStoredString(apiKeyStorageKey));
   const [activeDestination, setActiveDestination] = useState<string>(() => loadStoredString(targetAddressStorageKey));
+  const [activeDestinationCoords, setActiveDestinationCoords] = useState<DestinationCoords | null>(() => loadStoredCoords(targetCoordsStorageKey));
   const [destinationInput, setDestinationInput] = useState<string>(() => loadStoredString(targetAddressStorageKey));
+  const [destinationDraftCoords, setDestinationDraftCoords] = useState<DestinationCoords | null>(() => loadStoredCoords(targetCoordsStorageKey));
+  const [destinationInitialInput, setDestinationInitialInput] = useState<string>("");
   const [destinationModalOpen, setDestinationModalOpen] = useState(false);
+  const [recentDestinations, setRecentDestinations] = useState<RecentDestination[]>(() => loadRecentDestinations());
   const [mapLayerMenuOpen, setMapLayerMenuOpen] = useState(false);
   const [navigationActive, setNavigationActive] = useState(false);
   const [distanceFeet, setDistanceFeet] = useState(1400);
@@ -2271,6 +2574,20 @@ function App(): ReactElement {
       window.localStorage.setItem(targetAddressStorageKey, activeDestination);
     }
   }, [activeDestination]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (activeDestinationCoords) {
+      window.localStorage.setItem(targetCoordsStorageKey, JSON.stringify(activeDestinationCoords));
+    } else {
+      window.localStorage.removeItem(targetCoordsStorageKey);
+    }
+  }, [activeDestinationCoords]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(recentDestinationsStorageKey, JSON.stringify(recentDestinations));
+  }, [recentDestinations]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -2639,6 +2956,110 @@ function App(): ReactElement {
     },
     [hotlistAlertItems, allRows],
   );
+  const destinationTargets = useMemo<DestinationTarget[]>(() => {
+    const targets: DestinationTarget[] = [];
+    const now = Date.now();
+
+    const latestAlert = hotlistAlertItems.find(({ row, alert }) => {
+      const linkedEntry = hotlists.find((entry) => entry.entry_id === alert.hotlist_entry_id);
+      const hasCoords =
+        (row?.lat != null && row?.lng != null) ||
+        (alert.gps_latitude != null && alert.gps_longitude != null) ||
+        (linkedEntry?.address_latitude != null && linkedEntry?.address_longitude != null);
+      return hasCoords;
+    });
+    if (latestAlert) {
+      const { alert, row } = latestAlert;
+      const linkedEntry = hotlists.find((entry) => entry.entry_id === alert.hotlist_entry_id) ?? null;
+      const lat = row?.lat ?? alert.gps_latitude ?? linkedEntry?.address_latitude ?? null;
+      const lng = row?.lng ?? alert.gps_longitude ?? linkedEntry?.address_longitude ?? null;
+      const addressFromEntry = linkedEntry
+        ? [linkedEntry.address_line1, linkedEntry.address_city, linkedEntry.address_state]
+            .filter((value): value is string => Boolean(value && value.trim()))
+            .join(", ")
+        : "";
+      const fallbackAddress = row ? `${row.plate1} • ${row.source}` : alert.hotlist_label ?? "Latest alert";
+      const plate = row?.plate1 ?? normalizePlate(alert.matched_plate_text);
+      targets.push({
+        id: `target-alert-${alert.alert_id}`,
+        source: "alert",
+        address: addressFromEntry || fallbackAddress,
+        label: plate ? `Last alert • ${plate}` : "Last alert",
+        subtitle: alert.hotlist_label ?? (row ? row.vehicle : undefined),
+        coords: typeof lat === "number" && typeof lng === "number" ? { lat, lng } : null,
+        accent: "critical",
+        relativeTime: formatRelativeTime(alert.updated_at_utc ?? alert.timestamp_utc, now),
+      });
+    }
+
+    const latestRow = allRows.find((row) => typeof row.lat === "number" && typeof row.lng === "number");
+    if (latestRow) {
+      targets.push({
+        id: `target-read-${latestRow.id}`,
+        source: "read",
+        address: latestRow.gps || `${latestRow.lat.toFixed(5)}, ${latestRow.lng.toFixed(5)}`,
+        label: `Last read • ${latestRow.plate1}`,
+        subtitle: latestRow.source,
+        coords: { lat: latestRow.lat, lng: latestRow.lng },
+        accent: "cyan",
+        relativeTime: formatRelativeTime(latestRow.timestampUtc, now),
+      });
+    }
+
+    const activeHotlistsWithAddress = hotlists.filter(
+      (entry) => entry.active && (entry.address_line1 || entry.address_label),
+    );
+    for (const entry of activeHotlistsWithAddress.slice(0, 4)) {
+      const parts = [entry.address_line1, entry.address_city, entry.address_state]
+        .filter((value): value is string => Boolean(value && value.trim()));
+      const address = parts.length > 0 ? parts.join(", ") : entry.address_label ?? "";
+      if (!address) continue;
+      const lat = entry.address_latitude;
+      const lng = entry.address_longitude;
+      const plate = normalizePlate(entry.plate_text);
+      targets.push({
+        id: `target-account-${entry.entry_id}`,
+        source: "account",
+        address,
+        label: entry.address_label ?? (plate ? `Account • ${plate}` : "Account address"),
+        subtitle: plate || hotlistIdentifierSummary(entry),
+        coords: typeof lat === "number" && typeof lng === "number" ? { lat, lng } : null,
+        accent: "warn",
+      });
+    }
+
+    for (const entry of recentDestinations) {
+      targets.push({
+        id: `target-recent-${entry.id}`,
+        source: "recent",
+        address: entry.address,
+        label: entry.label ?? "Recent",
+        subtitle: formatRelativeTime(entry.lastUsedAtUtc, now),
+        coords: entry.coords,
+        accent: "muted",
+        relativeTime: formatRelativeTime(entry.lastUsedAtUtc, now),
+      });
+    }
+
+    const seen = new Set<string>();
+    return targets.filter((target) => {
+      const key = target.address.trim().toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [hotlistAlertItems, allRows, hotlists, recentDestinations]);
+
+  const destinationPreview = useMemo(() => {
+    if (!destinationDraftCoords) return null;
+    const feet = haversineFeet(unitPosition, destinationDraftCoords);
+    return {
+      distance: formatDistance(feet),
+      eta: formatEta(feet, true),
+      feet,
+    };
+  }, [destinationDraftCoords, unitPosition]);
+
   const recognitionActivityItems = useMemo<RecognitionActivityItem[]>(
     () =>
       [...(overview?.popup_activity ?? [])]
@@ -2754,8 +3175,41 @@ function App(): ReactElement {
     }));
   }
 
+  function rememberDestination(address: string, coords: DestinationCoords | null, label?: string): void {
+    const trimmed = address.trim();
+    if (!trimmed) return;
+    const nextEntry: RecentDestination = {
+      id: `rd_${trimmed.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 48)}_${Date.now().toString(36)}`,
+      address: trimmed,
+      label,
+      coords,
+      lastUsedAtUtc: new Date().toISOString(),
+    };
+    setRecentDestinations((current) => {
+      const deduped = current.filter((entry) => entry.address.trim().toLowerCase() !== trimmed.toLowerCase());
+      return [nextEntry, ...deduped].slice(0, recentDestinationsLimit);
+    });
+  }
+
+  function applyDestinationTarget(target: DestinationTarget): void {
+    setDestinationInput(target.address);
+    setDestinationDraftCoords(target.coords);
+  }
+
+  function clearDestinationDraft(): void {
+    setDestinationInput("");
+    setDestinationDraftCoords(null);
+  }
+
+  function removeRecentDestination(id: string): void {
+    setRecentDestinations((current) => current.filter((entry) => entry.id !== id));
+  }
+
   function openDestinationModal(): void {
-    setDestinationInput(activeDestination || targetRoute.address);
+    const initial = activeDestination || "";
+    setDestinationInput(initial);
+    setDestinationDraftCoords(activeDestinationCoords);
+    setDestinationInitialInput(initial);
     setMapLayerMenuOpen(false);
     setStageView("map");
     switchScreen("console");
@@ -2763,14 +3217,28 @@ function App(): ReactElement {
   }
 
   function closeDestinationModal(): void {
+    const currentTrim = destinationInput.trim();
+    const initialTrim = destinationInitialInput.trim();
+    if (currentTrim && currentTrim !== initialTrim) {
+      const confirmed =
+        typeof window === "undefined"
+          ? true
+          : window.confirm("Discard the destination you just entered?");
+      if (!confirmed) return;
+    }
     setDestinationModalOpen(false);
-    setDestinationInput(activeDestination || targetRoute.address);
+    setDestinationInput(activeDestination);
+    setDestinationDraftCoords(activeDestinationCoords);
   }
 
   function stageDestination(): void {
-    const nextDestination = destinationInput.trim() || targetRoute.address;
+    const nextDestination = destinationInput.trim();
+    if (!nextDestination) return;
     setActiveDestination(nextDestination);
+    setActiveDestinationCoords(destinationDraftCoords);
     setDestinationInput(nextDestination);
+    setDestinationInitialInput(nextDestination);
+    rememberDestination(nextDestination, destinationDraftCoords);
     setMapLayerMenuOpen(false);
     setDestinationModalOpen(false);
     setStageView("map");
@@ -2778,9 +3246,14 @@ function App(): ReactElement {
   }
 
   function startRoute(): void {
-    const nextDestination = destinationInput.trim() || activeDestination || targetRoute.address;
+    const nextDestination = destinationInput.trim() || activeDestination;
+    if (!nextDestination) return;
+    const nextCoords = destinationDraftCoords ?? activeDestinationCoords;
     setActiveDestination(nextDestination);
+    setActiveDestinationCoords(nextCoords);
     setDestinationInput(nextDestination);
+    setDestinationInitialInput(nextDestination);
+    rememberDestination(nextDestination, nextCoords);
     setMapLayerMenuOpen(false);
     setDestinationModalOpen(false);
     setNavigationActive(true);
@@ -3616,6 +4089,9 @@ function App(): ReactElement {
               dataSource={dataSource}
               destinationInput={destinationInput}
               destinationModalOpen={destinationModalOpen}
+              destinationTargets={destinationTargets}
+              destinationPreview={destinationPreview}
+              recentDestinations={recentDestinations}
               idleScanEnabled={idleScanEnabled}
               layerMenuOpen={mapLayerMenuOpen}
               navigationActive={navigationActive}
@@ -3632,11 +4108,14 @@ function App(): ReactElement {
               withinRadius={withinRadius}
               secondaryCamera={secondaryCamera}
               secondaryCameraFocusRow={secondaryCameraFocusRow}
+              onApplyDestinationTarget={applyDestinationTarget}
+              onClearDestinationDraft={clearDestinationDraft}
               onCloseDestinationModal={closeDestinationModal}
               onDestinationChange={setDestinationInput}
               onEndRoute={endRoute}
               onOpenDetail={openDetail}
               onOpenDestinationModal={openDestinationModal}
+              onRemoveRecentDestination={removeRecentDestination}
               onConsoleLayoutChange={setConsoleLayoutMode}
               onSelectCamera={setSelectedCameraId}
               onSelectDetection={setSelectedDetectionId}
@@ -4578,6 +5057,9 @@ function ConsoleScreen(props: {
   dataSource: DataSource;
   destinationInput: string;
   destinationModalOpen: boolean;
+  destinationTargets: DestinationTarget[];
+  destinationPreview: { distance: string; eta: string; feet: number } | null;
+  recentDestinations: RecentDestination[];
   idleScanEnabled: boolean;
   layerMenuOpen: boolean;
   navigationActive: boolean;
@@ -4593,11 +5075,14 @@ function ConsoleScreen(props: {
   routePath: [number, number][];
   routeStatusLabel: string;
   withinRadius: boolean;
+  onApplyDestinationTarget: (target: DestinationTarget) => void;
+  onClearDestinationDraft: () => void;
   onCloseDestinationModal: () => void;
   onDestinationChange: (value: string) => void;
   onEndRoute: () => void;
   onOpenDetail: (row: ConsoleDetectionRow) => void;
   onOpenDestinationModal: () => void;
+  onRemoveRecentDestination: (id: string) => void;
   onConsoleLayoutChange: (mode: ConsoleLayoutMode) => void;
   onSelectCamera: (cameraId: string) => void;
   onSelectDetection: (rowId: string) => void;
@@ -4643,6 +5128,42 @@ function ConsoleScreen(props: {
   const layoutStyle: CSSProperties | undefined = stageFraction != null
     ? { gridTemplateRows: `minmax(0, ${stageFraction}fr) auto minmax(0, ${1 - stageFraction}fr)` }
     : undefined;
+
+  const mapPanelProps = {
+    alertMarkers: props.alertMarkers,
+    activeDestination: props.activeDestination,
+    destinationInput: props.destinationInput,
+    destinationModalOpen: props.destinationModalOpen,
+    destinationTargets: props.destinationTargets,
+    destinationPreview: props.destinationPreview,
+    idleScanEnabled: props.idleScanEnabled,
+    layerMenuOpen: props.layerMenuOpen,
+    navigationActive: props.navigationActive,
+    routeDistance: props.routeDistance,
+    routeEta: props.routeEta,
+    routePath: props.routePath,
+    routeStatusLabel: props.routeStatusLabel,
+    rows: props.allRows.slice(0, 8),
+    selectedRowId: props.selectedDetectionId,
+    settings: props.settings,
+    unitPosition: props.unitPosition,
+    withinRadius: props.withinRadius,
+    onApplyDestinationTarget: props.onApplyDestinationTarget,
+    onClearDestinationDraft: props.onClearDestinationDraft,
+    onCloseDestinationModal: props.onCloseDestinationModal,
+    onDestinationChange: props.onDestinationChange,
+    onEndRoute: props.onEndRoute,
+    onOpenDestinationModal: props.onOpenDestinationModal,
+    onRemoveRecentDestination: props.onRemoveRecentDestination,
+    onSelect: props.onSelectDetection,
+    onStageDestination: props.onStageDestination,
+    onStartRoute: props.onStartRoute,
+    onToggleActiveAlertPins: props.onToggleActiveAlertPins,
+    onToggleDetectionPins: props.onToggleDetectionPins,
+    onToggleHistoricalAlertPins: props.onToggleHistoricalAlertPins,
+    onToggleLayerMenu: props.onToggleLayerMenu,
+    onToggleRadiusRing: props.onToggleRadiusRing,
+  } as const;
 
   return (
     <section className="screen">
@@ -4720,72 +5241,13 @@ function ConsoleScreen(props: {
                 </article>
 
                 <article className="console-overview-card console-overview-card--map">
-                  <MapStagePanel
-                    compact
-                    alertMarkers={props.alertMarkers}
-                    activeDestination={props.activeDestination}
-                    destinationInput={props.destinationInput}
-                    destinationModalOpen={props.destinationModalOpen}
-                    idleScanEnabled={props.idleScanEnabled}
-                    layerMenuOpen={props.layerMenuOpen}
-                    navigationActive={props.navigationActive}
-                    routeDistance={props.routeDistance}
-                    routeEta={props.routeEta}
-                    routePath={props.routePath}
-                    routeStatusLabel={props.routeStatusLabel}
-                    rows={props.allRows.slice(0, 8)}
-                    selectedRowId={props.selectedDetectionId}
-                    settings={props.settings}
-                    unitPosition={props.unitPosition}
-                    withinRadius={props.withinRadius}
-                    onCloseDestinationModal={props.onCloseDestinationModal}
-                    onDestinationChange={props.onDestinationChange}
-                    onEndRoute={props.onEndRoute}
-                    onOpenDestinationModal={props.onOpenDestinationModal}
-                    onSelect={props.onSelectDetection}
-                    onStageDestination={props.onStageDestination}
-                    onStartRoute={props.onStartRoute}
-                    onToggleActiveAlertPins={props.onToggleActiveAlertPins}
-                    onToggleDetectionPins={props.onToggleDetectionPins}
-                    onToggleHistoricalAlertPins={props.onToggleHistoricalAlertPins}
-                    onToggleLayerMenu={props.onToggleLayerMenu}
-                    onToggleRadiusRing={props.onToggleRadiusRing}
-                  />
+                  <MapStagePanel compact {...mapPanelProps} />
                 </article>
               </div>
             ) : props.stageView === "camera" ? (
               <CameraViewport cameraId={props.selectedCameraId} row={props.cameraFocusRow} dataSource={props.dataSource} />
             ) : (
-              <MapStagePanel
-                alertMarkers={props.alertMarkers}
-                activeDestination={props.activeDestination}
-                destinationInput={props.destinationInput}
-                destinationModalOpen={props.destinationModalOpen}
-                idleScanEnabled={props.idleScanEnabled}
-                layerMenuOpen={props.layerMenuOpen}
-                navigationActive={props.navigationActive}
-                routeDistance={props.routeDistance}
-                routeEta={props.routeEta}
-                routePath={props.routePath}
-                routeStatusLabel={props.routeStatusLabel}
-                rows={props.allRows.slice(0, 8)}
-                selectedRowId={props.selectedDetectionId}
-                settings={props.settings}
-                unitPosition={props.unitPosition}
-                withinRadius={props.withinRadius}
-                onCloseDestinationModal={props.onCloseDestinationModal}
-                onDestinationChange={props.onDestinationChange}
-                onEndRoute={props.onEndRoute}
-                onOpenDestinationModal={props.onOpenDestinationModal}
-                onSelect={props.onSelectDetection}
-                onStageDestination={props.onStageDestination}
-                onStartRoute={props.onStartRoute}
-                onToggleActiveAlertPins={props.onToggleActiveAlertPins}
-                onToggleDetectionPins={props.onToggleDetectionPins}
-                onToggleHistoricalAlertPins={props.onToggleHistoricalAlertPins}
-                onToggleLayerMenu={props.onToggleLayerMenu}
-                onToggleRadiusRing={props.onToggleRadiusRing}
-              />
+              <MapStagePanel {...mapPanelProps} />
             )}
           </div>
         </section>
