@@ -521,6 +521,17 @@ class TestTrainingProfileSchema:
         assert profile.weight_decay == 0.0005
         assert profile.label_smoothing == 0.08
 
+    def test_make_model_warmstart_v2_profile_parses(self):
+        profile = load_training_profile(CONFIGS / "training" / "vehicle-make-model-warmstart-v2.yaml")
+        assert profile.task == DatasetTask.vehicle_make_model_classification
+        assert profile.framework == TrainingFramework.torchvision
+        assert profile.base_model == "efficientnet_b0"
+        assert profile.dropout == pytest.approx(0.3)
+        assert profile.freeze_backbone_epochs == 5
+        assert profile.validation_fraction == pytest.approx(0.15)
+        assert profile.augmentation.random_erasing is True
+        assert profile.augmentation.mixup_alpha == pytest.approx(0.2)
+
     def test_efficientnet_color_profile_parses(self):
         profile = load_training_profile(CONFIGS / "training" / "vehicle-color-classifier-efficientnet.yaml")
         assert profile.task == DatasetTask.vehicle_color_classification

@@ -5,6 +5,7 @@ import io
 import json
 import subprocess
 import sys
+import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -49,6 +50,7 @@ def _write_training_status(
     best_checkpoint: Path | None = None,
     exported_onnx: Path | None = None,
     label_metadata: Path | None = None,
+    holdout_accuracy: float | None = None,
     error_message: str | None = None,
 ) -> None:
     payload = {
@@ -63,6 +65,7 @@ def _write_training_status(
         "best_checkpoint": str(best_checkpoint) if best_checkpoint is not None else None,
         "exported_onnx": str(exported_onnx) if exported_onnx is not None else None,
         "label_metadata": str(label_metadata) if label_metadata is not None else None,
+        "holdout_accuracy": holdout_accuracy,
         "error_message": error_message,
     }
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
@@ -134,7 +137,49 @@ def _load_existing_training_status(path: Path) -> dict[str, object]:
     return data if isinstance(data, dict) else {}
 
 
-def _load_initial_checkpoint(*, checkpoint_path: Path, class_names: list[str]):
+def _remap_classifier_head_state_dict(
+    state_dict: dict[str, object],
+    *,
+    head_path: str,
+    target_keys: set[str],
+) -> dict[str, object]:
+    legacy_weight = f"{head_path}.weight"
+    legacy_bias = f"{head_path}.bias"
+    dropout_weight = f"{head_path}.1.weight"
+    dropout_bias = f"{head_path}.1.bias"
+    remapped = dict(state_dict)
+
+    if (
+        legacy_weight in remapped
+        and legacy_bias in remapped
+        and dropout_weight in target_keys
+        and dropout_bias in target_keys
+        and legacy_weight not in target_keys
+        and legacy_bias not in target_keys
+    ):
+        remapped[dropout_weight] = remapped.pop(legacy_weight)
+        remapped[dropout_bias] = remapped.pop(legacy_bias)
+    elif (
+        dropout_weight in remapped
+        and dropout_bias in remapped
+        and legacy_weight in target_keys
+        and legacy_bias in target_keys
+        and dropout_weight not in target_keys
+        and dropout_bias not in target_keys
+    ):
+        remapped[legacy_weight] = remapped.pop(dropout_weight)
+        remapped[legacy_bias] = remapped.pop(dropout_bias)
+
+    return remapped
+
+
+def _load_initial_checkpoint(
+    *,
+    checkpoint_path: Path,
+    class_names: list[str],
+    head_path: str,
+    target_keys: set[str],
+):
     import torch
 
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
@@ -146,7 +191,14 @@ def _load_initial_checkpoint(*, checkpoint_path: Path, class_names: list[str]):
         raise ValueError(
             "initial checkpoint classes do not match the current dataset classes"
         )
-    return checkpoint["state_dict"]
+    state_dict = checkpoint["state_dict"]
+    if not isinstance(state_dict, dict):
+        raise ValueError(f"initial checkpoint '{checkpoint_path}' state_dict payload is invalid")
+    return _remap_classifier_head_state_dict(
+        state_dict,
+        head_path=head_path,
+        target_keys=target_keys,
+    )
 
 
 def _module_from_path(root, path: str):
@@ -207,6 +259,23 @@ def _build_torchvision_model(base_model: str | None, *, num_classes: int, dropou
     return model, head_path
 
 
+def _resume_cosine_scheduler(scheduler, *, completed_epochs: int) -> None:
+    if completed_epochs <= 0:
+        return
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=r"Detected call of `lr_scheduler\.step\(\)` before `optimizer\.step\(\)`.*",
+            category=UserWarning,
+        )
+        warnings.filterwarnings(
+            "ignore",
+            message=r"The epoch parameter in `scheduler\.step\(\)` was not necessary.*",
+            category=UserWarning,
+        )
+        scheduler.step(completed_epochs)
+
+
 def _evaluate(model, loader, device) -> float:
     import torch
 
@@ -224,6 +293,111 @@ def _evaluate(model, loader, device) -> float:
     return (correct / total) if total else 0.0
 
 
+def _evaluate_checkpoint(
+    *,
+    torch_module,
+    profile,
+    checkpoint_path: Path,
+    loader,
+    device,
+) -> float:
+    checkpoint = torch_module.load(checkpoint_path, map_location="cpu", weights_only=False)
+    class_names = list(checkpoint["classes"])
+    model, head_path = _build_torchvision_model(
+        profile.base_model,
+        num_classes=len(class_names),
+        dropout=getattr(profile, "dropout", 0.0),
+    )
+    state_dict = checkpoint["state_dict"]
+    if not isinstance(state_dict, dict):
+        raise ValueError(f"checkpoint '{checkpoint_path}' state_dict payload is invalid")
+    model.load_state_dict(
+        _remap_classifier_head_state_dict(
+            state_dict,
+            head_path=head_path,
+            target_keys=set(model.state_dict().keys()),
+        )
+    )
+    model = model.to(device)
+    return _evaluate(model, loader, device)
+
+
+def _write_classification_evaluation_summary(
+    path: Path,
+    *,
+    run_name: str,
+    best_checkpoint: Path,
+    best_validation_accuracy: float,
+    holdout_accuracy: float | None,
+    holdout_split_path: Path | None,
+    validation_strategy: str,
+) -> None:
+    payload = {
+        "run_name": run_name,
+        "evaluated_at_utc": _utc_now_utc(),
+        "best_checkpoint": str(best_checkpoint),
+        "best_validation_accuracy": best_validation_accuracy,
+        "validation_strategy": validation_strategy,
+        "holdout_accuracy": holdout_accuracy,
+        "holdout_split_path": str(holdout_split_path) if holdout_split_path is not None else None,
+    }
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _evaluate_holdout_and_write_summary(
+    *,
+    torch_module,
+    repo_root: Path,
+    profile,
+    dataset_manifest,
+    run_name: str,
+    best_checkpoint: Path,
+    best_validation_accuracy: float | None,
+    holdout_loader,
+    device,
+    evaluation_summary_path: Path,
+    events_path: Path,
+) -> float | None:
+    holdout_accuracy = None
+    holdout_split_path = None
+    if holdout_loader is not None:
+        from reposcan_contracts.dataset import DatasetSplit
+        from reposcan_training import resolve_storage_root
+
+        storage_root = resolve_storage_root(repo_root, dataset_manifest.storage_root)
+        split_map = {split.split: split for split in dataset_manifest.splits}
+        holdout_split = split_map.get(DatasetSplit.holdout)
+        if holdout_split is not None:
+            holdout_split_path = storage_root / holdout_split.relative_path
+        holdout_accuracy = _evaluate_checkpoint(
+            torch_module=torch_module,
+            profile=profile,
+            checkpoint_path=best_checkpoint,
+            loader=holdout_loader,
+            device=device,
+        )
+        print(f"holdout_accuracy={holdout_accuracy:.4f}")
+        _append_training_event(
+            events_path,
+            f"holdout_evaluated holdout_acc={holdout_accuracy:.4f} checkpoint={best_checkpoint}",
+        )
+
+    _write_classification_evaluation_summary(
+        evaluation_summary_path,
+        run_name=run_name,
+        best_checkpoint=best_checkpoint,
+        best_validation_accuracy=best_validation_accuracy or 0.0,
+        holdout_accuracy=holdout_accuracy,
+        holdout_split_path=holdout_split_path,
+        validation_strategy=(
+            "stanford_cars_train_internal_split"
+            if getattr(profile, "dataset_adapter", None) == "stanford_cars"
+            else "manifest_validation_or_train_internal_split"
+        ),
+    )
+    return holdout_accuracy
+
+
 def _export_trained_classifier(
     *,
     torch_module,
@@ -235,11 +409,20 @@ def _export_trained_classifier(
 
     checkpoint = torch_module.load(checkpoint_path, map_location="cpu", weights_only=False)
     class_names = list(checkpoint["classes"])
-    model, _ = _build_torchvision_model(
+    model, head_path = _build_torchvision_model(
         profile.base_model, num_classes=len(class_names),
         dropout=getattr(profile, 'dropout', 0.0),
     )
-    model.load_state_dict(checkpoint["state_dict"])
+    state_dict = checkpoint["state_dict"]
+    if not isinstance(state_dict, dict):
+        raise ValueError(f"checkpoint '{checkpoint_path}' state_dict payload is invalid")
+    model.load_state_dict(
+        _remap_classifier_head_state_dict(
+            state_dict,
+            head_path=head_path,
+            target_keys=set(model.state_dict().keys()),
+        )
+    )
     model = model.to("cpu")
     model.eval()
     dummy = torch_module.randn(1, 3, profile.image_size, profile.image_size)
@@ -359,6 +542,42 @@ def _wrap_subset_with_transform(subset, transform):
     return TransformSubset(subset, transform)
 
 
+def _resolve_stanford_cars_annotations_path(root: Path, candidates: list[str]) -> Path | None:
+    for candidate in candidates:
+        path = root / candidate
+        if path.exists():
+            return path
+    return None
+
+
+def _warn_if_profile_is_heavy_for_device(profile, device) -> str | None:
+    if str(device) != "cpu":
+        return None
+
+    reasons: list[str] = []
+    if (profile.base_model or "").strip().lower().startswith("efficientnet"):
+        reasons.append("EfficientNet backbone")
+    if profile.image_size > 224:
+        reasons.append(f"{profile.image_size}px inputs")
+    if profile.epochs >= 30:
+        reasons.append(f"{profile.epochs} epochs")
+    if getattr(profile, "freeze_backbone_epochs", 0) > 0:
+        reasons.append(f"backbone unfreeze after {profile.freeze_backbone_epochs} epochs")
+    if getattr(profile, "dropout", 0.0) > 0.0:
+        reasons.append(f"dropout={profile.dropout}")
+    if getattr(profile.augmentation, "mixup_alpha", 0.0) > 0.0:
+        reasons.append(f"mixup={profile.augmentation.mixup_alpha}")
+    if getattr(profile.augmentation, "random_erasing", False):
+        reasons.append("random erasing")
+
+    if not reasons:
+        return None
+    return (
+        "Hardware note: this CPU-only machine is running a heavy profile "
+        f"({', '.join(reasons)}). Expect long epoch times after backbone unfreezing."
+    )
+
+
 def _build_imagefolder_loaders(profile, manifest, repo_root: Path):
     import torch
     from torchvision import datasets
@@ -371,11 +590,14 @@ def _build_imagefolder_loaders(profile, manifest, repo_root: Path):
     train_root = storage_root / split_map[DatasetSplit.train].relative_path
     validation_split = split_map.get(DatasetSplit.validation)
     validation_root = storage_root / validation_split.relative_path if validation_split else None
+    holdout_split = split_map.get(DatasetSplit.holdout)
+    holdout_root = storage_root / holdout_split.relative_path if holdout_split else None
 
     train_transform = _build_classification_transforms(profile, train=True)
     validation_transform = _build_classification_transforms(profile, train=False)
 
     train_dataset = datasets.ImageFolder(str(train_root), transform=train_transform)
+    holdout_dataset = None
     if validation_root is not None and validation_root.exists():
         validation_dataset = datasets.ImageFolder(str(validation_root), transform=validation_transform)
         class_names = list(train_dataset.classes)
@@ -394,6 +616,8 @@ def _build_imagefolder_loaders(profile, manifest, repo_root: Path):
         train_dataset = _wrap_subset_with_transform(train_subset, train_transform)
         validation_dataset = _wrap_subset_with_transform(validation_subset, validation_transform)
         class_names = list(raw_dataset.classes)
+    if holdout_root is not None and holdout_root.exists():
+        holdout_dataset = datasets.ImageFolder(str(holdout_root), transform=validation_transform)
 
     # num_workers=0 on Windows to avoid spawn-based multiprocessing errors with
     # DataLoader. On Linux (Jetson) the profile value is used as configured.
@@ -411,7 +635,15 @@ def _build_imagefolder_loaders(profile, manifest, repo_root: Path):
         shuffle=False,
         num_workers=num_workers,
     )
-    return train_loader, validation_loader, class_names
+    holdout_loader = None
+    if holdout_dataset is not None:
+        holdout_loader = torch.utils.data.DataLoader(
+            holdout_dataset,
+            batch_size=profile.batch_size,
+            shuffle=False,
+            num_workers=num_workers,
+        )
+    return train_loader, validation_loader, holdout_loader, class_names
 
 
 def _build_stanford_cars_loaders(profile, manifest, repo_root: Path):
@@ -420,31 +652,26 @@ def _build_stanford_cars_loaders(profile, manifest, repo_root: Path):
     from scipy.io import loadmat
     from torch.utils.data import Dataset, random_split
 
+    from reposcan_contracts.dataset import DatasetSplit
     from reposcan_training import resolve_storage_root
 
     storage_root = resolve_storage_root(repo_root, manifest.storage_root)
+    split_map = {split.split: split for split in manifest.splits}
     train_transform = _build_classification_transforms(profile, train=True)
     validation_transform = _build_classification_transforms(profile, train=False)
 
-    class StanfordCarsTrainDataset(Dataset):
-        def __init__(self, root: Path, *, transform):
+    class StanfordCarsDataset(Dataset):
+        def __init__(self, root: Path, *, image_dir: Path, ann_path: Path, meta_path: Path, transform):
             self.root = root
             self.transform = transform
-            ann_path = self.root / "devkit" / "cars_train_annos.mat"
-            if not ann_path.exists():
-                ann_path = self.root / "cars_train_annos.mat"
-            meta_path = self.root / "devkit" / "cars_meta.mat"
-            if not meta_path.exists():
-                meta_path = self.root / "cars_meta.mat"
             ann = loadmat(str(ann_path))["annotations"][0]
             meta = loadmat(str(meta_path))["class_names"][0]
             self.classes = [str(item[0]) for item in meta]
             self.samples = []
-            train_dir = self.root / "cars_train"
             for item in ann:
                 class_index = int(item["class"][0, 0]) - 1
                 filename = str(item["fname"][0])
-                image_path = train_dir / filename
+                image_path = image_dir / filename
                 if image_path.exists():
                     self.samples.append((image_path, class_index))
 
@@ -458,7 +685,24 @@ def _build_stanford_cars_loaders(profile, manifest, repo_root: Path):
                 image = self.transform(image)
             return image, target
 
-    dataset = StanfordCarsTrainDataset(storage_root, transform=None)
+    train_ann_path = _resolve_stanford_cars_annotations_path(
+        storage_root,
+        ["devkit/cars_train_annos.mat", "cars_train_annos.mat"],
+    )
+    meta_path = _resolve_stanford_cars_annotations_path(
+        storage_root,
+        ["devkit/cars_meta.mat", "cars_meta.mat"],
+    )
+    if train_ann_path is None or meta_path is None:
+        raise FileNotFoundError("Stanford Cars training annotations or class metadata were not found")
+
+    dataset = StanfordCarsDataset(
+        storage_root,
+        image_dir=storage_root / split_map[DatasetSplit.train].relative_path,
+        ann_path=train_ann_path,
+        meta_path=meta_path,
+        transform=None,
+    )
     val_fraction = getattr(profile, 'validation_fraction', 0.1)
     val_size = max(1, int(len(dataset) * val_fraction))
     train_size = len(dataset) - val_size
@@ -469,11 +713,41 @@ def _build_stanford_cars_loaders(profile, manifest, repo_root: Path):
     )
     train_dataset = _wrap_subset_with_transform(train_subset, train_transform)
     validation_dataset = _wrap_subset_with_transform(validation_subset, validation_transform)
+    holdout_loader = None
+    holdout_split = split_map.get(DatasetSplit.holdout)
+    if holdout_split is not None:
+        holdout_ann_path = _resolve_stanford_cars_annotations_path(
+            storage_root,
+            [
+                "cars_test_annos_withlabels.mat",
+                "devkit/cars_test_annos_withlabels.mat",
+                "devkit/cars_test_annos.mat",
+                "cars_test_annos.mat",
+            ],
+        )
+        if holdout_ann_path is not None:
+            holdout_dataset = StanfordCarsDataset(
+                storage_root,
+                image_dir=storage_root / holdout_split.relative_path,
+                ann_path=holdout_ann_path,
+                meta_path=meta_path,
+                transform=validation_transform,
+            )
+            if holdout_dataset.samples:
+                import platform
+
+                num_workers = 0 if platform.system() == "Windows" else profile.workers
+                holdout_loader = torch.utils.data.DataLoader(
+                    holdout_dataset,
+                    batch_size=profile.batch_size,
+                    shuffle=False,
+                    num_workers=num_workers,
+                )
     import platform
     num_workers = 0 if platform.system() == "Windows" else profile.workers
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=profile.batch_size, shuffle=True, num_workers=num_workers)
     validation_loader = torch.utils.data.DataLoader(validation_dataset, batch_size=profile.batch_size, shuffle=False, num_workers=num_workers)
-    return train_loader, validation_loader, dataset.classes
+    return train_loader, validation_loader, holdout_loader, dataset.classes
 
 
 def main() -> int:
@@ -517,6 +791,7 @@ def main() -> int:
     events_path = workspace_dir / "training_events.log"
     checkpoints_dir = workspace_dir / "checkpoints"
     exports_dir = workspace_dir / "exports"
+    evaluation_summary_path = workspace_dir / "evaluation_summary.json"
     best_checkpoint = checkpoints_dir / "best.pt"
     last_checkpoint = checkpoints_dir / "last.pt"
 
@@ -588,6 +863,12 @@ def main() -> int:
 
     checkpoints_dir.mkdir(parents=True, exist_ok=True)
     exports_dir.mkdir(parents=True, exist_ok=True)
+    holdout_loader = None
+    if args.export_only:
+        if profile.dataset_adapter == DatasetAdapter.stanford_cars:
+            _, _, holdout_loader, _ = _build_stanford_cars_loaders(profile, dataset_manifest, repo_root)
+        else:
+            _, _, holdout_loader, _ = _build_imagefolder_loaders(profile, dataset_manifest, repo_root)
 
     if args.export_only:
         if not best_checkpoint.exists():
@@ -603,6 +884,7 @@ def main() -> int:
             current_epoch=current_epoch,
             best_validation_accuracy=float(best_validation_accuracy) if isinstance(best_validation_accuracy, (int, float)) else None,
             best_checkpoint=best_checkpoint,
+            holdout_accuracy=float(existing_status["holdout_accuracy"]) if isinstance(existing_status.get("holdout_accuracy"), (int, float)) else None,
         )
         _append_training_event(events_path, f"export_only_started checkpoint={best_checkpoint}")
         onnx_path, labels_path = _export_trained_classifier(
@@ -610,6 +892,21 @@ def main() -> int:
             profile=profile,
             checkpoint_path=best_checkpoint,
             exports_dir=exports_dir,
+        )
+        holdout_accuracy = _evaluate_holdout_and_write_summary(
+            torch_module=torch,
+            repo_root=repo_root,
+            profile=profile,
+            dataset_manifest=dataset_manifest,
+            run_name=run_name,
+            best_checkpoint=best_checkpoint,
+            best_validation_accuracy=(
+                float(best_validation_accuracy) if isinstance(best_validation_accuracy, (int, float)) else None
+            ),
+            holdout_loader=holdout_loader,
+            device=torch.device("cuda" if torch.cuda.is_available() and profile.device != "cpu" else "cpu"),
+            evaluation_summary_path=evaluation_summary_path,
+            events_path=events_path,
         )
         _write_training_status(
             status_path,
@@ -621,24 +918,35 @@ def main() -> int:
             best_checkpoint=best_checkpoint,
             exported_onnx=onnx_path,
             label_metadata=labels_path,
+            holdout_accuracy=holdout_accuracy,
         )
         _append_training_event(events_path, f"run_completed export_only=true onnx={onnx_path}")
         print(f"Best checkpoint: {best_checkpoint}")
         print(f"Exported ONNX: {onnx_path}")
         print(f"Labels: {labels_path}")
+        print(f"Evaluation summary: {evaluation_summary_path}")
         return 0
 
     if profile.dataset_adapter == DatasetAdapter.stanford_cars:
-        train_loader, validation_loader, class_names = _build_stanford_cars_loaders(profile, dataset_manifest, repo_root)
+        train_loader, validation_loader, holdout_loader, class_names = _build_stanford_cars_loaders(
+            profile, dataset_manifest, repo_root
+        )
     else:
-        train_loader, validation_loader, class_names = _build_imagefolder_loaders(profile, dataset_manifest, repo_root)
+        train_loader, validation_loader, holdout_loader, class_names = _build_imagefolder_loaders(
+            profile, dataset_manifest, repo_root
+        )
 
     model, head_path = _build_torchvision_model(
         profile.base_model, num_classes=len(class_names),
         dropout=getattr(profile, 'dropout', 0.0),
     )
     if initial_checkpoint_path is not None:
-        state_dict = _load_initial_checkpoint(checkpoint_path=initial_checkpoint_path, class_names=class_names)
+        state_dict = _load_initial_checkpoint(
+            checkpoint_path=initial_checkpoint_path,
+            class_names=class_names,
+            head_path=head_path,
+            target_keys=set(model.state_dict().keys()),
+        )
         model.load_state_dict(state_dict, strict=True)
         if args.resume_last:
             print(f"Resuming from last checkpoint: {initial_checkpoint_path}")
@@ -680,11 +988,15 @@ def main() -> int:
     if initial_checkpoint_path is not None and not args.resume_last:
         _append_training_event(events_path, f"initial_checkpoint_loaded checkpoint={initial_checkpoint_path}")
 
-    scheduler_last_epoch = start_epoch - 1
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=profile.epochs, eta_min=1e-6,
-        last_epoch=scheduler_last_epoch if scheduler_last_epoch > 0 else -1,
+        optimizer, T_max=profile.epochs, eta_min=1e-6
     )
+    _resume_cosine_scheduler(scheduler, completed_epochs=resume_completed_epochs)
+
+    device_note = _warn_if_profile_is_heavy_for_device(profile, device)
+    if device_note:
+        print(device_note)
+        _append_training_event(events_path, f"hardware_note {device_note}")
 
     # Graduated unfreezing: freeze backbone for the first N epochs
     freeze_backbone_epochs = getattr(profile, 'freeze_backbone_epochs', 0)
@@ -711,6 +1023,11 @@ def main() -> int:
             "best_val": existing_status.get("best_validation_accuracy"),
             "lr": None,
         }
+    holdout_accuracy: float | None = (
+        float(existing_status["holdout_accuracy"])
+        if isinstance(existing_status.get("holdout_accuracy"), (int, float))
+        else None
+    )
     try:
         for epoch in range(start_epoch, profile.epochs + 1):
             print(_format_epoch_start_message(epoch, profile.epochs, previous_epoch_summary))
@@ -805,6 +1122,19 @@ def main() -> int:
             checkpoint_path=best_checkpoint,
             exports_dir=exports_dir,
         )
+        holdout_accuracy = _evaluate_holdout_and_write_summary(
+            torch_module=torch,
+            repo_root=repo_root,
+            profile=profile,
+            dataset_manifest=dataset_manifest,
+            run_name=run_name,
+            best_checkpoint=best_checkpoint,
+            best_validation_accuracy=best_val,
+            holdout_loader=holdout_loader,
+            device=device,
+            evaluation_summary_path=evaluation_summary_path,
+            events_path=events_path,
+        )
 
         _write_training_status(
             status_path,
@@ -816,6 +1146,7 @@ def main() -> int:
             best_checkpoint=best_checkpoint,
             exported_onnx=onnx_path,
             label_metadata=labels_path,
+            holdout_accuracy=holdout_accuracy,
         )
         _append_training_event(
             events_path,
@@ -825,6 +1156,7 @@ def main() -> int:
         print(f"Best checkpoint: {best_checkpoint}")
         print(f"Exported ONNX: {onnx_path}")
         print(f"Labels: {labels_path}")
+        print(f"Evaluation summary: {evaluation_summary_path}")
         return 0
     except Exception as exc:
         _write_training_status(
@@ -835,6 +1167,7 @@ def main() -> int:
             current_epoch=completed_epoch,
             best_validation_accuracy=best_val,
             best_checkpoint=best_checkpoint if best_checkpoint.exists() else None,
+            holdout_accuracy=holdout_accuracy,
             error_message=str(exc),
         )
         _append_training_event(events_path, f"run_failed error={exc}")

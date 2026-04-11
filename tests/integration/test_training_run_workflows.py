@@ -7,7 +7,9 @@ import sys
 import time
 from pathlib import Path
 
+import pytest
 import yaml
+from PIL import Image
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -37,6 +39,11 @@ def _write_profile(example_name: str, output_root: Path, destination: Path) -> P
     profile["output_root"] = output_root.as_posix()
     destination.write_text(yaml.safe_dump(profile, sort_keys=False), encoding="utf-8")
     return destination
+
+
+def _write_rgb_image(path: Path, color: tuple[int, int, int]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    Image.new("RGB", (64, 64), color).save(path, format="JPEG")
 
 
 def test_detection_training_script_prepares_workspace(tmp_path):
@@ -352,6 +359,99 @@ def test_attribute_training_script_resume_last_uses_existing_checkpoint(tmp_path
     assert "--initial-checkpoint" not in run_manifest["training_command"]
 
 
+def test_attribute_training_script_execute_writes_holdout_evaluation_summary(tmp_path):
+    storage_root = tmp_path / "vehicle_color_dataset"
+    split_colors = {
+        "train": {
+            "black": [(10, 10, 10), (20, 20, 20), (30, 30, 30)],
+            "white": [(225, 225, 225), (235, 235, 235), (245, 245, 245)],
+        },
+        "validation": {
+            "black": [(15, 15, 15)],
+            "white": [(240, 240, 240)],
+        },
+        "holdout": {
+            "black": [(25, 25, 25)],
+            "white": [(230, 230, 230)],
+        },
+    }
+    for split_name, classes in split_colors.items():
+        for class_name, colors in classes.items():
+            for index, color in enumerate(colors, start=1):
+                _write_rgb_image(
+                    storage_root / split_name / class_name / f"{class_name}_{index:04d}.jpg",
+                    color,
+                )
+
+    manifest_path = tmp_path / "vehicle-color.yaml"
+    manifest_path.write_text(
+        "\n".join(
+            [
+                "dataset_name: tmp-vehicle-color",
+                "dataset_version: 1",
+                "task: vehicle_color_classification",
+                "format: imagefolder",
+                f"storage_root: {storage_root.as_posix()}",
+                "review_status: approved",
+                "provenance:",
+                "  source_name: tmp-color-dataset",
+                "  source_kind: internal_generated",
+                "  license_tier: internal",
+                "  license_name: internal",
+                "  license_reference: internal://tmp-color",
+                "annotation_review:",
+                "  reviewer: qa_01",
+                "  reviewed_at_utc: 2026-03-23T08:05:00Z",
+                "  accepted_tasks: [vehicle_color]",
+                "splits:",
+                "  - split: train",
+                "    relative_path: train",
+                "  - split: validation",
+                "    relative_path: validation",
+                "  - split: holdout",
+                "    relative_path: holdout",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    profile_path = _write_profile("vehicle-color-classifier.yaml", tmp_path / "runs", tmp_path / "color-profile.yaml")
+    profile = yaml.safe_load(profile_path.read_text(encoding="utf-8"))
+    profile["image_size"] = 64
+    profile["epochs"] = 1
+    profile["batch_size"] = 2
+    profile["workers"] = 0
+    profile["patience"] = 1
+    profile["device"] = "cpu"
+    profile_path.write_text(yaml.safe_dump(profile, sort_keys=False), encoding="utf-8")
+
+    result = _run_script(
+        "scripts/train_attribute_classifier.py",
+        "--profile",
+        str(profile_path),
+        "--dataset-manifest",
+        str(manifest_path),
+        "--run-name",
+        "vehicle-color-execute-smoke",
+        "--execute",
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    workspace_dir = tmp_path / "runs" / "vehicle-color-execute-smoke"
+    status = json.loads((workspace_dir / "training_status.json").read_text(encoding="utf-8"))
+    evaluation_summary = json.loads((workspace_dir / "evaluation_summary.json").read_text(encoding="utf-8"))
+    events = (workspace_dir / "training_events.log").read_text(encoding="utf-8")
+
+    assert status["state"] == "completed"
+    assert status["holdout_accuracy"] is not None
+    assert 0.0 <= status["holdout_accuracy"] <= 1.0
+    assert evaluation_summary["validation_strategy"] == "manifest_validation_or_train_internal_split"
+    assert evaluation_summary["holdout_split_path"].endswith("holdout")
+    assert evaluation_summary["holdout_accuracy"] == status["holdout_accuracy"]
+    assert "holdout_evaluated" in events
+
+
 def test_attribute_training_console_epoch_start_includes_previous_epoch_summary():
     module = _load_script_module(
         "train_attribute_classifier_script",
@@ -387,6 +487,117 @@ def test_attribute_training_console_progress_reports_batch_position():
     message = module._format_epoch_progress_message(5, 16, 3, 12, 0.98123)
 
     assert message == "epoch_progress epoch=5/16 batch=3/12 train_acc=0.9812"
+
+
+def test_attribute_training_checkpoint_key_remap_supports_dropout_head():
+    module = _load_script_module(
+        "train_attribute_classifier_script",
+        REPO_ROOT / "scripts" / "train_attribute_classifier.py",
+    )
+
+    state_dict = {
+        "features.0.weight": object(),
+        "classifier.1.weight": object(),
+        "classifier.1.bias": object(),
+    }
+
+    remapped = module._remap_classifier_head_state_dict(
+        state_dict,
+        head_path="classifier.1",
+        target_keys={"features.0.weight", "classifier.1.1.weight", "classifier.1.1.bias"},
+    )
+
+    assert "classifier.1.weight" not in remapped
+    assert "classifier.1.bias" not in remapped
+    assert "classifier.1.1.weight" in remapped
+    assert "classifier.1.1.bias" in remapped
+
+
+def test_attribute_training_resume_cosine_scheduler_matches_uninterrupted_schedule():
+    module = _load_script_module(
+        "train_attribute_classifier_script",
+        REPO_ROOT / "scripts" / "train_attribute_classifier.py",
+    )
+
+    import torch
+
+    total_epochs = 16
+    completed_epochs = 9
+    base_lr = 2e-4
+
+    parameter = torch.nn.Parameter(torch.tensor(1.0))
+    optimizer = torch.optim.AdamW([parameter], lr=base_lr)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=total_epochs, eta_min=1e-6)
+    uninterrupted_lrs: list[float] = []
+    for _ in range(total_epochs):
+        uninterrupted_lrs.append(optimizer.param_groups[0]["lr"])
+        optimizer.step()
+        scheduler.step()
+
+    resumed_parameter = torch.nn.Parameter(torch.tensor(1.0))
+    resumed_optimizer = torch.optim.AdamW([resumed_parameter], lr=base_lr)
+    resumed_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        resumed_optimizer,
+        T_max=total_epochs,
+        eta_min=1e-6,
+    )
+    module._resume_cosine_scheduler(resumed_scheduler, completed_epochs=completed_epochs)
+
+    assert resumed_optimizer.param_groups[0]["lr"] == pytest.approx(uninterrupted_lrs[completed_epochs], rel=1e-9)
+
+
+def test_launch_training_run_streams_attached_output(tmp_path):
+    output_path = tmp_path / "foreground-result.txt"
+    worker_script = tmp_path / "foreground_worker.py"
+    worker_script.write_text(
+        "\n".join(
+            [
+                "from pathlib import Path",
+                "import sys",
+                "print('epoch=1 train_acc=0.9000 val_acc=0.8000', flush=True)",
+                "print('stderr: checkpoint pending', file=sys.stderr, flush=True)",
+                "Path(sys.argv[1]).write_text('done', encoding='utf-8')",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    manifest_path = tmp_path / "run_manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "run_name": "foreground-launch-smoke",
+                "training_command": [sys.executable, str(worker_script), str(output_path)],
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    stdout_log = tmp_path / "stdout.log"
+    stderr_log = tmp_path / "stderr.log"
+    pid_file = tmp_path / "run.pid"
+    result = _run_script(
+        "scripts/launch_training_run.py",
+        "--run-manifest",
+        str(manifest_path),
+        "--stdout-log",
+        str(stdout_log),
+        "--stderr-log",
+        str(stderr_log),
+        "--pid-file",
+        str(pid_file),
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Mode: attached" in result.stdout
+    assert "epoch=1 train_acc=0.9000 val_acc=0.8000" in result.stdout
+    assert "stderr: checkpoint pending" in result.stderr
+    assert output_path.read_text(encoding="utf-8") == "done"
+    assert "epoch=1 train_acc=0.9000 val_acc=0.8000" in stdout_log.read_text(encoding="utf-8")
+    assert "stderr: checkpoint pending" in stderr_log.read_text(encoding="utf-8")
+    assert pid_file.exists()
 
 
 def test_launch_training_run_starts_background_process_from_manifest(tmp_path):
@@ -425,6 +636,7 @@ def test_launch_training_run_starts_background_process_from_manifest(tmp_path):
         "scripts/launch_training_run.py",
         "--run-manifest",
         str(manifest_path),
+        "--detached",
         "--stdout-log",
         str(stdout_log),
         "--stderr-log",
@@ -442,6 +654,74 @@ def test_launch_training_run_starts_background_process_from_manifest(tmp_path):
         time.sleep(0.2)
 
     assert output_path.read_text(encoding="utf-8") == "done"
+
+
+def test_launch_training_run_marks_stale_running_status_interrupted_on_abnormal_exit(tmp_path):
+    workspace_dir = tmp_path / "run_workspace"
+    workspace_dir.mkdir(parents=True, exist_ok=True)
+    (workspace_dir / "training_status.json").write_text(
+        json.dumps(
+            {
+                "run_name": "abnormal-launch-smoke",
+                "state": "running",
+                "current_epoch": 7,
+                "total_epochs": 40,
+                "error_message": None,
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    worker_script = tmp_path / "abnormal_worker.py"
+    worker_script.write_text(
+        "\n".join(
+            [
+                "import sys",
+                "print('epoch_progress epoch=8/40 batch=31/217 train_acc=0.4400', flush=True)",
+                "print('stderr: console closed', file=sys.stderr, flush=True)",
+                "sys.exit(7)",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    manifest_path = workspace_dir / "run_manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "run_name": "abnormal-launch-smoke",
+                "workspace_dir": str(workspace_dir),
+                "training_command": [sys.executable, str(worker_script)],
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    stdout_log = tmp_path / "stdout.log"
+    stderr_log = tmp_path / "stderr.log"
+    pid_file = tmp_path / "run.pid"
+    result = _run_script(
+        "scripts/launch_training_run.py",
+        "--run-manifest",
+        str(manifest_path),
+        "--stdout-log",
+        str(stdout_log),
+        "--stderr-log",
+        str(stderr_log),
+        "--pid-file",
+        str(pid_file),
+    )
+
+    assert result.returncode == 7, result.stdout + result.stderr
+    status = json.loads((workspace_dir / "training_status.json").read_text(encoding="utf-8"))
+    events = (workspace_dir / "training_events.log").read_text(encoding="utf-8")
+    assert status["state"] == "interrupted"
+    assert "code 7" in status["error_message"]
+    assert "stderr: console closed" in status["error_message"]
+    assert "run_interrupted exit_code=7" in events
 
 
 def test_ocr_training_script_prepares_workspace(tmp_path):
@@ -574,7 +854,10 @@ def test_ocr_training_script_prefers_ppocrv5_when_available(tmp_path):
 
     assert result.returncode == 0, result.stdout + result.stderr
     run_manifest = json.loads((tmp_path / "runs" / "ocr-ppocrv5-smoke" / "run_manifest.json").read_text(encoding="utf-8"))
-    assert any("PP-OCRv5" in token for token in run_manifest["training_command"])
+    assert run_manifest["training_command"][2].endswith("scripts\\train_ocr_recognizer.py")
+    assert "--execute" in run_manifest["training_command"]
+    assert run_manifest["export_command"][1] == str((paddle_root / "tools" / "export_model.py").resolve())
+    assert any("en_PP-OCRv5_rec.yml" in token for token in run_manifest["export_command"])
 
 
 def test_ocr_training_script_detects_ppocrv4_mobile_config(tmp_path):

@@ -5,15 +5,25 @@ import json
 import os
 import subprocess
 import sys
+import threading
+from datetime import datetime, timezone
 from pathlib import Path
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Launch a prepared RepoScan training run in a detached background process.")
+    parser = argparse.ArgumentParser(
+        description="Launch a prepared RepoScan training run, streaming to this terminal by default."
+    )
     parser.add_argument("--run-manifest", required=True, help="Path to a prepared training run manifest JSON file.")
     parser.add_argument("--stdout-log", help="Optional stdout log path. Defaults to runtime/training/logs/<run>.stdout.log")
     parser.add_argument("--stderr-log", help="Optional stderr log path. Defaults to runtime/training/logs/<run>.stderr.log")
     parser.add_argument("--pid-file", help="Optional pid file path. Defaults to runtime/training/logs/<run>.pid")
+    parser.add_argument(
+        "--detached",
+        action="store_true",
+        help="Launch the training command in the background instead of streaming it in this terminal.",
+    )
+    parser.add_argument("--monitor-run", action="store_true", help=argparse.SUPPRESS)
     return parser.parse_args()
 
 
@@ -27,20 +37,32 @@ def _default_log_paths(repo_root: Path, run_name: str) -> tuple[Path, Path, Path
     )
 
 
-def _launch_command(command: list[str], *, cwd: Path, stdout_path: Path, stderr_path: Path) -> subprocess.Popen:
+def _utc_now_utc() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _common_popen_kwargs(*, cwd: Path) -> dict[str, object]:
+    return {
+        "cwd": str(cwd),
+        "stdin": subprocess.DEVNULL,
+        "close_fds": True,
+        "env": {**os.environ, "PYTHONUNBUFFERED": "1"},
+    }
+
+
+def _launch_detached_command(command: list[str], *, cwd: Path, stdout_path: Path, stderr_path: Path) -> subprocess.Popen:
     stdout_path.parent.mkdir(parents=True, exist_ok=True)
     stderr_path.parent.mkdir(parents=True, exist_ok=True)
     stdout_handle = stdout_path.open("ab")
     stderr_handle = stderr_path.open("ab")
 
-    kwargs: dict[str, object] = {
-        "cwd": str(cwd),
-        "stdout": stdout_handle,
-        "stderr": stderr_handle,
-        "stdin": subprocess.DEVNULL,
-        "close_fds": True,
-        "env": {**os.environ, "PYTHONUNBUFFERED": "1"},
-    }
+    kwargs = _common_popen_kwargs(cwd=cwd)
+    kwargs.update(
+        {
+            "stdout": stdout_handle,
+            "stderr": stderr_handle,
+        }
+    )
 
     if sys.platform == "win32":
         kwargs["creationflags"] = (
@@ -57,6 +79,207 @@ def _launch_command(command: list[str], *, cwd: Path, stdout_path: Path, stderr_
         stdout_handle.close()
         stderr_handle.close()
         raise
+    finally:
+        stdout_handle.close()
+        stderr_handle.close()
+
+
+def _tee_pipe(stream, terminal_stream, log_path: Path) -> None:
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("a", encoding="utf-8", buffering=1) as log_handle:
+        for line in iter(stream.readline, ""):
+            if terminal_stream is not None:
+                terminal_stream.write(line)
+                terminal_stream.flush()
+            log_handle.write(line)
+            log_handle.flush()
+    stream.close()
+
+
+def _launch_attached_command(
+    command: list[str],
+    *,
+    cwd: Path,
+    pid_path: Path,
+) -> subprocess.Popen:
+    kwargs = _common_popen_kwargs(cwd=cwd)
+    kwargs.update(
+        {
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.PIPE,
+            "text": True,
+            "bufsize": 1,
+        }
+    )
+
+    process = subprocess.Popen(command, **kwargs)
+    pid_path.parent.mkdir(parents=True, exist_ok=True)
+    pid_path.write_text(str(process.pid), encoding="utf-8")
+    return process
+
+
+def _stream_attached_process(process: subprocess.Popen, *, stdout_path: Path, stderr_path: Path) -> int:
+    assert process.stdout is not None
+    assert process.stderr is not None
+    stdout_thread = threading.Thread(
+        target=_tee_pipe,
+        args=(process.stdout, sys.stdout, stdout_path),
+        daemon=True,
+    )
+    stderr_thread = threading.Thread(
+        target=_tee_pipe,
+        args=(process.stderr, sys.stderr, stderr_path),
+        daemon=True,
+    )
+    stdout_thread.start()
+    stderr_thread.start()
+
+    return_code = process.wait()
+    stdout_thread.join()
+    stderr_thread.join()
+    return return_code
+
+
+def _stream_background_process(process: subprocess.Popen, *, stdout_path: Path, stderr_path: Path) -> int:
+    assert process.stdout is not None
+    assert process.stderr is not None
+    stdout_thread = threading.Thread(
+        target=_tee_pipe,
+        args=(process.stdout, None, stdout_path),
+        daemon=True,
+    )
+    stderr_thread = threading.Thread(
+        target=_tee_pipe,
+        args=(process.stderr, None, stderr_path),
+        daemon=True,
+    )
+    stdout_thread.start()
+    stderr_thread.start()
+
+    return_code = process.wait()
+    stdout_thread.join()
+    stderr_thread.join()
+    return return_code
+
+
+def _resolve_workspace_dir(run_manifest_path: Path, run_manifest: dict[str, object]) -> Path:
+    raw_workspace_dir = run_manifest.get("workspace_dir")
+    if isinstance(raw_workspace_dir, str) and raw_workspace_dir.strip():
+        workspace_dir = Path(raw_workspace_dir)
+        if workspace_dir.is_absolute():
+            return workspace_dir
+        return (run_manifest_path.parent / workspace_dir).resolve()
+    return run_manifest_path.parent.resolve()
+
+
+def _append_training_event(path: Path, message: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(f"{_utc_now_utc()} {message}\n")
+
+
+def _read_last_nonempty_line(path: Path) -> str | None:
+    if not path.exists():
+        return None
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except Exception:
+        return None
+    for line in reversed(lines):
+        stripped = line.strip()
+        if stripped:
+            return stripped
+    return None
+
+
+def _reconcile_training_status_after_exit(
+    *,
+    run_manifest_path: Path,
+    run_manifest: dict[str, object],
+    return_code: int,
+    stderr_path: Path,
+) -> None:
+    if return_code == 0:
+        return
+
+    workspace_dir = _resolve_workspace_dir(run_manifest_path, run_manifest)
+    status_path = workspace_dir / "training_status.json"
+    if not status_path.exists():
+        return
+
+    try:
+        status = json.loads(status_path.read_text(encoding="utf-8"))
+    except Exception:
+        return
+    if not isinstance(status, dict) or status.get("state") != "running":
+        return
+
+    error_message = f"training process exited with code {return_code} before final status update"
+    last_stderr_line = _read_last_nonempty_line(stderr_path)
+    if last_stderr_line:
+        error_message = f"{error_message}; last_stderr={last_stderr_line}"
+
+    status["state"] = "interrupted"
+    status["updated_at_utc"] = _utc_now_utc()
+    status["error_message"] = error_message
+    status_path.write_text(json.dumps(status, indent=2), encoding="utf-8")
+
+    _append_training_event(
+        workspace_dir / "training_events.log",
+        f"run_interrupted exit_code={return_code}",
+    )
+
+
+def _build_monitor_command(
+    *,
+    run_manifest_path: Path,
+    stdout_path: Path,
+    stderr_path: Path,
+    pid_path: Path,
+) -> list[str]:
+    return [
+        str(Path(sys.executable).resolve()),
+        "-u",
+        str(Path(__file__).resolve()),
+        "--run-manifest",
+        str(run_manifest_path),
+        "--stdout-log",
+        str(stdout_path),
+        "--stderr-log",
+        str(stderr_path),
+        "--pid-file",
+        str(pid_path),
+        "--monitor-run",
+    ]
+
+
+def _monitor_run(
+    training_command: list[str],
+    *,
+    cwd: Path,
+    run_manifest_path: Path,
+    run_manifest: dict[str, object],
+    stdout_path: Path,
+    stderr_path: Path,
+    pid_path: Path,
+) -> int:
+    process = _launch_attached_command(
+        training_command,
+        cwd=cwd,
+        pid_path=pid_path,
+    )
+    return_code = _stream_background_process(
+        process,
+        stdout_path=stdout_path,
+        stderr_path=stderr_path,
+    )
+    _reconcile_training_status_after_exit(
+        run_manifest_path=run_manifest_path,
+        run_manifest=run_manifest,
+        return_code=return_code,
+        stderr_path=stderr_path,
+    )
+    return return_code
 
 
 def main() -> int:
@@ -83,16 +306,62 @@ def main() -> int:
     if not pid_path.is_absolute():
         pid_path = (repo_root / pid_path).resolve()
 
-    process = _launch_command(training_command, cwd=repo_root, stdout_path=stdout_path, stderr_path=stderr_path)
-    pid_path.parent.mkdir(parents=True, exist_ok=True)
-    pid_path.write_text(str(process.pid), encoding="utf-8")
+    if args.monitor_run:
+        return _monitor_run(
+            training_command,
+            cwd=repo_root,
+            run_manifest_path=run_manifest_path,
+            run_manifest=run_manifest,
+            stdout_path=stdout_path,
+            stderr_path=stderr_path,
+            pid_path=pid_path,
+        )
 
+    if args.detached:
+        monitor_command = _build_monitor_command(
+            run_manifest_path=run_manifest_path,
+            stdout_path=stdout_path,
+            stderr_path=stderr_path,
+            pid_path=pid_path,
+        )
+        process = _launch_detached_command(
+            monitor_command,
+            cwd=repo_root,
+            stdout_path=stdout_path,
+            stderr_path=stderr_path,
+        )
+        pid_path.parent.mkdir(parents=True, exist_ok=True)
+        pid_path.write_text(str(process.pid), encoding="utf-8")
+        print(f"Run name: {run_name}")
+        print(f"Stdout: {stdout_path}")
+        print(f"Stderr: {stderr_path}")
+        print(f"PID file: {pid_path}")
+        print(f"PID: {process.pid}")
+        return 0
+
+    process = _launch_attached_command(
+        training_command,
+        cwd=repo_root,
+        pid_path=pid_path,
+    )
     print(f"Run name: {run_name}")
-    print(f"PID: {process.pid}")
     print(f"Stdout: {stdout_path}")
     print(f"Stderr: {stderr_path}")
     print(f"PID file: {pid_path}")
-    return 0
+    print(f"PID: {process.pid}")
+    print("Mode: attached")
+    return_code = _stream_attached_process(
+        process,
+        stdout_path=stdout_path,
+        stderr_path=stderr_path,
+    )
+    _reconcile_training_status_after_exit(
+        run_manifest_path=run_manifest_path,
+        run_manifest=run_manifest,
+        return_code=return_code,
+        stderr_path=stderr_path,
+    )
+    return return_code
 
 
 def _entrypoint() -> int:

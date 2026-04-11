@@ -92,12 +92,14 @@ On CPU-bound development machines, use the lighter warm-start profile instead:
   --run-name make_model_warmstart_cpu_01
 ```
 
-Launch a prepared long-running training job in the background so it survives terminal closure:
+Launch a prepared training job with live output in the same terminal:
 
 ```powershell
 .\.venv\Scripts\python.exe .\scripts\launch_training_run.py `
   --run-manifest .\runtime\training\make_model_warmstart_01\run_manifest.json
 ```
+
+That launcher now streams the child process into the current terminal and also keeps writing:
 
 For attribute-classifier runs, monitor:
 
@@ -105,6 +107,21 @@ For attribute-classifier runs, monitor:
 - `runtime/training/<run-name>/training_events.log`
 - `runtime/training/logs/<run-name>.stdout.log`
 - `runtime/training/logs/<run-name>.stderr.log`
+- `runtime/training/<run-name>/evaluation_summary.json`
+
+For Stanford Cars warm-start runs:
+
+- the per-epoch `val_acc` used for early stopping is an internal seeded split from `cars_train`
+- when a manifest `holdout` split is available and labeled, the workflow now evaluates the best checkpoint against that holdout after training completes
+- the resulting best-checkpoint metrics are written to `evaluation_summary.json` so internal validation and holdout accuracy stay distinguishable
+
+If you need the run to survive terminal closure instead, launch it explicitly in detached mode:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\launch_training_run.py `
+  --run-manifest .\runtime\training\make_model_warmstart_01\run_manifest.json `
+  --detached
+```
 
 If training completed but export failed, rerun export only from the saved checkpoint:
 
@@ -115,6 +132,12 @@ If training completed but export failed, rerun export only from the saved checkp
   --run-name vehicle_make_model_warmstart_cpu_20260401_rerun1 `
   --export-only
 ```
+
+Practical hardware note:
+
+- on this repo's typical CPU-only Windows development machine, `efficientnet_b0` profiles above `224px` and long post-unfreeze runs can take hours per epoch
+- use `vehicle-make-model-warmstart-cpu.yaml` for local workflow validation and CPU-bound iteration
+- reserve larger regularized profiles such as `vehicle-make-model-warmstart-v2.yaml` for GPU-backed training comparisons
 
 Build a canonical make/model/year catalog from a markdown seed list before collecting or promoting field data:
 

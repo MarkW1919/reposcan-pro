@@ -19,6 +19,7 @@ $requiredFiles = @(
     "docs/ARCHITECTURE.md",
     "docs/IMPLEMENTATION_BLUEPRINT.md",
     "docs/REQUIREMENTS.md",
+    "docs/EXECUTION_PLAN.md",
     "docs/CAMERA_AND_IMAGING.md",
     "docs/MODELS.md",
     "docs/DATASETS.md",
@@ -63,7 +64,8 @@ foreach ($jsonFile in $jsonFiles) {
 $ignoredMarkdownRoots = @(
     (Join-Path $RepoRoot "node_modules"),
     (Join-Path $RepoRoot ".venv"),
-    (Join-Path $RepoRoot "apps/ui/dist")
+    (Join-Path $RepoRoot "apps/ui/dist"),
+    (Join-Path $RepoRoot "tmp")
 )
 
 $markdownFiles = Get-ChildItem -Path $RepoRoot -Recurse -File -Filter *.md | Where-Object {
@@ -97,7 +99,14 @@ foreach ($file in $markdownFiles) {
             continue
         }
 
-        $resolvedPath = [System.IO.Path]::GetFullPath((Join-Path $file.DirectoryName $normalizedTarget))
+        try {
+            $resolvedPath = [System.IO.Path]::GetFullPath((Join-Path $file.DirectoryName $normalizedTarget))
+        }
+        catch {
+            $brokenLinks += "$($file.FullName) -> $target (invalid path format)"
+            continue
+        }
+
         if (-not (Test-Path $resolvedPath)) {
             $brokenLinks += "$($file.FullName) -> $target"
         }

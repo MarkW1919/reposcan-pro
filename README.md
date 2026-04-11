@@ -42,6 +42,7 @@ The canonical mission and rules live in [CLAUDE.md](CLAUDE.md).
 - [Architecture](docs/ARCHITECTURE.md)
 - [Implementation Blueprint](docs/IMPLEMENTATION_BLUEPRINT.md)
 - [Requirements](docs/REQUIREMENTS.md)
+- [Execution Plan](docs/EXECUTION_PLAN.md)
 - [Camera And Imaging](docs/CAMERA_AND_IMAGING.md)
 - [Camera Deployment Workflow](docs/CAMERA_DEPLOYMENT_WORKFLOW.md)
 - [Models](docs/MODELS.md)
@@ -182,13 +183,25 @@ For CPU-bound development machines, use the lighter profile:
 
 The attribute-classifier workflow now exports `model.onnx` plus a `labels.json` metadata sidecar so single-task color or make/model classifiers can plug back into the runtime and promoted bundle flow.
 
-For long-running training on Windows, launch the prepared run manifest in the background so the job survives terminal closure:
+To keep real-time epoch progress and accuracy output in the same terminal, launch the prepared run manifest directly:
 
 ```powershell
 .\.venv\Scripts\python.exe .\scripts\launch_training_run.py --run-manifest .\runtime\training\warmstart_01\run_manifest.json
 ```
 
+That launcher now streams training output to the current terminal and also writes the usual `stdout` and `stderr` log files under `runtime/training/logs/`.
+
+If the job must survive terminal closure, opt into the old detached behavior explicitly:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\launch_training_run.py --run-manifest .\runtime\training\warmstart_01\run_manifest.json --detached
+```
+
 Monitor `training_status.json` and `training_events.log` inside the run workspace for progress that does not depend on an open console window.
+
+Classifier runs now also write an `evaluation_summary.json` file in the run workspace. For Stanford Cars warm-start experiments, the per-epoch `val_acc` remains an internal split from `cars_train`, while the best checkpoint is evaluated against the manifest `holdout` split when labeled holdout annotations are available.
+
+On CPU-only development machines, prefer the lighter `vehicle-make-model-warmstart-cpu.yaml` profile for local iteration. Larger EfficientNet-B0 profiles with long unfreezing phases are intended for GPU-backed comparisons and can take hours per epoch after the backbone is unfrozen.
 
 If the training epochs finished but ONNX export failed, rerun export only from the saved checkpoint:
 

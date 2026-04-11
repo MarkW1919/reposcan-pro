@@ -23,6 +23,7 @@ data/
 media/
 logs/
 runtime/
+SILVERADO_DATASET_BUILD_STATUS.md
 
 # Model artifacts and exports
 *.pt

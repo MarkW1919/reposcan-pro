@@ -4,7 +4,7 @@
 
 Define the full map and navigation redesign for RepoScan Pro before implementation so the work lands as one coherent operator workflow, not a series of disconnected map fixes.
 
-This document complements [UI_COMPETITIVE_ALIGNMENT.md](C:/Users/mark/Documents/Playground/reposcan-pro/docs/UI_COMPETITIVE_ALIGNMENT.md) and focuses on:
+This document complements [UI_COMPETITIVE_ALIGNMENT.md](UI_COMPETITIVE_ALIGNMENT.md) and focuses on:
 
 - in-map destination workflow
 - offline mapping and offline routing
@@ -45,7 +45,7 @@ The final map and navigation system must support these operator tasks:
 
 ## Current Gaps
 
-The current implementation in [App.tsx](C:/Users/mark/Documents/Playground/reposcan-pro/apps/ui/src/App.tsx) has a functional shell but it is not yet production-grade for repossession work:
+The current implementation in [App.tsx](../apps/ui/src/App.tsx) has a functional shell but it is not yet production-grade for repossession work:
 
 - destination input lives in the left rail instead of the map surface
 - radius is controlled through settings instead of map controls
