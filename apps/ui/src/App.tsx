@@ -1,5 +1,5 @@
 import { startTransition, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type ReactElement, type ReactNode } from "react";
-import { Circle, MapContainer, Marker, Polyline, Popup, TileLayer } from "react-leaflet";
+import { Circle, MapContainer, Marker, Polyline, Popup, TileLayer, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -505,32 +505,43 @@ function buildGpsIndicator(fix: GpsFixState): { value: string; tone: "good" | "o
       return {
         value: "Locked",
         tone: "good",
-        tip: `GPS locked (±${Math.round(fix.accuracyMeters ?? 0)} m) \u2014 click to open map settings`,
+        tip: `GPS locked (+/-${Math.round(fix.accuracyMeters ?? 0)} m) - click to open map settings`,
       };
     case "fair":
       return {
         value: "Fair",
         tone: "good",
-        tip: `GPS fair (±${Math.round(fix.accuracyMeters ?? 0)} m) \u2014 click to open map settings`,
+        tip: `GPS fair (+/-${Math.round(fix.accuracyMeters ?? 0)} m) - click to open map settings`,
       };
     case "weak":
       return {
         value: "Weak",
         tone: "warn",
-        tip: `GPS weak signal (±${Math.round(fix.accuracyMeters ?? 0)} m) \u2014 click to open map settings`,
+        tip: `GPS weak signal (+/-${Math.round(fix.accuracyMeters ?? 0)} m) - click to open map settings`,
       };
     case "stale":
-      return { value: "Stale", tone: "warn", tip: "GPS fix stale \u2014 click to open map settings" };
+      return { value: "Stale", tone: "warn", tip: "GPS fix stale - click to open map settings" };
     case "acquiring":
-      return { value: "Acquiring", tone: "warn", tip: "Waiting for first GPS fix \u2014 click to open map settings" };
+      return { value: "Acquiring", tone: "warn", tip: "Waiting for first GPS fix - click to open map settings" };
     case "denied":
-      return { value: "Denied", tone: "off", tip: "Location permission denied \u2014 click to open map settings" };
+      return { value: "Denied", tone: "off", tip: "Location permission denied - click to open map settings" };
     case "unsupported":
-      return { value: "Unavail", tone: "off", tip: "Geolocation unsupported in this browser \u2014 click to open map settings" };
+      return { value: "Unavail", tone: "off", tip: "Geolocation unsupported in this browser - click to open map settings" };
     case "error":
     default:
-      return { value: "Error", tone: "off", tip: fix.message ?? "GPS error \u2014 click to open map settings" };
+      return { value: "Error", tone: "off", tip: fix.message ?? "GPS error - click to open map settings" };
   }
+}
+
+function gpsFixToCoords(fix: GpsFixState): DestinationCoords | null {
+  if (
+    (fix.status === "locked" || fix.status === "fair" || fix.status === "weak" || fix.status === "stale") &&
+    typeof fix.lat === "number" &&
+    typeof fix.lng === "number"
+  ) {
+    return { lat: fix.lat, lng: fix.lng };
+  }
+  return null;
 }
 
 function useBrowserGeolocation(): GpsFixState {
@@ -1881,21 +1892,60 @@ function buildDetectionBoxPosition(cameraId: string, compact = false): CSSProper
   } as CSSProperties;
 }
 
-function buildRoutePath(position: { lat: number; lng: number }): [number, number][] {
+function buildRoutePath(position: { lat: number; lng: number }, destination: { lat: number; lng: number }): [number, number][] {
   const mid1: [number, number] = [
-    position.lat + (targetRoute.lat - position.lat) * 0.4 + 0.0032,
-    position.lng + (targetRoute.lng - position.lng) * 0.2,
+    position.lat + (destination.lat - position.lat) * 0.4 + 0.0032,
+    position.lng + (destination.lng - position.lng) * 0.2,
   ];
   const mid2: [number, number] = [
-    position.lat + (targetRoute.lat - position.lat) * 0.72 - 0.0016,
-    position.lng + (targetRoute.lng - position.lng) * 0.68 + 0.0024,
+    position.lat + (destination.lat - position.lat) * 0.72 - 0.0016,
+    position.lng + (destination.lng - position.lng) * 0.68 + 0.0024,
   ];
   return [
     [position.lat, position.lng],
     mid1,
     mid2,
-    [targetRoute.lat, targetRoute.lng],
+    [destination.lat, destination.lng],
   ];
+}
+
+function MapViewportSync(props: {
+  autoCenter: boolean;
+  unitPosition: DestinationCoords;
+  destinationCoords: DestinationCoords | null;
+  showRoute: boolean;
+}): null {
+  const map = useMap();
+
+  useEffect(() => {
+    if (props.showRoute && props.destinationCoords) {
+      map.fitBounds(
+        [
+          [props.unitPosition.lat, props.unitPosition.lng],
+          [props.destinationCoords.lat, props.destinationCoords.lng],
+        ],
+        { padding: [40, 40], maxZoom: 15 },
+      );
+      return;
+    }
+
+    if (!props.autoCenter) {
+      return;
+    }
+
+    const focus = props.destinationCoords ?? props.unitPosition;
+    map.setView([focus.lat, focus.lng], map.getZoom(), { animate: false });
+  }, [
+    props.autoCenter,
+    map,
+    props.destinationCoords?.lat,
+    props.destinationCoords?.lng,
+    props.showRoute,
+    props.unitPosition.lat,
+    props.unitPosition.lng,
+  ]);
+
+  return null;
 }
 
 function makeDotIcon(color: string, size: number): L.DivIcon {
@@ -1923,7 +1973,9 @@ const acknowledgedAlertIcon = makeDotIcon("#FFBF48", 10);
 const historicalAlertIcon = makeDotIcon("#91A6B3", 10);
 
 function OpsMap(props: {
+  autoCenter: boolean;
   unitPosition: { lat: number; lng: number };
+  destinationCoords: DestinationCoords | null;
   routePath: [number, number][];
   rows: ConsoleDetectionRow[];
   alertMarkers: MapAlertMarker[];
@@ -1938,23 +1990,30 @@ function OpsMap(props: {
   selectedRowId: string | null;
   onSelect: (rowId: string) => void;
 }): ReactElement {
+  const initialCenter = props.destinationCoords ?? props.unitPosition;
   return (
-    <MapContainer center={[targetRoute.lat, targetRoute.lng]} zoom={14} scrollWheelZoom={true} style={{ height: "100%", width: "100%" }}>
+    <MapContainer center={[initialCenter.lat, initialCenter.lng]} zoom={14} scrollWheelZoom={true} style={{ height: "100%", width: "100%" }}>
       <TileLayer attribution="OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+      <MapViewportSync
+        autoCenter={props.autoCenter}
+        unitPosition={props.unitPosition}
+        destinationCoords={props.destinationCoords}
+        showRoute={props.showRoute}
+      />
 
       <Marker position={[props.unitPosition.lat, props.unitPosition.lng]} icon={unitIcon}>
         <Popup>Recovery unit</Popup>
       </Marker>
 
-      {props.showDestination ? (
-        <Marker position={[targetRoute.lat, targetRoute.lng]} icon={targetIcon}>
-          <Popup>{props.destinationLabel || targetRoute.address}</Popup>
+      {props.showDestination && props.destinationCoords ? (
+        <Marker position={[props.destinationCoords.lat, props.destinationCoords.lng]} icon={targetIcon}>
+          <Popup>{props.destinationLabel || "Destination"}</Popup>
         </Marker>
       ) : null}
 
-      {props.showDestination && props.showRadiusRing ? (
+      {props.showDestination && props.showRadiusRing && props.destinationCoords ? (
         <Circle
-          center={[targetRoute.lat, targetRoute.lng]}
+          center={[props.destinationCoords.lat, props.destinationCoords.lng]}
           radius={props.radiusFeet * 0.3048}
           pathOptions={{
             color: "#38E8FF",
@@ -1966,7 +2025,7 @@ function OpsMap(props: {
         />
       ) : null}
 
-      {props.showRoute ? <Polyline positions={props.routePath} pathOptions={{ color: "#38E8FF", opacity: 0.8, weight: 4 }} /> : null}
+      {props.showRoute && props.routePath.length >= 2 ? <Polyline positions={props.routePath} pathOptions={{ color: "#38E8FF", opacity: 0.8, weight: 4 }} /> : null}
 
       {props.showDetectionPins
         ? props.rows.map((row) => (
@@ -2014,6 +2073,7 @@ function MapStagePanel(props: {
   compact?: boolean;
   alertMarkers: MapAlertMarker[];
   activeDestination: string;
+  destinationCoords: DestinationCoords | null;
   destinationInput: string;
   destinationModalOpen: boolean;
   destinationTargets: DestinationTarget[];
@@ -2066,7 +2126,9 @@ function MapStagePanel(props: {
   return (
     <div className={`map-stage ${compact ? "map-stage--overview" : ""}`.trim()}>
       <OpsMap
+        autoCenter={props.settings.autoCenterVehicle}
         unitPosition={props.unitPosition}
+        destinationCoords={props.destinationCoords}
         routePath={props.routePath}
         rows={props.rows}
         alertMarkers={props.alertMarkers}
@@ -2707,7 +2769,6 @@ function App(): ReactElement {
   const [recentDestinations, setRecentDestinations] = useState<RecentDestination[]>(() => loadRecentDestinations());
   const [mapLayerMenuOpen, setMapLayerMenuOpen] = useState(false);
   const [navigationActive, setNavigationActive] = useState(false);
-  const [distanceFeet, setDistanceFeet] = useState(1400);
   const [dataSource, setDataSource] = useState<DataSource>("demo");
   const [overview, setOverview] = useState<DashboardOverviewResponse | null>(null);
   const [hotlists, setHotlists] = useState<DashboardHotlist[]>(seedHotlists);
@@ -3079,10 +3140,10 @@ function App(): ReactElement {
   const primaryCameraId = currentCamera?.id ?? selectedRow?.cameraId ?? selectedCameraId;
   const cameraRows = allRows.filter((row) => row.cameraId === primaryCameraId);
   const cameraFocusRow = cameraRows[0] ?? selectedRow;
-  const routeProgress = navigationActive ? clamp(1 - distanceFeet / 4800, 0, 1) : 0;
-  const unitPosition = interpolatePosition(routeProgress);
-  const routePath = buildRoutePath(unitPosition);
-  const withinRadius = navigationActive && distanceFeet <= settings.arrivalRadiusFeet;
+  const unitPosition = gpsFixToCoords(gpsFix) ?? routeStart;
+  const activeRouteFeet = activeDestinationCoords ? haversineFeet(unitPosition, activeDestinationCoords) : null;
+  const routePath = navigationActive && activeDestinationCoords ? buildRoutePath(unitPosition, activeDestinationCoords) : [];
+  const withinRadius = navigationActive && activeRouteFeet != null && activeRouteFeet <= settings.arrivalRadiusFeet;
   const idleScanEnabled = !navigationActive && settings.arrivalScanEnabled;
   const totalReads = overview?.counts.recent_detections ?? 142;
   const activeAlerts = overview?.counts.active_alerts ?? allRows.filter((row) => row.hotlist).length;
@@ -3098,13 +3159,15 @@ function App(): ReactElement {
     ? idleScanEnabled
       ? "Idle scan live"
       : "Route idle"
+    : activeDestinationCoords == null
+      ? "Route pending coordinates"
     : withinRadius
       ? settings.autoArrivalScan
         ? "Within radius - auto scan"
         : "Within radius - scan off"
       : "En route";
-  const routeEta = formatEta(distanceFeet, navigationActive);
-  const routeDistance = formatDistance(distanceFeet);
+  const routeEta = activeRouteFeet != null ? formatEta(activeRouteFeet, navigationActive) : navigationActive ? "Resolve loc" : "Standby";
+  const routeDistance = activeRouteFeet != null ? formatDistance(activeRouteFeet) : navigationActive ? "Pending" : "--";
   const detailTimeline = detailRow ? allRows.filter((row) => normalizePlate(row.plate1) === normalizePlate(detailRow.plate1)) : [];
   const groupedSearchResults = searchGroupByPlate ? buildPlateGroups(searchResults) : [];
   const hotlistWarning = !settings.hotlistAlerts || !settings.soundEnabled;
@@ -3407,6 +3470,29 @@ function App(): ReactElement {
     setDestinationDraftCoords(target.coords);
   }
 
+  function handleDestinationInputChange(value: string): void {
+    const trimmed = value.trim();
+    setDestinationInput(value);
+    if (!trimmed) {
+      setDestinationDraftCoords(null);
+      return;
+    }
+
+    const normalizedValue = trimmed.toLowerCase();
+    const matchedTarget = destinationTargets.find((target) => target.address.trim().toLowerCase() === normalizedValue);
+    if (matchedTarget) {
+      setDestinationDraftCoords(matchedTarget.coords);
+      return;
+    }
+
+    if (normalizedValue === activeDestination.trim().toLowerCase()) {
+      setDestinationDraftCoords(activeDestinationCoords);
+      return;
+    }
+
+    setDestinationDraftCoords(null);
+  }
+
   function clearDestinationDraft(): void {
     setDestinationInput("");
     setDestinationDraftCoords(null);
@@ -3591,8 +3677,7 @@ function App(): ReactElement {
     setSearchCurrentShiftOnly(false);
   }
 
-  async function handleSearchSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
+  async function runSearch(): Promise<void> {
     setSearchLoading(true);
     setSearchError(null);
     setSearchMessage(null);
@@ -3794,6 +3879,11 @@ function App(): ReactElement {
     }
 
     setSearchLoading(false);
+  }
+
+  async function handleSearchSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    await runSearch();
   }
 
   async function handleCopyPlate(plate: string): Promise<void> {
@@ -4298,6 +4388,7 @@ function App(): ReactElement {
               cameraFocusRow={cameraFocusRow}
               currentCamera={currentCamera}
               dataSource={dataSource}
+              destinationCoords={activeDestinationCoords}
               destinationInput={destinationInput}
               destinationModalOpen={destinationModalOpen}
               destinationTargets={destinationTargets}
@@ -4319,7 +4410,7 @@ function App(): ReactElement {
               onApplyDestinationTarget={applyDestinationTarget}
               onClearDestinationDraft={clearDestinationDraft}
               onCloseDestinationModal={closeDestinationModal}
-              onDestinationChange={setDestinationInput}
+              onDestinationChange={handleDestinationInputChange}
               onEndRoute={endRoute}
               onOpenDetail={openDetail}
               onOpenDestinationModal={openDestinationModal}
@@ -4374,6 +4465,7 @@ function App(): ReactElement {
               onCopyPlate={handleCopyPlate}
               onDetails={openDetail}
               onMap={centerMapOnRow}
+              onRetrySearch={() => void runSearch()}
               onSelectDetection={setSelectedDetectionId}
               onSearchSubmit={handleSearchSubmit}
               onToggleExpanded={(plate) =>
@@ -5236,6 +5328,7 @@ function ConsoleScreen(props: {
   cameraFocusRow: ConsoleDetectionRow | null;
   currentCamera: CameraUiFeed | undefined;
   dataSource: DataSource;
+  destinationCoords: DestinationCoords | null;
   destinationInput: string;
   destinationModalOpen: boolean;
   destinationTargets: DestinationTarget[];
@@ -5310,6 +5403,7 @@ function ConsoleScreen(props: {
   const mapPanelProps = {
     alertMarkers: props.alertMarkers,
     activeDestination: props.activeDestination,
+    destinationCoords: props.destinationCoords,
     destinationInput: props.destinationInput,
     destinationModalOpen: props.destinationModalOpen,
     destinationTargets: props.destinationTargets,
@@ -5481,6 +5575,7 @@ function SearchScreen(props: {
   onCopyPlate: (plate: string) => Promise<void>;
   onDetails: (row: ConsoleDetectionRow) => void;
   onMap: (row: ConsoleDetectionRow) => void;
+  onRetrySearch: () => void;
   onSelectDetection: (rowId: string) => void;
   onSearchSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   onToggleExpanded: (plate: string) => void;
@@ -5809,7 +5904,7 @@ function SearchScreen(props: {
                     variant="error"
                     title="Search failed"
                     description={props.searchError}
-                    action={{ label: "Try again", onClick: props.onClearFilters, tone: "ghost" }}
+                    action={{ label: "Try again", onClick: props.onRetrySearch, tone: "ghost" }}
                   />
                 ) : props.results.length === 0 ? (
                   <StateView
