@@ -135,7 +135,11 @@ class PreprocessingService:
 
         brightness_before = self._mean_brightness(image)
         backend = self._selected_backend()
-        night_mode = brightness_before <= self.pipeline_config.preprocessing.target_mean_brightness
+        # Mirror prepare()'s night-mode policy so the OCR benchmark and the
+        # runtime apply the same enhancement decisions to identical crops.
+        # Plate crops have no FrameEnvelope, so camera IR mode is unknown
+        # and treated as off here.
+        night_mode = self._night_mode_triggered_for_brightness(brightness_before)
 
         denoise_applied = False
         exposure_adjusted = False
@@ -212,10 +216,16 @@ class PreprocessingService:
             return True
         if config.ir_night_mode == NightModePolicy.never:
             return False
-
         if frame.camera_profile.ir_mode:
             return True
+        return self._night_mode_triggered_for_brightness(brightness_before)
 
+    def _night_mode_triggered_for_brightness(self, brightness_before: float) -> bool:
+        config = self.pipeline_config.preprocessing
+        if config.ir_night_mode == NightModePolicy.always:
+            return True
+        if config.ir_night_mode == NightModePolicy.never:
+            return False
         lux_threshold = config.night_mode_threshold_lux or 0.0
         brightness_threshold = min(max(lux_threshold * 8.0, 0.0), 255.0)
         return brightness_before <= brightness_threshold

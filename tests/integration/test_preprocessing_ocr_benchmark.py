@@ -7,6 +7,7 @@ import yaml
 from PIL import Image
 
 from reposcan_contracts.config.loader import load_pipeline_config
+from reposcan_contracts.frame import CameraProfile, FrameEnvelope, SourceType
 from reposcan_preprocessing import PreprocessingService
 from reposcan_preprocessing.ocr_benchmark import (
     OcrBenchmarkInputRecord,
@@ -191,3 +192,40 @@ def test_build_ocr_preprocessing_report_computes_subset_metrics():
     assert report["subsets"]["low_light"]["preprocessed_exact_match"] == 1.0
     assert report["subsets"]["non_low_light"]["raw_exact_match"] == 1.0
     assert report["preprocessing_summary"]["night_mode_trigger_rate"] == 0.5
+
+
+def test_prepare_plate_crop_with_metadata_matches_prepare_night_mode_decision(tmp_path):
+    # The OCR benchmark must measure the same enhancement decisions that the
+    # production frame pipeline applies, otherwise reported numbers do not
+    # represent runtime behavior.
+    pipeline_config = load_pipeline_config(str(REPO_ROOT / "configs/pipelines/default-edge.yaml"))
+    service = PreprocessingService(pipeline_config, artifact_root=tmp_path / "artifacts")
+
+    for color in ((10, 10, 10), (90, 90, 90), (180, 180, 180)):
+        source_path = tmp_path / f"crop_{color[0]:03d}.jpg"
+        Image.new("RGB", (96, 32), color=color).save(source_path)
+
+        frame = FrameEnvelope.model_validate(
+            {
+                "frame_id": f"frm_{color[0]:03d}",
+                "camera_id": "cam_parity",
+                "timestamp_utc": "2026-04-11T00:00:00Z",
+                "frame_path": str(source_path),
+                "frame_number": 0,
+                "source_type": "file",
+                "camera_profile": CameraProfile(
+                    camera_id="cam_parity",
+                    source_type=SourceType.file,
+                    ir_mode=False,
+                ).model_dump(mode="json"),
+            }
+        )
+
+        prepared = service.prepare(frame)
+        _, crop_metadata = service.prepare_plate_crop_with_metadata(source_path)
+
+        assert prepared.preprocessing.night_mode_triggered == crop_metadata.night_mode_triggered, (
+            f"night_mode parity broke for crop color={color}: "
+            f"prepare={prepared.preprocessing.night_mode_triggered} "
+            f"crop={crop_metadata.night_mode_triggered}"
+        )
