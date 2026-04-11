@@ -253,7 +253,7 @@ select:focus-visible {
 .panel-card__header p,
 .settings-card__header p,
 .detail-section p,
-.empty-state p {
+.state-view__description {
   margin: 0;
   color: var(--muted);
   line-height: 1.45;
@@ -3321,11 +3321,119 @@ select:focus-visible {
   margin-top: 8px;
 }
 
-.empty-state {
-  padding: 30px;
+.state-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 32px 28px;
   border-radius: 18px;
-  border: 1px dashed rgba(56, 232, 255, 0.16);
+  border: 1px dashed rgba(56, 232, 255, 0.18);
+  background: rgba(8, 16, 22, 0.52);
   text-align: center;
+}
+
+.state-view--compact {
+  padding: 18px 16px;
+  gap: 10px;
+  border-radius: 14px;
+}
+
+.state-view__icon {
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(56, 232, 255, 0.1);
+  color: var(--cyan);
+  flex: 0 0 auto;
+}
+
+.state-view__icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.state-view--compact .state-view__icon {
+  width: 34px;
+  height: 34px;
+}
+
+.state-view--compact .state-view__icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.state-view__copy {
+  display: grid;
+  gap: 6px;
+  max-width: 40ch;
+}
+
+.state-view__title {
+  color: var(--text);
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.state-view--compact .state-view__title {
+  font-size: 0.85rem;
+}
+
+.state-view__description {
+  font-size: 0.82rem;
+}
+
+.state-view--compact .state-view__description {
+  font-size: 0.76rem;
+}
+
+.state-view__actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 4px;
+}
+
+.state-view--loading {
+  border-style: solid;
+  border-color: rgba(56, 232, 255, 0.18);
+}
+
+.state-view--loading .state-view__icon {
+  animation: state-view-spin 900ms linear infinite;
+}
+
+@keyframes state-view-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.state-view--error {
+  border-style: solid;
+  border-color: rgba(255, 107, 107, 0.32);
+  background: rgba(28, 12, 14, 0.58);
+}
+
+.state-view--error .state-view__icon {
+  color: var(--danger, #ff6b6b);
+  background: rgba(255, 107, 107, 0.12);
+}
+
+.state-view--restricted {
+  border-color: rgba(255, 191, 72, 0.28);
+  background: rgba(28, 22, 10, 0.56);
+}
+
+.state-view--restricted .state-view__icon {
+  color: var(--warn);
+  background: rgba(255, 191, 72, 0.14);
 }
 
 .hotlists-grid,

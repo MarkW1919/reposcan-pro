@@ -2427,6 +2427,99 @@ function Badge(props: { tone: "cyan" | "critical" | "success" | "warn" | "muted"
   return <span className={`badge badge--${props.tone}`}>{props.children}</span>;
 }
 
+type StateViewVariant = "empty" | "loading" | "error" | "restricted";
+
+interface StateViewAction {
+  label: string;
+  onClick: () => void;
+  tone?: "primary" | "ghost";
+}
+
+function StateViewIcon(props: { variant: StateViewVariant }): ReactElement {
+  if (props.variant === "loading") {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+        <path d="M12 3 a9 9 0 1 0 9 9" />
+      </svg>
+    );
+  }
+  if (props.variant === "error") {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M10.3 3.9 1.9 18.4 A2 2 0 0 0 3.6 21.4 H20.4 A2 2 0 0 0 22.1 18.4 L13.7 3.9 A2 2 0 0 0 10.3 3.9 Z" />
+        <path d="M12 9 V13" />
+        <path d="M12 17 H12.01" />
+      </svg>
+    );
+  }
+  if (props.variant === "restricted") {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="4.5" y="10.5" width="15" height="10" rx="2" />
+        <path d="M8 10.5 V7 A4 4 0 0 1 16 7 V10.5" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="10.5" cy="10.5" r="6" />
+      <path d="M20 20 L15 15" />
+    </svg>
+  );
+}
+
+function StateView(props: {
+  variant?: StateViewVariant;
+  size?: "default" | "compact";
+  title: string;
+  description?: string;
+  icon?: ReactElement;
+  action?: StateViewAction;
+  secondaryAction?: StateViewAction;
+}): ReactElement {
+  const variant: StateViewVariant = props.variant ?? "empty";
+  const size = props.size ?? "default";
+  const role = variant === "loading" ? "status" : variant === "error" ? "alert" : undefined;
+  const ariaLive = variant === "loading" ? "polite" : undefined;
+  return (
+    <div
+      className={`state-view state-view--${variant} state-view--${size}`}
+      role={role}
+      aria-live={ariaLive}
+    >
+      <div className="state-view__icon" aria-hidden="true">
+        {props.icon ?? <StateViewIcon variant={variant} />}
+      </div>
+      <div className="state-view__copy">
+        <strong className="state-view__title">{props.title}</strong>
+        {props.description ? <p className="state-view__description">{props.description}</p> : null}
+      </div>
+      {props.action || props.secondaryAction ? (
+        <div className="state-view__actions">
+          {props.action ? (
+            <button
+              className={`btn btn--${props.action.tone ?? "primary"}`}
+              type="button"
+              onClick={props.action.onClick}
+            >
+              {props.action.label}
+            </button>
+          ) : null}
+          {props.secondaryAction ? (
+            <button
+              className={`btn btn--${props.secondaryAction.tone ?? "ghost"}`}
+              type="button"
+              onClick={props.secondaryAction.onClick}
+            >
+              {props.secondaryAction.label}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function workflowVariantForTone(tone: OperationalSignal["tone"]): "verify" | "follow-up" | "proceed" | "cancel" | "muted" {
   if (tone === "critical") {
     return "cancel";
@@ -4628,10 +4721,10 @@ function SearchLeadPanel(props: {
             <h3>Lead Intelligence</h3>
           </div>
         </div>
-        <div className="empty-state">
-          <strong>No lead selected.</strong>
-          <p>Run a locate search or focus a result to open the DRN-style lead workspace.</p>
-        </div>
+        <StateView
+          title="No lead selected"
+          description="Run a locate search or focus a result to open the DRN-style lead workspace."
+        />
       </aside>
     );
   }
@@ -5705,11 +5798,29 @@ function SearchScreen(props: {
               </div>
 
               <div className="search-results">
-                {props.results.length === 0 ? (
-                  <div className="empty-state">
-                    <strong>No reads matched.</strong>
-                    <p>Widen the plate fragment, adjust the time window, or remove active filters.</p>
-                  </div>
+                {props.loading ? (
+                  <StateView
+                    variant="loading"
+                    title="Searching reads"
+                    description="Running your query against the local read index."
+                  />
+                ) : props.searchError ? (
+                  <StateView
+                    variant="error"
+                    title="Search failed"
+                    description={props.searchError}
+                    action={{ label: "Try again", onClick: props.onClearFilters, tone: "ghost" }}
+                  />
+                ) : props.results.length === 0 ? (
+                  <StateView
+                    title={props.searchExecuted ? "No reads matched" : "Ready to search"}
+                    description={
+                      props.searchExecuted
+                        ? "Widen the plate fragment, adjust the time window, or remove active filters."
+                        : "Enter a plate fragment or hotlist filter above to pull matching reads."
+                    }
+                    action={props.searchExecuted ? { label: "Clear filters", onClick: props.onClearFilters, tone: "ghost" } : undefined}
+                  />
                 ) : props.searchGroupByPlate ? (
                   props.groupedResults.map((group) => {
                     const expanded = props.expandedGroups[group.plate] ?? false;
@@ -5891,10 +6002,11 @@ function AccountsScreen(props: {
           </div>
           <div className="hotlist-list">
             {props.hotlists.length === 0 ? (
-              <div className="empty-state">
-                <strong>No recovery accounts.</strong>
-                <p>Add a plate, VIN, or vehicle profile to begin tracking a repossession target.</p>
-              </div>
+              <StateView
+                title="No recovery accounts"
+                description="Add a plate, VIN, or vehicle profile to begin tracking a repossession target."
+                action={props.canManageAccounts ? { label: "New account", onClick: props.onClearDraft } : undefined}
+              />
             ) : (
               props.hotlists.map((entry) => (
                 <button
@@ -6369,10 +6481,10 @@ function HotlistsScreen(props: {
             {props.alertActionMessage ? <div className="feedback feedback--good">{props.alertActionMessage}</div> : null}
             <div className="record-list">
               {alertCases.length === 0 ? (
-                <div className="empty-state">
-                  <strong>No active recovery cases.</strong>
-                  <p>Scanned plates matching armed accounts will appear here.</p>
-                </div>
+                <StateView
+                  title="No active recovery cases"
+                  description="Scanned plates matching armed accounts will appear here."
+                />
               ) : (
                 alertCases.map(({ alert, row, entry }) => {
                   const matchConfidence = confidenceLabel(confidencePercent(alert.match_confidence));
@@ -6758,10 +6870,10 @@ function HotlistsScreen(props: {
                 </div>
               </>
             ) : (
-              <div className="empty-state">
-                <strong>No case selected.</strong>
-                <p>Select a recovery case from the queue or wait for a new plate match.</p>
-              </div>
+              <StateView
+                title="No case selected"
+                description="Select a recovery case from the queue or wait for a new plate match."
+              />
             )}
           </section>
         </div>
@@ -6777,10 +6889,10 @@ function HotlistsScreen(props: {
           </div>
           <div className="record-list">
             {props.activity.length === 0 ? (
-              <div className="empty-state">
-                <strong>No scan activity.</strong>
-                <p>LPR reads and recovery matches will appear here as they occur.</p>
-              </div>
+              <StateView
+                title="No scan activity"
+                description="LPR reads and recovery matches will appear here as they occur."
+              />
             ) : (
               props.activity.map(({ event, row }) => {
                 const eventConfidence = confidenceLabel(confidencePercent(event.confidence));
@@ -7017,9 +7129,11 @@ function SettingsScreen(props: {
                   </div>
                   <div className="settings-session-list">
                     {props.activeSessionRecords.length === 0 ? (
-                      <div className="empty-state">
-                        <strong>No active sessions.</strong>
-                      </div>
+                      <StateView
+                        size="compact"
+                        title="No active sessions"
+                        description="Operator sessions signed in to this workspace will show up here."
+                      />
                     ) : (
                       props.activeSessionRecords.map((session) => (
                         <div key={session.session_id} className="settings-session-row">
@@ -7043,20 +7157,34 @@ function SettingsScreen(props: {
                     </div>
                     <Badge tone={props.canViewAudit ? "success" : "muted"}>{props.canViewAudit ? "Visible" : "Restricted"}</Badge>
                   </div>
-                  {props.auditError ? <div className="feedback feedback--error">{props.auditError}</div> : null}
                   <div className="settings-session-list">
                     {!props.canViewAudit ? (
-                      <div className="empty-state">
-                        <strong>Audit access restricted.</strong>
-                      </div>
+                      <StateView
+                        variant="restricted"
+                        size="compact"
+                        title="Audit access restricted"
+                        description="Your role cannot read the audit log. Ask an admin to grant audit visibility."
+                      />
+                    ) : props.auditError ? (
+                      <StateView
+                        variant="error"
+                        size="compact"
+                        title="Audit log unavailable"
+                        description={props.auditError}
+                      />
                     ) : props.auditLoading ? (
-                      <div className="empty-state">
-                        <strong>Loading audit log...</strong>
-                      </div>
+                      <StateView
+                        variant="loading"
+                        size="compact"
+                        title="Loading audit log"
+                        description="Fetching recent operator actions."
+                      />
                     ) : props.auditEvents.length === 0 ? (
-                      <div className="empty-state">
-                        <strong>No audit events.</strong>
-                      </div>
+                      <StateView
+                        size="compact"
+                        title="No audit events"
+                        description="Operator and system actions will appear here once captured."
+                      />
                     ) : (
                       props.auditEvents.map((event) => (
                         <div key={event.event_id} className="settings-session-row">
