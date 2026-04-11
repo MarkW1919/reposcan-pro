@@ -2798,6 +2798,7 @@ function App(): ReactElement {
   const [searchGroupByPlate, setSearchGroupByPlate] = useState(true);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [searchResults, setSearchResults] = useState<ConsoleDetectionRow[]>([]);
+  const [searchSelectedDetectionId, setSearchSelectedDetectionId] = useState<string | null>(null);
   const [searchTotal, setSearchTotal] = useState(0);
   const [searchExecuted, setSearchExecuted] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -3056,6 +3057,27 @@ function App(): ReactElement {
     setSearchResults(initialRows);
     setSearchTotal(initialRows.length);
   }, [allRows, searchExecuted]);
+
+  useEffect(() => {
+    if (searchResults.length === 0) {
+      if (searchSelectedDetectionId) {
+        setSearchSelectedDetectionId(null);
+      }
+      return;
+    }
+
+    const currentSearchRowStillExists = searchSelectedDetectionId
+      ? searchResults.some((row) => row.id === searchSelectedDetectionId)
+      : false;
+    if (currentSearchRowStillExists) {
+      return;
+    }
+
+    const selectedConsoleRow =
+      selectedDetectionId ? searchResults.find((row) => row.id === selectedDetectionId) ?? null : null;
+    const nextSearchRow = selectedConsoleRow ?? searchResults[0] ?? null;
+    setSearchSelectedDetectionId(nextSearchRow?.id ?? null);
+  }, [searchResults, searchSelectedDetectionId, selectedDetectionId]);
 
   useEffect(() => {
     const detailRow = [...allRows, ...searchResults].find((row) => row.id === detailDetectionId);
@@ -3582,6 +3604,26 @@ function App(): ReactElement {
   function openDetail(row: ConsoleDetectionRow): void {
     setSelectedDetectionId(row.id);
     setDetailDetectionId(row.id);
+  }
+
+  function focusSearchRow(rowId: string): void {
+    setSearchSelectedDetectionId(rowId);
+    setSelectedDetectionId(rowId);
+  }
+
+  function openSearchDetail(row: ConsoleDetectionRow): void {
+    setSearchSelectedDetectionId(row.id);
+    openDetail(row);
+  }
+
+  function routeSearchRow(row: ConsoleDetectionRow): void {
+    setSearchSelectedDetectionId(row.id);
+    routeToRow(row);
+  }
+
+  function openSearchAccount(row: ConsoleDetectionRow): void {
+    setSearchSelectedDetectionId(row.id);
+    openAccountsForRow(row);
   }
 
   function routeToRow(row: ConsoleDetectionRow): void {
@@ -4259,9 +4301,9 @@ function App(): ReactElement {
         );
       }
 
-      setAssignmentMessage(request.existing ? "Dispatch assignment updated." : "Dispatch assignment created.");
+      setAssignmentMessage(request.existing ? "Assignment updated." : "Assignment created.");
     } catch (error) {
-      setAssignmentError(error instanceof Error ? error.message : "Unable to save the dispatch assignment.");
+      setAssignmentError(error instanceof Error ? error.message : "Unable to save the assignment.");
     } finally {
       setAssignmentSaving(false);
     }
@@ -4494,13 +4536,13 @@ function App(): ReactElement {
               searchVehicleYear={searchVehicleYear}
               searchCurrentCameraOnly={searchCurrentCameraOnly}
               searchCurrentShiftOnly={searchCurrentShiftOnly}
-              onAddToHotlist={openAccountsForRow}
+              onAddToHotlist={openSearchAccount}
               onClearFilters={clearSearchFilters}
               onCopyPlate={handleCopyPlate}
-              onDetails={openDetail}
-              onMap={routeToRow}
+              onDetails={openSearchDetail}
+              onMap={routeSearchRow}
               onRetrySearch={() => void runSearch()}
-              onSelectDetection={setSelectedDetectionId}
+              onSelectDetection={focusSearchRow}
               onSearchSubmit={handleSearchSubmit}
               onToggleExpanded={(plate) =>
                 setExpandedGroups((current) => ({
@@ -4509,7 +4551,7 @@ function App(): ReactElement {
                 }))
               }
               setQuery={setSearchQuery}
-              selectedDetectionId={selectedDetectionId}
+              selectedDetectionId={searchSelectedDetectionId}
               setSearchFromLocal={setSearchFromLocal}
               setSearchGroupByPlate={setSearchGroupByPlate}
               setSearchHighConfidenceOnly={setSearchHighConfidenceOnly}
@@ -4962,8 +5004,8 @@ function SearchLeadPanel(props: {
       {(props.followUp || props.assignment || row.alertNotes) ? (
         <div className="detail-section">
           <div className="detail-section__copy">
-            <h4>Case context</h4>
-            <p>Current operational state tied to this read.</p>
+            <h4>Recovery context</h4>
+            <p>Current recovery state tied to this lead.</p>
           </div>
           <div className="locate-context-list">
             {props.followUp ? (
@@ -4975,7 +5017,7 @@ function SearchLeadPanel(props: {
             {props.assignment ? (
               <div className="locate-context-row">
                 <DispatchStatusPill status={props.assignment.status} />
-                <span>{props.assignment.summary ?? "Dispatch case is active for this plate."}</span>
+                <span>{props.assignment.summary ?? "Field assignment is active for this plate."}</span>
               </div>
             ) : null}
             {row.alertNotes ? (
@@ -5551,7 +5593,7 @@ function ConsoleScreen(props: {
               <span className="table-card__count">{props.allRows.length}</span>
             </div>
             <div className="table-card__meta">
-              {props.activeAlerts > 0 ? <Badge tone="critical">{`${props.activeAlerts} alert${props.activeAlerts === 1 ? "" : "s"}`}</Badge> : null}
+              {props.activeAlerts > 0 ? <Badge tone="critical">{`${props.activeAlerts} recovery match${props.activeAlerts === 1 ? "" : "es"}`}</Badge> : null}
             </div>
           </div>
           <DetectionFeed
@@ -5728,7 +5770,7 @@ function SearchScreen(props: {
                     ? "Camera name or location"
                     : props.searchMode === "vehicle"
                       ? "Make, model, color, or year"
-                      : "Recovery alert plate or case notes"
+                      : "Recovery account plate or account notes"
               }
               type="text"
               value={props.query}
@@ -5810,13 +5852,13 @@ function SearchScreen(props: {
           <CollapsibleSection
             className="search-sidebar-section search-sidebar-section--collapsible"
             defaultOpen={recoveryFilterCount > 0}
-            summary={summarizeFilterCount(recoveryFilterCount, "case filter")}
+            summary={summarizeFilterCount(recoveryFilterCount, "recovery filter")}
             title="Recovery status"
           >
             <label className="settings-input-row">
               <span>Status</span>
               <select className="select-input" value={props.searchAlertStatus} onChange={(event) => props.setSearchAlertStatus(event.target.value as DashboardAlertStatus | "")}>
-                <option value="">Any alert state</option>
+                <option value="">Any recovery status</option>
                 <option value="active">Active</option>
                 <option value="acknowledged">Acknowledged</option>
                 <option value="dismissed">Dismissed</option>
