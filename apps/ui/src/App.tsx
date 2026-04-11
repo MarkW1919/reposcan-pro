@@ -466,6 +466,131 @@ function formatRelativeTime(timestampUtc: string, now: number = Date.now()): str
   return new Date(ts).toLocaleDateString();
 }
 
+type GpsFixStatus =
+  | "unsupported"
+  | "denied"
+  | "error"
+  | "acquiring"
+  | "weak"
+  | "fair"
+  | "locked"
+  | "stale";
+
+interface GpsFixState {
+  status: GpsFixStatus;
+  lat: number | null;
+  lng: number | null;
+  accuracyMeters: number | null;
+  lastFixAtMs: number | null;
+  message: string | null;
+}
+
+const initialGpsFixState: GpsFixState = {
+  status: "acquiring",
+  lat: null,
+  lng: null,
+  accuracyMeters: null,
+  lastFixAtMs: null,
+  message: null,
+};
+
+function classifyGpsAccuracy(accuracyMeters: number): Extract<GpsFixStatus, "weak" | "fair" | "locked"> {
+  if (accuracyMeters <= 15) return "locked";
+  if (accuracyMeters <= 45) return "fair";
+  return "weak";
+}
+
+function buildGpsIndicator(fix: GpsFixState): { value: string; tone: "good" | "off" | "warn"; tip: string } {
+  switch (fix.status) {
+    case "locked":
+      return {
+        value: "Locked",
+        tone: "good",
+        tip: `GPS locked (±${Math.round(fix.accuracyMeters ?? 0)} m) \u2014 click to open map settings`,
+      };
+    case "fair":
+      return {
+        value: "Fair",
+        tone: "good",
+        tip: `GPS fair (±${Math.round(fix.accuracyMeters ?? 0)} m) \u2014 click to open map settings`,
+      };
+    case "weak":
+      return {
+        value: "Weak",
+        tone: "warn",
+        tip: `GPS weak signal (±${Math.round(fix.accuracyMeters ?? 0)} m) \u2014 click to open map settings`,
+      };
+    case "stale":
+      return { value: "Stale", tone: "warn", tip: "GPS fix stale \u2014 click to open map settings" };
+    case "acquiring":
+      return { value: "Acquiring", tone: "warn", tip: "Waiting for first GPS fix \u2014 click to open map settings" };
+    case "denied":
+      return { value: "Denied", tone: "off", tip: "Location permission denied \u2014 click to open map settings" };
+    case "unsupported":
+      return { value: "Unavail", tone: "off", tip: "Geolocation unsupported in this browser \u2014 click to open map settings" };
+    case "error":
+    default:
+      return { value: "Error", tone: "off", tip: fix.message ?? "GPS error \u2014 click to open map settings" };
+  }
+}
+
+function useBrowserGeolocation(): GpsFixState {
+  const [fix, setFix] = useState<GpsFixState>(() => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      return { ...initialGpsFixState, status: "unsupported", message: "Geolocation not supported" };
+    }
+    return initialGpsFixState;
+  });
+
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      return;
+    }
+
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        const accuracyMeters = position.coords.accuracy ?? 9999;
+        setFix({
+          status: classifyGpsAccuracy(accuracyMeters),
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+          accuracyMeters,
+          lastFixAtMs: position.timestamp ?? Date.now(),
+          message: null,
+        });
+      },
+      (error) => {
+        setFix((current) => ({
+          ...current,
+          status: error.code === error.PERMISSION_DENIED ? "denied" : "error",
+          message: error.message || null,
+        }));
+      },
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 },
+    );
+
+    const staleInterval = window.setInterval(() => {
+      setFix((current) => {
+        if (!current.lastFixAtMs) return current;
+        if (current.status !== "locked" && current.status !== "fair" && current.status !== "weak") {
+          return current;
+        }
+        if (Date.now() - current.lastFixAtMs > 12000) {
+          return { ...current, status: "stale" };
+        }
+        return current;
+      });
+    }, 3000);
+
+    return () => {
+      navigator.geolocation.clearWatch(watchId);
+      window.clearInterval(staleInterval);
+    };
+  }, []);
+
+  return fix;
+}
+
 function loadStoredSettings(): UiSettings {
   if (typeof window === "undefined") {
     return defaultUiSettings;
@@ -2471,6 +2596,7 @@ function ScreenHeader(props: { title: string; subtitle?: string; meta?: ReactEle
 }
 
 function App(): ReactElement {
+  const gpsFix = useBrowserGeolocation();
   const [screen, setScreen] = useState<AppScreen>("console");
   const [consoleLayoutMode, setConsoleLayoutMode] = useState<ConsoleLayoutMode>("overview");
   const [stageView, setStageView] = useState<StageView>("camera");
@@ -4031,6 +4157,7 @@ function App(): ReactElement {
     }
   }
 
+  const gpsIndicator = buildGpsIndicator(gpsFix);
   const footerIndicators: Array<{
     label: string;
     value: string;
@@ -4038,7 +4165,7 @@ function App(): ReactElement {
     tip: string;
     action: () => void;
   }> = [
-    { label: "GPS", value: "Locked", tone: "good", tip: "GPS signal status \u2014 click to open map settings", action: () => { switchScreen("settings"); setSettingsSection("map"); } },
+    { label: "GPS", value: gpsIndicator.value, tone: gpsIndicator.tone, tip: gpsIndicator.tip, action: () => { switchScreen("settings"); setSettingsSection("map"); } },
     { label: "API", value: dataSource === "live" ? "Live" : dataSource === "fallback" ? "Fallback" : "Demo", tone: dataSource === "live" ? "good" : "off", tip: "Backend connection \u2014 click to open system settings", action: () => { switchScreen("settings"); setSettingsSection("system"); } },
     { label: "LPR", value: navigationActive ? `Auto ${settings.arrivalRadiusFeet}ft` : settings.arrivalScanEnabled ? "Scanning" : "Off", tone: navigationActive || settings.arrivalScanEnabled ? "good" : "off", tip: "Plate reader status \u2014 click to open map settings", action: () => { switchScreen("settings"); setSettingsSection("map"); } },
     { label: "Cams", value: `${onlineCameraCount}/${availableCameraFeeds.length}`, tone: onlineCameraCount > 0 ? "good" : "off", tip: "Camera feeds \u2014 click to open camera settings", action: () => { switchScreen("settings"); setSettingsSection("cameras"); } },
@@ -4072,7 +4199,6 @@ function App(): ReactElement {
             }
           }}
           routeEta={routeEta}
-          settings={settings}
           totalReads={totalReads}
         />
 
@@ -4942,7 +5068,6 @@ function NavPanel(props: {
   onScreenChange: (screen: AppScreen) => void;
   onToggleIdleScan: () => void;
   routeEta: string;
-  settings: UiSettings;
   totalReads: number;
 }): ReactElement {
   const navItems: Array<{ id: AppScreen; label: string; tip: string; count: number | null }> = [
@@ -5017,30 +5142,6 @@ function NavPanel(props: {
         </div>
       </div>
 
-      <div className="panel-card">
-        <div className="panel-card__header">
-          <h3>Scan Control</h3>
-          <Badge tone={!props.navigationActive && props.idleScanEnabled ? "success" : props.navigationActive ? "cyan" : "muted"}>
-            {props.navigationActive ? "AUTO" : props.idleScanEnabled ? "LIVE" : "OFF"}
-          </Badge>
-        </div>
-        <p className="brand-copy">
-          {props.navigationActive
-            ? `Arrival auto-scan is ${props.settings.autoArrivalScan ? "armed" : "disabled"} and will trigger at ${props.settings.arrivalRadiusFeet} ft.`
-            : "When you are not routing to a destination, scanning is controlled from this dashboard CTA."}
-        </p>
-        <div className="button-row">
-          {!props.navigationActive ? (
-            <button className={`btn ${props.idleScanEnabled ? "btn--danger" : "btn--primary"}`} type="button" onClick={props.onToggleIdleScan}>
-              {props.idleScanEnabled ? "Pause Scanning" : "Start Scanning"}
-            </button>
-          ) : (
-            <button className="btn btn--ghost" type="button" onClick={props.onOpenRoute}>
-              Open Route
-            </button>
-          )}
-        </div>
-      </div>
     </aside>
   );
 }

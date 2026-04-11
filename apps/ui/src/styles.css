@@ -279,14 +279,15 @@ select:focus-visible {
 }
 
 .nav-tab {
-  min-height: 42px;
-  padding: 0 12px;
+  min-height: 52px;
+  padding: 0 14px;
   border-radius: 14px;
   border: 1px solid transparent;
   background: rgba(14, 23, 30, 0.84);
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
   transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
 }
 
@@ -313,14 +314,25 @@ select:focus-visible {
 }
 
 .nav-tab__count {
-  min-width: 28px;
-  padding: 4px 8px;
+  min-width: 32px;
+  height: 24px;
+  padding: 0 10px;
   border-radius: 999px;
-  text-align: center;
-  background: rgba(56, 232, 255, 0.08);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(56, 232, 255, 0.14);
   color: var(--cyan);
-  font-size: 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 700;
   font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  border: 1px solid rgba(56, 232, 255, 0.24);
+}
+
+.nav-tab.is-active .nav-tab__count {
+  background: rgba(56, 232, 255, 0.28);
+  border-color: rgba(56, 232, 255, 0.5);
 }
 
 .ops-glance-card {
