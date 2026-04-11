@@ -53,7 +53,6 @@ import { detectionSeverityForRow } from "./presentation/detectionSeverity";
 
 type AppScreen = "console" | "search" | "accounts" | "hotlists" | "settings";
 type StageView = "camera" | "map";
-type ConsoleLayoutMode = "overview" | "focus";
 type SearchMode = "plate" | "camera" | "vehicle" | "alert";
 type DataSource = "demo" | "live" | "fallback";
 type AlertPersistence = "until-dismissed" | "15 sec" | "60 sec";
@@ -2598,7 +2597,6 @@ function ScreenHeader(props: { title: string; subtitle?: string; meta?: ReactEle
 function App(): ReactElement {
   const gpsFix = useBrowserGeolocation();
   const [screen, setScreen] = useState<AppScreen>("console");
-  const [consoleLayoutMode, setConsoleLayoutMode] = useState<ConsoleLayoutMode>("overview");
   const [stageView, setStageView] = useState<StageView>("camera");
   const [selectedCameraId, setSelectedCameraId] = useState<string>("");
   const [selectedDetectionId, setSelectedDetectionId] = useState<string | null>(null);
@@ -2985,15 +2983,9 @@ function App(): ReactElement {
   const detailRow = [...allRows, ...searchResults].find((row) => row.id === detailDetectionId) ?? null;
   const hotlistOverlayRow = allRows.find((row) => row.id === hotlistOverlayId) ?? null;
   const currentCamera = availableCameraFeeds.find((feed) => feed.id === selectedCameraId) ?? availableCameraFeeds[0];
-  const currentCameraIndex = currentCamera ? availableCameraFeeds.findIndex((feed) => feed.id === currentCamera.id) : -1;
-  const secondaryCamera =
-    availableCameraFeeds.length > 1 && currentCameraIndex >= 0 ? availableCameraFeeds[(currentCameraIndex + 1) % availableCameraFeeds.length] : currentCamera;
   const primaryCameraId = currentCamera?.id ?? selectedRow?.cameraId ?? selectedCameraId;
-  const secondaryCameraId = secondaryCamera?.id ?? primaryCameraId;
   const cameraRows = allRows.filter((row) => row.cameraId === primaryCameraId);
-  const secondaryCameraRows = allRows.filter((row) => row.cameraId === secondaryCameraId);
   const cameraFocusRow = cameraRows[0] ?? selectedRow;
-  const secondaryCameraFocusRow = secondaryCameraRows[0] ?? allRows.find((row) => row.cameraId === secondaryCameraId) ?? selectedRow;
   const routeProgress = navigationActive ? clamp(1 - distanceFeet / 4800, 0, 1) : 0;
   const unitPosition = interpolatePosition(routeProgress);
   const routePath = buildRoutePath(unitPosition);
@@ -4225,15 +4217,12 @@ function App(): ReactElement {
               selectedDetectionId={selectedDetectionId}
               settings={settings}
               stageView={stageView}
-              consoleLayoutMode={consoleLayoutMode}
               unitPosition={unitPosition}
               routeDistance={routeDistance}
               routeEta={routeEta}
               routePath={routePath}
               routeStatusLabel={routeStatusLabel}
               withinRadius={withinRadius}
-              secondaryCamera={secondaryCamera}
-              secondaryCameraFocusRow={secondaryCameraFocusRow}
               onApplyDestinationTarget={applyDestinationTarget}
               onClearDestinationDraft={clearDestinationDraft}
               onCloseDestinationModal={closeDestinationModal}
@@ -4242,7 +4231,6 @@ function App(): ReactElement {
               onOpenDetail={openDetail}
               onOpenDestinationModal={openDestinationModal}
               onRemoveRecentDestination={removeRecentDestination}
-              onConsoleLayoutChange={setConsoleLayoutMode}
               onSelectCamera={setSelectedCameraId}
               onSelectDetection={setSelectedDetectionId}
               onStageDestination={stageDestination}
@@ -5153,7 +5141,6 @@ function ConsoleScreen(props: {
   allRows: ConsoleDetectionRow[];
   cameraFeedsList: CameraUiFeed[];
   cameraFocusRow: ConsoleDetectionRow | null;
-  consoleLayoutMode: ConsoleLayoutMode;
   currentCamera: CameraUiFeed | undefined;
   dataSource: DataSource;
   destinationInput: string;
@@ -5164,8 +5151,6 @@ function ConsoleScreen(props: {
   idleScanEnabled: boolean;
   layerMenuOpen: boolean;
   navigationActive: boolean;
-  secondaryCamera: CameraUiFeed | undefined;
-  secondaryCameraFocusRow: ConsoleDetectionRow | null;
   selectedCameraId: string;
   selectedDetectionId: string | null;
   settings: UiSettings;
@@ -5184,7 +5169,6 @@ function ConsoleScreen(props: {
   onOpenDetail: (row: ConsoleDetectionRow) => void;
   onOpenDestinationModal: () => void;
   onRemoveRecentDestination: (id: string) => void;
-  onConsoleLayoutChange: (mode: ConsoleLayoutMode) => void;
   onSelectCamera: (cameraId: string) => void;
   onSelectDetection: (rowId: string) => void;
   onStageDestination: () => void;
@@ -5270,82 +5254,64 @@ function ConsoleScreen(props: {
     <section className="screen">
       <div
         ref={layoutRef}
-        className={`console-layout ${props.consoleLayoutMode === "overview" ? "console-layout--overview" : "console-layout--focus"}`}
+        className="console-layout"
         style={layoutStyle}
       >
         <section className="stage-card">
           <div className="stage-toolbar">
             <div className="camera-tab-strip">
-              {props.cameraFeedsList.map((feed) => (
-                <button
-                  key={feed.id}
-                  className={`camera-tab ${props.selectedCameraId === feed.id ? "is-active" : ""}`}
-                  type="button"
-                  onClick={() => props.onSelectCamera(feed.id)}
-                >
-                  <span className={`camera-dot camera-dot--${cameraFeedDotTone(feed.status)}`} />
-                  {feed.shortLabel}
-                </button>
-              ))}
+              {props.cameraFeedsList.map((feed) => {
+                const metaLabel =
+                  feed.status === "Online"
+                    ? feed.fps
+                      ? `${Math.round(feed.fps)} fps`
+                      : "Live"
+                    : feed.lastSeenAtUtc
+                      ? `Seen ${formatRelativeTime(feed.lastSeenAtUtc)}`
+                      : feed.status;
+                return (
+                  <button
+                    key={feed.id}
+                    className={`camera-tab ${props.selectedCameraId === feed.id ? "is-active" : ""}`}
+                    type="button"
+                    onClick={() => props.onSelectCamera(feed.id)}
+                  >
+                    <span className={`camera-dot camera-dot--${cameraFeedDotTone(feed.status)}`} />
+                    <span className="camera-tab__copy">
+                      <strong>{feed.shortLabel}</strong>
+                      <span className="camera-tab__meta">{metaLabel}</span>
+                    </span>
+                  </button>
+                );
+              })}
             </div>
             <div className="stage-toolbar__right">
-              <Tooltip text="Split view with cameras and map">
+              <div className="segmented-control stage-view-toggle" role="tablist" aria-label="Stage view">
                 <button
-                  className={`pill-button ${props.consoleLayoutMode === "overview" ? "is-active" : ""}`}
+                  className={props.stageView === "camera" ? "is-active" : ""}
                   type="button"
-                  onClick={() => props.onConsoleLayoutChange("overview")}
+                  role="tab"
+                  aria-selected={props.stageView === "camera" ? "true" : "false"}
+                  onClick={() => props.onStageViewChange("camera")}
                 >
-                  Overview
+                  Camera
                 </button>
-              </Tooltip>
-              <Tooltip text="Full-size single view">
                 <button
-                  className={`pill-button ${props.consoleLayoutMode === "focus" ? "is-active" : ""}`}
+                  className={props.stageView === "map" ? "is-active" : ""}
                   type="button"
-                  onClick={() => props.onConsoleLayoutChange("focus")}
+                  role="tab"
+                  aria-selected={props.stageView === "map" ? "true" : "false"}
+                  onClick={() => props.onStageViewChange("map")}
                 >
-                  Focus
+                  Map
                 </button>
-              </Tooltip>
-              {props.consoleLayoutMode === "focus" ? (
-                <>
-                  <Tooltip text="Show live camera feed">
-                    <button className={`pill-button ${props.stageView === "camera" ? "is-active" : ""}`} type="button" onClick={() => props.onStageViewChange("camera")}>
-                      Camera
-                    </button>
-                  </Tooltip>
-                  <Tooltip text="Show route and detection map">
-                    <button className={`pill-button ${props.stageView === "map" ? "is-active" : ""}`} type="button" onClick={() => props.onStageViewChange("map")}>
-                      Map
-                    </button>
-                  </Tooltip>
-                </>
-              ) : null}
+              </div>
               <Badge tone={cameraFeedTone(props.currentCamera?.status ?? "Unknown")}>{cameraFeedBadgeLabel(props.currentCamera?.status ?? "Unknown").toUpperCase()}</Badge>
             </div>
           </div>
 
           <div className="stage-surface">
-            {props.consoleLayoutMode === "overview" ? (
-              <div className="console-overview-grid">
-                <article className="console-overview-card console-overview-card--primary">
-                  <CameraViewport cameraId={props.selectedCameraId} row={props.cameraFocusRow} dataSource={props.dataSource} compact />
-                </article>
-
-                <article className="console-overview-card console-overview-card--secondary">
-                  <CameraViewport
-                    cameraId={props.secondaryCamera?.id ?? props.selectedCameraId}
-                    row={props.secondaryCameraFocusRow}
-                    dataSource={props.dataSource}
-                    compact
-                  />
-                </article>
-
-                <article className="console-overview-card console-overview-card--map">
-                  <MapStagePanel compact {...mapPanelProps} />
-                </article>
-              </div>
-            ) : props.stageView === "camera" ? (
+            {props.stageView === "camera" ? (
               <CameraViewport cameraId={props.selectedCameraId} row={props.cameraFocusRow} dataSource={props.dataSource} />
             ) : (
               <MapStagePanel {...mapPanelProps} />
@@ -5366,25 +5332,6 @@ function ConsoleScreen(props: {
             <div className="table-card__meta">
               {props.activeAlerts > 0 ? <Badge tone="critical">{`${props.activeAlerts} alert${props.activeAlerts === 1 ? "" : "s"}`}</Badge> : null}
             </div>
-          </div>
-          <div className="camera-health-strip">
-            {props.cameraFeedsList.map((feed) => (
-              <div key={feed.id} className={`camera-health-chip camera-health-chip--${feed.status.toLowerCase()}`}>
-                <span className={`camera-health-chip__dot camera-health-chip__dot--${cameraFeedDotTone(feed.status)}`} />
-                <div className="camera-health-chip__copy">
-                  <strong>{feed.shortLabel}</strong>
-                  <span>
-                    {feed.status === "Online"
-                      ? feed.fps
-                        ? `${Math.round(feed.fps)} fps`
-                        : "Live"
-                      : feed.lastSeenAtUtc
-                        ? `Seen ${formatDateTime(feed.lastSeenAtUtc)}`
-                        : feed.status}
-                  </span>
-                </div>
-              </div>
-            ))}
           </div>
           <DetectionFeed
             confidenceLabel={confidenceLabel}
