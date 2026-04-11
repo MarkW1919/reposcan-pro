@@ -8,7 +8,9 @@ Current integrated slice:
 - applies exposure-aware tuning plus low-light-oriented contrast enhancement when valid images are available
 - supports an OpenCV-oriented CLAHE path when the runtime has OpenCV available, with a safe Pillow fallback
 - provides plate-crop rectification helpers for downstream OCR preparation
+- exposes plate-crop preprocessing metadata for OCR benchmark reporting
 - degrades safely to passthrough behavior when the source frame is missing or not decodable
 
-Planned responsibilities:
-- preprocessing benchmark results tied to real OCR-capable evaluation sets
+Repo-tracked evidence:
+- `services/preprocessing/fixtures/reports/openalpr-us-holdout.preprocessing-ocr.json`
+- `services/preprocessing/fixtures/reports/synthetic-oklahoma-holdout.preprocessing-ocr.json`

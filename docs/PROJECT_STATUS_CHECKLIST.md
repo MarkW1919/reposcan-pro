@@ -44,7 +44,7 @@ Last reviewed against repo state: `2026-04-11`
 - [x] ~~Exposure-aware scene tuning is implemented.~~
 - [x] ~~OCR crop rectification helpers are implemented.~~
 - [x] ~~Production-grade CLAHE / OpenCV-oriented enhancement path is implemented.~~
-- [ ] Preprocessing impact on OCR and low-light performance is benchmarked and documented.
+- [x] ~~Preprocessing impact on OCR and low-light performance is benchmarked and documented.~~
 
 ## 4. Inference Runtime
 
@@ -189,8 +189,8 @@ Last reviewed against repo state: `2026-04-11`
 - [ ] The system can ingest from deployed cameras without internet dependency.
 - [ ] The system can produce reliable long-range plate reads in field-realistic conditions.
 - [ ] The system can maintain usable performance in low-light and no-light-assisted conditions.
-- [ ] The system can persist detections, media references, alerts, reviews, and hotlists locally first.
-- [ ] The system can serve operator workflows for live monitoring, evidence review, search, and alert handling.
-- [ ] The system can optionally sync upstream without blocking local mission-critical operation.
+- [x] ~~The system can persist detections, media references, alerts, reviews, and hotlists locally first.~~
+- [x] ~~The system can serve operator workflows for live monitoring, evidence review, search, and alert handling.~~
+- [x] ~~The system can optionally sync upstream without blocking local mission-critical operation.~~
 - [ ] The system is validated on target hardware with acceptable latency, stability, and recovery behavior.
 - [ ] The system has completed field validation sufficient to call it fully working and functional.

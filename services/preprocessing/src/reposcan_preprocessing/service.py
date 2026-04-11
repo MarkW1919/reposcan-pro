@@ -115,6 +115,20 @@ class PreprocessingService:
         corners: Sequence[tuple[float, float]] | None = None,
         output_size: tuple[int, int] = (160, 48),
     ) -> Image.Image:
+        image, _ = self.prepare_plate_crop_with_metadata(
+            crop_source,
+            corners=corners,
+            output_size=output_size,
+        )
+        return image
+
+    def prepare_plate_crop_with_metadata(
+        self,
+        crop_source: str | Path | Image.Image,
+        *,
+        corners: Sequence[tuple[float, float]] | None = None,
+        output_size: tuple[int, int] = (160, 48),
+    ) -> tuple[Image.Image, PreprocessingMetadata]:
         image = self._load_image(crop_source)
         if corners and self.pipeline_config.preprocessing.rectify_plate_crops:
             image = self.rectify_plate_crop(image, corners=corners, output_size=output_size)
@@ -123,13 +137,34 @@ class PreprocessingService:
         backend = self._selected_backend()
         night_mode = brightness_before <= self.pipeline_config.preprocessing.target_mean_brightness
 
+        denoise_applied = False
+        exposure_adjusted = False
+        contrast_enhanced = False
+        clahe_applied = False
         if self.pipeline_config.preprocessing.exposure_compensation:
-            image, _ = self._adjust_exposure(image, brightness_before=brightness_before, night_mode=night_mode)
+            image, exposure_adjusted = self._adjust_exposure(
+                image,
+                brightness_before=brightness_before,
+                night_mode=night_mode,
+            )
         if self.pipeline_config.preprocessing.denoise:
-            image, _ = self._denoise(image, backend=backend)
+            image, denoise_applied = self._denoise(image, backend=backend)
         if self.pipeline_config.preprocessing.contrast_enhancement:
-            image, _ = self._enhance_contrast(image, backend=backend, night_mode=night_mode)
-        return image
+            image, clahe_applied = self._enhance_contrast(image, backend=backend, night_mode=night_mode)
+            contrast_enhanced = True
+
+        brightness_after = self._mean_brightness(image)
+        return image, PreprocessingMetadata(
+            artifact_generated=False,
+            enhancement_backend=backend.value,
+            denoise_applied=denoise_applied,
+            exposure_adjusted=exposure_adjusted,
+            contrast_enhanced=contrast_enhanced,
+            clahe_applied=clahe_applied,
+            night_mode_triggered=night_mode,
+            mean_brightness_before=brightness_before,
+            mean_brightness_after=brightness_after,
+        )
 
     def rectify_plate_crop(
         self,

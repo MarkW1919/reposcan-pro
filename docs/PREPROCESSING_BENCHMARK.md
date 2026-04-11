@@ -1,55 +1,89 @@
 # PREPROCESSING_BENCHMARK.md
 
-This document defines the current preprocessing benchmark harness for RepoScan Pro.
+This document records the current OCR-facing preprocessing benchmark evidence for RepoScan Pro.
 
-It is intentionally scoped as a preprocessing-quality benchmark, not a final OCR-accuracy benchmark. The real Section 3 checklist item stays open until the team benchmarks preprocessing against a real OCR-capable runtime and a representative low-light corpus.
+The benchmark now uses a real PaddleOCR runtime against label-backed OCR crops. That closes the Section 3 requirement to benchmark preprocessing impact on OCR and low-light behavior.
 
-## Current Harness
+It does not close any field-acceptance requirement by itself. These reports are still lab evidence, not deployed-camera proof.
 
-Use the local benchmark script to measure:
+## Repo-Tracked Evidence
 
-- frame count processed
-- artifact generation count
-- average brightness before preprocessing
-- average brightness after preprocessing
-- how often exposure compensation triggered
-- how often the OpenCV CLAHE path was used when available
+- real OCR benchmark, public OpenALPR holdout:
+  - [openalpr-us-holdout.preprocessing-ocr.json](../services/preprocessing/fixtures/reports/openalpr-us-holdout.preprocessing-ocr.json)
+- low-light stress benchmark, synthetic Oklahoma holdout:
+  - [synthetic-oklahoma-holdout.preprocessing-ocr.json](../services/preprocessing/fixtures/reports/synthetic-oklahoma-holdout.preprocessing-ocr.json)
 
-Run:
+## Current Results
+
+From the public OpenALPR holdout report (`75` real plate crops):
+
+- raw exact match: `0.627`
+- preprocessed exact match: `0.600`
+- raw character accuracy: `0.905`
+- preprocessed character accuracy: `0.900`
+
+From the synthetic Oklahoma holdout report (`30` support crops):
+
+- raw exact match: `0.033`
+- preprocessed exact match: `0.033`
+- raw character accuracy: `0.255`
+- preprocessed character accuracy: `0.297`
+
+From the synthetic low-light subset (`19` metadata-flagged low-light crops):
+
+- raw exact match: `0.000`
+- preprocessed exact match: `0.053`
+- raw character accuracy: `0.204`
+- preprocessed character accuracy: `0.221`
+
+## What This Proves
+
+- preprocessing impact is now measured against a real OCR runtime, not only image-quality proxies
+- the current default preprocessing profile is not a universal win for already-isolated real plate crops
+- the same profile does improve controlled low-light OCR character accuracy and low-light exact match on the synthetic support holdout
+- the benchmark can now be rerun before changing preprocessing defaults or OCR runtime assumptions
+
+## Regenerate
+
+Public OCR holdout:
 
 ```powershell
-.\.venv\Scripts\python.exe .\scripts\benchmark_preprocessing.py --frames-dir C:\path\to\frames
+.\.venv\Scripts\python.exe .\scripts\benchmark_preprocessing_ocr.py `
+  --dataset-manifest .\data\manifests\public\openalpr-us-benchmark-20260402.yaml `
+  --split holdout `
+  --pipeline-config .\configs\pipelines\default-edge.yaml `
+  --paddleocr-root .\tmp\PaddleOCR `
+  --checkpoint-dir .\tmp\PaddleOCR\en_PP-OCRv4_rec_train\best_accuracy `
+  --character-dict-path .\tmp\PaddleOCR\ppocr\utils\en_dict.txt `
+  --report-output .\services\preprocessing\fixtures\reports\openalpr-us-holdout.preprocessing-ocr.json
 ```
 
-## What This Proves Today
+Synthetic Oklahoma support holdout with metadata-tagged low-light subset:
 
-- the preprocessing service can run across a real folder of local images
-- artifact generation is stable across a batch
-- exposure-aware tuning changes can be observed numerically
-- low-light lift can be compared between preprocessing revisions
+```powershell
+.\.venv\Scripts\python.exe .\scripts\benchmark_preprocessing_ocr.py `
+  --dataset-manifest .\data\staged\synthetic_ok_ocr_claude_handoff_2026-03-24\manifest.yaml `
+  --split holdout `
+  --pipeline-config .\configs\pipelines\default-edge.yaml `
+  --paddleocr-root .\tmp\PaddleOCR `
+  --checkpoint-dir .\tmp\PaddleOCR\en_PP-OCRv4_rec_train\best_accuracy `
+  --character-dict-path .\tmp\PaddleOCR\ppocr\utils\en_dict.txt `
+  --metadata-csv .\data\staged\synthetic_ok_ocr_claude_handoff_2026-03-24\metadata.csv `
+  --report-output .\services\preprocessing\fixtures\reports\synthetic-oklahoma-holdout.preprocessing-ocr.json
+```
 
-## What This Does Not Prove Yet
+## Interpretation
 
-- exact-match OCR gains
-- character-error-rate gains
-- field-valid long-range performance gains
-- production-ready low-light acceptance behavior
+- default preprocessing should not be treated as automatically beneficial for every isolated OCR crop
+- low-light-oriented preprocessing remains justified as a targeted support path for dark or degraded crops
+- future preprocessing changes should be compared against both reports before becoming the default
 
-Those remain blocked on:
+## What This Does Not Prove
 
-- a real OCR runtime in the inference stack
-- representative labeled low-light and long-range evaluation frames
-- benchmark runs tied to accepted holdout sets
-
-## Recommended Next Benchmark Step
-
-Once the real OCR path is integrated:
-
-1. assemble a labeled low-light evaluation subset
-2. run OCR on raw plate crops
-3. run OCR on rectified and preprocessed plate crops
-4. compare exact match, character accuracy, and latency
-5. record the result before promoting new preprocessing defaults
+- deployed-camera low-light acceptance
+- long-range field-read performance
+- moving-platform OCR behavior
+- target-hardware latency acceptance
 
 ## Related Documents
 
