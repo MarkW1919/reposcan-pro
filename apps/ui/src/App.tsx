@@ -270,7 +270,10 @@ interface GeocodeSuggestion {
   lng: number;
 }
 
-function useGeocodeSuggestions(query: string): { suggestions: GeocodeSuggestion[]; loading: boolean; error: string | null } {
+function useGeocodeSuggestions(
+  query: string,
+  biasCoords: DestinationCoords | null,
+): { suggestions: GeocodeSuggestion[]; loading: boolean; error: string | null } {
   const [suggestions, setSuggestions] = useState<GeocodeSuggestion[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -292,7 +295,12 @@ function useGeocodeSuggestions(query: string): { suggestions: GeocodeSuggestion[
       const controller = new AbortController();
       abortRef.current = controller;
 
-      searchAddresses(trimmed, controller.signal, 5)
+      searchAddresses(trimmed, {
+        signal: controller.signal,
+        limit: 8,
+        bias_latitude: biasCoords?.lat,
+        bias_longitude: biasCoords?.lng,
+      })
         .then((data) => {
           setSuggestions(
             data.results.map((item) => ({
@@ -317,7 +325,7 @@ function useGeocodeSuggestions(query: string): { suggestions: GeocodeSuggestion[
       window.clearTimeout(timer);
       abortRef.current?.abort();
     };
-  }, [query]);
+  }, [biasCoords?.lat, biasCoords?.lng, query]);
 
   return { suggestions, loading, error };
 }
@@ -2304,6 +2312,7 @@ function MapStagePanel(props: {
           destinationPreview={props.destinationPreview}
           hasDestination={hasDestination}
           arrivalRadiusFeet={props.settings.arrivalRadiusFeet}
+          unitPosition={props.unitPosition}
           onApplyTarget={props.onApplyDestinationTarget}
           onClearDraft={props.onClearDestinationDraft}
           onClose={props.onCloseDestinationModal}
@@ -2326,6 +2335,7 @@ function DestinationModal(props: {
   destinationPreview: { distance: string; eta: string; feet: number } | null;
   hasDestination: boolean;
   arrivalRadiusFeet: number;
+  unitPosition: DestinationCoords;
   onApplyTarget: (target: DestinationTarget) => void;
   onClearDraft: () => void;
   onClose: () => void;
@@ -2338,7 +2348,10 @@ function DestinationModal(props: {
   onStartRoute: () => void;
 }): ReactElement {
   const inputRef = useRef<HTMLInputElement>(null);
-  const { suggestions: geocodeSuggestions, loading: geocodeLoading, error: geocodeError } = useGeocodeSuggestions(props.destinationInput);
+  const { suggestions: geocodeSuggestions, loading: geocodeLoading, error: geocodeError } = useGeocodeSuggestions(
+    props.destinationInput,
+    props.unitPosition,
+  );
   const [suggestionsOpen, setSuggestionsOpen] = useState(true);
 
   useEffect(() => {

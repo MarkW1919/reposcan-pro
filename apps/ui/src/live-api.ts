@@ -906,6 +906,13 @@ export interface AddressSearchResult {
   results: AddressSearchSuggestion[];
 }
 
+export interface AddressSearchOptions {
+  bias_latitude?: number;
+  bias_longitude?: number;
+  limit?: number;
+  signal?: AbortSignal;
+}
+
 export async function searchAlerts(
   filters: AlertSearchFilters,
   signal?: AbortSignal,
@@ -959,13 +966,19 @@ export async function searchAlerts(
 
 export async function searchAddresses(
   query: string,
-  signal?: AbortSignal,
-  limit = 5,
+  options: AddressSearchOptions = {},
 ): Promise<AddressSearchResult> {
+  const { bias_latitude, bias_longitude, limit = 8, signal } = options;
   const params = new URLSearchParams({
     q: query.trim(),
     limit: String(limit),
   });
+  if (bias_latitude !== undefined && !Number.isNaN(bias_latitude)) {
+    params.set("bias_latitude", String(bias_latitude));
+  }
+  if (bias_longitude !== undefined && !Number.isNaN(bias_longitude)) {
+    params.set("bias_longitude", String(bias_longitude));
+  }
   const response = await fetch(apiUrl(`/search/addresses?${params.toString()}`), { signal, headers: authHeaders() });
   if (!response.ok) {
     throw new Error(await responseErrorMessage(response, `Failed to search addresses (${response.status})`));

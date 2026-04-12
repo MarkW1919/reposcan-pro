@@ -5,7 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
+import math
 from pathlib import Path
+import re
 from threading import RLock
 import time
 from urllib.error import HTTPError, URLError
@@ -76,6 +78,35 @@ _ADDRESS_SEARCH_TIMEOUT_SECONDS = 3.0
 _ADDRESS_SEARCH_CACHE_FRESH_SECONDS = 300.0
 _ADDRESS_SEARCH_CACHE_STALE_SECONDS = 1800.0
 _ADDRESS_SEARCH_CACHE_MAX_ENTRIES = 128
+_ADDRESS_SEARCH_FETCH_LIMIT_MULTIPLIER = 3
+_ADDRESS_SEARCH_FETCH_LIMIT_MAX = 12
+_ADDRESS_SEARCH_VIEWBOX_RADIUS_MILES = 40.0
+_ADDRESS_SEARCH_ALLOWED_STATES = {"texas", "oklahoma"}
+_ADDRESS_SEARCH_ALLOWED_STATE_CODES = {"tx", "ok"}
+
+_ADDRESS_TOKEN_ALIASES = {
+    "n": "north",
+    "s": "south",
+    "e": "east",
+    "w": "west",
+    "ne": "northeast",
+    "nw": "northwest",
+    "se": "southeast",
+    "sw": "southwest",
+    "st": "street",
+    "rd": "road",
+    "ave": "avenue",
+    "blvd": "boulevard",
+    "dr": "drive",
+    "ln": "lane",
+    "ct": "court",
+    "cir": "circle",
+    "trl": "trail",
+    "pkwy": "parkway",
+    "hwy": "highway",
+    "mt": "mount",
+    "ft": "fort",
+}
 
 
 @dataclass(frozen=True)
@@ -84,7 +115,7 @@ class _AddressSearchCacheEntry:
     results: tuple[AddressSearchSuggestion, ...]
 
 
-_address_search_cache: dict[tuple[str, int, str], _AddressSearchCacheEntry] = {}
+_address_search_cache: dict[tuple[str, int, str, float | None, float | None], _AddressSearchCacheEntry] = {}
 _address_search_cache_lock = RLock()
 
 
@@ -116,9 +147,194 @@ def _build_alert_popup_note(alert: AlertRecord) -> str | None:
     return note or None
 
 
-def _address_search_cache_key(query: str, *, limit: int, countrycodes: str) -> tuple[str, int, str]:
+def _normalize_address_token(token: str) -> str:
+    normalized = token.strip().lower()
+    return _ADDRESS_TOKEN_ALIASES.get(normalized, normalized)
+
+
+def _address_tokens(value: str | None) -> list[str]:
+    if not value:
+        return []
+    return [_normalize_address_token(token) for token in re.findall(r"[a-z0-9]+", value.lower())]
+
+
+def _query_house_number(tokens: list[str]) -> str | None:
+    for token in tokens:
+        if token.isdigit():
+            return token
+    return None
+
+
+def _bias_viewbox(latitude: float, longitude: float, *, radius_miles: float) -> str:
+    lat_delta = radius_miles / 69.0
+    lng_scale = max(math.cos(math.radians(latitude)), 0.15)
+    lng_delta = radius_miles / (69.0 * lng_scale)
+    west = longitude - lng_delta
+    east = longitude + lng_delta
+    north = latitude + lat_delta
+    south = latitude - lat_delta
+    return f"{west:.6f},{north:.6f},{east:.6f},{south:.6f}"
+
+
+def _haversine_miles(lat_a: float, lng_a: float, lat_b: float, lng_b: float) -> float:
+    earth_radius_miles = 3958.7613
+    lat_a_rad = math.radians(lat_a)
+    lat_b_rad = math.radians(lat_b)
+    delta_lat = lat_b_rad - lat_a_rad
+    delta_lng = math.radians(lng_b - lng_a)
+    sin_lat = math.sin(delta_lat / 2.0)
+    sin_lng = math.sin(delta_lng / 2.0)
+    value = sin_lat**2 + math.cos(lat_a_rad) * math.cos(lat_b_rad) * sin_lng**2
+    return 2.0 * earth_radius_miles * math.asin(min(1.0, math.sqrt(value)))
+
+
+def _candidate_text_parts(item: dict[str, object]) -> list[str]:
+    address = item.get("address")
+    address_parts = address if isinstance(address, dict) else {}
+    parts = [
+        item.get("display_name"),
+        item.get("name"),
+        address_parts.get("amenity"),
+        address_parts.get("house_number"),
+        address_parts.get("road"),
+        address_parts.get("suburb"),
+        address_parts.get("city"),
+        address_parts.get("town"),
+        address_parts.get("village"),
+        address_parts.get("county"),
+        address_parts.get("state"),
+        address_parts.get("postcode"),
+    ]
+    return [str(part) for part in parts if isinstance(part, str) and part.strip()]
+
+
+def _candidate_address_parts(item: dict[str, object]) -> dict[str, object]:
+    address = item.get("address")
+    return address if isinstance(address, dict) else {}
+
+
+def _candidate_in_allowed_states(item: dict[str, object]) -> bool:
+    address_parts = _candidate_address_parts(item)
+    state_value = str(address_parts.get("state", "")).strip().lower()
+    state_code = str(address_parts.get("state_code", "")).strip().lower()
+    if state_value in _ADDRESS_SEARCH_ALLOWED_STATES:
+        return True
+    if state_code in _ADDRESS_SEARCH_ALLOWED_STATE_CODES:
+        return True
+    display_name = str(item.get("display_name", "")).lower()
+    return any(state_name in display_name for state_name in _ADDRESS_SEARCH_ALLOWED_STATES)
+
+
+def _address_match_score(
+    query: str,
+    item: dict[str, object],
+    *,
+    bias_latitude: float | None,
+    bias_longitude: float | None,
+) -> float:
+    query_tokens = _address_tokens(query)
+    if not query_tokens:
+        return 0.0
+
+    candidate_text = " ".join(_candidate_text_parts(item))
+    candidate_tokens = _address_tokens(candidate_text)
+    candidate_token_set = set(candidate_tokens)
+    score = 0.0
+
+    normalized_query = " ".join(query_tokens)
+    normalized_candidate = " ".join(candidate_tokens)
+    if normalized_query and normalized_query in normalized_candidate:
+        score += 90.0
+    if normalized_query and normalized_candidate.startswith(normalized_query):
+        score += 35.0
+
+    house_number = _query_house_number(query_tokens)
+    address_parts = _candidate_address_parts(item)
+    candidate_house_number = _query_house_number(_address_tokens(str(address_parts.get("house_number", ""))))
+    for token in query_tokens:
+        if token in candidate_token_set:
+            score += 18.0 if token.isdigit() else 5.0
+        else:
+            score -= 12.0 if token.isdigit() else 1.5
+    if house_number:
+        if candidate_house_number == house_number:
+            score += 70.0
+        elif candidate_house_number:
+            score -= 40.0
+
+    importance = item.get("importance")
+    try:
+        score += float(importance) * 20.0
+    except (TypeError, ValueError):
+        pass
+
+    if bias_latitude is not None and bias_longitude is not None:
+        try:
+            candidate_latitude = float(item["lat"])
+            candidate_longitude = float(item["lon"])
+            distance_miles = _haversine_miles(bias_latitude, bias_longitude, candidate_latitude, candidate_longitude)
+            if distance_miles <= 10.0:
+                score += 35.0
+            elif distance_miles <= 30.0:
+                score += 22.0
+            elif distance_miles <= 75.0:
+                score += 10.0
+            elif distance_miles >= 250.0:
+                score -= 20.0
+        except (KeyError, TypeError, ValueError):
+            pass
+
+    if not _candidate_in_allowed_states(item):
+        score -= 250.0
+
+    return score
+
+
+def _sorted_address_payload(
+    payload: list[object],
+    *,
+    query: str,
+    bias_latitude: float | None,
+    bias_longitude: float | None,
+) -> list[dict[str, object]]:
+    ranked: list[tuple[float, float, dict[str, object]]] = []
+    for raw_item in payload:
+        if not isinstance(raw_item, dict):
+            continue
+        if not _candidate_in_allowed_states(raw_item):
+            continue
+        try:
+            importance = float(raw_item.get("importance") or 0.0)
+        except (TypeError, ValueError):
+            importance = 0.0
+        ranked.append(
+            (
+                _address_match_score(
+                    query,
+                    raw_item,
+                    bias_latitude=bias_latitude,
+                    bias_longitude=bias_longitude,
+                ),
+                importance,
+                raw_item,
+            )
+        )
+    ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    return [item[2] for item in ranked]
+
+
+def _address_search_cache_key(
+    query: str,
+    *,
+    limit: int,
+    countrycodes: str,
+    bias_latitude: float | None,
+    bias_longitude: float | None,
+) -> tuple[str, int, str, float | None, float | None]:
     normalized_query = " ".join(query.strip().lower().split())
-    return normalized_query, limit, countrycodes.strip().lower()
+    rounded_latitude = round(bias_latitude, 2) if bias_latitude is not None else None
+    rounded_longitude = round(bias_longitude, 2) if bias_longitude is not None else None
+    return normalized_query, limit, countrycodes.strip().lower(), rounded_latitude, rounded_longitude
 
 
 def _get_cached_address_results(
@@ -126,9 +342,17 @@ def _get_cached_address_results(
     *,
     limit: int,
     countrycodes: str,
+    bias_latitude: float | None,
+    bias_longitude: float | None,
     max_age_seconds: float,
 ) -> list[AddressSearchSuggestion] | None:
-    cache_key = _address_search_cache_key(query, limit=limit, countrycodes=countrycodes)
+    cache_key = _address_search_cache_key(
+        query,
+        limit=limit,
+        countrycodes=countrycodes,
+        bias_latitude=bias_latitude,
+        bias_longitude=bias_longitude,
+    )
     with _address_search_cache_lock:
         entry = _address_search_cache.get(cache_key)
         if entry is None:
@@ -144,9 +368,17 @@ def _store_cached_address_results(
     *,
     limit: int,
     countrycodes: str,
+    bias_latitude: float | None,
+    bias_longitude: float | None,
     results: list[AddressSearchSuggestion],
 ) -> None:
-    cache_key = _address_search_cache_key(query, limit=limit, countrycodes=countrycodes)
+    cache_key = _address_search_cache_key(
+        query,
+        limit=limit,
+        countrycodes=countrycodes,
+        bias_latitude=bias_latitude,
+        bias_longitude=bias_longitude,
+    )
     entry = _AddressSearchCacheEntry(
         cached_at_monotonic=time.monotonic(),
         results=tuple(item.model_copy(deep=True) for item in results),
@@ -162,7 +394,14 @@ def _store_cached_address_results(
         _address_search_cache.pop(oldest_key, None)
 
 
-def _search_address_candidates(query: str, *, limit: int, countrycodes: str = "us") -> list[AddressSearchSuggestion]:
+def _search_address_candidates(
+    query: str,
+    *,
+    limit: int,
+    countrycodes: str = "us",
+    bias_latitude: float | None = None,
+    bias_longitude: float | None = None,
+) -> list[AddressSearchSuggestion]:
     trimmed = query.strip()
     if not trimmed:
         return []
@@ -171,24 +410,33 @@ def _search_address_candidates(query: str, *, limit: int, countrycodes: str = "u
         trimmed,
         limit=limit,
         countrycodes=countrycodes,
+        bias_latitude=bias_latitude,
+        bias_longitude=bias_longitude,
         max_age_seconds=_ADDRESS_SEARCH_CACHE_FRESH_SECONDS,
     )
     if cached_results is not None:
         return cached_results
 
-    params = urlencode(
-        {
-            "q": trimmed,
-            "format": "jsonv2",
-            "addressdetails": "1",
-            "limit": str(limit),
-            "countrycodes": countrycodes,
-        }
-    )
+    request_params = {
+        "q": trimmed,
+        "format": "jsonv2",
+        "addressdetails": "1",
+        "limit": str(min(_ADDRESS_SEARCH_FETCH_LIMIT_MAX, max(limit, limit * _ADDRESS_SEARCH_FETCH_LIMIT_MULTIPLIER))),
+        "countrycodes": countrycodes,
+        "dedupe": "1",
+    }
+    if bias_latitude is not None and bias_longitude is not None:
+        request_params["viewbox"] = _bias_viewbox(
+            bias_latitude,
+            bias_longitude,
+            radius_miles=_ADDRESS_SEARCH_VIEWBOX_RADIUS_MILES,
+        )
+    params = urlencode(request_params)
     request = UrlRequest(
         f"{_ADDRESS_SEARCH_URL}?{params}",
         headers={
             "Accept": "application/json",
+            "Accept-Language": "en-US,en;q=0.9",
             "User-Agent": "RepoScanPro/1.0 (repossession field tool)",
         },
     )
@@ -201,6 +449,8 @@ def _search_address_candidates(query: str, *, limit: int, countrycodes: str = "u
             trimmed,
             limit=limit,
             countrycodes=countrycodes,
+            bias_latitude=bias_latitude,
+            bias_longitude=bias_longitude,
             max_age_seconds=_ADDRESS_SEARCH_CACHE_STALE_SECONDS,
         )
         if stale_results is not None:
@@ -208,7 +458,12 @@ def _search_address_candidates(query: str, *, limit: int, countrycodes: str = "u
         raise AddressSearchProviderError("Address search provider unavailable") from exc
 
     suggestions: list[AddressSearchSuggestion] = []
-    for item in payload:
+    for item in _sorted_address_payload(
+        payload,
+        query=trimmed,
+        bias_latitude=bias_latitude,
+        bias_longitude=bias_longitude,
+    ):
         try:
             suggestions.append(
                 AddressSearchSuggestion(
@@ -221,7 +476,16 @@ def _search_address_candidates(query: str, *, limit: int, countrycodes: str = "u
             )
         except (KeyError, TypeError, ValueError):
             continue
-    _store_cached_address_results(trimmed, limit=limit, countrycodes=countrycodes, results=suggestions)
+        if len(suggestions) >= limit:
+            break
+    _store_cached_address_results(
+        trimmed,
+        limit=limit,
+        countrycodes=countrycodes,
+        bias_latitude=bias_latitude,
+        bias_longitude=bias_longitude,
+        results=suggestions,
+    )
     return suggestions
 
 
@@ -762,17 +1026,30 @@ def create_app(
         request: Request,
         query: str = Query(..., alias="q", min_length=3),
         limit: int = Query(default=5, ge=1, le=8),
+        bias_latitude: float | None = Query(default=None, ge=-90.0, le=90.0),
+        bias_longitude: float | None = Query(default=None, ge=-180.0, le=180.0),
         principal: ApiPrincipalContext = Depends(access_controller.address_search_access),
     ) -> AddressSearchResponse:
         try:
-            results = _search_address_candidates(query, limit=limit)
+            results = _search_address_candidates(
+                query,
+                limit=limit,
+                bias_latitude=bias_latitude,
+                bias_longitude=bias_longitude,
+            )
         except AddressSearchProviderError as exc:
             record_audit(
                 request,
                 principal=principal,
                 action="search.addresses",
                 outcome=AuditOutcome.error,
-                details={"query": query, "limit": limit, "detail": str(exc)},
+                details={
+                    "query": query,
+                    "limit": limit,
+                    "bias_latitude": bias_latitude,
+                    "bias_longitude": bias_longitude,
+                    "detail": str(exc),
+                },
             )
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Address search unavailable") from exc
 
@@ -781,7 +1058,13 @@ def create_app(
             principal=principal,
             action="search.addresses",
             outcome=AuditOutcome.success,
-            details={"query": query, "limit": limit, "total_results": len(results)},
+            details={
+                "query": query,
+                "limit": limit,
+                "bias_latitude": bias_latitude,
+                "bias_longitude": bias_longitude,
+                "total_results": len(results),
+            },
         )
         return AddressSearchResponse(results=results)
 

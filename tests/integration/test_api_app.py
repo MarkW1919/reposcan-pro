@@ -1033,10 +1033,19 @@ def test_versioned_address_search_returns_provider_results_and_writes_audit_even
     admin_headers = {"X-RepoScan-Api-Key": "admin-demo-token"}
     captured: dict[str, object] = {}
 
-    def fake_search(query: str, *, limit: int, countrycodes: str = "us"):
+    def fake_search(
+        query: str,
+        *,
+        limit: int,
+        countrycodes: str = "us",
+        bias_latitude: float | None = None,
+        bias_longitude: float | None = None,
+    ):
         captured["query"] = query
         captured["limit"] = limit
         captured["countrycodes"] = countrycodes
+        captured["bias_latitude"] = bias_latitude
+        captured["bias_longitude"] = bias_longitude
         return [
             api_app_module.AddressSearchSuggestion(
                 suggestion_id="place_001",
@@ -1052,7 +1061,7 @@ def test_versioned_address_search_returns_provider_results_and_writes_audit_even
     response = client.get(
         "/api/v1/search/addresses",
         headers=viewer_headers,
-        params={"q": "4128 W Fulton St", "limit": 3},
+        params={"q": "4128 W Fulton St", "limit": 3, "bias_latitude": 35.4676, "bias_longitude": -97.5164},
     )
     audit_response = client.get("/api/v1/audit/events", headers=admin_headers)
 
@@ -1061,7 +1070,13 @@ def test_versioned_address_search_returns_provider_results_and_writes_audit_even
     assert payload["results"][0]["display_name"] == "ABC Towing, 4128 W Fulton St, Cook County, Illinois"
     assert payload["results"][0]["latitude"] == 41.8862
     assert payload["results"][0]["longitude"] == -87.7282
-    assert captured == {"query": "4128 W Fulton St", "limit": 3, "countrycodes": "us"}
+    assert captured == {
+        "query": "4128 W Fulton St",
+        "limit": 3,
+        "countrycodes": "us",
+        "bias_latitude": 35.4676,
+        "bias_longitude": -97.5164,
+    }
 
     assert audit_response.status_code == 200
     actions = [event["action"] for event in audit_response.json()["events"]]
@@ -1072,7 +1087,14 @@ def test_versioned_address_search_returns_502_when_provider_fails(tmp_path, monk
     client, _ = _secure_seeded_client(tmp_path)
     viewer_headers = {"X-RepoScan-Api-Key": "viewer-demo-token"}
 
-    def fake_search(query: str, *, limit: int, countrycodes: str = "us"):
+    def fake_search(
+        query: str,
+        *,
+        limit: int,
+        countrycodes: str = "us",
+        bias_latitude: float | None = None,
+        bias_longitude: float | None = None,
+    ):
         raise api_app_module.AddressSearchProviderError("provider down")
 
     monkeypatch.setattr(api_app_module, "_search_address_candidates", fake_search)
@@ -1090,7 +1112,14 @@ def test_versioned_address_search_returns_502_when_provider_fails(tmp_path, monk
 def test_versioned_address_search_allows_unauthenticated_requests(tmp_path, monkeypatch):
     client, _ = _secure_seeded_client(tmp_path)
 
-    def fake_search(query: str, *, limit: int, countrycodes: str = "us"):
+    def fake_search(
+        query: str,
+        *,
+        limit: int,
+        countrycodes: str = "us",
+        bias_latitude: float | None = None,
+        bias_longitude: float | None = None,
+    ):
         assert query == "4128 W Fulton St"
         assert limit == 2
         return [
@@ -1131,9 +1160,10 @@ def test_address_search_candidates_reuses_fresh_cache(monkeypatch):
                 [
                     {
                         "place_id": 101,
-                        "display_name": "ABC Towing, 4128 W Fulton St, Cook County, Illinois",
-                        "lat": "41.8862",
-                        "lon": "-87.7282",
+                        "display_name": "ABC Towing, 4128 W Fulton St, Tulsa County, Oklahoma",
+                        "lat": "36.1540",
+                        "lon": "-95.9928",
+                        "address": {"house_number": "4128", "road": "West Fulton Street", "city": "Tulsa", "state": "Oklahoma"},
                     }
                 ]
             ).encode("utf-8")
@@ -1170,9 +1200,10 @@ def test_address_search_candidates_returns_stale_cache_when_provider_fails(monke
                 [
                     {
                         "place_id": 202,
-                        "display_name": "ABC Towing, 4128 W Fulton St, Cook County, Illinois",
-                        "lat": "41.8862",
-                        "lon": "-87.7282",
+                        "display_name": "ABC Towing, 4128 W Fulton St, Tulsa County, Oklahoma",
+                        "lat": "36.1540",
+                        "lon": "-95.9928",
+                        "address": {"house_number": "4128", "road": "West Fulton Street", "city": "Tulsa", "state": "Oklahoma"},
                     }
                 ]
             ).encode("utf-8")
@@ -1192,6 +1223,45 @@ def test_address_search_candidates_returns_stale_cache_when_provider_fails(monke
 
     assert calls["count"] == 2
     assert second[0].display_name == first[0].display_name
+    api_app_module._address_search_cache.clear()
+
+
+def test_address_search_candidates_filters_to_texas_and_oklahoma(monkeypatch):
+    api_app_module._address_search_cache.clear()
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self) -> bytes:
+            return json.dumps(
+                [
+                    {
+                        "place_id": 301,
+                        "display_name": "4128 West Fulton Street, Broken Arrow, Tulsa, Oklahoma, 74012, United States",
+                        "lat": "36.0234901",
+                        "lon": "-95.8405338",
+                        "address": {"house_number": "4128", "road": "West Fulton Street", "city": "Broken Arrow", "state": "Oklahoma"},
+                    },
+                    {
+                        "place_id": 302,
+                        "display_name": "4128 West Fulton Street, Los Angeles, California, 90012, United States",
+                        "lat": "34.052235",
+                        "lon": "-118.243683",
+                        "address": {"house_number": "4128", "road": "West Fulton Street", "city": "Los Angeles", "state": "California"},
+                    },
+                ]
+            ).encode("utf-8")
+
+    monkeypatch.setattr(api_app_module, "urlopen", lambda request, timeout: FakeResponse())
+    results = api_app_module._search_address_candidates("4128 W Fulton St", limit=5)
+
+    assert [item.display_name for item in results] == [
+        "4128 West Fulton Street, Broken Arrow, Tulsa, Oklahoma, 74012, United States"
+    ]
     api_app_module._address_search_cache.clear()
 
 
