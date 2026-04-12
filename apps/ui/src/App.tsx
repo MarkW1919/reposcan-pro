@@ -258,6 +258,78 @@ const targetCoordsStorageKey = "reposcan.ui.target-coords.v1";
 const recentDestinationsStorageKey = "reposcan.ui.recent-destinations.v1";
 const recentDestinationsLimit = 6;
 const sessionIdStorageKey = "reposcan.ui.session-id.v1";
+const geocodeDebounceMs = 500;
+const geocodeMinChars = 3;
+
+interface GeocodeSuggestion {
+  id: string;
+  displayName: string;
+  lat: number;
+  lng: number;
+}
+
+function useGeocodeSuggestions(query: string): { suggestions: GeocodeSuggestion[]; loading: boolean } {
+  const [suggestions, setSuggestions] = useState<GeocodeSuggestion[]>([]);
+  const [loading, setLoading] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (trimmed.length < geocodeMinChars) {
+      setSuggestions([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    const timer = window.setTimeout(() => {
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      const params = new URLSearchParams({
+        q: trimmed,
+        format: "json",
+        addressdetails: "1",
+        limit: "5",
+        countrycodes: "us",
+      });
+
+      fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
+        signal: controller.signal,
+        headers: { "User-Agent": "RepoScanPro/1.0" },
+      })
+        .then((response) => {
+          if (!response.ok) throw new Error("geocode failed");
+          return response.json();
+        })
+        .then((data: Array<{ place_id: number; display_name: string; lat: string; lon: string }>) => {
+          setSuggestions(
+            data.map((item) => ({
+              id: String(item.place_id),
+              displayName: item.display_name,
+              lat: parseFloat(item.lat),
+              lng: parseFloat(item.lon),
+            })),
+          );
+          setLoading(false);
+        })
+        .catch((err) => {
+          if ((err as DOMException)?.name !== "AbortError") {
+            setSuggestions([]);
+            setLoading(false);
+          }
+        });
+    }, geocodeDebounceMs);
+
+    return () => {
+      window.clearTimeout(timer);
+      abortRef.current?.abort();
+    };
+  }, [query]);
+
+  return { suggestions, loading };
+}
 
 function loadOrCreateSessionId(): string {
   if (typeof window === "undefined") {
@@ -2098,6 +2170,7 @@ function MapStagePanel(props: {
   onOpenDestinationModal: () => void;
   onRemoveRecentDestination: (id: string) => void;
   onSelect: (rowId: string) => void;
+  onSelectGeocodedAddress: (address: string, coords: DestinationCoords) => void;
   onStageDestination: () => void;
   onStartRoute: () => void;
   onToggleActiveAlertPins: () => void;
@@ -2243,6 +2316,7 @@ function MapStagePanel(props: {
           onClose={props.onCloseDestinationModal}
           onDestinationChange={props.onDestinationChange}
           onRemoveRecent={props.onRemoveRecentDestination}
+          onSelectGeocodedAddress={props.onSelectGeocodedAddress}
           onStageDestination={props.onStageDestination}
           onStartRoute={props.onStartRoute}
         />
@@ -2262,15 +2336,22 @@ function DestinationModal(props: {
   onClose: () => void;
   onDestinationChange: (value: string) => void;
   onRemoveRecent: (id: string) => void;
+  onSelectGeocodedAddress: (address: string, coords: DestinationCoords) => void;
   onStageDestination: () => void;
   onStartRoute: () => void;
 }): ReactElement {
   const inputRef = useRef<HTMLInputElement>(null);
+  const { suggestions: geocodeSuggestions, loading: geocodeLoading } = useGeocodeSuggestions(props.destinationInput);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(true);
 
   useEffect(() => {
     inputRef.current?.focus();
     inputRef.current?.select();
   }, []);
+
+  useEffect(() => {
+    setSuggestionsOpen(true);
+  }, [props.destinationInput]);
 
   useEffect(() => {
     function handleKey(event: KeyboardEvent): void {
@@ -2292,12 +2373,18 @@ function DestinationModal(props: {
     account: props.destinationTargets.filter((target) => target.source === "account"),
     recent: props.destinationTargets.filter((target) => target.source === "recent"),
   };
+  const showSuggestions = suggestionsOpen && trimmed.length >= geocodeMinChars && (geocodeSuggestions.length > 0 || geocodeLoading);
 
   function handleInputKeyDown(event: ReactKeyboardEvent<HTMLInputElement>): void {
     if (event.key === "Enter" && canStartRoute) {
       event.preventDefault();
       props.onStartRoute();
     }
+  }
+
+  function handleSelectSuggestion(suggestion: GeocodeSuggestion): void {
+    setSuggestionsOpen(false);
+    props.onSelectGeocodedAddress(suggestion.displayName, { lat: suggestion.lat, lng: suggestion.lng });
   }
 
   return (
@@ -2314,7 +2401,7 @@ function DestinationModal(props: {
             <span className="eyebrow">Route Planner</span>
             <h3 id="destination-modal-title">{props.hasDestination ? "Change Destination" : "Set Destination"}</h3>
             <p className="destination-modal__hint">
-              Pick a recovery account, recent stop, or last-seen point. Free-typed addresses can be saved, but route start requires a mapped location.
+              Type an address to search, or pick a recovery account, recent stop, or last-seen point below.
             </p>
           </div>
           <button
@@ -2336,13 +2423,17 @@ function DestinationModal(props: {
               ref={inputRef}
               id="destination-modal-input"
               className="text-input destination-modal__input"
-              placeholder="Street, city, state"
+              placeholder="Start typing an address…"
               type="text"
               value={props.destinationInput}
               autoComplete="off"
               spellCheck={false}
               onChange={(event) => props.onDestinationChange(event.target.value)}
               onKeyDown={handleInputKeyDown}
+              role="combobox"
+              aria-expanded={showSuggestions}
+              aria-autocomplete="list"
+              aria-controls="destination-suggestions"
             />
             {trimmed.length > 0 ? (
               <button
@@ -2355,6 +2446,23 @@ function DestinationModal(props: {
               </button>
             ) : null}
           </div>
+          {showSuggestions ? (
+            <ul id="destination-suggestions" className="destination-modal__suggestions" role="listbox">
+              {geocodeLoading && geocodeSuggestions.length === 0 ? (
+                <li className="destination-modal__suggestion destination-modal__suggestion--loading" role="option" aria-selected="false">
+                  Searching addresses…
+                </li>
+              ) : (
+                geocodeSuggestions.map((suggestion) => (
+                  <li key={suggestion.id} className="destination-modal__suggestion" role="option" aria-selected="false">
+                    <button type="button" onClick={() => handleSelectSuggestion(suggestion)}>
+                      <span className="destination-modal__suggestion-name">{suggestion.displayName}</span>
+                    </button>
+                  </li>
+                ))
+              )}
+            </ul>
+          ) : null}
         </div>
 
         {props.destinationPreview ? (
@@ -3493,6 +3601,11 @@ function App(): ReactElement {
     setDestinationDraftCoords(target.coords);
   }
 
+  function selectGeocodedAddress(address: string, coords: DestinationCoords): void {
+    setDestinationInput(address);
+    setDestinationDraftCoords(coords);
+  }
+
   function handleDestinationInputChange(value: string): void {
     const trimmed = value.trim();
     setDestinationInput(value);
@@ -4493,6 +4606,7 @@ function App(): ReactElement {
               onRemoveRecentDestination={removeRecentDestination}
               onSelectCamera={setSelectedCameraId}
               onSelectDetection={setSelectedDetectionId}
+              onSelectGeocodedAddress={selectGeocodedAddress}
               onStageDestination={stageDestination}
               onStartRoute={startRoute}
               onStageViewChange={setStageView}
@@ -5433,6 +5547,7 @@ function ConsoleScreen(props: {
   onRemoveRecentDestination: (id: string) => void;
   onSelectCamera: (cameraId: string) => void;
   onSelectDetection: (rowId: string) => void;
+  onSelectGeocodedAddress: (address: string, coords: DestinationCoords) => void;
   onStageDestination: () => void;
   onStartRoute: () => void;
   onStageViewChange: (view: StageView) => void;
@@ -5504,6 +5619,7 @@ function ConsoleScreen(props: {
     onOpenDestinationModal: props.onOpenDestinationModal,
     onRemoveRecentDestination: props.onRemoveRecentDestination,
     onSelect: props.onSelectDetection,
+    onSelectGeocodedAddress: props.onSelectGeocodedAddress,
     onStageDestination: props.onStageDestination,
     onStartRoute: props.onStartRoute,
     onToggleActiveAlertPins: props.onToggleActiveAlertPins,
