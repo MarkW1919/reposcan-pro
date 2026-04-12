@@ -682,7 +682,7 @@ def create_app(
         request: Request,
         query: str = Query(..., alias="q", min_length=3),
         limit: int = Query(default=5, ge=1, le=8),
-        principal: ApiPrincipalContext = Depends(access_controller.viewer_access),
+        principal: ApiPrincipalContext = Depends(access_controller.address_search_access),
     ) -> AddressSearchResponse:
         try:
             results = _search_address_candidates(query, limit=limit)

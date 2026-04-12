@@ -1085,6 +1085,34 @@ def test_versioned_address_search_returns_502_when_provider_fails(tmp_path, monk
     assert response.json()["detail"] == "Address search unavailable"
 
 
+def test_versioned_address_search_allows_unauthenticated_requests(tmp_path, monkeypatch):
+    client, _ = _secure_seeded_client(tmp_path)
+
+    def fake_search(query: str, *, limit: int, countrycodes: str = "us"):
+        assert query == "4128 W Fulton St"
+        assert limit == 2
+        return [
+            api_app_module.AddressSearchSuggestion(
+                suggestion_id="place_public",
+                display_name="ABC Towing, 4128 W Fulton St, Cook County, Illinois",
+                latitude=41.8862,
+                longitude=-87.7282,
+                provider="nominatim",
+            )
+        ]
+
+    monkeypatch.setattr(api_app_module, "_search_address_candidates", fake_search)
+
+    response = client.get(
+        "/api/v1/search/addresses",
+        params={"q": "4128 W Fulton St", "limit": 2},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["results"][0]["display_name"] == "ABC Towing, 4128 W Fulton St, Cook County, Illinois"
+
+
 def test_secure_api_requires_credentials_and_enforces_roles(tmp_path):
     client, _ = _secure_seeded_client(tmp_path)
 

@@ -1483,6 +1483,17 @@ select:focus-visible {
   white-space: nowrap;
 }
 
+.destination-modal__status {
+  margin: 0;
+  padding: 0 4px;
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
+.destination-modal__status--error {
+  color: var(--warn);
+}
+
 .destination-modal__preview {
   display: flex;
   align-items: center;

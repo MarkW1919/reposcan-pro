@@ -270,9 +270,10 @@ interface GeocodeSuggestion {
   lng: number;
 }
 
-function useGeocodeSuggestions(query: string): { suggestions: GeocodeSuggestion[]; loading: boolean } {
+function useGeocodeSuggestions(query: string): { suggestions: GeocodeSuggestion[]; loading: boolean; error: string | null } {
   const [suggestions, setSuggestions] = useState<GeocodeSuggestion[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -280,10 +281,12 @@ function useGeocodeSuggestions(query: string): { suggestions: GeocodeSuggestion[
     if (trimmed.length < geocodeMinChars) {
       setSuggestions([]);
       setLoading(false);
+      setError(null);
       return;
     }
 
     setLoading(true);
+    setError(null);
     const timer = window.setTimeout(() => {
       abortRef.current?.abort();
       const controller = new AbortController();
@@ -305,6 +308,7 @@ function useGeocodeSuggestions(query: string): { suggestions: GeocodeSuggestion[
           if ((err as DOMException)?.name !== "AbortError") {
             setSuggestions([]);
             setLoading(false);
+            setError(err instanceof Error ? err.message : "Address search unavailable");
           }
         });
     }, geocodeDebounceMs);
@@ -315,7 +319,7 @@ function useGeocodeSuggestions(query: string): { suggestions: GeocodeSuggestion[
     };
   }, [query]);
 
-  return { suggestions, loading };
+  return { suggestions, loading, error };
 }
 
 function loadOrCreateSessionId(): string {
@@ -2334,7 +2338,7 @@ function DestinationModal(props: {
   onStartRoute: () => void;
 }): ReactElement {
   const inputRef = useRef<HTMLInputElement>(null);
-  const { suggestions: geocodeSuggestions, loading: geocodeLoading } = useGeocodeSuggestions(props.destinationInput);
+  const { suggestions: geocodeSuggestions, loading: geocodeLoading, error: geocodeError } = useGeocodeSuggestions(props.destinationInput);
   const [suggestionsOpen, setSuggestionsOpen] = useState(true);
 
   useEffect(() => {
@@ -2566,6 +2570,11 @@ function DestinationModal(props: {
                 ))
               )}
             </ul>
+          ) : null}
+          {geocodeError && trimmed.length >= geocodeMinChars ? (
+            <p className="destination-modal__status destination-modal__status--error" role="status">
+              {geocodeError}
+            </p>
           ) : null}
         </div>
 

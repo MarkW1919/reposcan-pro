@@ -234,6 +234,10 @@ class ApiAccessController:
         self._enforce_rate_limit(request, key=f"public:{request.client.host if request.client else 'unknown'}")
         return self._public_context() if self.config.security.enabled else self._local_context()
 
+    def address_search_access(self, request: Request) -> ApiPrincipalContext:
+        self._enforce_rate_limit(request, key=f"public:{request.client.host if request.client else 'unknown'}")
+        return self._public_context() if self.config.security.enabled else self._local_context()
+
     def viewer_access(self, request: Request) -> ApiPrincipalContext:
         return self._authorize(request, accepted_roles=self._viewer_roles, action="api.read")
 
