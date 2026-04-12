@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 import time
+from urllib.error import URLError
 
 from fastapi.testclient import TestClient
 from PIL import Image
@@ -1111,6 +1113,86 @@ def test_versioned_address_search_allows_unauthenticated_requests(tmp_path, monk
     assert response.status_code == 200
     payload = response.json()
     assert payload["results"][0]["display_name"] == "ABC Towing, 4128 W Fulton St, Cook County, Illinois"
+
+
+def test_address_search_candidates_reuses_fresh_cache(monkeypatch):
+    api_app_module._address_search_cache.clear()
+    calls: list[str] = []
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self) -> bytes:
+            return json.dumps(
+                [
+                    {
+                        "place_id": 101,
+                        "display_name": "ABC Towing, 4128 W Fulton St, Cook County, Illinois",
+                        "lat": "41.8862",
+                        "lon": "-87.7282",
+                    }
+                ]
+            ).encode("utf-8")
+
+    def fake_urlopen(request, timeout):
+        calls.append(request.full_url)
+        return FakeResponse()
+
+    monotonic_values = iter([100.0, 120.0])
+    monkeypatch.setattr(api_app_module, "urlopen", fake_urlopen)
+    monkeypatch.setattr(api_app_module.time, "monotonic", lambda: next(monotonic_values))
+
+    first = api_app_module._search_address_candidates("4128 W Fulton St", limit=5)
+    second = api_app_module._search_address_candidates("4128 W Fulton St", limit=5)
+
+    assert len(calls) == 1
+    assert first[0].display_name == second[0].display_name
+    api_app_module._address_search_cache.clear()
+
+
+def test_address_search_candidates_returns_stale_cache_when_provider_fails(monkeypatch):
+    api_app_module._address_search_cache.clear()
+    calls = {"count": 0}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self) -> bytes:
+            return json.dumps(
+                [
+                    {
+                        "place_id": 202,
+                        "display_name": "ABC Towing, 4128 W Fulton St, Cook County, Illinois",
+                        "lat": "41.8862",
+                        "lon": "-87.7282",
+                    }
+                ]
+            ).encode("utf-8")
+
+    def fake_urlopen(request, timeout):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return FakeResponse()
+        raise URLError("provider down")
+
+    monotonic_values = iter([100.0, 450.0, 450.0])
+    monkeypatch.setattr(api_app_module, "urlopen", fake_urlopen)
+    monkeypatch.setattr(api_app_module.time, "monotonic", lambda: next(monotonic_values))
+
+    first = api_app_module._search_address_candidates("4128 W Fulton St", limit=5)
+    second = api_app_module._search_address_candidates("4128 W Fulton St", limit=5)
+
+    assert calls["count"] == 2
+    assert second[0].display_name == first[0].display_name
+    api_app_module._address_search_cache.clear()
 
 
 def test_secure_api_requires_credentials_and_enforces_roles(tmp_path):

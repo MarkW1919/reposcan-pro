@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+from threading import RLock
+import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request as UrlRequest, urlopen
@@ -70,6 +73,19 @@ _DASHBOARD_SUPPORTING_RECORD_LIMIT = 200
 _ADDRESS_SEARCH_PROVIDER = "nominatim"
 _ADDRESS_SEARCH_URL = "https://nominatim.openstreetmap.org/search"
 _ADDRESS_SEARCH_TIMEOUT_SECONDS = 3.0
+_ADDRESS_SEARCH_CACHE_FRESH_SECONDS = 300.0
+_ADDRESS_SEARCH_CACHE_STALE_SECONDS = 1800.0
+_ADDRESS_SEARCH_CACHE_MAX_ENTRIES = 128
+
+
+@dataclass(frozen=True)
+class _AddressSearchCacheEntry:
+    cached_at_monotonic: float
+    results: tuple[AddressSearchSuggestion, ...]
+
+
+_address_search_cache: dict[tuple[str, int, str], _AddressSearchCacheEntry] = {}
+_address_search_cache_lock = RLock()
 
 
 class AddressSearchProviderError(RuntimeError):
@@ -100,10 +116,65 @@ def _build_alert_popup_note(alert: AlertRecord) -> str | None:
     return note or None
 
 
+def _address_search_cache_key(query: str, *, limit: int, countrycodes: str) -> tuple[str, int, str]:
+    normalized_query = " ".join(query.strip().lower().split())
+    return normalized_query, limit, countrycodes.strip().lower()
+
+
+def _get_cached_address_results(
+    query: str,
+    *,
+    limit: int,
+    countrycodes: str,
+    max_age_seconds: float,
+) -> list[AddressSearchSuggestion] | None:
+    cache_key = _address_search_cache_key(query, limit=limit, countrycodes=countrycodes)
+    with _address_search_cache_lock:
+        entry = _address_search_cache.get(cache_key)
+        if entry is None:
+            return None
+        age_seconds = time.monotonic() - entry.cached_at_monotonic
+        if age_seconds > max_age_seconds:
+            return None
+        return [item.model_copy(deep=True) for item in entry.results]
+
+
+def _store_cached_address_results(
+    query: str,
+    *,
+    limit: int,
+    countrycodes: str,
+    results: list[AddressSearchSuggestion],
+) -> None:
+    cache_key = _address_search_cache_key(query, limit=limit, countrycodes=countrycodes)
+    entry = _AddressSearchCacheEntry(
+        cached_at_monotonic=time.monotonic(),
+        results=tuple(item.model_copy(deep=True) for item in results),
+    )
+    with _address_search_cache_lock:
+        _address_search_cache[cache_key] = entry
+        if len(_address_search_cache) <= _ADDRESS_SEARCH_CACHE_MAX_ENTRIES:
+            return
+        oldest_key = min(
+            _address_search_cache.items(),
+            key=lambda item: item[1].cached_at_monotonic,
+        )[0]
+        _address_search_cache.pop(oldest_key, None)
+
+
 def _search_address_candidates(query: str, *, limit: int, countrycodes: str = "us") -> list[AddressSearchSuggestion]:
     trimmed = query.strip()
     if not trimmed:
         return []
+
+    cached_results = _get_cached_address_results(
+        trimmed,
+        limit=limit,
+        countrycodes=countrycodes,
+        max_age_seconds=_ADDRESS_SEARCH_CACHE_FRESH_SECONDS,
+    )
+    if cached_results is not None:
+        return cached_results
 
     params = urlencode(
         {
@@ -126,6 +197,14 @@ def _search_address_candidates(query: str, *, limit: int, countrycodes: str = "u
         with urlopen(request, timeout=_ADDRESS_SEARCH_TIMEOUT_SECONDS) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+        stale_results = _get_cached_address_results(
+            trimmed,
+            limit=limit,
+            countrycodes=countrycodes,
+            max_age_seconds=_ADDRESS_SEARCH_CACHE_STALE_SECONDS,
+        )
+        if stale_results is not None:
+            return stale_results
         raise AddressSearchProviderError("Address search provider unavailable") from exc
 
     suggestions: list[AddressSearchSuggestion] = []
@@ -142,6 +221,7 @@ def _search_address_candidates(query: str, *, limit: int, countrycodes: str = "u
             )
         except (KeyError, TypeError, ValueError):
             continue
+    _store_cached_address_results(trimmed, limit=limit, countrycodes=countrycodes, results=suggestions)
     return suggestions
 
 
