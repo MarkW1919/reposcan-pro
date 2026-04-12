@@ -32,7 +32,7 @@ export function DetectionFeedRow(props: DetectionFeedRowProps): ReactElement {
   const statusLabel = detectionSeverityLabel(props.row);
 
   return (
-    <article className={`detection-feed-row severity-band severity-band--${severity} ${props.selected ? "is-selected" : ""}`} aria-selected={props.selected}>
+    <article className={`detection-feed-row severity-band severity-band--${severity} ${props.selected ? "is-selected" : ""}`} aria-current={props.selected ? "true" : undefined}>
       <button className="detection-feed-row__body" type="button" onClick={props.onSelect}>
         <div className="detection-feed-row__primary">
           <div className="detection-feed-row__plate-stack">

@@ -260,6 +260,7 @@ const recentDestinationsLimit = 6;
 const sessionIdStorageKey = "reposcan.ui.session-id.v1";
 const geocodeDebounceMs = 500;
 const geocodeMinChars = 3;
+const destinationLocalSuggestionMinChars = 2;
 
 interface GeocodeSuggestion {
   id: string;
@@ -289,16 +290,13 @@ function useGeocodeSuggestions(query: string): { suggestions: GeocodeSuggestion[
 
       const params = new URLSearchParams({
         q: trimmed,
-        format: "json",
+        format: "jsonv2",
         addressdetails: "1",
         limit: "5",
         countrycodes: "us",
       });
 
-      fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
-        signal: controller.signal,
-        headers: { "User-Agent": "RepoScanPro/1.0" },
-      })
+      fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, { signal: controller.signal })
         .then((response) => {
           if (!response.ok) throw new Error("geocode failed");
           return response.json();
@@ -2171,7 +2169,9 @@ function MapStagePanel(props: {
   onRemoveRecentDestination: (id: string) => void;
   onSelect: (rowId: string) => void;
   onSelectGeocodedAddress: (address: string, coords: DestinationCoords) => void;
+  onStageResolvedDestination: (address: string, coords: DestinationCoords) => void;
   onStageDestination: () => void;
+  onStartResolvedRoute: (address: string, coords: DestinationCoords) => void;
   onStartRoute: () => void;
   onToggleActiveAlertPins: () => void;
   onToggleDetectionPins: () => void;
@@ -2317,7 +2317,9 @@ function MapStagePanel(props: {
           onDestinationChange={props.onDestinationChange}
           onRemoveRecent={props.onRemoveRecentDestination}
           onSelectGeocodedAddress={props.onSelectGeocodedAddress}
+          onStageResolvedDestination={props.onStageResolvedDestination}
           onStageDestination={props.onStageDestination}
+          onStartResolvedRoute={props.onStartResolvedRoute}
           onStartRoute={props.onStartRoute}
         />
       ) : null}
@@ -2337,7 +2339,9 @@ function DestinationModal(props: {
   onDestinationChange: (value: string) => void;
   onRemoveRecent: (id: string) => void;
   onSelectGeocodedAddress: (address: string, coords: DestinationCoords) => void;
+  onStageResolvedDestination: (address: string, coords: DestinationCoords) => void;
   onStageDestination: () => void;
+  onStartResolvedRoute: (address: string, coords: DestinationCoords) => void;
   onStartRoute: () => void;
 }): ReactElement {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -2366,25 +2370,85 @@ function DestinationModal(props: {
 
   const trimmed = props.destinationInput.trim();
   const canCommit = trimmed.length > 0;
-  const canStartRoute = canCommit && props.destinationPreview != null;
   const groupedTargets = {
     alert: props.destinationTargets.filter((target) => target.source === "alert"),
     read: props.destinationTargets.filter((target) => target.source === "read"),
     account: props.destinationTargets.filter((target) => target.source === "account"),
     recent: props.destinationTargets.filter((target) => target.source === "recent"),
   };
-  const showSuggestions = suggestionsOpen && trimmed.length >= geocodeMinChars && (geocodeSuggestions.length > 0 || geocodeLoading);
+  const localSuggestions =
+    trimmed.length < destinationLocalSuggestionMinChars
+      ? []
+      : props.destinationTargets
+          .filter((target) => target.coords != null)
+          .filter((target) => {
+            const normalizedQuery = trimmed.toLowerCase();
+            const haystack = [target.label, target.address, target.subtitle].filter(Boolean).join(" ").toLowerCase();
+            return haystack.includes(normalizedQuery);
+          })
+          .slice(0, 4);
+  const normalizedLocalAddresses = new Set(localSuggestions.map((target) => target.address.trim().toLowerCase()));
+  const combinedGeocodeSuggestions = geocodeSuggestions.filter(
+    (suggestion) => !normalizedLocalAddresses.has(suggestion.displayName.trim().toLowerCase()),
+  );
+  const showSuggestions =
+    suggestionsOpen &&
+    trimmed.length >= destinationLocalSuggestionMinChars &&
+    (localSuggestions.length > 0 || combinedGeocodeSuggestions.length > 0 || geocodeLoading);
+  const topResolvedSuggestion =
+    localSuggestions[0]?.coords != null
+      ? { address: localSuggestions[0].address, coords: localSuggestions[0].coords }
+      : combinedGeocodeSuggestions[0]
+        ? {
+            address: combinedGeocodeSuggestions[0].displayName,
+            coords: { lat: combinedGeocodeSuggestions[0].lat, lng: combinedGeocodeSuggestions[0].lng },
+          }
+        : null;
+  const canStartRoute = canCommit && (props.destinationPreview != null || topResolvedSuggestion != null);
 
   function handleInputKeyDown(event: ReactKeyboardEvent<HTMLInputElement>): void {
     if (event.key === "Enter" && canStartRoute) {
       event.preventDefault();
-      props.onStartRoute();
+      if (props.destinationPreview) {
+        props.onStartRoute();
+        return;
+      }
+      if (topResolvedSuggestion) {
+        props.onStartResolvedRoute(topResolvedSuggestion.address, topResolvedSuggestion.coords);
+      }
     }
   }
 
   function handleSelectSuggestion(suggestion: GeocodeSuggestion): void {
     setSuggestionsOpen(false);
     props.onSelectGeocodedAddress(suggestion.displayName, { lat: suggestion.lat, lng: suggestion.lng });
+  }
+
+  function handleSelectLocalSuggestion(target: DestinationTarget): void {
+    setSuggestionsOpen(false);
+    props.onApplyTarget(target);
+  }
+
+  function handleStageTarget(): void {
+    if (props.destinationPreview) {
+      props.onStageDestination();
+      return;
+    }
+    if (topResolvedSuggestion) {
+      props.onStageResolvedDestination(topResolvedSuggestion.address, topResolvedSuggestion.coords);
+      return;
+    }
+    props.onStageDestination();
+  }
+
+  function handleStartTargetRoute(): void {
+    if (props.destinationPreview) {
+      props.onStartRoute();
+      return;
+    }
+    if (topResolvedSuggestion) {
+      props.onStartResolvedRoute(topResolvedSuggestion.address, topResolvedSuggestion.coords);
+    }
   }
 
   return (
@@ -2431,7 +2495,7 @@ function DestinationModal(props: {
               onChange={(event) => props.onDestinationChange(event.target.value)}
               onKeyDown={handleInputKeyDown}
               role="combobox"
-              aria-expanded={showSuggestions}
+              aria-expanded={showSuggestions ? "true" : "false"}
               aria-autocomplete="list"
               aria-controls="destination-suggestions"
             />
@@ -2448,16 +2512,48 @@ function DestinationModal(props: {
           </div>
           {showSuggestions ? (
             <ul id="destination-suggestions" className="destination-modal__suggestions" role="listbox">
+              {localSuggestions.map((target) => (
+                <li
+                  key={`local-${target.id}`}
+                  className="destination-modal__suggestion"
+                  role="option"
+                  aria-selected="false"
+                  tabIndex={0}
+                  onClick={() => handleSelectLocalSuggestion(target)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      handleSelectLocalSuggestion(target);
+                    }
+                  }}
+                >
+                  <span className="destination-modal__suggestion-name">{target.label}</span>
+                  <span className="destination-modal__suggestion-meta">
+                    <span>{target.address}</span>
+                    <span className="destination-modal__suggestion-source">Recovery address</span>
+                  </span>
+                </li>
+              ))}
               {geocodeLoading && geocodeSuggestions.length === 0 ? (
                 <li className="destination-modal__suggestion destination-modal__suggestion--loading" role="option" aria-selected="false">
                   Searching addresses…
                 </li>
               ) : (
-                geocodeSuggestions.map((suggestion) => (
-                  <li key={suggestion.id} className="destination-modal__suggestion" role="option" aria-selected="false">
-                    <button type="button" onClick={() => handleSelectSuggestion(suggestion)}>
-                      <span className="destination-modal__suggestion-name">{suggestion.displayName}</span>
-                    </button>
+                combinedGeocodeSuggestions.map((suggestion) => (
+                  <li
+                    key={suggestion.id}
+                    className="destination-modal__suggestion"
+                    role="option"
+                    aria-selected="false"
+                    tabIndex={0}
+                    onClick={() => handleSelectSuggestion(suggestion)}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleSelectSuggestion(suggestion); } }}
+                  >
+                    <span className="destination-modal__suggestion-name">{suggestion.displayName}</span>
+                    <span className="destination-modal__suggestion-meta">
+                      <span>{`${suggestion.lat.toFixed(5)}, ${suggestion.lng.toFixed(5)}`}</span>
+                      <span className="destination-modal__suggestion-source">Address search</span>
+                    </span>
                   </li>
                 ))
               )}
@@ -2514,7 +2610,7 @@ function DestinationModal(props: {
           <button
             className="btn btn--ghost"
             type="button"
-            onClick={props.onStageDestination}
+            onClick={handleStageTarget}
             disabled={!canCommit}
           >
             Save Target
@@ -2522,7 +2618,7 @@ function DestinationModal(props: {
           <button
             className="btn btn--primary"
             type="button"
-            onClick={props.onStartRoute}
+            onClick={handleStartTargetRoute}
             disabled={!canStartRoute}
           >
             Start Route
@@ -3678,6 +3774,21 @@ function App(): ReactElement {
     switchScreen("console");
   }
 
+  function stageResolvedDestination(address: string, coords: DestinationCoords): void {
+    const nextDestination = address.trim();
+    if (!nextDestination) return;
+    setActiveDestination(nextDestination);
+    setActiveDestinationCoords(coords);
+    setDestinationInput(nextDestination);
+    setDestinationDraftCoords(coords);
+    setDestinationInitialInput(nextDestination);
+    rememberDestination(nextDestination, coords);
+    setMapLayerMenuOpen(false);
+    setDestinationModalOpen(false);
+    setStageView("map");
+    switchScreen("console");
+  }
+
   function startRoute(): void {
     const nextDestination = destinationInput.trim() || activeDestination;
     if (!nextDestination) return;
@@ -3688,6 +3799,22 @@ function App(): ReactElement {
     setDestinationInput(nextDestination);
     setDestinationInitialInput(nextDestination);
     rememberDestination(nextDestination, nextCoords);
+    setMapLayerMenuOpen(false);
+    setDestinationModalOpen(false);
+    setNavigationActive(true);
+    setStageView("map");
+    switchScreen("console");
+  }
+
+  function startResolvedRoute(address: string, coords: DestinationCoords): void {
+    const nextDestination = address.trim();
+    if (!nextDestination) return;
+    setActiveDestination(nextDestination);
+    setActiveDestinationCoords(coords);
+    setDestinationInput(nextDestination);
+    setDestinationDraftCoords(coords);
+    setDestinationInitialInput(nextDestination);
+    rememberDestination(nextDestination, coords);
     setMapLayerMenuOpen(false);
     setDestinationModalOpen(false);
     setNavigationActive(true);
@@ -4607,7 +4734,9 @@ function App(): ReactElement {
               onSelectCamera={setSelectedCameraId}
               onSelectDetection={setSelectedDetectionId}
               onSelectGeocodedAddress={selectGeocodedAddress}
+              onStageResolvedDestination={stageResolvedDestination}
               onStageDestination={stageDestination}
+              onStartResolvedRoute={startResolvedRoute}
               onStartRoute={startRoute}
               onStageViewChange={setStageView}
               onToggleActiveAlertPins={() => updateSetting("showActiveAlertPins", !settings.showActiveAlertPins)}
@@ -5201,9 +5330,7 @@ function SearchResultCard(props: {
 
   return (
     <article
-      aria-selected={props.selected}
       className={`search-result-card severity-band severity-band--${severity} ${props.selected ? "is-selected" : ""}`}
-      role="button"
       tabIndex={0}
       onClick={props.onSelect}
       onKeyDown={(event) => {
@@ -5331,6 +5458,7 @@ function SettingsRangeRow(props: {
         <span>{props.detail}</span>
       </div>
       <input
+        aria-label={props.title}
         max={props.max}
         min={props.min}
         step={props.step}
@@ -5355,7 +5483,7 @@ function SettingsSelectRow(props: {
         <strong>{props.title}</strong>
         <span>{props.detail}</span>
       </div>
-      <select className="select-input" value={props.value} onChange={(event) => props.onChange(event.target.value)}>
+      <select className="select-input" aria-label={props.title} value={props.value} onChange={(event) => props.onChange(event.target.value)}>
         {props.options.map((option) => (
           <option key={option} value={option}>
             {option}
@@ -5548,7 +5676,9 @@ function ConsoleScreen(props: {
   onSelectCamera: (cameraId: string) => void;
   onSelectDetection: (rowId: string) => void;
   onSelectGeocodedAddress: (address: string, coords: DestinationCoords) => void;
+  onStageResolvedDestination: (address: string, coords: DestinationCoords) => void;
   onStageDestination: () => void;
+  onStartResolvedRoute: (address: string, coords: DestinationCoords) => void;
   onStartRoute: () => void;
   onStageViewChange: (view: StageView) => void;
   onToggleActiveAlertPins: () => void;
@@ -5620,7 +5750,9 @@ function ConsoleScreen(props: {
     onRemoveRecentDestination: props.onRemoveRecentDestination,
     onSelect: props.onSelectDetection,
     onSelectGeocodedAddress: props.onSelectGeocodedAddress,
+    onStageResolvedDestination: props.onStageResolvedDestination,
     onStageDestination: props.onStageDestination,
+    onStartResolvedRoute: props.onStartResolvedRoute,
     onStartRoute: props.onStartRoute,
     onToggleActiveAlertPins: props.onToggleActiveAlertPins,
     onToggleDetectionPins: props.onToggleDetectionPins,
