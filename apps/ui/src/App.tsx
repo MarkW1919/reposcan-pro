@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type ReactElement, type ReactNode } from "react";
+import { startTransition, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type ReactElement, type ReactNode } from "react";
 import { Circle, MapContainer, Marker, Polyline, Popup, TileLayer, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -2051,7 +2051,7 @@ function OpsMap(props: {
 }): ReactElement {
   const initialCenter = props.destinationCoords ?? props.unitPosition;
   return (
-    <MapContainer center={[initialCenter.lat, initialCenter.lng]} zoom={14} scrollWheelZoom={true} style={{ height: "100%", width: "100%" }}>
+    <MapContainer center={[initialCenter.lat, initialCenter.lng]} zoom={14} scrollWheelZoom={true} className="map-stage__canvas">
       <TileLayer attribution="OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
       <MapViewportSync
         autoCenter={props.autoCenter}
@@ -2472,22 +2472,41 @@ function DestinationModal(props: {
             Destination address
           </label>
           <div className="destination-modal__input-row">
-            <input
-              ref={inputRef}
-              id="destination-modal-input"
-              className="text-input destination-modal__input"
-              placeholder="Start typing an address…"
-              type="text"
-              value={props.destinationInput}
-              autoComplete="off"
-              spellCheck={false}
-              onChange={(event) => props.onDestinationChange(event.target.value)}
-              onKeyDown={handleInputKeyDown}
-              role="combobox"
-              aria-expanded={showSuggestions ? "true" : "false"}
-              aria-autocomplete="list"
-              aria-controls="destination-suggestions"
-            />
+            {showSuggestions ? (
+              <input
+                ref={inputRef}
+                id="destination-modal-input"
+                className="text-input destination-modal__input"
+                placeholder="Start typing an address…"
+                type="text"
+                value={props.destinationInput}
+                autoComplete="off"
+                spellCheck={false}
+                onChange={(event) => props.onDestinationChange(event.target.value)}
+                onKeyDown={handleInputKeyDown}
+                role="combobox"
+                aria-expanded="true"
+                aria-autocomplete="list"
+                aria-controls="destination-suggestions"
+              />
+            ) : (
+              <input
+                ref={inputRef}
+                id="destination-modal-input"
+                className="text-input destination-modal__input"
+                placeholder="Start typing an address…"
+                type="text"
+                value={props.destinationInput}
+                autoComplete="off"
+                spellCheck={false}
+                onChange={(event) => props.onDestinationChange(event.target.value)}
+                onKeyDown={handleInputKeyDown}
+                role="combobox"
+                aria-expanded="false"
+                aria-autocomplete="list"
+                aria-controls="destination-suggestions"
+              />
+            )}
             {trimmed.length > 0 ? (
               <button
                 className="destination-modal__clear"
@@ -2735,14 +2754,8 @@ function StateView(props: {
 }): ReactElement {
   const variant: StateViewVariant = props.variant ?? "empty";
   const size = props.size ?? "default";
-  const role = variant === "loading" ? "status" : variant === "error" ? "alert" : undefined;
-  const ariaLive = variant === "loading" ? "polite" : undefined;
-  return (
-    <div
-      className={`state-view state-view--${variant} state-view--${size}`}
-      role={role}
-      aria-live={ariaLive}
-    >
+  const content = (
+    <>
       <div className="state-view__icon" aria-hidden="true">
         {props.icon ?? <StateViewIcon variant={variant} />}
       </div>
@@ -2772,8 +2785,23 @@ function StateView(props: {
           ) : null}
         </div>
       ) : null}
-    </div>
+    </>
   );
+  if (variant === "loading") {
+    return (
+      <div className={`state-view state-view--${variant} state-view--${size}`} role="status" aria-live="polite">
+        {content}
+      </div>
+    );
+  }
+  if (variant === "error") {
+    return (
+      <div className={`state-view state-view--${variant} state-view--${size}`} role="alert">
+        {content}
+      </div>
+    );
+  }
+  return <div className={`state-view state-view--${variant} state-view--${size}`}>{content}</div>;
 }
 
 function workflowVariantForTone(tone: OperationalSignal["tone"]): "verify" | "follow-up" | "proceed" | "cancel" | "muted" {
@@ -5018,14 +5046,34 @@ function SearchTimeline(props: {
   onSelectRow: (rowId: string) => void;
   selectedRowId: string;
 }): ReactElement {
+  const markerRefs = useRef(new Map<string, HTMLButtonElement>());
+
+  useLayoutEffect(() => {
+    const markerPositions = new Map(props.markers.map((marker) => [marker.id, `${marker.leftPercent}%`]));
+    markerRefs.current.forEach((node, markerId) => {
+      const left = markerPositions.get(markerId);
+      if (left) {
+        node.style.left = left;
+      } else {
+        node.style.removeProperty("left");
+      }
+    });
+  }, [props.markers]);
+
   return (
     <div className="search-timeline">
       <div className="search-timeline__rail" aria-hidden="true" />
       {props.markers.map((marker) => (
         <button
           key={marker.id}
+          ref={(node) => {
+            if (node) {
+              markerRefs.current.set(marker.id, node);
+            } else {
+              markerRefs.current.delete(marker.id);
+            }
+          }}
           className={`search-timeline__marker search-timeline__marker--${marker.severity} ${props.selectedRowId === marker.id ? "is-selected" : ""} ${marker.isLead ? "is-lead" : ""}`}
-          style={{ left: `${marker.leftPercent}%` } as CSSProperties}
           title={marker.timestampLabel}
           type="button"
           onClick={() => props.onSelectRow(marker.id)}
@@ -5706,9 +5754,14 @@ function ConsoleScreen(props: {
     document.addEventListener("mouseup", onPointerUp);
   }
 
-  const layoutStyle: CSSProperties | undefined = stageFraction != null
-    ? { gridTemplateRows: `minmax(0, ${stageFraction}fr) auto minmax(0, ${1 - stageFraction}fr)` }
-    : undefined;
+  useLayoutEffect(() => {
+    if (!layoutRef.current) return;
+    if (stageFraction == null) {
+      layoutRef.current.style.removeProperty("grid-template-rows");
+      return;
+    }
+    layoutRef.current.style.gridTemplateRows = `minmax(0, ${stageFraction}fr) auto minmax(0, ${1 - stageFraction}fr)`;
+  }, [stageFraction]);
 
   const mapPanelProps = {
     alertMarkers: props.alertMarkers,
@@ -5755,7 +5808,6 @@ function ConsoleScreen(props: {
       <div
         ref={layoutRef}
         className="console-layout"
-        style={layoutStyle}
       >
         <section className="stage-card">
           <div className="stage-toolbar">
@@ -5787,24 +5839,46 @@ function ConsoleScreen(props: {
             </div>
             <div className="stage-toolbar__right">
               <div className="segmented-control stage-view-toggle" role="tablist" aria-label="Stage view">
-                <button
-                  className={props.stageView === "camera" ? "is-active" : ""}
-                  type="button"
-                  role="tab"
-                  aria-selected={props.stageView === "camera" ? "true" : "false"}
-                  onClick={() => props.onStageViewChange("camera")}
-                >
-                  Camera
-                </button>
-                <button
-                  className={props.stageView === "map" ? "is-active" : ""}
-                  type="button"
-                  role="tab"
-                  aria-selected={props.stageView === "map" ? "true" : "false"}
-                  onClick={() => props.onStageViewChange("map")}
-                >
-                  Map
-                </button>
+                {props.stageView === "camera" ? (
+                  <button
+                    className="is-active"
+                    type="button"
+                    role="tab"
+                    aria-selected="true"
+                    onClick={() => props.onStageViewChange("camera")}
+                  >
+                    Camera
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected="false"
+                    onClick={() => props.onStageViewChange("camera")}
+                  >
+                    Camera
+                  </button>
+                )}
+                {props.stageView === "map" ? (
+                  <button
+                    className="is-active"
+                    type="button"
+                    role="tab"
+                    aria-selected="true"
+                    onClick={() => props.onStageViewChange("map")}
+                  >
+                    Map
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected="false"
+                    onClick={() => props.onStageViewChange("map")}
+                  >
+                    Map
+                  </button>
+                )}
               </div>
               <Badge tone={cameraFeedTone(props.currentCamera?.status ?? "Unknown")}>{cameraFeedBadgeLabel(props.currentCamera?.status ?? "Unknown").toUpperCase()}</Badge>
             </div>
