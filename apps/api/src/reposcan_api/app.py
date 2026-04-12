@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import difflib
 import json
 import math
 from pathlib import Path
@@ -83,6 +84,81 @@ _ADDRESS_SEARCH_FETCH_LIMIT_MAX = 12
 _ADDRESS_SEARCH_VIEWBOX_RADIUS_MILES = 40.0
 _ADDRESS_SEARCH_ALLOWED_STATES = {"texas", "oklahoma"}
 _ADDRESS_SEARCH_ALLOWED_STATE_CODES = {"tx", "ok"}
+_ADDRESS_SEARCH_SPELLING_LEXICON = {
+    "alabama",
+    "alaska",
+    "arizona",
+    "arkansas",
+    "california",
+    "colorado",
+    "connecticut",
+    "delaware",
+    "florida",
+    "georgia",
+    "hawaii",
+    "idaho",
+    "illinois",
+    "indiana",
+    "iowa",
+    "kansas",
+    "kentucky",
+    "louisiana",
+    "maine",
+    "maryland",
+    "massachusetts",
+    "michigan",
+    "minnesota",
+    "mississippi",
+    "missouri",
+    "montana",
+    "nebraska",
+    "nevada",
+    "hampshire",
+    "jersey",
+    "mexico",
+    "york",
+    "carolina",
+    "dakota",
+    "ohio",
+    "oklahoma",
+    "oregon",
+    "pennsylvania",
+    "rhode",
+    "island",
+    "tennessee",
+    "texas",
+    "utah",
+    "vermont",
+    "virginia",
+    "washington",
+    "wisconsin",
+    "wyoming",
+    "north",
+    "south",
+    "east",
+    "west",
+    "northeast",
+    "northwest",
+    "southeast",
+    "southwest",
+    "street",
+    "road",
+    "avenue",
+    "boulevard",
+    "drive",
+    "lane",
+    "court",
+    "circle",
+    "trail",
+    "parkway",
+    "highway",
+    "mount",
+    "fort",
+    "city",
+    "county",
+    "ok",
+    "tx",
+}
 
 _ADDRESS_TOKEN_ALIASES = {
     "n": "north",
@@ -223,6 +299,25 @@ def _candidate_in_allowed_states(item: dict[str, object]) -> bool:
         return True
     display_name = str(item.get("display_name", "")).lower()
     return any(state_name in display_name for state_name in _ADDRESS_SEARCH_ALLOWED_STATES)
+
+
+def _address_spelling_variant(query: str) -> str | None:
+    pieces = re.findall(r"[a-z0-9]+|[^a-z0-9]+", query.lower())
+    corrected: list[str] = []
+    changed = False
+    for piece in pieces:
+        if not piece.isalpha() or len(piece) < 5 or piece in _ADDRESS_SEARCH_SPELLING_LEXICON:
+            corrected.append(piece)
+            continue
+        replacement = difflib.get_close_matches(piece, sorted(_ADDRESS_SEARCH_SPELLING_LEXICON), n=1, cutoff=0.88)
+        if replacement:
+            corrected.append(replacement[0])
+            changed = True
+        else:
+            corrected.append(piece)
+    if not changed:
+        return None
+    return "".join(corrected)
 
 
 def _address_match_score(
@@ -401,6 +496,35 @@ def _search_address_candidates(
     countrycodes: str = "us",
     bias_latitude: float | None = None,
     bias_longitude: float | None = None,
+) -> list[AddressSearchSuggestion]:
+    suggestions = _search_address_candidates_once(
+        query,
+        limit=limit,
+        countrycodes=countrycodes,
+        bias_latitude=bias_latitude,
+        bias_longitude=bias_longitude,
+    )
+    if suggestions:
+        return suggestions
+    spelling_variant = _address_spelling_variant(query)
+    if spelling_variant and spelling_variant != query.strip().lower():
+        return _search_address_candidates_once(
+            spelling_variant,
+            limit=limit,
+            countrycodes=countrycodes,
+            bias_latitude=bias_latitude,
+            bias_longitude=bias_longitude,
+        )
+    return suggestions
+
+
+def _search_address_candidates_once(
+    query: str,
+    *,
+    limit: int,
+    countrycodes: str,
+    bias_latitude: float | None,
+    bias_longitude: float | None,
 ) -> list[AddressSearchSuggestion]:
     trimmed = query.strip()
     if not trimmed:

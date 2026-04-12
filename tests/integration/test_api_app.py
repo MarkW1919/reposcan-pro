@@ -1265,6 +1265,62 @@ def test_address_search_candidates_filters_to_texas_and_oklahoma(monkeypatch):
     api_app_module._address_search_cache.clear()
 
 
+def test_address_search_candidates_retries_with_spelling_variant(monkeypatch):
+    api_app_module._address_search_cache.clear()
+    calls: list[str] = []
+
+    class EmptyResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self) -> bytes:
+            return b"[]"
+
+    class MatchResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self) -> bytes:
+            return json.dumps(
+                [
+                    {
+                        "place_id": 401,
+                        "display_name": "920, North Virginia Drive, Oklahoma City, Oklahoma County, Oklahoma, 73107, United States",
+                        "lat": "35.4766259",
+                        "lon": "-97.5976956",
+                        "address": {"house_number": "920", "road": "North Virginia Drive", "city": "Oklahoma City", "state": "Oklahoma"},
+                    }
+                ]
+            ).encode("utf-8")
+
+    def fake_urlopen(request, timeout):
+        calls.append(request.full_url)
+        if "virgina" in request.full_url:
+            return EmptyResponse()
+        return MatchResponse()
+
+    monkeypatch.setattr(api_app_module, "urlopen", fake_urlopen)
+
+    results = api_app_module._search_address_candidates(
+        "920 n virgina dr oklahoma city ok",
+        limit=5,
+        bias_latitude=35.4676,
+        bias_longitude=-97.5164,
+    )
+
+    assert len(calls) == 2
+    assert "virgina" in calls[0]
+    assert "virginia" in calls[1]
+    assert results[0].display_name == "920, North Virginia Drive, Oklahoma City, Oklahoma County, Oklahoma, 73107, United States"
+    api_app_module._address_search_cache.clear()
+
+
 def test_secure_api_requires_credentials_and_enforces_roles(tmp_path):
     client, _ = _secure_seeded_client(tmp_path)
 
