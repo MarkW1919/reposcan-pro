@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
+from urllib.request import Request as UrlRequest, urlopen
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, Response, status
@@ -35,6 +39,8 @@ from reposcan_storage.service import (
 )
 
 from .models import (
+    AddressSearchResponse,
+    AddressSearchSuggestion,
     AlertUpdateSubmission,
     AlertSearchResponse,
     ApiAuditEvent,
@@ -61,6 +67,13 @@ from .audit import ApiAuditLogger
 from .security import ApiAccessController, ApiPrincipalContext, principal_details
 
 _DASHBOARD_SUPPORTING_RECORD_LIMIT = 200
+_ADDRESS_SEARCH_PROVIDER = "nominatim"
+_ADDRESS_SEARCH_URL = "https://nominatim.openstreetmap.org/search"
+_ADDRESS_SEARCH_TIMEOUT_SECONDS = 3.0
+
+
+class AddressSearchProviderError(RuntimeError):
+    """Raised when the upstream address search provider cannot be reached cleanly."""
 
 
 def _utcnow() -> str:
@@ -85,6 +98,51 @@ def _build_alert_popup_note(alert: AlertRecord) -> str | None:
     parts = [alert.notes, alert.response_notes]
     note = " | ".join(part for part in parts if part)
     return note or None
+
+
+def _search_address_candidates(query: str, *, limit: int, countrycodes: str = "us") -> list[AddressSearchSuggestion]:
+    trimmed = query.strip()
+    if not trimmed:
+        return []
+
+    params = urlencode(
+        {
+            "q": trimmed,
+            "format": "jsonv2",
+            "addressdetails": "1",
+            "limit": str(limit),
+            "countrycodes": countrycodes,
+        }
+    )
+    request = UrlRequest(
+        f"{_ADDRESS_SEARCH_URL}?{params}",
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "RepoScanPro/1.0 (repossession field tool)",
+        },
+    )
+
+    try:
+        with urlopen(request, timeout=_ADDRESS_SEARCH_TIMEOUT_SECONDS) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+        raise AddressSearchProviderError("Address search provider unavailable") from exc
+
+    suggestions: list[AddressSearchSuggestion] = []
+    for item in payload:
+        try:
+            suggestions.append(
+                AddressSearchSuggestion(
+                    suggestion_id=str(item["place_id"]),
+                    display_name=str(item["display_name"]),
+                    latitude=float(item["lat"]),
+                    longitude=float(item["lon"]),
+                    provider=_ADDRESS_SEARCH_PROVIDER,
+                )
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+    return suggestions
 
 
 def _geo_search_kwargs(geo_filters: GeoSearchFilters) -> dict[str, object]:
@@ -618,6 +676,34 @@ def create_app(
             details={"plate": plate, "camera_id": camera_id, "limit": limit, "offset": offset, "total_results": total},
         )
         return AlertSearchResponse(page=SearchPageInfo(total_results=total, limit=limit, offset=offset), results=results)
+
+    @api_router.get("/search/addresses", response_model=AddressSearchResponse)
+    def search_addresses(
+        request: Request,
+        query: str = Query(..., alias="q", min_length=3),
+        limit: int = Query(default=5, ge=1, le=8),
+        principal: ApiPrincipalContext = Depends(access_controller.viewer_access),
+    ) -> AddressSearchResponse:
+        try:
+            results = _search_address_candidates(query, limit=limit)
+        except AddressSearchProviderError as exc:
+            record_audit(
+                request,
+                principal=principal,
+                action="search.addresses",
+                outcome=AuditOutcome.error,
+                details={"query": query, "limit": limit, "detail": str(exc)},
+            )
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Address search unavailable") from exc
+
+        record_audit(
+            request,
+            principal=principal,
+            action="search.addresses",
+            outcome=AuditOutcome.success,
+            details={"query": query, "limit": limit, "total_results": len(results)},
+        )
+        return AddressSearchResponse(results=results)
 
     @api_router.get("/demo/runtime", response_model=DemoRuntimeStatus)
     def get_demo_runtime_status(

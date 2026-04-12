@@ -19,6 +19,7 @@ import {
   fetchHotlists,
   fetchReviews,
   searchAlerts,
+  searchAddresses,
   searchDetections,
   sendOperatorSessionHeartbeat,
   setApiClientConfig,
@@ -288,26 +289,14 @@ function useGeocodeSuggestions(query: string): { suggestions: GeocodeSuggestion[
       const controller = new AbortController();
       abortRef.current = controller;
 
-      const params = new URLSearchParams({
-        q: trimmed,
-        format: "jsonv2",
-        addressdetails: "1",
-        limit: "5",
-        countrycodes: "us",
-      });
-
-      fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, { signal: controller.signal })
-        .then((response) => {
-          if (!response.ok) throw new Error("geocode failed");
-          return response.json();
-        })
-        .then((data: Array<{ place_id: number; display_name: string; lat: string; lon: string }>) => {
+      searchAddresses(trimmed, controller.signal, 5)
+        .then((data) => {
           setSuggestions(
-            data.map((item) => ({
-              id: String(item.place_id),
+            data.results.map((item) => ({
+              id: item.suggestion_id,
               displayName: item.display_name,
-              lat: parseFloat(item.lat),
-              lng: parseFloat(item.lon),
+              lat: item.latitude,
+              lng: item.longitude,
             })),
           );
           setLoading(false);

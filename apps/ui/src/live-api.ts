@@ -894,6 +894,18 @@ export interface AlertSearchResult {
   results: DashboardAlert[];
 }
 
+export interface AddressSearchSuggestion {
+  suggestion_id: string;
+  display_name: string;
+  latitude: number;
+  longitude: number;
+  provider: string;
+}
+
+export interface AddressSearchResult {
+  results: AddressSearchSuggestion[];
+}
+
 export async function searchAlerts(
   filters: AlertSearchFilters,
   signal?: AbortSignal,
@@ -943,6 +955,22 @@ export async function searchAlerts(
     throw new Error(await responseErrorMessage(response, `Failed to search alerts (${response.status})`));
   }
   return (await response.json()) as AlertSearchResult;
+}
+
+export async function searchAddresses(
+  query: string,
+  signal?: AbortSignal,
+  limit = 5,
+): Promise<AddressSearchResult> {
+  const params = new URLSearchParams({
+    q: query.trim(),
+    limit: String(limit),
+  });
+  const response = await fetch(apiUrl(`/search/addresses?${params.toString()}`), { signal, headers: authHeaders() });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, `Failed to search addresses (${response.status})`));
+  }
+  return (await response.json()) as AddressSearchResult;
 }
 
 export function mapOverviewToAlertItems(

@@ -12,6 +12,7 @@ from reposcan_contracts.config.loader import load_deployment_config
 from reposcan_contracts.detection import DetectionRecord
 from reposcan_contracts.followup import FollowUpRecord
 from reposcan_contracts.hotlist import HotlistEntry
+import reposcan_api.app as api_app_module
 from reposcan_api import create_app
 from reposcan_storage.memory import InMemoryStorageRepository
 from reposcan_storage.service import StorageService
@@ -1022,6 +1023,66 @@ def test_versioned_search_supports_geo_circle_and_polygon_filters(tmp_path):
     assert polygon_response.status_code == 200
     assert polygon_response.json()["page"]["total_results"] == 1
     assert polygon_response.json()["results"][0]["alert_id"] == "alert_geo_match"
+
+
+def test_versioned_address_search_returns_provider_results_and_writes_audit_event(tmp_path, monkeypatch):
+    client, _ = _secure_seeded_client(tmp_path)
+    viewer_headers = {"X-RepoScan-Api-Key": "viewer-demo-token"}
+    admin_headers = {"X-RepoScan-Api-Key": "admin-demo-token"}
+    captured: dict[str, object] = {}
+
+    def fake_search(query: str, *, limit: int, countrycodes: str = "us"):
+        captured["query"] = query
+        captured["limit"] = limit
+        captured["countrycodes"] = countrycodes
+        return [
+            api_app_module.AddressSearchSuggestion(
+                suggestion_id="place_001",
+                display_name="ABC Towing, 4128 W Fulton St, Cook County, Illinois",
+                latitude=41.8862,
+                longitude=-87.7282,
+                provider="nominatim",
+            )
+        ]
+
+    monkeypatch.setattr(api_app_module, "_search_address_candidates", fake_search)
+
+    response = client.get(
+        "/api/v1/search/addresses",
+        headers=viewer_headers,
+        params={"q": "4128 W Fulton St", "limit": 3},
+    )
+    audit_response = client.get("/api/v1/audit/events", headers=admin_headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["results"][0]["display_name"] == "ABC Towing, 4128 W Fulton St, Cook County, Illinois"
+    assert payload["results"][0]["latitude"] == 41.8862
+    assert payload["results"][0]["longitude"] == -87.7282
+    assert captured == {"query": "4128 W Fulton St", "limit": 3, "countrycodes": "us"}
+
+    assert audit_response.status_code == 200
+    actions = [event["action"] for event in audit_response.json()["events"]]
+    assert "search.addresses" in actions
+
+
+def test_versioned_address_search_returns_502_when_provider_fails(tmp_path, monkeypatch):
+    client, _ = _secure_seeded_client(tmp_path)
+    viewer_headers = {"X-RepoScan-Api-Key": "viewer-demo-token"}
+
+    def fake_search(query: str, *, limit: int, countrycodes: str = "us"):
+        raise api_app_module.AddressSearchProviderError("provider down")
+
+    monkeypatch.setattr(api_app_module, "_search_address_candidates", fake_search)
+
+    response = client.get(
+        "/api/v1/search/addresses",
+        headers=viewer_headers,
+        params={"q": "4128 W Fulton St"},
+    )
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "Address search unavailable"
 
 
 def test_secure_api_requires_credentials_and_enforces_roles(tmp_path):

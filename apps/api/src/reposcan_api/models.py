@@ -219,6 +219,18 @@ class AlertSearchResponse(BaseModel):
     results: list[AlertRecord]
 
 
+class AddressSearchSuggestion(BaseModel):
+    suggestion_id: str = Field(..., min_length=1)
+    display_name: str = Field(..., min_length=1)
+    latitude: float = Field(..., ge=-90.0, le=90.0)
+    longitude: float = Field(..., ge=-180.0, le=180.0)
+    provider: str = Field(..., min_length=1)
+
+
+class AddressSearchResponse(BaseModel):
+    results: list[AddressSearchSuggestion]
+
+
 class ApiVersionInfo(BaseModel):
     service: str = Field(..., description="Logical service identifier")
     package_version: str = Field(..., description="Application package version")
