@@ -192,6 +192,93 @@ def _read_last_nonempty_line(path: Path) -> str | None:
     return None
 
 
+def _read_pid_file(path: Path) -> int | None:
+    if not path.exists():
+        return None
+    try:
+        raw_value = path.read_text(encoding="utf-8").strip()
+    except Exception:
+        return None
+    if not raw_value:
+        return None
+    try:
+        pid = int(raw_value)
+    except ValueError:
+        return None
+    return pid if pid > 0 else None
+
+
+def _pid_is_running(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def _load_training_status(path: Path) -> dict[str, object]:
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _write_training_status(path: Path, status: dict[str, object]) -> None:
+    path.write_text(json.dumps(status, indent=2), encoding="utf-8")
+
+
+def _reconcile_stale_run_state_before_launch(
+    *,
+    run_manifest_path: Path,
+    run_manifest: dict[str, object],
+    pid_path: Path,
+    stderr_path: Path,
+) -> None:
+    workspace_dir = _resolve_workspace_dir(run_manifest_path, run_manifest)
+    status_path = workspace_dir / "training_status.json"
+    status = _load_training_status(status_path)
+    state = status.get("state") if isinstance(status, dict) else None
+    pid_file_exists = pid_path.exists()
+    pid = _read_pid_file(pid_path)
+    pid_running = pid is not None and _pid_is_running(pid)
+
+    if pid_running:
+        raise RuntimeError(f"run '{run_manifest['run_name']}' already appears active with pid {pid}")
+
+    if pid is not None and pid_path.exists():
+        pid_path.unlink(missing_ok=True)
+
+    if state != "running":
+        return
+
+    if not pid_file_exists:
+        return
+
+    error_parts: list[str] = ["training launcher found stale running state before launch"]
+    error_parts.append("recorded pid file was stale before relaunch")
+    if pid is not None:
+        error_parts.append(f"recorded pid {pid} was not running")
+    last_stderr_line = _read_last_nonempty_line(stderr_path)
+    if last_stderr_line:
+        error_parts.append(f"last_stderr={last_stderr_line}")
+
+    status["state"] = "interrupted"
+    status["updated_at_utc"] = _utc_now_utc()
+    status["error_message"] = "; ".join(error_parts)
+    _write_training_status(status_path, status)
+    _append_training_event(
+        workspace_dir / "training_events.log",
+        "run_interrupted reason=stale_running_state_before_launch",
+    )
+
+
 def _reconcile_training_status_after_exit(
     *,
     run_manifest_path: Path,
@@ -316,6 +403,13 @@ def main() -> int:
             stderr_path=stderr_path,
             pid_path=pid_path,
         )
+
+    _reconcile_stale_run_state_before_launch(
+        run_manifest_path=run_manifest_path,
+        run_manifest=run_manifest,
+        pid_path=pid_path,
+        stderr_path=stderr_path,
+    )
 
     if args.detached:
         monitor_command = _build_monitor_command(

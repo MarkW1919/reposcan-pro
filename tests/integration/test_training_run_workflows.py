@@ -724,6 +724,80 @@ def test_launch_training_run_marks_stale_running_status_interrupted_on_abnormal_
     assert "run_interrupted exit_code=7" in events
 
 
+def test_launch_training_run_reconciles_stale_running_status_before_relaunch(tmp_path):
+    workspace_dir = tmp_path / "run_workspace"
+    workspace_dir.mkdir(parents=True, exist_ok=True)
+    (workspace_dir / "training_status.json").write_text(
+        json.dumps(
+            {
+                "run_name": "stale-relaunch-smoke",
+                "state": "running",
+                "current_epoch": 6,
+                "total_epochs": 40,
+                "best_validation_accuracy": 0.3964,
+                "error_message": None,
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    worker_output = tmp_path / "relaunch-result.txt"
+    worker_script = tmp_path / "relaunch_worker.py"
+    worker_script.write_text(
+        "\n".join(
+            [
+                "from pathlib import Path",
+                "import sys",
+                "print('epoch_started epoch=7/40', flush=True)",
+                "Path(sys.argv[1]).write_text('done', encoding='utf-8')",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    manifest_path = workspace_dir / "run_manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "run_name": "stale-relaunch-smoke",
+                "workspace_dir": str(workspace_dir),
+                "training_command": [sys.executable, str(worker_script), str(worker_output)],
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    stdout_log = tmp_path / "stdout.log"
+    stderr_log = tmp_path / "stderr.log"
+    pid_file = tmp_path / "run.pid"
+    pid_file.write_text("999999", encoding="utf-8")
+    stderr_log.write_text("forrtl: error (200): program aborting due to window-CLOSE event\n", encoding="utf-8")
+
+    result = _run_script(
+        "scripts/launch_training_run.py",
+        "--run-manifest",
+        str(manifest_path),
+        "--stdout-log",
+        str(stdout_log),
+        "--stderr-log",
+        str(stderr_log),
+        "--pid-file",
+        str(pid_file),
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert worker_output.read_text(encoding="utf-8") == "done"
+    status = json.loads((workspace_dir / "training_status.json").read_text(encoding="utf-8"))
+    events = (workspace_dir / "training_events.log").read_text(encoding="utf-8")
+    assert status["state"] == "interrupted"
+    assert "stale running state before launch" in status["error_message"]
+    assert "window-CLOSE event" in status["error_message"]
+    assert "run_interrupted reason=stale_running_state_before_launch" in events
+
+
 def test_ocr_training_script_prepares_workspace(tmp_path):
     storage_root = tmp_path / "ocr_dataset"
     for split in ("train", "validation", "holdout"):
