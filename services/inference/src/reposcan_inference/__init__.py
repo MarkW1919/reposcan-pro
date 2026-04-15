@@ -8,6 +8,22 @@ from .adapters import (
     StaticVehicleDetectorAdapter,
 )
 from .adapter_factory import build_runtime_adapter_bundle
+from .acceptance import (
+    ACCEPTANCE_LANES,
+    AcceptanceLaneReport,
+    AcceptanceRunReport,
+    LONG_RANGE_LANE,
+    LOW_LIGHT_LANE,
+    MOVING_PLATFORM_LANE,
+    build_acceptance_run_report,
+    default_run_id,
+    frame_lanes,
+    lane_report_filenames,
+    render_lane_markdown,
+    render_overall_markdown,
+    stamp_acceptance_lanes,
+    write_acceptance_artifacts,
+)
 from .benchmarking import (
     BenchmarkSubsetMetrics,
     PromotedModelBenchmarkReport,
@@ -56,6 +72,20 @@ from .validation import ModelStackValidationReport, StageValidationReport, Valid
 from .workflow import FrameToCandidateWorkflow
 
 __all__ = [
+    "ACCEPTANCE_LANES",
+    "AcceptanceLaneReport",
+    "AcceptanceRunReport",
+    "LONG_RANGE_LANE",
+    "LOW_LIGHT_LANE",
+    "MOVING_PLATFORM_LANE",
+    "build_acceptance_run_report",
+    "default_run_id",
+    "frame_lanes",
+    "lane_report_filenames",
+    "render_lane_markdown",
+    "render_overall_markdown",
+    "stamp_acceptance_lanes",
+    "write_acceptance_artifacts",
     "FrameToCandidateWorkflow",
     "DemoRunInProgressError",
     "DemoRunRequest",
