@@ -5,6 +5,8 @@ import importlib.util
 from pathlib import Path
 
 import pytest
+import yaml
+from PIL import Image
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -133,3 +135,57 @@ def test_export_root_requires_overwrite_for_non_empty_directory(tmp_path):
 
     assert output_root.is_dir()
     assert not (output_root / "stale.txt").exists()
+
+
+def test_export_reviewed_crops_builds_color_manifest(tmp_path):
+    module = _load_pipeline_module()
+    crop_root = tmp_path / "crops"
+    crop_root.mkdir()
+    Image.new("RGB", (96, 64), color=(240, 240, 240)).save(crop_root / "white_001.jpg")
+    Image.new("RGB", (96, 64), color=(20, 20, 20)).save(crop_root / "black_001.jpg")
+
+    review_csv = tmp_path / "crop_review.csv"
+    review_csv.write_text(
+        "\n".join(
+            [
+                ",".join(module._crop_review_fieldnames()),
+                f"crop_white,source_1,source_a.jpg,{crop_root / 'white_001.jpg'},Car,0,0,1,1,96,64,true,true,white,,,2020,white,vehicle_class:passenger_car,",
+                f"crop_black,source_2,source_b.jpg,{crop_root / 'black_001.jpg'},Truck,0,0,1,1,96,64,true,true,black,,,2019,black,vehicle_class:pickup,",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    output_root = tmp_path / "reviewed_color"
+    manifest_path = tmp_path / "reviewed_color.yaml"
+
+    result = module.export_reviewed_crops(
+        argparse.Namespace(
+            review_csv=str(review_csv),
+            output_root=str(output_root),
+            manifest_path=str(manifest_path),
+            dataset_name="tmp-reviewed-color-crops",
+            dataset_version="2026-04-15",
+            task="vehicle_color_classification",
+            seed=7,
+            train_ratio=0.5,
+            validation_ratio=0.5,
+            holdout_ratio=0.0,
+            copy_mode="copy",
+            reviewer="qa_01",
+            review_status="approved",
+            allow_unreviewed=False,
+            overwrite=False,
+        )
+    )
+
+    assert result == 0
+    manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["task"] == "vehicle_color_classification"
+    assert manifest["review_status"] == "approved"
+    assert sorted(path.name for path in (output_root / "splits").rglob("*.jpg")) == [
+        "crop_black.jpg",
+        "crop_white.jpg",
+    ]
+    assert sorted(asset["vehicle_color"] for asset in manifest["assets"]) == ["black", "white"]

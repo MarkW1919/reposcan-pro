@@ -110,6 +110,83 @@ coverage, session diversity, and Oklahoma-priority class balance:
   --report-output .\runtime\dataset_readiness\fiftyone-open-images-ok-vehicle-reviewed.json
 ```
 
+## Attribute Crop Review
+
+Year, make, model, and color are vehicle attributes, not detector classes. Use
+vehicle detections to create one crop per vehicle, review those crops, then
+export task-specific ImageFolder manifests for attribute-classifier training.
+
+Create a crop review queue from Open Images detections:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\fiftyone_vehicle_dataset_pipeline.py export-attribute-crop-review `
+  --dataset-name reposcan_open_images_ok_vehicle_candidates `
+  --output-root .\data\staged\attribute_crops\open_images_vehicle_attribute_review_20260415 `
+  --review-csv .\data\staged\review_templates\open_images_vehicle_attribute_crop_review_20260415.csv `
+  --source-labels Car Truck Bus Motorcycle Van Taxi `
+  --min-width-px 64 `
+  --min-height-px 64 `
+  --overwrite
+```
+
+Fill the crop CSV with conservative labels:
+
+- `reposcan_accepted`: `true` when the crop contains one usable vehicle
+- `reposcan_reviewed`: `true` after visual/provenance review
+- `reposcan_class_label`: make/model class such as `ford_f_series`
+- `reposcan_vehicle_make`: normalized make such as `ford`
+- `reposcan_vehicle_model`: normalized model or family such as `f_series`
+- `reposcan_vehicle_year`: exact year or generation range when defensible
+- `reposcan_vehicle_color`: dominant body color
+- `reposcan_oklahoma_tags`: tags such as `vehicle_class:pickup`
+
+Export reviewed crop labels for each attribute task:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\fiftyone_vehicle_dataset_pipeline.py export-reviewed-crops `
+  --review-csv .\data\staged\review_templates\open_images_vehicle_attribute_crop_review_20260415.csv `
+  --output-root .\data\curated\fiftyone_open_images_vehicle_color_reviewed `
+  --manifest-path .\data\manifests\public\fiftyone-open-images-vehicle-color-reviewed.yaml `
+  --dataset-name fiftyone-open-images-vehicle-color-reviewed `
+  --task vehicle_color_classification `
+  --copy-mode hardlink `
+  --reviewer reviewer_01 `
+  --review-status approved `
+  --overwrite
+
+.\.venv\Scripts\python.exe .\scripts\fiftyone_vehicle_dataset_pipeline.py export-reviewed-crops `
+  --review-csv .\data\staged\review_templates\open_images_vehicle_attribute_crop_review_20260415.csv `
+  --output-root .\data\curated\fiftyone_open_images_vehicle_make_model_reviewed `
+  --manifest-path .\data\manifests\public\fiftyone-open-images-vehicle-make-model-reviewed.yaml `
+  --dataset-name fiftyone-open-images-vehicle-make-model-reviewed `
+  --task vehicle_make_model_classification `
+  --copy-mode hardlink `
+  --reviewer reviewer_01 `
+  --review-status approved `
+  --overwrite
+
+.\.venv\Scripts\python.exe .\scripts\fiftyone_vehicle_dataset_pipeline.py export-reviewed-crops `
+  --review-csv .\data\staged\review_templates\open_images_vehicle_attribute_crop_review_20260415.csv `
+  --output-root .\data\curated\fiftyone_open_images_vehicle_year_reviewed `
+  --manifest-path .\data\manifests\public\fiftyone-open-images-vehicle-year-reviewed.yaml `
+  --dataset-name fiftyone-open-images-vehicle-year-reviewed `
+  --task vehicle_year_classification `
+  --copy-mode hardlink `
+  --reviewer reviewer_01 `
+  --review-status approved `
+  --overwrite
+```
+
+Train the exported crop datasets with `scripts/train_attribute_classifier.py`
+and the existing attribute profiles:
+
+- `configs/training/vehicle-color-classifier-efficientnet.yaml`
+- `configs/training/vehicle-make-model-warmstart-v2.yaml` for warm starts
+- `configs/training/vehicle-year-classifier.yaml`
+
+Keep year labels conservative; year ranges or generation labels are preferable
+when the exact model year is not visible.
+
 ## Vehicle Detector Warm-Start
 
 Open Images detection labels can also warm-start a one-class `vehicle` detector.

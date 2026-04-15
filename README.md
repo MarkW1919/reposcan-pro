@@ -269,6 +269,12 @@ When GPU training hardware is available, use `configs/training/vehicle-detector-
 
 The detailed review and CSV batch-labeling workflow lives in [Internet Vehicle Image Pipeline](docs/INTERNET_VEHICLE_IMAGE_PIPELINE.md).
 
+For vehicle year, make, model, and color, export detected vehicle crops to a crop-level review CSV before training attribute classifiers:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\fiftyone_vehicle_dataset_pipeline.py export-attribute-crop-review --dataset-name reposcan_open_images_ok_vehicle_candidates --output-root .\data\staged\attribute_crops\open_images_vehicle_attribute_review_20260415 --review-csv .\data\staged\review_templates\open_images_vehicle_attribute_crop_review_20260415.csv --source-labels Car Truck Bus Motorcycle Van Taxi --min-width-px 64 --min-height-px 64 --overwrite
+```
+
 Refresh the repo-tracked Section 4 inference-runtime evidence fixtures with:
 
 ```powershell

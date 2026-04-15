@@ -1,0 +1,36 @@
+profile_name: vehicle-year-classifier
+task: vehicle_year_classification
+framework: torchvision
+output_root: runtime/training
+allow_pending_review: false
+dataset_adapter: imagefolder
+base_model: efficientnet_b0
+image_size: 224
+epochs: 40
+batch_size: 32
+workers: 4
+patience: 8
+seed: 42
+learning_rate: 0.0002
+weight_decay: 0.0005
+label_smoothing: 0.05
+dropout: 0.25
+freeze_backbone_epochs: 3
+validation_fraction: 0.15
+precision: fp32
+device: auto
+augmentation:
+  horizontal_flip: true
+  motion_blur: true
+  defocus_blur: true
+  brightness_contrast: true
+  noise: true
+  compression_artifacts: true
+  perspective_distortion: true
+  random_erasing: true
+  mixup_alpha: 0.1
+  synthetic_support_ratio: 0.0
+  notes:
+    - Use exact-year labels only when defensible from the crop.
+    - Prefer generation ranges such as 2019-2023 when visual evidence cannot support an exact year.
+    - Treat year recognition as lower confidence than make/model and color until field holdouts prove it.

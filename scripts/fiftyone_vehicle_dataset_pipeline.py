@@ -74,6 +74,45 @@ def parse_args() -> argparse.Namespace:
     apply_review.add_argument("--key-field", choices=["sample_id", "filepath", "filename"], default="sample_id")
     apply_review.add_argument("--strict", action="store_true", help="Fail when a CSV row does not match a sample.")
 
+    crop_review = subparsers.add_parser(
+        "export-attribute-crop-review",
+        help="Export detected vehicle crops and a CSV queue for make/model/year/color review.",
+    )
+    crop_review.add_argument("--dataset-name", required=True)
+    crop_review.add_argument("--output-root", required=True)
+    crop_review.add_argument("--review-csv", required=True)
+    crop_review.add_argument("--detections-field", default="ground_truth")
+    crop_review.add_argument("--source-labels", nargs="+", default=["Car", "Truck", "Bus", "Motorcycle", "Van", "Taxi"])
+    crop_review.add_argument("--padding-ratio", type=float, default=0.05)
+    crop_review.add_argument("--min-width-px", type=int, default=48)
+    crop_review.add_argument("--min-height-px", type=int, default=48)
+    crop_review.add_argument("--max-crops", type=int)
+    crop_review.add_argument("--overwrite", action="store_true", help="Replace a non-empty crop output root before export.")
+
+    crop_export = subparsers.add_parser(
+        "export-reviewed-crops",
+        help="Export reviewed attribute crop CSV rows to a RepoScan ImageFolder manifest.",
+    )
+    crop_export.add_argument("--review-csv", required=True)
+    crop_export.add_argument("--output-root", required=True)
+    crop_export.add_argument("--manifest-path", required=True)
+    crop_export.add_argument("--dataset-name", required=True)
+    crop_export.add_argument("--dataset-version", default=datetime.now(timezone.utc).strftime("%Y-%m-%d"))
+    crop_export.add_argument(
+        "--task",
+        choices=["vehicle_make_model_classification", "vehicle_color_classification", "vehicle_year_classification"],
+        default="vehicle_make_model_classification",
+    )
+    crop_export.add_argument("--seed", type=int, default=42)
+    crop_export.add_argument("--train-ratio", type=float, default=0.8)
+    crop_export.add_argument("--validation-ratio", type=float, default=0.1)
+    crop_export.add_argument("--holdout-ratio", type=float, default=0.1)
+    crop_export.add_argument("--copy-mode", choices=["copy", "hardlink"], default="copy")
+    crop_export.add_argument("--reviewer", default="attribute_crop_reviewer")
+    crop_export.add_argument("--review-status", choices=["pending", "approved"], default="approved")
+    crop_export.add_argument("--allow-unreviewed", action="store_true")
+    crop_export.add_argument("--overwrite", action="store_true", help="Replace a non-empty output root before export.")
+
     export = subparsers.add_parser("export-reviewed", help="Export approved FiftyOne samples to RepoScan ImageFolder.")
     export.add_argument("--dataset-name", required=True)
     export.add_argument("--output-root", required=True)
@@ -495,6 +534,15 @@ def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
             writer.writerow(row)
 
 
+def _write_dict_csv(path: Path, rows: list[dict[str, Any]], fieldnames: list[str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction="ignore")
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+
+
 def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
@@ -522,6 +570,122 @@ def _sample_detections(sample, field_name: str) -> list[Any]:
     if detections is None:
         return []
     return list(getattr(detections, "detections", []) or [])
+
+
+def _expanded_bbox_pixels(
+    bounding_box: list[float] | tuple[float, float, float, float],
+    *,
+    image_width: int,
+    image_height: int,
+    padding_ratio: float,
+) -> tuple[int, int, int, int] | None:
+    if len(bounding_box) != 4:
+        return None
+    x_top_left, y_top_left, width, height = [float(value) for value in bounding_box]
+    if width <= 0.0 or height <= 0.0:
+        return None
+    pad_x = width * max(padding_ratio, 0.0)
+    pad_y = height * max(padding_ratio, 0.0)
+    left = max(0, int(round((x_top_left - pad_x) * image_width)))
+    top = max(0, int(round((y_top_left - pad_y) * image_height)))
+    right = min(image_width, int(round((x_top_left + width + pad_x) * image_width)))
+    bottom = min(image_height, int(round((y_top_left + height + pad_y) * image_height)))
+    if right <= left or bottom <= top:
+        return None
+    return left, top, right, bottom
+
+
+def _crop_review_fieldnames() -> list[str]:
+    return [
+        "crop_id",
+        "source_sample_id",
+        "source_filepath",
+        "crop_filepath",
+        "source_label",
+        "bbox_x",
+        "bbox_y",
+        "bbox_w",
+        "bbox_h",
+        "crop_width",
+        "crop_height",
+        "reposcan_accepted",
+        "reposcan_reviewed",
+        "reposcan_class_label",
+        "reposcan_vehicle_make",
+        "reposcan_vehicle_model",
+        "reposcan_vehicle_year",
+        "reposcan_vehicle_color",
+        "reposcan_oklahoma_tags",
+        "reviewer_notes",
+    ]
+
+
+def _class_label_for_crop_row(row: dict[str, str], *, task: str) -> str:
+    if task == "vehicle_color_classification":
+        return _slugify(row.get("reposcan_vehicle_color", ""))
+    if task == "vehicle_year_classification":
+        return _slugify(row.get("reposcan_vehicle_year", ""))
+    return _slugify(row.get("reposcan_class_label", ""))
+
+
+def _validate_crop_row_fields(row: dict[str, str], *, task: str, class_label: str) -> tuple[str | None, str | None, str | None, str | None]:
+    make = str(row.get("reposcan_vehicle_make") or "").strip()
+    model = str(row.get("reposcan_vehicle_model") or "").strip()
+    year = str(row.get("reposcan_vehicle_year") or "").strip()
+    color = str(row.get("reposcan_vehicle_color") or "").strip()
+    if not class_label or class_label == "unknown":
+        raise ValueError(f"accepted crop {row.get('crop_id', '')} is missing a class label for {task}")
+    if task == "vehicle_make_model_classification" and (not make or not model):
+        raise ValueError(f"accepted crop {row.get('crop_id', '')} is missing reposcan_vehicle_make/reposcan_vehicle_model")
+    if task == "vehicle_color_classification" and not color:
+        raise ValueError(f"accepted crop {row.get('crop_id', '')} is missing reposcan_vehicle_color")
+    if task == "vehicle_year_classification" and not year:
+        raise ValueError(f"accepted crop {row.get('crop_id', '')} is missing reposcan_vehicle_year")
+    return make or None, model or None, year or None, color or None
+
+
+def _split_crop_rows(
+    rows: list[dict[str, str]],
+    *,
+    task: str,
+    train_ratio: float,
+    validation_ratio: float,
+    holdout_ratio: float,
+    seed: int,
+) -> dict[str, list[dict[str, str]]]:
+    ratio_total = train_ratio + validation_ratio + holdout_ratio
+    if abs(ratio_total - 1.0) > 1e-6:
+        raise ValueError("train, validation, and holdout ratios must add up to 1.0")
+
+    grouped: dict[str, list[dict[str, str]]] = {}
+    for row in rows:
+        grouped.setdefault(_class_label_for_crop_row(row, task=task), []).append(row)
+
+    randomizer = random.Random(seed)
+    split_map: dict[str, list[dict[str, str]]] = {"train": [], "validation": [], "holdout": []}
+    for class_rows in grouped.values():
+        shuffled = list(class_rows)
+        randomizer.shuffle(shuffled)
+        count = len(shuffled)
+        if count >= 10:
+            validation_count = max(1, int(round(count * validation_ratio)))
+            holdout_count = max(1, int(round(count * holdout_ratio)))
+        elif count >= 3:
+            validation_count = 1
+            holdout_count = 1
+        elif count == 2:
+            validation_count = 1
+            holdout_count = 0
+        else:
+            validation_count = 0
+            holdout_count = 0
+        if validation_count + holdout_count >= count:
+            holdout_count = max(0, count - validation_count - 1)
+        train_count = count - validation_count - holdout_count
+        split_map["train"].extend(shuffled[:train_count])
+        split_map["validation"].extend(shuffled[train_count : train_count + validation_count])
+        split_map["holdout"].extend(shuffled[train_count + validation_count :])
+    return split_map
 
 
 def _split_records(records: list[dict[str, Any]], *, train_ratio: float, validation_ratio: float, holdout_ratio: float, seed: int) -> dict[str, list[dict[str, Any]]]:
@@ -758,6 +922,280 @@ def export_detections_yolo(args: argparse.Namespace) -> int:
     return 0
 
 
+def export_attribute_crop_review(args: argparse.Namespace) -> int:
+    fo, _ = _require_fiftyone()
+    try:
+        from PIL import Image
+    except ImportError as exc:
+        raise RuntimeError("Pillow is required to export vehicle attribute crops") from exc
+
+    dataset = fo.load_dataset(args.dataset_name)
+    source_labels = {label.strip() for label in args.source_labels if label.strip()}
+    if not source_labels:
+        raise ValueError("at least one --source-labels value is required")
+
+    output_root = Path(args.output_root).resolve()
+    review_csv = Path(args.review_csv).resolve()
+    _prepare_export_root(output_root, overwrite=args.overwrite)
+
+    rows: list[dict[str, Any]] = []
+    skipped_small = 0
+    skipped_invalid = 0
+    for sample in dataset:
+        source_path = Path(sample.filepath)
+        if not source_path.exists():
+            skipped_invalid += 1
+            continue
+        try:
+            image = Image.open(source_path).convert("RGB")
+        except Exception:
+            skipped_invalid += 1
+            continue
+
+        with image:
+            image_width, image_height = image.size
+            for detection_index, detection in enumerate(_sample_detections(sample, args.detections_field)):
+                source_label = str(getattr(detection, "label", "") or "")
+                if source_label not in source_labels:
+                    continue
+                bounding_box = list(getattr(detection, "bounding_box", []) or [])
+                crop_box = _expanded_bbox_pixels(
+                    bounding_box,
+                    image_width=image_width,
+                    image_height=image_height,
+                    padding_ratio=args.padding_ratio,
+                )
+                if crop_box is None:
+                    skipped_invalid += 1
+                    continue
+                left, top, right, bottom = crop_box
+                crop_width = right - left
+                crop_height = bottom - top
+                if crop_width < args.min_width_px or crop_height < args.min_height_px:
+                    skipped_small += 1
+                    continue
+
+                crop_id = f"{sample.id}_{detection_index:04d}"
+                crop_path = output_root / "crops" / f"{crop_id}.jpg"
+                crop_path.parent.mkdir(parents=True, exist_ok=True)
+                image.crop(crop_box).save(crop_path, format="JPEG", quality=95)
+                rows.append(
+                    {
+                        "crop_id": crop_id,
+                        "source_sample_id": sample.id,
+                        "source_filepath": str(source_path),
+                        "crop_filepath": str(crop_path),
+                        "source_label": source_label,
+                        "bbox_x": f"{float(bounding_box[0]):.6f}" if len(bounding_box) == 4 else "",
+                        "bbox_y": f"{float(bounding_box[1]):.6f}" if len(bounding_box) == 4 else "",
+                        "bbox_w": f"{float(bounding_box[2]):.6f}" if len(bounding_box) == 4 else "",
+                        "bbox_h": f"{float(bounding_box[3]):.6f}" if len(bounding_box) == 4 else "",
+                        "crop_width": crop_width,
+                        "crop_height": crop_height,
+                        "reposcan_accepted": "false",
+                        "reposcan_reviewed": "false",
+                        "reposcan_class_label": "",
+                        "reposcan_vehicle_make": "",
+                        "reposcan_vehicle_model": "",
+                        "reposcan_vehicle_year": "",
+                        "reposcan_vehicle_color": "",
+                        "reposcan_oklahoma_tags": "",
+                        "reviewer_notes": "",
+                    }
+                )
+                if args.max_crops is not None and len(rows) >= args.max_crops:
+                    break
+            if args.max_crops is not None and len(rows) >= args.max_crops:
+                break
+
+    _write_dict_csv(review_csv, rows, _crop_review_fieldnames())
+    summary = {
+        "dataset_name": args.dataset_name,
+        "source_labels": sorted(source_labels),
+        "exported_crops": len(rows),
+        "skipped_small_crops": skipped_small,
+        "skipped_invalid_images_or_boxes": skipped_invalid,
+        "review_csv": str(review_csv),
+    }
+    (output_root / "crop_review_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    print(f"Exported attribute review crops: {len(rows)}")
+    print(f"Crop root: {output_root}")
+    print(f"Review CSV: {review_csv}")
+    print(json.dumps(summary, indent=2))
+    return 0
+
+
+def export_reviewed_crops(args: argparse.Namespace) -> int:
+    repo_root = Path(__file__).resolve().parents[1]
+    _configure_pythonpath(repo_root)
+
+    from reposcan_contracts.dataset import (
+        AnnotationReview,
+        DatasetAssetRecord,
+        DatasetFormat,
+        DatasetLicenseTier,
+        DatasetProvenance,
+        DatasetReviewStatus,
+        DatasetSourceKind,
+        DatasetSplit,
+        DatasetSplitSource,
+        DatasetTask,
+        LightingCondition,
+        TrainingDatasetManifest,
+    )
+
+    if DatasetReviewStatus(args.review_status) == DatasetReviewStatus.approved and args.allow_unreviewed:
+        raise ValueError("--review-status approved cannot be combined with --allow-unreviewed")
+
+    review_csv = Path(args.review_csv).resolve()
+    with review_csv.open("r", encoding="utf-8", newline="") as handle:
+        rows = [dict(row) for row in csv.DictReader(handle)]
+
+    selected: list[dict[str, str]] = []
+    for row in rows:
+        if not _truthy(row.get("reposcan_accepted")):
+            continue
+        if not args.allow_unreviewed and not _truthy(row.get("reposcan_reviewed")):
+            continue
+        class_label = _class_label_for_crop_row(row, task=args.task)
+        _validate_crop_row_fields(row, task=args.task, class_label=class_label)
+        selected.append(row)
+
+    if not selected:
+        raise ValueError("no accepted reviewed crop rows were found in the review CSV")
+
+    output_root = Path(args.output_root).resolve()
+    manifest_path = Path(args.manifest_path).resolve()
+    _prepare_export_root(output_root, overwrite=args.overwrite)
+    split_map = _split_crop_rows(
+        selected,
+        task=args.task,
+        train_ratio=args.train_ratio,
+        validation_ratio=args.validation_ratio,
+        holdout_ratio=args.holdout_ratio,
+        seed=args.seed,
+    )
+
+    annotation_tasks = _annotation_tasks_for_task(args.task)
+    assets: list[DatasetAssetRecord] = []
+    split_rows: dict[str, list[dict[str, Any]]] = {"train": [], "validation": [], "holdout": []}
+    class_counts: dict[str, dict[str, int]] = {"train": {}, "validation": {}, "holdout": {}}
+
+    for split_name, split_rows_for_split in split_map.items():
+        for row in split_rows_for_split:
+            class_label = _class_label_for_crop_row(row, task=args.task)
+            make, model, year, color = _validate_crop_row_fields(row, task=args.task, class_label=class_label)
+            source = Path(row["crop_filepath"]).resolve()
+            if not source.exists():
+                raise ValueError(f"reviewed crop image does not exist: {source}")
+            suffix = source.suffix.lower() or ".jpg"
+            crop_id = _slugify(row.get("crop_id") or source.stem)
+            destination = output_root / "splits" / split_name / class_label / f"{crop_id}{suffix}"
+            _copy_or_link(source, destination, copy_mode=args.copy_mode)
+            relative_path = destination.relative_to(output_root).as_posix()
+            tags = ["attribute_crop", "fiftyone_detection_crop"]
+            source_label = row.get("source_label", "").strip()
+            if source_label:
+                tags.append(f"open_images_label:{_slugify(source_label)}")
+            for tag in _split_tag_text(row.get("reposcan_oklahoma_tags")):
+                if tag not in tags:
+                    tags.append(tag)
+
+            split_row = {
+                "image_file": relative_path,
+                "class_label": class_label,
+                "sample_id": row.get("crop_id", ""),
+                "source_filepath": row.get("source_filepath", ""),
+                "vehicle_make": make or "",
+                "vehicle_model": model or "",
+                "vehicle_year": year or "",
+                "vehicle_color": color or "",
+                "tags": "|".join(tags),
+            }
+            split_rows[split_name].append(split_row)
+            class_counts[split_name][class_label] = class_counts[split_name].get(class_label, 0) + 1
+            assets.append(
+                DatasetAssetRecord(
+                    asset_id=f"{split_name}_{crop_id}",
+                    relative_path=relative_path,
+                    capture_session_id=f"attribute_crops_{args.dataset_name}_{split_name}",
+                    lighting_conditions=[LightingCondition.unknown],
+                    annotations=annotation_tasks,
+                    tags=tags,
+                    vehicle_make=make,
+                    vehicle_model=model,
+                    vehicle_year=year,
+                    vehicle_color=color,
+                )
+            )
+
+    for split_name, rows_for_split in split_rows.items():
+        if not rows_for_split:
+            continue
+        _write_csv(output_root / "splits" / split_name / "labels.csv", rows_for_split)
+        _write_jsonl(output_root / "splits" / split_name / "manifest.jsonl", rows_for_split)
+
+    metadata_root = output_root / "metadata"
+    metadata_root.mkdir(parents=True, exist_ok=True)
+    (metadata_root / "class_balance_report.json").write_text(json.dumps(class_counts, indent=2), encoding="utf-8")
+    _write_jsonl(metadata_root / "source_crops.jsonl", [row for rows_for_split in split_rows.values() for row in rows_for_split])
+
+    split_sources = []
+    for split_name, rows_for_split in split_rows.items():
+        if not rows_for_split:
+            continue
+        split_sources.append(
+            DatasetSplitSource(
+                split=DatasetSplit(split_name),
+                relative_path=f"splits/{split_name}",
+                label_path=f"splits/{split_name}/labels.csv",
+                sample_count=len(rows_for_split),
+                capture_session_ids=[f"attribute_crops_{args.dataset_name}_{split_name}"],
+                tags=["attribute_crop", "reviewed_vehicle_attribute"],
+            )
+        )
+
+    review_status = DatasetReviewStatus(args.review_status)
+    manifest = TrainingDatasetManifest(
+        dataset_name=args.dataset_name,
+        dataset_version=args.dataset_version,
+        task=DatasetTask(args.task),
+        format=DatasetFormat.imagefolder,
+        storage_root=str(output_root),
+        review_status=review_status,
+        provenance=DatasetProvenance(
+            source_name=f"Reviewed vehicle attribute crops from {review_csv.name}",
+            source_kind=DatasetSourceKind.public_benchmark,
+            license_tier=DatasetLicenseTier.unknown if review_status == DatasetReviewStatus.pending else DatasetLicenseTier.public,
+            license_name="per-crop upstream dataset license/provenance review",
+            license_reference=str(review_csv),
+            region="us-ok",
+            notes="Vehicle crops exported from public detections and reviewed for attribute classifier training.",
+        ),
+        annotation_review=(
+            AnnotationReview(
+                reviewer=args.reviewer,
+                reviewed_at_utc=_utcnow(),
+                accepted_tasks=annotation_tasks,
+                notes="Approved crop-level vehicle attribute labels exported from review CSV.",
+            )
+            if review_status == DatasetReviewStatus.approved
+            else None
+        ),
+        assets=assets,
+        splits=split_sources,
+        notes="RepoScan ImageFolder attribute dataset exported from reviewed vehicle crops.",
+    )
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(yaml.safe_dump(manifest.model_dump(mode="json"), sort_keys=False), encoding="utf-8")
+
+    print(f"Exported reviewed attribute crops: {sum(len(rows_for_split) for rows_for_split in split_rows.values())}")
+    print(f"Dataset root: {output_root}")
+    print(f"Manifest: {manifest_path}")
+    print(json.dumps({"split_counts": {name: len(rows_for_split) for name, rows_for_split in split_rows.items()}}, indent=2))
+    return 0
+
+
 def export_reviewed(args: argparse.Namespace) -> int:
     repo_root = Path(__file__).resolve().parents[1]
     _configure_pythonpath(repo_root)
@@ -934,6 +1372,10 @@ def main() -> int:
         return apply_review_csv(args)
     if args.command == "launch-app":
         return launch_app(args)
+    if args.command == "export-attribute-crop-review":
+        return export_attribute_crop_review(args)
+    if args.command == "export-reviewed-crops":
+        return export_reviewed_crops(args)
     if args.command == "export-reviewed":
         return export_reviewed(args)
     if args.command == "export-detections-yolo":
