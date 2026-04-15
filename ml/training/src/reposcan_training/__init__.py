@@ -10,6 +10,7 @@ from .datasets import (
     validate_yolo_label_file,
     write_detection_label_index,
 )
+from .dataset_readiness import audit_dataset_readiness, build_dataset_readiness_policy
 from .field_eval import qualify_field_eval_dataset
 from .vehicle_catalog import (
     build_vehicle_recognition_catalog,
@@ -55,6 +56,8 @@ __all__ = [
     "validate_yolo_label_file",
     "write_detection_label_index",
     "build_run_manifest",
+    "audit_dataset_readiness",
+    "build_dataset_readiness_policy",
     "qualify_field_eval_dataset",
     "build_vehicle_recognition_catalog",
     "expand_vehicle_seed_entries",

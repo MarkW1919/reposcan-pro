@@ -19,6 +19,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+dataset = [
+    "fiftyone>=1.14,<2.0",
+]
+training = [
+    "numpy>=1.26.4,<2",
+    "opencv-python>=4.10,<4.12",
+    "ultralytics>=8.3,<9.0",
+]
 dev = [
     "httpx>=0.28,<1.0",
     "onnx>=1.20,<2.0",

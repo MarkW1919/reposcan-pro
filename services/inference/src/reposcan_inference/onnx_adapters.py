@@ -139,6 +139,146 @@ def _relative_bbox_to_absolute(relative_xywh: np.ndarray, *, width: int, height:
     return BoundingBox(x=x, y=y, w=w, h=h)
 
 
+def _center_xywh_to_relative_topleft_xywh(
+    center_xywh: np.ndarray,
+    *,
+    input_width: int,
+    input_height: int,
+) -> np.ndarray:
+    boxes = np.asarray(center_xywh, dtype=np.float32).reshape(-1, 4).copy()
+    if boxes.size == 0:
+        return boxes
+
+    scale = np.asarray([input_width, input_height, input_width, input_height], dtype=np.float32)
+    if float(np.nanmax(np.abs(boxes))) > 1.5:
+        boxes = boxes / scale
+
+    top_left = boxes.copy()
+    top_left[:, 0] = boxes[:, 0] - boxes[:, 2] / 2.0
+    top_left[:, 1] = boxes[:, 1] - boxes[:, 3] / 2.0
+    top_left[:, 0] = np.clip(top_left[:, 0], 0.0, 1.0)
+    top_left[:, 1] = np.clip(top_left[:, 1], 0.0, 1.0)
+    top_left[:, 2] = np.clip(top_left[:, 2], 0.0, 1.0 - top_left[:, 0])
+    top_left[:, 3] = np.clip(top_left[:, 3], 0.0, 1.0 - top_left[:, 1])
+    return top_left
+
+
+def _box_iou_xywh(box: np.ndarray, boxes: np.ndarray) -> np.ndarray:
+    box_x2 = box[0] + box[2]
+    box_y2 = box[1] + box[3]
+    boxes_x2 = boxes[:, 0] + boxes[:, 2]
+    boxes_y2 = boxes[:, 1] + boxes[:, 3]
+    inter_x1 = np.maximum(box[0], boxes[:, 0])
+    inter_y1 = np.maximum(box[1], boxes[:, 1])
+    inter_x2 = np.minimum(box_x2, boxes_x2)
+    inter_y2 = np.minimum(box_y2, boxes_y2)
+    inter_area = np.maximum(0.0, inter_x2 - inter_x1) * np.maximum(0.0, inter_y2 - inter_y1)
+    box_area = max(float(box[2] * box[3]), 0.0)
+    boxes_area = np.maximum(0.0, boxes[:, 2] * boxes[:, 3])
+    union = box_area + boxes_area - inter_area
+    return np.divide(inter_area, union, out=np.zeros_like(inter_area), where=union > 0.0)
+
+
+def _nms_indices(boxes: np.ndarray, scores: np.ndarray, *, iou_threshold: float, limit: int = 300) -> list[int]:
+    if boxes.size == 0 or scores.size == 0:
+        return []
+    order = np.argsort(scores)[::-1]
+    keep: list[int] = []
+    while order.size > 0 and len(keep) < limit:
+        current = int(order[0])
+        keep.append(current)
+        if order.size == 1:
+            break
+        remaining = order[1:]
+        ious = _box_iou_xywh(boxes[current], boxes[remaining])
+        order = remaining[ious <= iou_threshold]
+    return keep
+
+
+def _looks_like_yolo_detector_output(output_map: dict[str, object]) -> bool:
+    if len(output_map) != 1:
+        return False
+    output = np.asarray(next(iter(output_map.values())))
+    if output.ndim != 3:
+        return False
+    shape = output.shape
+    return shape[0] == 1 and (shape[1] >= 5 or shape[2] >= 5)
+
+
+def _decode_yolo_detector_outputs(
+    output_map: dict[str, object],
+    model_config: DetectorModelConfig,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    raw = np.asarray(next(iter(output_map.values())), dtype=np.float32)
+    if raw.ndim != 3 or raw.shape[0] != 1:
+        return (
+            np.empty((0, 4), dtype=np.float32),
+            np.empty((0,), dtype=np.float32),
+            np.empty((0,), dtype=np.int64),
+        )
+
+    predictions = raw[0]
+    expected_channel_count = 4 + max(len(model_config.class_labels), 1)
+    if predictions.shape[0] == expected_channel_count and predictions.shape[1] != expected_channel_count:
+        predictions = predictions.T
+    elif predictions.shape[0] < predictions.shape[1] and predictions.shape[0] >= 5:
+        predictions = predictions.T
+    if predictions.shape[1] < 5:
+        return (
+            np.empty((0, 4), dtype=np.float32),
+            np.empty((0,), dtype=np.float32),
+            np.empty((0,), dtype=np.int64),
+        )
+
+    boxes = _center_xywh_to_relative_topleft_xywh(
+        predictions[:, :4],
+        input_width=model_config.input_width,
+        input_height=model_config.input_height,
+    )
+    class_scores = predictions[:, 4:]
+    label_indices = np.argmax(class_scores, axis=1).astype(np.int64)
+    scores = np.max(class_scores, axis=1).astype(np.float32)
+    valid = (scores >= model_config.confidence_threshold) & (boxes[:, 2] > 0.0) & (boxes[:, 3] > 0.0)
+    boxes = boxes[valid]
+    scores = scores[valid]
+    label_indices = label_indices[valid]
+    if scores.size == 0:
+        return boxes, scores, label_indices
+
+    keep: list[int] = []
+    for label_index in sorted(set(label_indices.tolist())):
+        class_mask = label_indices == label_index
+        class_positions = np.flatnonzero(class_mask)
+        class_keep = _nms_indices(
+            boxes[class_mask],
+            scores[class_mask],
+            iou_threshold=model_config.nms_iou_threshold,
+        )
+        keep.extend(int(class_positions[index]) for index in class_keep)
+
+    keep = sorted(keep, key=lambda index: float(scores[index]), reverse=True)
+    return boxes[keep], scores[keep], label_indices[keep]
+
+
+def _decode_detector_outputs(
+    output_map: dict[str, object],
+    model_config: DetectorModelConfig,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    if {"boxes_xywh", "scores", "label_indices"}.issubset(output_map):
+        return (
+            np.asarray(output_map["boxes_xywh"], dtype=np.float32).reshape(-1, 4),
+            _flatten(output_map["scores"]).astype(np.float32),
+            _flatten(output_map["label_indices"]).astype(np.int64),
+        )
+    if _looks_like_yolo_detector_output(output_map):
+        return _decode_yolo_detector_outputs(output_map, model_config)
+    return (
+        np.empty((0, 4), dtype=np.float32),
+        np.empty((0,), dtype=np.float32),
+        np.empty((0,), dtype=np.int64),
+    )
+
+
 def _validate_classifier_metadata(
     model_config: ClassifierModelConfig,
     *,
@@ -325,6 +465,9 @@ def validate_onnx_artifact(
         )
         return issues
 
+    if stage in {"vehicle_detector", "plate_detector"} and _looks_like_yolo_detector_output(output_map):
+        return issues
+
     missing = sorted(required_outputs[stage] - output_names)
     if missing:
         issues.append(f"Missing required outputs for {stage}: {', '.join(missing)}")
@@ -356,9 +499,7 @@ class OnnxVehicleDetectorAdapter:
             normalization_std=self.model_config.normalization_std,
         )
         outputs = _session_output_map(self.session, self.session.run(None, {self.input_name: tensor}))
-        boxes = np.asarray(outputs["boxes_xywh"], dtype=np.float32).reshape(-1, 4)
-        scores = _flatten(outputs["scores"])
-        label_indices = _flatten(outputs["label_indices"])
+        boxes, scores, label_indices = _decode_detector_outputs(outputs, self.model_config)
 
         detections: list[VehicleDetection] = []
         for index, relative_box in enumerate(boxes):
@@ -421,8 +562,7 @@ class OnnxPlateDetectorAdapter:
                     normalization_std=self.model_config.normalization_std,
                 )
                 outputs = _session_output_map(self.session, self.session.run(None, {self.input_name: tensor}))
-                boxes = np.asarray(outputs["boxes_xywh"], dtype=np.float32).reshape(-1, 4)
-                scores = _flatten(outputs["scores"])
+                boxes, scores, _ = _decode_detector_outputs(outputs, self.model_config)
                 for index, relative_box in enumerate(boxes):
                     score = float(scores[index]) if index < scores.size else 0.0
                     if score < self.model_config.confidence_threshold:
@@ -455,8 +595,7 @@ class OnnxPlateDetectorAdapter:
             normalization_std=self.model_config.normalization_std,
         )
         outputs = _session_output_map(self.session, self.session.run(None, {self.input_name: tensor}))
-        boxes = np.asarray(outputs["boxes_xywh"], dtype=np.float32).reshape(-1, 4)
-        scores = _flatten(outputs["scores"])
+        boxes, scores, _ = _decode_detector_outputs(outputs, self.model_config)
         for index, relative_box in enumerate(boxes):
             score = float(scores[index]) if index < scores.size else 0.0
             if score < self.model_config.confidence_threshold:

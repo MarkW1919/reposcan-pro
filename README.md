@@ -50,6 +50,8 @@ The canonical mission and rules live in [CLAUDE.md](CLAUDE.md).
 - [Annotation Standards](docs/ANNOTATION_STANDARDS.md)
 - [Dataset Intake Workflow](docs/DATASET_INTAKE_WORKFLOW.md)
 - [Detection Dataset Curation](docs/DETECTION_DATASET_CURATION.md)
+- [Oklahoma Dataset Readiness](docs/OKLAHOMA_DATASET_READINESS.md)
+- [Internet Vehicle Image Pipeline](docs/INTERNET_VEHICLE_IMAGE_PIPELINE.md)
 - [Field Eval Qualification](docs/FIELD_EVAL_QUALIFICATION.md)
 - [Training](docs/TRAINING.md)
 - [Training Workflows](docs/TRAINING_WORKFLOWS.md)
@@ -239,6 +241,31 @@ Qualify a reviewed field-eval manifest before treating it as a real regression h
 ```powershell
 .\.venv\Scripts\python.exe .\scripts\qualify_field_eval_dataset.py --dataset-manifest C:\artifacts\data\manifests\oklahoma-field-eval.yaml --verify-files --report-output C:\artifacts\data\reports\oklahoma-field-eval-qualification.json
 ```
+
+Audit a primary training dataset against the Oklahoma commercial-readiness gate before using it for a shippable vehicle-recognition, detection, or OCR model:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\audit_training_dataset_readiness.py --dataset-manifest C:\artifacts\data\manifests\oklahoma-training-dataset.yaml --level oklahoma-commercial --verify-files --report-output .\runtime\dataset_readiness\oklahoma-training-dataset.json
+```
+
+Pull public candidate vehicle images into FiftyOne, review labels, and export only accepted samples into a RepoScan manifest with:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install ".[dataset]"
+.\.venv\Scripts\python.exe .\scripts\fiftyone_vehicle_dataset_pipeline.py pull-open-images --dataset-name reposcan_open_images_ok_vehicle_candidates --split validation --classes Car Truck Bus Motorcycle --max-samples 5000
+.\.venv\Scripts\python.exe .\scripts\fiftyone_vehicle_dataset_pipeline.py launch-app --dataset-name reposcan_open_images_ok_vehicle_candidates --port 5151
+.\.venv\Scripts\python.exe .\scripts\fiftyone_vehicle_dataset_pipeline.py export-reviewed --dataset-name reposcan_open_images_ok_vehicle_candidates --output-root .\data\curated\fiftyone_open_images_ok_vehicle_reviewed --manifest-path .\data\manifests\public\fiftyone-open-images-ok-vehicle-reviewed.yaml --task vehicle_make_model_classification --copy-mode hardlink --reviewer reviewer_01 --review-status approved
+```
+
+Warm-start the vehicle detector from Open Images bounding boxes and validate the YOLO-to-ONNX training path with:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install ".[training]"
+.\.venv\Scripts\python.exe .\scripts\fiftyone_vehicle_dataset_pipeline.py export-detections-yolo --dataset-name reposcan_open_images_ok_vehicle_candidates --output-root .\data\curated\fiftyone_open_images_vehicle_detection_warmstart --manifest-path .\data\manifests\public\fiftyone-open-images-vehicle-detection-warmstart.yaml --source-labels Car Truck Bus Motorcycle Van Taxi --target-class-name vehicle --copy-mode hardlink --review-status pending
+.\.venv\Scripts\python.exe .\scripts\train_detection_model.py --profile .\configs\training\vehicle-detector-open-images-cpu-smoke.yaml --dataset-manifest .\data\manifests\public\fiftyone-open-images-vehicle-detection-warmstart.yaml --run-name vehicle_detector_open_images_cpu_smoke_20260415 --execute
+```
+
+The detailed review and CSV batch-labeling workflow lives in [Internet Vehicle Image Pipeline](docs/INTERNET_VEHICLE_IMAGE_PIPELINE.md).
 
 Refresh the repo-tracked Section 4 inference-runtime evidence fixtures with:
 

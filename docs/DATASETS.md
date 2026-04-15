@@ -11,6 +11,8 @@ RepoScan Pro must be trained and validated with data that reflects real deployme
 
 ## Priority Data Domains
 
+- Oklahoma-common vehicle mix: pickups, UVs/SUVs/crossovers, passenger cars, and vans/minivans
+- Oklahoma-priority truck and SUV families such as Ford F-Series, Chevrolet Silverado, Ram pickups, GMC Sierra, Toyota Tacoma, Tahoe, and Suburban
 - long-range vehicle scenes
 - small and angled license plates
 - low-light and no-light scenes
@@ -74,11 +76,17 @@ Approved `eval_holdout` manifests are also the preferred source for promoted-bun
 
 Before a holdout is treated as a real regression gate, run the qualification workflow in [Field Eval Qualification](FIELD_EVAL_QUALIFICATION.md). That step verifies minimum coverage for `long_range`, `low_light`, session spread, and benchmark-ready labeling.
 
+For Oklahoma deployment readiness, every primary training manifest should also pass the Oklahoma commercial audit in [Oklahoma Dataset Readiness](OKLAHOMA_DATASET_READINESS.md). That gate checks approved review status, license status, split coverage, session metadata, low-light / long-range coverage, synthetic-data limits, and Oklahoma vehicle-class tags.
+
+When internet-sourced public images are needed to expand make/model coverage, use the FiftyOne workflow in [Internet Vehicle Image Pipeline](INTERNET_VEHICLE_IMAGE_PIPELINE.md). It pulls public candidate images into a review app, supports CSV batch labeling, and exports only accepted/reviewed samples into typed RepoScan manifests.
+
 ## Related Documents
 
 - [Training](TRAINING.md)
 - [Annotation Standards](ANNOTATION_STANDARDS.md)
 - [Dataset Intake Workflow](DATASET_INTAKE_WORKFLOW.md)
 - [Detection Dataset Curation](DETECTION_DATASET_CURATION.md)
+- [Oklahoma Dataset Readiness](OKLAHOMA_DATASET_READINESS.md)
+- [Internet Vehicle Image Pipeline](INTERNET_VEHICLE_IMAGE_PIPELINE.md)
 - [Requirements](REQUIREMENTS.md)
 - [Dataset Intake Skill](../.claude/skills/dataset-intake/SKILL.md)
