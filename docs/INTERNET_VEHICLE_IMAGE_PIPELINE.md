@@ -154,6 +154,60 @@ they do not mark rows accepted or reviewed:
   --overwrite
 ```
 
+For faster crop triage, add pretrained VLM suggestions on top of the local
+suggestions. This stage reads the same crop CSV, adds `suggested_vlm_*`
+columns, and leaves the authoritative RepoScan review fields untouched:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\label_vehicle_attribute_crops_with_vlm.py label-crops `
+  --review-csv .\data\staged\review_templates\open_images_vehicle_attribute_crop_suggestions_20260415.csv `
+  --output-csv .\data\staged\review_templates\open_images_vehicle_attribute_crop_vlm_suggestions_20260415.csv `
+  --provider openai `
+  --model gpt-5.4-mini `
+  --overwrite
+```
+
+For GPU-backed local or Colab runs, use Qwen2.5-VL instead:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\label_vehicle_attribute_crops_with_vlm.py label-crops `
+  --review-csv .\data\staged\review_templates\open_images_vehicle_attribute_crop_suggestions_20260415.csv `
+  --output-csv .\data\staged\review_templates\open_images_vehicle_attribute_crop_vlm_suggestions_20260415.csv `
+  --provider qwen2_5_vl `
+  --model Qwen/Qwen2.5-VL-7B-Instruct `
+  --overwrite
+```
+
+Install the optional API path locally with:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e ".[openai-labeling]"
+```
+
+Install the optional Hugging Face VLM path in a GPU runtime with:
+
+```powershell
+python -m pip install -e ".[vlm-labeling]"
+```
+
+The VLM stage can draft high-confidence pending labels for a specific task.
+Pending rows are useful for warm-start experiments, but they are not approved
+production labels unless `--mark-reviewed` is passed intentionally:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\label_vehicle_attribute_crops_with_vlm.py apply-consensus `
+  --input-csv .\data\staged\review_templates\open_images_vehicle_attribute_crop_vlm_suggestions_20260415.csv `
+  --output-csv .\data\staged\review_templates\open_images_vehicle_make_model_ai_consensus_pending_20260415.csv `
+  --task vehicle_make_model_classification `
+  --min-vlm-confidence 0.75 `
+  --overwrite
+```
+
+Use [Vehicle Attribute VLM Labeling Colab](../notebooks/vehicle_attribute_vlm_labeling_colab.ipynb)
+when the local machine does not have a GPU. The notebook installs the optional
+VLM dependencies, labels the crop CSV, applies a pending consensus CSV, and
+zips the results for download.
+
 Export reviewed crop labels for each attribute task:
 
 ```powershell
@@ -190,6 +244,12 @@ Export reviewed crop labels for each attribute task:
   --review-status approved `
   --overwrite
 ```
+
+For AI-assisted warm-start experiments before full human review, point
+`--review-csv` at a consensus CSV, set `--review-status pending`, and pass
+`--allow-unreviewed`. Do not use that pending manifest as a release gate or
+production-quality benchmark until the rows have been reviewed and re-exported
+with `--review-status approved`.
 
 Train the exported crop datasets with `scripts/train_attribute_classifier.py`
 and the existing attribute profiles:

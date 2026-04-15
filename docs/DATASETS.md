@@ -78,7 +78,7 @@ Before a holdout is treated as a real regression gate, run the qualification wor
 
 For Oklahoma deployment readiness, every primary training manifest should also pass the Oklahoma commercial audit in [Oklahoma Dataset Readiness](OKLAHOMA_DATASET_READINESS.md). That gate checks approved review status, license status, split coverage, session metadata, low-light / long-range coverage, synthetic-data limits, and Oklahoma vehicle-class tags.
 
-When internet-sourced public images are needed to expand make/model coverage, use the FiftyOne workflow in [Internet Vehicle Image Pipeline](INTERNET_VEHICLE_IMAGE_PIPELINE.md). It pulls public candidate images into a review app, supports CSV batch labeling, and exports only accepted/reviewed samples into typed RepoScan manifests.
+When internet-sourced public images are needed to expand make/model coverage, use the FiftyOne workflow in [Internet Vehicle Image Pipeline](INTERNET_VEHICLE_IMAGE_PIPELINE.md). It pulls public candidate images into a review app, supports CSV batch labeling, adds optional pretrained VLM-assisted suggestions, and exports only accepted/reviewed samples into typed RepoScan manifests. VLM consensus rows may be exported as `pending` warm-start data with `--allow-unreviewed`, but approved release gates still require reviewed labels.
 
 ## Related Documents
 

@@ -185,6 +185,8 @@ For CPU-bound development machines, use the lighter profile:
 
 The attribute-classifier workflow now exports `model.onnx` plus a `labels.json` metadata sidecar so single-task color or make/model classifiers can plug back into the runtime and promoted bundle flow.
 
+Internet-sourced vehicle crops can now be accelerated with pretrained VLM assistance before review. The workflow in [Internet Vehicle Image Pipeline](docs/INTERNET_VEHICLE_IMAGE_PIPELINE.md) supports OpenAI vision API labeling, Qwen2.5-VL labeling in a GPU/Colab runtime, and conservative consensus CSVs that remain pending unless explicitly reviewed.
+
 To keep real-time epoch progress and accuracy output in the same terminal, launch the prepared run manifest directly:
 
 ```powershell
