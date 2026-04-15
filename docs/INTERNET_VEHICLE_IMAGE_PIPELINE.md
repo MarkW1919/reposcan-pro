@@ -140,6 +140,20 @@ Fill the crop CSV with conservative labels:
 - `reposcan_vehicle_color`: dominant body color
 - `reposcan_oklahoma_tags`: tags such as `vehicle_class:pickup`
 
+Optionally add review suggestions from deterministic color analysis and the
+local Stanford Cars make/model warm-start model. Suggestions are reviewer aids;
+they do not mark rows accepted or reviewed:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\fiftyone_vehicle_dataset_pipeline.py suggest-attribute-labels `
+  --review-csv .\data\staged\review_templates\open_images_vehicle_attribute_crop_review_20260415.csv `
+  --output-csv .\data\staged\review_templates\open_images_vehicle_attribute_crop_suggestions_20260415.csv `
+  --make-model-onnx .\runtime\training\vehicle-make-model-warmstart-v2_20260409_141756\exports\model.onnx `
+  --make-model-labels .\runtime\training\vehicle-make-model-warmstart-v2_20260409_141756\exports\labels.json `
+  --make-model-top-k 5 `
+  --overwrite
+```
+
 Export reviewed crop labels for each attribute task:
 
 ```powershell

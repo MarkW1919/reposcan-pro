@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import colorsys
 import csv
 import json
 import random
@@ -112,6 +113,18 @@ def parse_args() -> argparse.Namespace:
     crop_export.add_argument("--review-status", choices=["pending", "approved"], default="approved")
     crop_export.add_argument("--allow-unreviewed", action="store_true")
     crop_export.add_argument("--overwrite", action="store_true", help="Replace a non-empty output root before export.")
+
+    suggest = subparsers.add_parser(
+        "suggest-attribute-labels",
+        help="Add conservative color and optional make/model suggestions to a crop review CSV.",
+    )
+    suggest.add_argument("--review-csv", required=True)
+    suggest.add_argument("--output-csv", required=True)
+    suggest.add_argument("--make-model-onnx")
+    suggest.add_argument("--make-model-labels")
+    suggest.add_argument("--make-model-top-k", type=int, default=5)
+    suggest.add_argument("--limit", type=int)
+    suggest.add_argument("--overwrite", action="store_true")
 
     export = subparsers.add_parser("export-reviewed", help="Export approved FiftyOne samples to RepoScan ImageFolder.")
     export.add_argument("--dataset-name", required=True)
@@ -686,6 +699,213 @@ def _split_crop_rows(
         split_map["validation"].extend(shuffled[train_count : train_count + validation_count])
         split_map["holdout"].extend(shuffled[train_count + validation_count :])
     return split_map
+
+
+def _suggest_color_from_crop(crop_path: Path) -> tuple[str, float]:
+    try:
+        from PIL import Image
+    except ImportError as exc:
+        raise RuntimeError("Pillow is required for color suggestions") from exc
+
+    with Image.open(crop_path).convert("RGB") as image:
+        resized = image.resize((96, 96))
+        width, height = resized.size
+        left = int(width * 0.08)
+        top = int(height * 0.08)
+        right = int(width * 0.92)
+        bottom = int(height * 0.92)
+        pixels = list(resized.crop((left, top, right, bottom)).getdata())
+
+    counts: dict[str, int] = {}
+    for red, green, blue in pixels:
+        r = red / 255.0
+        g = green / 255.0
+        b = blue / 255.0
+        hue, saturation, value = colorsys.rgb_to_hsv(r, g, b)
+
+        if value < 0.18:
+            label = "black"
+        elif saturation < 0.14:
+            if value > 0.82:
+                label = "white"
+            elif value > 0.55:
+                label = "silver"
+            else:
+                label = "gray"
+        elif 0.04 <= hue < 0.14 and value < 0.58 and saturation > 0.22:
+            label = "brown"
+        elif hue < 0.04 or hue >= 0.94:
+            label = "red"
+        elif hue < 0.11:
+            label = "orange"
+        elif hue < 0.18:
+            label = "yellow"
+        elif hue < 0.45:
+            label = "green"
+        elif hue < 0.72:
+            label = "blue"
+        else:
+            label = "other"
+        counts[label] = counts.get(label, 0) + 1
+
+    if not counts or not pixels:
+        return "", 0.0
+    label, count = max(counts.items(), key=lambda item: item[1])
+    return label, count / len(pixels)
+
+
+def _softmax_values(values: list[float]) -> list[float]:
+    if not values:
+        return []
+    maximum = max(values)
+    exp_values = [pow(2.718281828459045, value - maximum) for value in values]
+    total = sum(exp_values)
+    if total <= 0.0:
+        return [0.0 for _ in values]
+    return [value / total for value in exp_values]
+
+
+def _preprocess_classifier_crop(crop_path: Path, *, image_size: int):
+    import numpy as np
+    from PIL import Image
+
+    with Image.open(crop_path).convert("RGB") as image:
+        resized = image.resize((image_size, image_size))
+        array = np.asarray(resized, dtype=np.float32) / 255.0
+    mean = np.asarray([0.485, 0.456, 0.406], dtype=np.float32)
+    std = np.asarray([0.229, 0.224, 0.225], dtype=np.float32)
+    array = (array - mean) / std
+    return np.transpose(array, (2, 0, 1))[None, :, :, :].astype(np.float32)
+
+
+def _build_make_model_suggester(repo_root: Path, *, onnx_path: str | None, labels_path: str | None, top_k: int):
+    if not onnx_path and not labels_path:
+        return None
+    if not onnx_path or not labels_path:
+        raise ValueError("--make-model-onnx and --make-model-labels must be provided together")
+
+    _configure_pythonpath(repo_root)
+    try:
+        import numpy as np
+        import onnxruntime as ort
+    except ImportError as exc:
+        raise RuntimeError("onnxruntime and numpy are required for make/model suggestions") from exc
+
+    from reposcan_contracts.classifier_export import ClassifierExportMetadata
+
+    model_path = Path(onnx_path).resolve()
+    metadata_path = Path(labels_path).resolve()
+    metadata = ClassifierExportMetadata.model_validate_json(metadata_path.read_text(encoding="utf-8"))
+    image_size = metadata.image_size or 224
+    session = ort.InferenceSession(str(model_path), providers=["CPUExecutionProvider"])
+    input_name = session.get_inputs()[0].name
+    output_names = [output.name for output in session.get_outputs()]
+    active_top_k = max(1, top_k)
+
+    def predict(crop_path: Path) -> list[dict[str, object]]:
+        tensor = _preprocess_classifier_crop(crop_path, image_size=image_size)
+        output_values = session.run(None, {input_name: tensor})
+        output_map = {name: value for name, value in zip(output_names, output_values, strict=False)}
+        logits = np.asarray(output_map.get("logits", output_values[0]), dtype=np.float32).reshape(-1)
+        probabilities = _softmax_values([float(value) for value in logits])
+        ranked = sorted(range(len(probabilities)), key=lambda index: probabilities[index], reverse=True)
+        suggestions: list[dict[str, object]] = []
+        for index in ranked[:active_top_k]:
+            record = metadata.record_for_index(index)
+            label = record.label if record is not None else str(index)
+            suggestions.append(
+                {
+                    "label": label,
+                    "confidence": probabilities[index],
+                    "make": record.make if record is not None else None,
+                    "model": record.model_label if record is not None else None,
+                    "year": record.year if record is not None else None,
+                }
+            )
+        return suggestions
+
+    return predict
+
+
+def suggest_attribute_labels(args: argparse.Namespace) -> int:
+    repo_root = Path(__file__).resolve().parents[1]
+    review_csv = Path(args.review_csv).resolve()
+    output_csv = Path(args.output_csv).resolve()
+    if output_csv.exists() and not args.overwrite:
+        raise FileExistsError(f"output CSV already exists: {output_csv}. Pass --overwrite to replace it.")
+
+    with review_csv.open("r", encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        rows = [dict(row) for row in reader]
+        fieldnames = list(reader.fieldnames or [])
+
+    suggester = _build_make_model_suggester(
+        repo_root,
+        onnx_path=args.make_model_onnx,
+        labels_path=args.make_model_labels,
+        top_k=args.make_model_top_k,
+    )
+
+    suggestion_fields = [
+        "suggested_vehicle_color",
+        "suggested_vehicle_color_confidence",
+        "suggested_make_model_top1",
+        "suggested_make_model_top1_confidence",
+        "suggested_vehicle_make",
+        "suggested_vehicle_model",
+        "suggested_vehicle_year",
+        "suggested_make_model_topk",
+        "review_priority",
+        "suggestion_error",
+    ]
+    for field_name in suggestion_fields:
+        if field_name not in fieldnames:
+            fieldnames.append(field_name)
+
+    processed = 0
+    errors = 0
+    for row in rows:
+        if args.limit is not None and processed >= args.limit:
+            break
+        crop_path = Path(row.get("crop_filepath") or "")
+        if not crop_path.exists():
+            row["suggestion_error"] = "missing crop file"
+            errors += 1
+            processed += 1
+            continue
+        try:
+            color, color_confidence = _suggest_color_from_crop(crop_path)
+            row["suggested_vehicle_color"] = color
+            row["suggested_vehicle_color_confidence"] = f"{color_confidence:.4f}"
+            if suggester is not None:
+                suggestions = suggester(crop_path)
+                if suggestions:
+                    top1 = suggestions[0]
+                    row["suggested_make_model_top1"] = str(top1["label"])
+                    row["suggested_make_model_top1_confidence"] = f"{float(top1['confidence']):.4f}"
+                    row["suggested_vehicle_make"] = str(top1.get("make") or "")
+                    row["suggested_vehicle_model"] = str(top1.get("model") or "")
+                    row["suggested_vehicle_year"] = str(top1.get("year") or "")
+                    row["suggested_make_model_topk"] = json.dumps(suggestions, ensure_ascii=False)
+            source_label = str(row.get("source_label") or "")
+            if source_label in {"Truck", "Van", "Taxi", "Bus", "Motorcycle"}:
+                row["review_priority"] = "high"
+            elif color_confidence < 0.35:
+                row["review_priority"] = "medium"
+            else:
+                row["review_priority"] = "normal"
+            row["suggestion_error"] = ""
+        except Exception as exc:
+            row["suggestion_error"] = str(exc)
+            errors += 1
+        processed += 1
+        if processed % 250 == 0:
+            print(f"Suggested labels for {processed} crop row(s)")
+
+    _write_dict_csv(output_csv, rows, fieldnames)
+    print(f"Wrote attribute suggestions: {output_csv}")
+    print(json.dumps({"rows": len(rows), "processed": processed, "errors": errors}, indent=2))
+    return 0 if errors == 0 else 1
 
 
 def _split_records(records: list[dict[str, Any]], *, train_ratio: float, validation_ratio: float, holdout_ratio: float, seed: int) -> dict[str, list[dict[str, Any]]]:
@@ -1376,6 +1596,8 @@ def main() -> int:
         return export_attribute_crop_review(args)
     if args.command == "export-reviewed-crops":
         return export_reviewed_crops(args)
+    if args.command == "suggest-attribute-labels":
+        return suggest_attribute_labels(args)
     if args.command == "export-reviewed":
         return export_reviewed(args)
     if args.command == "export-detections-yolo":

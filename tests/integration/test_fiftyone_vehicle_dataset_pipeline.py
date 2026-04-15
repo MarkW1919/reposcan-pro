@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import importlib.util
 from pathlib import Path
 
@@ -189,3 +190,40 @@ def test_export_reviewed_crops_builds_color_manifest(tmp_path):
         "crop_white.jpg",
     ]
     assert sorted(asset["vehicle_color"] for asset in manifest["assets"]) == ["black", "white"]
+
+
+def test_suggest_attribute_labels_adds_color_suggestions(tmp_path):
+    module = _load_pipeline_module()
+    crop_path = tmp_path / "red_crop.jpg"
+    Image.new("RGB", (96, 64), color=(180, 20, 20)).save(crop_path)
+
+    review_csv = tmp_path / "crop_review.csv"
+    output_csv = tmp_path / "crop_suggestions.csv"
+    review_csv.write_text(
+        "\n".join(
+            [
+                ",".join(module._crop_review_fieldnames()),
+                f"crop_red,source_1,source_a.jpg,{crop_path},Car,0,0,1,1,96,64,false,false,,,,,,,",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = module.suggest_attribute_labels(
+        argparse.Namespace(
+            review_csv=str(review_csv),
+            output_csv=str(output_csv),
+            make_model_onnx=None,
+            make_model_labels=None,
+            make_model_top_k=5,
+            limit=None,
+            overwrite=False,
+        )
+    )
+
+    assert result == 0
+    rows = list(csv.DictReader(output_csv.open("r", encoding="utf-8", newline="")))
+    assert rows[0]["suggested_vehicle_color"] == "red"
+    assert float(rows[0]["suggested_vehicle_color_confidence"]) > 0.9
+    assert rows[0]["review_priority"] == "normal"

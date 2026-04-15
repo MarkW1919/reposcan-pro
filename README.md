@@ -273,6 +273,7 @@ For vehicle year, make, model, and color, export detected vehicle crops to a cro
 
 ```powershell
 .\.venv\Scripts\python.exe .\scripts\fiftyone_vehicle_dataset_pipeline.py export-attribute-crop-review --dataset-name reposcan_open_images_ok_vehicle_candidates --output-root .\data\staged\attribute_crops\open_images_vehicle_attribute_review_20260415 --review-csv .\data\staged\review_templates\open_images_vehicle_attribute_crop_review_20260415.csv --source-labels Car Truck Bus Motorcycle Van Taxi --min-width-px 64 --min-height-px 64 --overwrite
+.\.venv\Scripts\python.exe .\scripts\fiftyone_vehicle_dataset_pipeline.py suggest-attribute-labels --review-csv .\data\staged\review_templates\open_images_vehicle_attribute_crop_review_20260415.csv --output-csv .\data\staged\review_templates\open_images_vehicle_attribute_crop_suggestions_20260415.csv --make-model-onnx .\runtime\training\vehicle-make-model-warmstart-v2_20260409_141756\exports\model.onnx --make-model-labels .\runtime\training\vehicle-make-model-warmstart-v2_20260409_141756\exports\labels.json --make-model-top-k 5 --overwrite
 ```
 
 Refresh the repo-tracked Section 4 inference-runtime evidence fixtures with:
