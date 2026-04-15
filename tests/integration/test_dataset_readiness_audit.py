@@ -119,6 +119,101 @@ def test_dataset_readiness_development_gate_passes(tmp_path):
     assert report["split_samples"] == {"train": 5, "validation": 2, "holdout": 3}
 
 
+def test_dataset_readiness_warmstart_gate_allows_pending_public_data(tmp_path):
+    manifest = {
+        "dataset_name": "open-images-vehicle-warmstart",
+        "dataset_version": "2026-04-15",
+        "task": "vehicle_detection",
+        "format": "yolo_detection",
+        "storage_root": "data/curated/open-images-vehicle-warmstart",
+        "review_status": "pending",
+        "provenance": {
+            "source_name": "Open Images vehicle detections",
+            "source_kind": "public_benchmark",
+            "license_tier": "unknown",
+            "license_name": "Open Images per-sample review pending",
+            "license_reference": "open-images-v7",
+            "region": "us",
+        },
+        "assets": [
+            {
+                "asset_id": f"train_{index:04d}",
+                "relative_path": f"images/train/train_{index:04d}.jpg",
+                "capture_session_id": "open_images_train",
+                "lighting_conditions": ["unknown"],
+                "annotations": ["vehicle_detection"],
+                "tags": ["open_images", "detection_class:vehicle"],
+            }
+            for index in range(30)
+        ]
+        + [
+            {
+                "asset_id": f"validation_{index:04d}",
+                "relative_path": f"images/validation/validation_{index:04d}.jpg",
+                "capture_session_id": "open_images_validation",
+                "lighting_conditions": ["unknown"],
+                "annotations": ["vehicle_detection"],
+                "tags": ["open_images", "detection_class:vehicle"],
+            }
+            for index in range(10)
+        ]
+        + [
+            {
+                "asset_id": f"holdout_{index:04d}",
+                "relative_path": f"images/holdout/holdout_{index:04d}.jpg",
+                "capture_session_id": "open_images_holdout",
+                "lighting_conditions": ["unknown"],
+                "annotations": ["vehicle_detection"],
+                "tags": ["open_images", "detection_class:vehicle"],
+            }
+            for index in range(10)
+        ],
+        "splits": [
+            {
+                "split": "train",
+                "relative_path": "images/train",
+                "label_path": "labels/train",
+                "sample_count": 30,
+                "capture_session_ids": ["open_images_train"],
+            },
+            {
+                "split": "validation",
+                "relative_path": "images/validation",
+                "label_path": "labels/validation",
+                "sample_count": 10,
+                "capture_session_ids": ["open_images_validation"],
+            },
+            {
+                "split": "holdout",
+                "relative_path": "images/holdout",
+                "label_path": "labels/holdout",
+                "sample_count": 10,
+                "capture_session_ids": ["open_images_holdout"],
+            },
+        ],
+    }
+    manifest_path = tmp_path / "warmstart.yaml"
+    report_path = tmp_path / "warmstart-report.json"
+    manifest_path.write_text(yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8")
+
+    result = _run_script(
+        "scripts/audit_training_dataset_readiness.py",
+        "--dataset-manifest",
+        str(manifest_path),
+        "--level",
+        "warmstart",
+        "--report-output",
+        str(report_path),
+        "--json",
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["ready"] is True
+    assert report["policy_name"] == "warmstart"
+    assert report["split_samples"] == {"train": 30, "validation": 10, "holdout": 10}
+
+
 def test_dataset_readiness_commercial_gate_fails_example_fixture(tmp_path):
     report_path = tmp_path / "commercial-report.json"
 

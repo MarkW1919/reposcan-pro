@@ -23,7 +23,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--level",
         default="oklahoma-commercial",
-        choices=["development", "production-candidate", "commercial-grade", "oklahoma-commercial"],
+        choices=["warmstart", "development", "production-candidate", "commercial-grade", "oklahoma-commercial"],
         help="Readiness gate to apply. Defaults to the Oklahoma commercial shipping gate.",
     )
     parser.add_argument("--verify-files", action="store_true")

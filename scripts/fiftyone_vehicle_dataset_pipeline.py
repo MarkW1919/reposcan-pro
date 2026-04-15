@@ -52,6 +52,11 @@ def parse_args() -> argparse.Namespace:
     pull.add_argument("--label-types", nargs="+", default=["detections"])
     pull.add_argument("--zoo-dir", help="Optional FiftyOne dataset zoo cache directory.")
     pull.add_argument("--non-persistent", action="store_true", help="Do not persist the FiftyOne dataset after import.")
+    pull.add_argument(
+        "--replace-existing",
+        action="store_true",
+        help="Delete and recreate the target FiftyOne dataset before pulling. Existing review fields will be lost.",
+    )
     pull.add_argument("--launch-app", action="store_true")
     pull.add_argument("--port", type=int, default=5151)
 
@@ -90,6 +95,7 @@ def parse_args() -> argparse.Namespace:
     export.add_argument("--copy-mode", choices=["copy", "hardlink"], default="copy")
     export.add_argument("--reviewer", default="fiftyone_vehicle_reviewer")
     export.add_argument("--review-status", choices=["pending", "approved"], default="approved")
+    export.add_argument("--overwrite", action="store_true", help="Replace a non-empty output root before export.")
 
     yolo = subparsers.add_parser("export-detections-yolo", help="Export FiftyOne detections to RepoScan YOLO format.")
     yolo.add_argument("--dataset-name", required=True)
@@ -109,6 +115,7 @@ def parse_args() -> argparse.Namespace:
     yolo.add_argument("--copy-mode", choices=["copy", "hardlink"], default="copy")
     yolo.add_argument("--reviewer", default="open_images_detection_export")
     yolo.add_argument("--review-status", choices=["pending", "approved"], default="pending")
+    yolo.add_argument("--overwrite", action="store_true", help="Replace a non-empty output root before export.")
     return parser.parse_args()
 
 
@@ -136,6 +143,18 @@ def _exact_sample_count(dataset) -> int:
         return int(dataset._sample_collection.count_documents({}))
     except Exception:
         return sum(1 for _ in dataset)
+
+
+def _load_open_images_zoo_dataset(foz, args: argparse.Namespace, *, dataset_name: str):
+    return foz.load_zoo_dataset(
+        "open-images-v7",
+        split=args.split,
+        label_types=args.label_types,
+        classes=args.classes,
+        only_matching=True,
+        max_samples=args.max_samples,
+        dataset_name=dataset_name,
+    )
 
 
 def _truthy(value: Any) -> bool:
@@ -170,24 +189,59 @@ def _copy_or_link(source: Path, destination: Path, *, copy_mode: str) -> None:
     shutil.copy2(source, destination)
 
 
+def _prepare_export_root(output_root: Path, *, overwrite: bool) -> None:
+    if output_root.exists() and any(output_root.iterdir()):
+        if not overwrite:
+            raise FileExistsError(f"output root is not empty: {output_root}. Pass --overwrite to replace it.")
+        shutil.rmtree(output_root)
+    output_root.mkdir(parents=True, exist_ok=True)
+
+
 def pull_open_images(args: argparse.Namespace) -> int:
     fo, foz = _require_fiftyone()
     if args.zoo_dir:
         fo.config.dataset_zoo_dir = str(Path(args.zoo_dir).resolve())
 
+    if args.replace_existing and fo.dataset_exists(args.dataset_name):
+        fo.delete_dataset(args.dataset_name)
+        print(f"Deleted existing FiftyOne dataset: {args.dataset_name}")
+
     if fo.dataset_exists(args.dataset_name):
         dataset = fo.load_dataset(args.dataset_name)
-        print(f"Using existing FiftyOne dataset: {dataset.name} ({_exact_sample_count(dataset)} samples)")
+        before_count = _exact_sample_count(dataset)
+        print(f"Using existing FiftyOne dataset: {dataset.name} ({before_count} samples)")
+        if before_count < args.max_samples:
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            temp_name = f"{args.dataset_name}_pull_{stamp}"
+            if fo.dataset_exists(temp_name):
+                fo.delete_dataset(temp_name)
+            temp_dataset = None
+            try:
+                temp_dataset = _load_open_images_zoo_dataset(foz, args, dataset_name=temp_name)
+                temp_count = _exact_sample_count(temp_dataset)
+                dataset.merge_samples(
+                    temp_dataset,
+                    key_field="filepath",
+                    skip_existing=True,
+                    insert_new=True,
+                    overwrite=False,
+                    include_info=False,
+                )
+                after_count = _exact_sample_count(dataset)
+                print(
+                    "Merged Open Images pull: "
+                    f"temp_samples={temp_count}, added={after_count - before_count}, total={after_count}"
+                )
+            finally:
+                if temp_dataset is not None and fo.dataset_exists(temp_name):
+                    fo.delete_dataset(temp_name)
+        else:
+            print(
+                "Existing dataset already meets or exceeds requested max_samples. "
+                "Increase --max-samples or pass --replace-existing to pull a different candidate pool."
+            )
     else:
-        dataset = foz.load_zoo_dataset(
-            "open-images-v7",
-            split=args.split,
-            label_types=args.label_types,
-            classes=args.classes,
-            only_matching=True,
-            max_samples=args.max_samples,
-            dataset_name=args.dataset_name,
-        )
+        dataset = _load_open_images_zoo_dataset(foz, args, dataset_name=args.dataset_name)
         print(f"Created FiftyOne dataset: {dataset.name} ({_exact_sample_count(dataset)} samples)")
 
     dataset.persistent = not args.non_persistent
@@ -566,6 +620,7 @@ def export_detections_yolo(args: argparse.Namespace) -> int:
 
     output_root = Path(args.output_root).resolve()
     manifest_path = Path(args.manifest_path).resolve()
+    _prepare_export_root(output_root, overwrite=args.overwrite)
     split_map = _split_records(
         records,
         train_ratio=args.train_ratio,
@@ -744,6 +799,7 @@ def export_reviewed(args: argparse.Namespace) -> int:
 
     output_root = Path(args.output_root).resolve()
     manifest_path = Path(args.manifest_path).resolve()
+    _prepare_export_root(output_root, overwrite=args.overwrite)
     split_map = _split_samples(
         selected,
         train_ratio=args.train_ratio,

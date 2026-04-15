@@ -252,18 +252,20 @@ Pull public candidate vehicle images into FiftyOne, review labels, and export on
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install ".[dataset]"
-.\.venv\Scripts\python.exe .\scripts\fiftyone_vehicle_dataset_pipeline.py pull-open-images --dataset-name reposcan_open_images_ok_vehicle_candidates --split validation --classes Car Truck Bus Motorcycle --max-samples 5000
+.\.venv\Scripts\python.exe .\scripts\fiftyone_vehicle_dataset_pipeline.py pull-open-images --dataset-name reposcan_open_images_ok_vehicle_candidates --split validation --classes Car Truck Bus Motorcycle Van Taxi --max-samples 5000
 .\.venv\Scripts\python.exe .\scripts\fiftyone_vehicle_dataset_pipeline.py launch-app --dataset-name reposcan_open_images_ok_vehicle_candidates --port 5151
-.\.venv\Scripts\python.exe .\scripts\fiftyone_vehicle_dataset_pipeline.py export-reviewed --dataset-name reposcan_open_images_ok_vehicle_candidates --output-root .\data\curated\fiftyone_open_images_ok_vehicle_reviewed --manifest-path .\data\manifests\public\fiftyone-open-images-ok-vehicle-reviewed.yaml --task vehicle_make_model_classification --copy-mode hardlink --reviewer reviewer_01 --review-status approved
+.\.venv\Scripts\python.exe .\scripts\fiftyone_vehicle_dataset_pipeline.py export-reviewed --dataset-name reposcan_open_images_ok_vehicle_candidates --output-root .\data\curated\fiftyone_open_images_ok_vehicle_reviewed --manifest-path .\data\manifests\public\fiftyone-open-images-ok-vehicle-reviewed.yaml --task vehicle_make_model_classification --copy-mode hardlink --reviewer reviewer_01 --review-status approved --overwrite
 ```
 
 Warm-start the vehicle detector from Open Images bounding boxes and validate the YOLO-to-ONNX training path with:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install ".[training]"
-.\.venv\Scripts\python.exe .\scripts\fiftyone_vehicle_dataset_pipeline.py export-detections-yolo --dataset-name reposcan_open_images_ok_vehicle_candidates --output-root .\data\curated\fiftyone_open_images_vehicle_detection_warmstart --manifest-path .\data\manifests\public\fiftyone-open-images-vehicle-detection-warmstart.yaml --source-labels Car Truck Bus Motorcycle Van Taxi --target-class-name vehicle --copy-mode hardlink --review-status pending
+.\.venv\Scripts\python.exe .\scripts\fiftyone_vehicle_dataset_pipeline.py export-detections-yolo --dataset-name reposcan_open_images_ok_vehicle_candidates --output-root .\data\curated\fiftyone_open_images_vehicle_detection_warmstart --manifest-path .\data\manifests\public\fiftyone-open-images-vehicle-detection-warmstart.yaml --source-labels Car Truck Bus Motorcycle Van Taxi --target-class-name vehicle --copy-mode hardlink --review-status pending --overwrite
 .\.venv\Scripts\python.exe .\scripts\train_detection_model.py --profile .\configs\training\vehicle-detector-open-images-cpu-smoke.yaml --dataset-manifest .\data\manifests\public\fiftyone-open-images-vehicle-detection-warmstart.yaml --run-name vehicle_detector_open_images_cpu_smoke_20260415 --execute
 ```
+
+When GPU training hardware is available, use `configs/training/vehicle-detector-open-images-gpu-warmstart.yaml` against the same manifest for a stronger public-data detector baseline before moving to approved Oklahoma field captures.
 
 The detailed review and CSV batch-labeling workflow lives in [Internet Vehicle Image Pipeline](docs/INTERNET_VEHICLE_IMAGE_PIPELINE.md).
 

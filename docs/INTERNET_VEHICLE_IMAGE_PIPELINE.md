@@ -85,7 +85,8 @@ RepoScan manifest:
   --task vehicle_make_model_classification `
   --copy-mode hardlink `
   --reviewer reviewer_01 `
-  --review-status approved
+  --review-status approved `
+  --overwrite
 ```
 
 Validate the exported manifest:
@@ -123,16 +124,33 @@ training path and gives us a public-data baseline:
   --source-labels Car Truck Bus Motorcycle Van Taxi `
   --target-class-name vehicle `
   --copy-mode hardlink `
-  --review-status pending
+  --review-status pending `
+  --overwrite
 ```
 
 Run the CPU smoke detector profile to validate YOLO training and ONNX export:
 
 ```powershell
+.\.venv\Scripts\python.exe .\scripts\audit_training_dataset_readiness.py `
+  --dataset-manifest .\data\manifests\public\fiftyone-open-images-vehicle-detection-warmstart.yaml `
+  --level warmstart `
+  --verify-files `
+  --report-output .\runtime\dataset_readiness\fiftyone-open-images-vehicle-detection-warmstart.json
+
 .\.venv\Scripts\python.exe .\scripts\train_detection_model.py `
   --profile .\configs\training\vehicle-detector-open-images-cpu-smoke.yaml `
   --dataset-manifest .\data\manifests\public\fiftyone-open-images-vehicle-detection-warmstart.yaml `
   --run-name vehicle_detector_open_images_cpu_smoke_20260415 `
+  --execute
+```
+
+When GPU training hardware is available, switch to the warm-start GPU profile:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\train_detection_model.py `
+  --profile .\configs\training\vehicle-detector-open-images-gpu-warmstart.yaml `
+  --dataset-manifest .\data\manifests\public\fiftyone-open-images-vehicle-detection-warmstart.yaml `
+  --run-name vehicle_detector_open_images_gpu_warmstart_20260415 `
   --execute
 ```
 

@@ -56,6 +56,28 @@ def build_dataset_readiness_policy(level: str = "oklahoma-commercial") -> Datase
     """
 
     normalized = level.strip().lower().replace("_", "-")
+    if normalized in {"warmstart", "public-warmstart", "benchmark-warmstart"}:
+        thresholds = DatasetReadinessThresholds(
+            min_total_samples=50,
+            min_train_samples=30,
+            min_validation_samples=10,
+            min_holdout_samples=0,
+            min_field_eval_samples=0,
+            min_capture_sessions=1,
+            min_low_light_assets=0,
+            min_long_range_assets=0,
+            max_synthetic_train_fraction=0.5,
+        )
+        return DatasetReadinessPolicy(
+            policy_name="warmstart",
+            require_approved_review=False,
+            require_license_review=False,
+            require_annotation_review=False,
+            require_capture_session_metadata=False,
+            require_condition_metadata=False,
+            thresholds_by_task={task: thresholds for task in DatasetTask},
+        )
+
     if normalized in {"dev", "development"}:
         thresholds = DatasetReadinessThresholds(
             min_total_samples=10,
