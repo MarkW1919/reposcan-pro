@@ -83,8 +83,11 @@ The current repo does not yet complete the hardware-only acceptance work:
 - captured and reviewed long-range acceptance scenes
 - captured and reviewed low-light / no-light acceptance scenes
 
+When the deployment rig arrives, run the capture campaign from [FIELD_CAPTURE_KIT.md](FIELD_CAPTURE_KIT.md). That pack carries the authoritative scene list, rig checklist, per-shot protocol, and handoff path for the acceptance harness.
+
 ## Related Documents
 
 - [Camera And Imaging](CAMERA_AND_IMAGING.md)
+- [Field Capture Kit](FIELD_CAPTURE_KIT.md)
 - [Requirements](REQUIREMENTS.md)
 - [Project Status Checklist](PROJECT_STATUS_CHECKLIST.md)

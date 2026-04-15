@@ -1,0 +1,1 @@
+session_id,shot_id,scene_id,take_number,timestamp_utc,lat,lon,camera_id,lens_mm,aperture,shutter,iso,gain,ir_on,lighting,range_band,approx_range_m,approx_lux,vehicle_count,vehicle_motion,platform_motion,gt_plate_text,pass_fail,reject_reason,notes
