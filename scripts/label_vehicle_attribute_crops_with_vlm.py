@@ -9,11 +9,12 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, NamedTuple, Protocol
 
 
 DEFAULT_QWEN_MODEL = "Qwen/Qwen2.5-VL-7B-Instruct"
 DEFAULT_OPENAI_MODEL = "gpt-5.4-mini"
+DEFAULT_CLIP_MODEL = "openai/clip-vit-base-patch32"
 
 COLOR_LABELS = {"black", "white", "silver", "gray", "red", "blue", "green", "yellow", "orange", "brown", "other"}
 BODY_TYPE_LABELS = {
@@ -30,6 +31,83 @@ BODY_TYPE_LABELS = {
     "bus",
     "motorcycle",
     "unknown",
+}
+
+
+class ClipCandidateEntry(NamedTuple):
+    label: str
+    prompt: str
+    make: str
+    model: str
+    body_type: str
+    generic: bool = False
+
+
+CLIP_OKLAHOMA_CANDIDATES: dict[str, tuple[ClipCandidateEntry, ...]] = {
+    "Truck": (
+        ClipCandidateEntry("ford_f_series", "ford f-series pickup truck", "ford", "f_series", "pickup"),
+        ClipCandidateEntry("ford_super_duty", "ford super duty pickup truck", "ford", "super_duty", "pickup"),
+        ClipCandidateEntry("chevrolet_pickup", "chevrolet pickup truck", "chevrolet", "pickup", "pickup"),
+        ClipCandidateEntry("gmc_sierra", "gmc sierra pickup truck", "gmc", "sierra", "pickup"),
+        ClipCandidateEntry("ram_pickup", "ram pickup truck", "ram", "pickup", "pickup"),
+        ClipCandidateEntry("toyota_tacoma", "toyota tacoma pickup truck", "toyota", "tacoma", "pickup"),
+        ClipCandidateEntry("toyota_tundra", "toyota tundra pickup truck", "toyota", "tundra", "pickup"),
+        ClipCandidateEntry("nissan_frontier", "nissan frontier pickup truck", "nissan", "frontier", "pickup"),
+        ClipCandidateEntry("nissan_pickup", "nissan pickup truck", "nissan", "pickup", "pickup"),
+        ClipCandidateEntry("generic_pickup", "pickup truck", "", "", "pickup", generic=True),
+    ),
+    "Van": (
+        ClipCandidateEntry("ford_transit", "ford transit van", "ford", "transit", "van"),
+        ClipCandidateEntry("chevrolet_express", "chevrolet express van", "chevrolet", "express", "van"),
+        ClipCandidateEntry("mercedes_sprinter", "mercedes sprinter van", "mercedes_benz", "sprinter", "van"),
+        ClipCandidateEntry("dodge_grand_caravan", "dodge grand caravan minivan", "dodge", "grand_caravan", "minivan"),
+        ClipCandidateEntry("honda_odyssey", "honda odyssey minivan", "honda", "odyssey", "minivan"),
+        ClipCandidateEntry("toyota_sienna", "toyota sienna minivan", "toyota", "sienna", "minivan"),
+        ClipCandidateEntry("generic_van", "van", "", "", "van", generic=True),
+    ),
+    "Bus": (
+        ClipCandidateEntry("generic_bus", "bus", "", "", "bus", generic=True),
+    ),
+    "Motorcycle": (
+        ClipCandidateEntry("generic_motorcycle", "motorcycle", "", "", "motorcycle", generic=True),
+    ),
+    "Taxi": (
+        ClipCandidateEntry("toyota_camry", "toyota camry sedan", "toyota", "camry", "sedan"),
+        ClipCandidateEntry("toyota_corolla", "toyota corolla sedan", "toyota", "corolla", "sedan"),
+        ClipCandidateEntry("honda_accord", "honda accord sedan", "honda", "accord", "sedan"),
+        ClipCandidateEntry("nissan_altima", "nissan altima sedan", "nissan", "altima", "sedan"),
+        ClipCandidateEntry("generic_sedan", "sedan", "", "", "sedan", generic=True),
+    ),
+    "Car": (
+        ClipCandidateEntry("toyota_camry", "toyota camry sedan", "toyota", "camry", "sedan"),
+        ClipCandidateEntry("toyota_corolla", "toyota corolla sedan", "toyota", "corolla", "sedan"),
+        ClipCandidateEntry("honda_accord", "honda accord sedan", "honda", "accord", "sedan"),
+        ClipCandidateEntry("honda_civic", "honda civic sedan", "honda", "civic", "sedan"),
+        ClipCandidateEntry("nissan_altima", "nissan altima sedan", "nissan", "altima", "sedan"),
+        ClipCandidateEntry("nissan_sentra", "nissan sentra sedan", "nissan", "sentra", "sedan"),
+        ClipCandidateEntry("chevrolet_malibu", "chevrolet malibu sedan", "chevrolet", "malibu", "sedan"),
+        ClipCandidateEntry("ford_mustang", "ford mustang coupe", "ford", "mustang", "coupe"),
+        ClipCandidateEntry("dodge_charger", "dodge charger sedan", "dodge", "charger", "sedan"),
+        ClipCandidateEntry("dodge_challenger", "dodge challenger coupe", "dodge", "challenger", "coupe"),
+        ClipCandidateEntry("hyundai_elantra", "hyundai elantra sedan", "hyundai", "elantra", "sedan"),
+        ClipCandidateEntry("hyundai_sonata", "hyundai sonata sedan", "hyundai", "sonata", "sedan"),
+        ClipCandidateEntry("kia_optima", "kia optima sedan", "kia", "optima", "sedan"),
+        ClipCandidateEntry("kia_soul", "kia soul hatchback", "kia", "soul", "hatchback"),
+        ClipCandidateEntry("ford_explorer", "ford explorer suv", "ford", "explorer", "suv"),
+        ClipCandidateEntry("ford_escape", "ford escape suv", "ford", "escape", "suv"),
+        ClipCandidateEntry("chevrolet_tahoe", "chevrolet tahoe suv", "chevrolet", "tahoe", "suv"),
+        ClipCandidateEntry("chevrolet_suburban", "chevrolet suburban suv", "chevrolet", "suburban", "suv"),
+        ClipCandidateEntry("gmc_yukon", "gmc yukon suv", "gmc", "yukon", "suv"),
+        ClipCandidateEntry("jeep_grand_cherokee", "jeep grand cherokee suv", "jeep", "grand_cherokee", "suv"),
+        ClipCandidateEntry("jeep_wrangler", "jeep wrangler suv", "jeep", "wrangler", "suv"),
+        ClipCandidateEntry("toyota_rav4", "toyota rav4 suv", "toyota", "rav4", "suv"),
+        ClipCandidateEntry("honda_cr_v", "honda cr-v suv", "honda", "cr_v", "suv"),
+        ClipCandidateEntry("nissan_rogue", "nissan rogue suv", "nissan", "rogue", "suv"),
+        ClipCandidateEntry("generic_sedan", "sedan", "", "", "sedan", generic=True),
+        ClipCandidateEntry("generic_suv", "suv", "", "", "suv", generic=True),
+        ClipCandidateEntry("generic_coupe", "coupe", "", "", "coupe", generic=True),
+        ClipCandidateEntry("generic_hatchback", "hatchback", "", "", "hatchback", generic=True),
+    ),
 }
 
 VLM_FIELDNAMES = [
@@ -73,7 +151,7 @@ def parse_args() -> argparse.Namespace:
     label = subparsers.add_parser("label-crops", help="Add VLM suggestion columns to a crop review CSV.")
     label.add_argument("--review-csv", required=True)
     label.add_argument("--output-csv", required=True)
-    label.add_argument("--provider", choices=["openai", "qwen2_5_vl", "fixture"], default="qwen2_5_vl")
+    label.add_argument("--provider", choices=["openai", "qwen2_5_vl", "clip_oklahoma", "fixture"], default="qwen2_5_vl")
     label.add_argument("--model", help="Provider model name. Defaults to the provider's recommended baseline.")
     label.add_argument("--fixture-jsonl", help="JSONL fixture for deterministic tests or offline dry runs.")
     label.add_argument("--limit", type=int)
@@ -84,6 +162,8 @@ def parse_args() -> argparse.Namespace:
     label.add_argument("--device-map", default="auto", help="Transformers device_map for Qwen2.5-VL.")
     label.add_argument("--temperature", type=float, default=0.0)
     label.add_argument("--openai-api-key-env", default="OPENAI_API_KEY")
+    label.add_argument("--clip-batch-size", type=int, default=16)
+    label.add_argument("--clip-accept-confidence", type=float, default=0.80)
 
     consensus = subparsers.add_parser(
         "apply-consensus",
@@ -271,6 +351,36 @@ class VehicleAttributeLabeler(Protocol):
         ...
 
 
+def _clip_candidate_entries_for_source_label(source_label: str) -> tuple[ClipCandidateEntry, ...]:
+    return CLIP_OKLAHOMA_CANDIDATES.get(source_label, CLIP_OKLAHOMA_CANDIDATES["Car"])
+
+
+def _response_from_clip_candidate(
+    entry: ClipCandidateEntry,
+    *,
+    confidence: float,
+    source_label: str,
+    top_candidates: list[dict[str, object]],
+    accept_confidence: float,
+) -> dict[str, Any]:
+    review_action = "accept_suggestion" if (not entry.generic and confidence >= accept_confidence) else "needs_human_review"
+    return {
+        "contains_usable_vehicle": True,
+        "make": entry.make or None,
+        "model": entry.model or None,
+        "model_family": entry.model or None,
+        "year": None,
+        "year_range": None,
+        "trim": None,
+        "color": None,
+        "body_type": entry.body_type,
+        "confidence": confidence,
+        "evidence": f"clip_oklahoma source_label={source_label} top1={entry.label}",
+        "review_action": review_action,
+        "top_candidates": top_candidates,
+    }
+
+
 class FixtureLabeler:
     provider = "fixture"
 
@@ -403,6 +513,93 @@ class QwenVehicleLabeler:
         return _extract_json_object(output_text)
 
 
+class ClipOklahomaLabeler:
+    provider = "clip_oklahoma"
+
+    def __init__(self, *, model_name: str, batch_size: int, accept_confidence: float):
+        try:
+            import torch
+            from PIL import Image
+            from transformers import CLIPModel, CLIPProcessor
+        except ImportError as exc:
+            raise RuntimeError(
+                "Install CLIP labeling dependencies with "
+                "`python -m pip install transformers accelerate pillow`."
+            ) from exc
+        self.torch = torch
+        self.Image = Image
+        self.model_name = model_name
+        self.batch_size = max(1, batch_size)
+        self.accept_confidence = accept_confidence
+        self.model = CLIPModel.from_pretrained(model_name)
+        self.processor = CLIPProcessor.from_pretrained(model_name)
+        self.model.eval()
+        self.logit_scale = self.model.logit_scale.exp().detach()
+        self.text_feature_cache: dict[str, Any] = {}
+
+    def _text_features_for(self, source_label: str):
+        cached = self.text_feature_cache.get(source_label)
+        if cached is not None:
+            return cached
+        entries = _clip_candidate_entries_for_source_label(source_label)
+        text_inputs = self.processor(text=[entry.prompt for entry in entries], return_tensors="pt", padding=True)
+        with self.torch.no_grad():
+            text_features = self.model.get_text_features(**text_inputs)
+        text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+        self.text_feature_cache[source_label] = text_features
+        return text_features
+
+    def label_batch(self, rows: list[dict[str, str]]) -> list[dict[str, Any]]:
+        if not rows:
+            return []
+        source_label = str(rows[0].get("source_label") or "Car")
+        entries = _clip_candidate_entries_for_source_label(source_label)
+        text_features = self._text_features_for(source_label)
+        images = []
+        for row in rows:
+            crop_path = Path(str(row.get("crop_filepath") or ""))
+            images.append(self.Image.open(crop_path).convert("RGB"))
+        try:
+            image_inputs = self.processor(images=images, return_tensors="pt", padding=True)
+            with self.torch.no_grad():
+                image_features = self.model.get_image_features(**image_inputs)
+            image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+            probabilities = (self.logit_scale * (image_features @ text_features.T)).softmax(dim=-1)
+        finally:
+            for image in images:
+                image.close()
+        results: list[dict[str, Any]] = []
+        for probability_row in probabilities:
+            top_indices = probability_row.topk(min(5, len(entries))).indices.tolist()
+            top_candidates = [
+                {
+                    "label": entries[index].label,
+                    "confidence": float(probability_row[index].item()),
+                    "prompt": entries[index].prompt,
+                    "make": entries[index].make or None,
+                    "model": entries[index].model or None,
+                    "body_type": entries[index].body_type,
+                    "generic": entries[index].generic,
+                }
+                for index in top_indices
+            ]
+            top_index = int(top_indices[0])
+            confidence = float(probability_row[top_index].item())
+            results.append(
+                _response_from_clip_candidate(
+                    entries[top_index],
+                    confidence=confidence,
+                    source_label=source_label,
+                    top_candidates=top_candidates,
+                    accept_confidence=self.accept_confidence,
+                )
+            )
+        return results
+
+    def label(self, crop_path: Path, row: dict[str, str]) -> dict[str, Any]:
+        return self.label_batch([row])[0]
+
+
 def _build_labeler(args: argparse.Namespace) -> VehicleAttributeLabeler:
     if args.provider == "fixture":
         if not args.fixture_jsonl:
@@ -419,6 +616,12 @@ def _build_labeler(args: argparse.Namespace) -> VehicleAttributeLabeler:
             model_name=args.model or DEFAULT_QWEN_MODEL,
             device_map=args.device_map,
             max_new_tokens=args.max_new_tokens,
+        )
+    if args.provider == "clip_oklahoma":
+        return ClipOklahomaLabeler(
+            model_name=args.model or DEFAULT_CLIP_MODEL,
+            batch_size=args.clip_batch_size,
+            accept_confidence=args.clip_accept_confidence,
         )
     raise ValueError(f"unsupported provider: {args.provider}")
 
@@ -466,6 +669,49 @@ def label_crops(args: argparse.Namespace) -> int:
     processed = 0
     errors = 0
     skipped = 0
+
+    if isinstance(labeler, ClipOklahomaLabeler):
+        grouped: dict[str, list[tuple[int, dict[str, str]]]] = {}
+        for index, row in enumerate(rows):
+            if args.skip_existing and row.get("suggested_vlm_provider") and not row.get("vlm_label_error"):
+                skipped += 1
+                continue
+            if args.limit is not None and processed >= args.limit:
+                continue
+            crop_path = _resolve_crop_path(str(row.get("crop_filepath") or ""), csv_path=review_csv)
+            row["crop_filepath"] = str(crop_path)
+            row["suggested_vlm_provider"] = labeler.provider
+            row["suggested_vlm_model_name"] = labeler.model_name
+            if not crop_path.exists():
+                row["vlm_label_error"] = f"missing crop file: {crop_path}"
+                errors += 1
+                processed += 1
+                continue
+            source_label = str(row.get("source_label") or "Car")
+            grouped.setdefault(source_label, []).append((index, row))
+            processed += 1
+
+        completed = 0
+        for source_label, indexed_rows in grouped.items():
+            for start in range(0, len(indexed_rows), labeler.batch_size):
+                chunk = indexed_rows[start : start + labeler.batch_size]
+                try:
+                    responses = labeler.label_batch([row for _, row in chunk])
+                    for (_, row), response in zip(chunk, responses, strict=False):
+                        row.update(_normalize_label_response(response))
+                except Exception as exc:
+                    for _, row in chunk:
+                        row["vlm_label_error"] = str(exc)
+                        errors += 1
+                completed += len(chunk)
+                if args.progress_every > 0 and completed % args.progress_every == 0:
+                    print(f"VLM-labeled {completed} crop row(s)")
+
+        _write_csv(output_csv, rows, fieldnames)
+        print(f"Wrote VLM suggestions: {output_csv}")
+        print(json.dumps({"rows": len(rows), "processed": processed, "skipped": skipped, "errors": errors}, indent=2))
+        return 0 if errors == 0 else 1
+
     for row in rows:
         if args.skip_existing and row.get("suggested_vlm_provider") and not row.get("vlm_label_error"):
             skipped += 1

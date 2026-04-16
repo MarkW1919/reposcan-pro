@@ -178,6 +178,25 @@ For GPU-backed local or Colab runs, use Qwen2.5-VL instead:
   --overwrite
 ```
 
+When GPU access or cloud credits are unavailable, use the local Oklahoma-tuned
+CLIP fallback. It runs on CPU, emits `suggested_vlm_*` columns in the same
+shape as the VLM workflow, and stays conservative by keeping generic body-type
+matches in `needs_human_review`:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\label_vehicle_attribute_crops_with_vlm.py label-crops `
+  --review-csv .\data\staged\review_templates\open_images_vehicle_attribute_crop_suggestions_20260415.csv `
+  --output-csv .\data\staged\review_templates\open_images_vehicle_attribute_clip_oklahoma_suggestions_20260416.csv `
+  --provider clip_oklahoma `
+  --clip-batch-size 16 `
+  --clip-accept-confidence 0.80 `
+  --overwrite
+```
+
+That path is useful for building a priority review queue when manual review is
+the real bottleneck, but it should still be treated as AI-assisted draft data
+rather than approved production labels.
+
 Install the optional API path locally with:
 
 ```powershell

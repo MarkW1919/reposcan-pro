@@ -252,3 +252,38 @@ def test_apply_consensus_skips_color_conflicts(tmp_path):
     assert rows[0]["reposcan_accepted"] == "false"
     assert rows[0]["reposcan_vehicle_color"] == ""
     assert "color_consensus_conflict" in rows[0]["reviewer_notes"]
+
+
+def test_clip_oklahoma_candidates_cover_trucks_and_cars():
+    module = _load_labeler_module()
+    truck_entries = module._clip_candidate_entries_for_source_label("Truck")
+    car_entries = module._clip_candidate_entries_for_source_label("Car")
+
+    assert any(entry.label == "ford_f_series" for entry in truck_entries)
+    assert any(entry.label == "generic_pickup" and entry.generic for entry in truck_entries)
+    assert any(entry.label == "toyota_camry" for entry in car_entries)
+    assert any(entry.label == "generic_suv" and entry.generic for entry in car_entries)
+
+
+def test_clip_generic_response_stays_pending():
+    module = _load_labeler_module()
+    entry = module.ClipCandidateEntry(
+        label="generic_suv",
+        prompt="suv",
+        make="",
+        model="",
+        body_type="suv",
+        generic=True,
+    )
+    response = module._response_from_clip_candidate(
+        entry,
+        confidence=0.91,
+        source_label="Car",
+        top_candidates=[{"label": "generic_suv", "confidence": 0.91}],
+        accept_confidence=0.80,
+    )
+
+    assert response["review_action"] == "needs_human_review"
+    assert response["body_type"] == "suv"
+    assert response["make"] is None
+    assert response["model"] is None
