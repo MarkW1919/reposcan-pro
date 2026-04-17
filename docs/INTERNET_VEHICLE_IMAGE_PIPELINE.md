@@ -197,6 +197,22 @@ That path is useful for building a priority review queue when manual review is
 the real bottleneck, but it should still be treated as AI-assisted draft data
 rather than approved production labels.
 
+When the priority queue is ready for human review, launch the local review app
+instead of editing the CSV directly:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e ".[review-ui]"
+.\.venv\Scripts\python.exe .\scripts\launch_vehicle_attribute_review_app.py `
+  --review-csv .\data\staged\review_templates\open_images_vehicle_attribute_priority_review_20260416.csv `
+  --host 127.0.0.1 `
+  --port 7860 `
+  --inbrowser
+```
+
+The app creates a `.bak` backup alongside the review CSV on first launch and
+lets the reviewer apply AI-assisted prefills, mark rows rejected, save changes,
+and jump to the next pending row.
+
 Install the optional API path locally with:
 
 ```powershell

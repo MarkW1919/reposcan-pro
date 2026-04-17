@@ -35,6 +35,9 @@ vlm-labeling = [
     "qwen-vl-utils>=0.0.8,<0.1",
     "transformers>=4.51,<5.0",
 ]
+review-ui = [
+    "gradio>=5.0,<6.0",
+]
 dev = [
     "httpx>=0.28,<1.0",
     "onnx>=1.20,<2.0",
