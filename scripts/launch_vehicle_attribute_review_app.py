@@ -25,8 +25,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Launch a local UI for reviewing vehicle attribute crop CSV rows.")
     parser.add_argument(
         "--review-csv",
-        default=r".\data\staged\review_templates\open_images_vehicle_attribute_priority_review_20260416.csv",
-        help="Priority review CSV to edit in place.",
+        required=True,
+        help=(
+            "Review CSV to edit in place. Typically the apply-consensus output, "
+            "or a hand-filtered subset of it."
+        ),
     )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=7860)
@@ -347,37 +350,37 @@ def create_review_app(review_csv: Path):
         return row_payload(index)
 
     def apply_prefill(index: int):
-        prefill = build_best_suggestion_prefill(rows[index])
-        row = dict(rows[index])
-        row.update(prefill)
-        rows[index] = row
+        # Return form values only; do not mutate rows[index]. Persistence must go
+        # through an explicit Save so a prefill on row A cannot be silently
+        # committed when the reviewer saves row B.
+        preview = dict(rows[index])
+        preview.update(build_best_suggestion_prefill(rows[index]))
         return (
-            _truthy(row["reposcan_accepted"]),
-            _truthy(row["reposcan_reviewed"]),
-            row["reposcan_class_label"],
-            row["reposcan_vehicle_make"],
-            row["reposcan_vehicle_model"],
-            row["reposcan_vehicle_year"],
-            row["reposcan_vehicle_color"],
-            row["reposcan_oklahoma_tags"],
-            row["reviewer_notes"],
+            _truthy(preview["reposcan_accepted"]),
+            _truthy(preview["reposcan_reviewed"]),
+            preview["reposcan_class_label"],
+            preview["reposcan_vehicle_make"],
+            preview["reposcan_vehicle_model"],
+            preview["reposcan_vehicle_year"],
+            preview["reposcan_vehicle_color"],
+            preview["reposcan_oklahoma_tags"],
+            preview["reviewer_notes"],
         )
 
     def reject_prefill(index: int):
-        prefill = build_reject_prefill(rows[index])
-        row = dict(rows[index])
-        row.update(prefill)
-        rows[index] = row
+        # Same contract as apply_prefill: form-only, no in-memory persistence.
+        preview = dict(rows[index])
+        preview.update(build_reject_prefill(rows[index]))
         return (
-            _truthy(row["reposcan_accepted"]),
-            _truthy(row["reposcan_reviewed"]),
-            row["reposcan_class_label"],
-            row["reposcan_vehicle_make"],
-            row["reposcan_vehicle_model"],
-            row["reposcan_vehicle_year"],
-            row["reposcan_vehicle_color"],
-            row["reposcan_oklahoma_tags"],
-            row["reviewer_notes"],
+            _truthy(preview["reposcan_accepted"]),
+            _truthy(preview["reposcan_reviewed"]),
+            preview["reposcan_class_label"],
+            preview["reposcan_vehicle_make"],
+            preview["reposcan_vehicle_model"],
+            preview["reposcan_vehicle_year"],
+            preview["reposcan_vehicle_color"],
+            preview["reposcan_oklahoma_tags"],
+            preview["reviewer_notes"],
         )
 
     with gr.Blocks(title="RepoScan Vehicle Attribute Reviewer") as app:

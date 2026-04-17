@@ -545,6 +545,17 @@ class TestTrainingProfileSchema:
         assert profile.augmentation.random_erasing is True
         assert profile.augmentation.mixup_alpha == pytest.approx(0.2)
 
+    def test_make_model_reviewed_seed_cpu_profile_parses(self):
+        profile = load_training_profile(
+            CONFIGS / "training" / "vehicle-make-model-reviewed-seed-cpu.yaml"
+        )
+        assert profile.task == DatasetTask.vehicle_make_model_classification
+        assert profile.framework == TrainingFramework.torchvision
+        assert profile.dataset_adapter == DatasetAdapter.imagefolder
+        assert profile.base_model == "resnet18"
+        assert profile.image_size == 192
+        assert profile.allow_pending_review is False
+
     def test_efficientnet_color_profile_parses(self):
         profile = load_training_profile(CONFIGS / "training" / "vehicle-color-classifier-efficientnet.yaml")
         assert profile.task == DatasetTask.vehicle_color_classification

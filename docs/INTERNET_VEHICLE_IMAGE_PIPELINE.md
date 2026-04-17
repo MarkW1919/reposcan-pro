@@ -163,7 +163,7 @@ columns, and leaves the authoritative RepoScan review fields untouched:
   --review-csv .\data\staged\review_templates\open_images_vehicle_attribute_crop_suggestions_20260415.csv `
   --output-csv .\data\staged\review_templates\open_images_vehicle_attribute_crop_vlm_suggestions_20260415.csv `
   --provider openai `
-  --model gpt-5.4-mini `
+  --model gpt-4o-mini `
   --overwrite
 ```
 
@@ -197,13 +197,16 @@ That path is useful for building a priority review queue when manual review is
 the real bottleneck, but it should still be treated as AI-assisted draft data
 rather than approved production labels.
 
-When the priority queue is ready for human review, launch the local review app
-instead of editing the CSV directly:
+When the AI-assisted draft queue is ready for human review, launch the local
+review app instead of editing the CSV directly. Point `--review-csv` at the
+most recent suggestions CSV for the batch you want to review — typically the
+CLIP fallback output above, the OpenAI/Qwen VLM suggestions CSV, or a
+hand-filtered subset of either:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -e ".[review-ui]"
 .\.venv\Scripts\python.exe .\scripts\launch_vehicle_attribute_review_app.py `
-  --review-csv .\data\staged\review_templates\open_images_vehicle_attribute_priority_review_20260416.csv `
+  --review-csv .\data\staged\review_templates\open_images_vehicle_attribute_clip_oklahoma_suggestions_20260416.csv `
   --host 127.0.0.1 `
   --port 7860 `
   --inbrowser

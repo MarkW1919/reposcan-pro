@@ -13,7 +13,7 @@ from typing import Any, NamedTuple, Protocol
 
 
 DEFAULT_QWEN_MODEL = "Qwen/Qwen2.5-VL-7B-Instruct"
-DEFAULT_OPENAI_MODEL = "gpt-5.4-mini"
+DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
 DEFAULT_CLIP_MODEL = "openai/clip-vit-base-patch32"
 
 COLOR_LABELS = {"black", "white", "silver", "gray", "red", "blue", "green", "yellow", "orange", "brown", "other"}
@@ -549,15 +549,20 @@ class ClipOklahomaLabeler:
         self.text_feature_cache[source_label] = text_features
         return text_features
 
-    def label_batch(self, rows: list[dict[str, str]]) -> list[dict[str, Any]]:
+    def label_batch(
+        self,
+        crop_paths: list[Path],
+        rows: list[dict[str, str]],
+    ) -> list[dict[str, Any]]:
         if not rows:
             return []
+        if len(crop_paths) != len(rows):
+            raise ValueError("crop_paths and rows must have equal length")
         source_label = str(rows[0].get("source_label") or "Car")
         entries = _clip_candidate_entries_for_source_label(source_label)
         text_features = self._text_features_for(source_label)
         images = []
-        for row in rows:
-            crop_path = Path(str(row.get("crop_filepath") or ""))
+        for crop_path in crop_paths:
             images.append(self.Image.open(crop_path).convert("RGB"))
         try:
             image_inputs = self.processor(images=images, return_tensors="pt", padding=True)
@@ -597,7 +602,7 @@ class ClipOklahomaLabeler:
         return results
 
     def label(self, crop_path: Path, row: dict[str, str]) -> dict[str, Any]:
-        return self.label_batch([row])[0]
+        return self.label_batch([crop_path], [row])[0]
 
 
 def _build_labeler(args: argparse.Namespace) -> VehicleAttributeLabeler:
@@ -671,7 +676,7 @@ def label_crops(args: argparse.Namespace) -> int:
     skipped = 0
 
     if isinstance(labeler, ClipOklahomaLabeler):
-        grouped: dict[str, list[tuple[int, dict[str, str]]]] = {}
+        grouped: dict[str, list[tuple[int, Path, dict[str, str]]]] = {}
         for index, row in enumerate(rows):
             if args.skip_existing and row.get("suggested_vlm_provider") and not row.get("vlm_label_error"):
                 skipped += 1
@@ -679,7 +684,6 @@ def label_crops(args: argparse.Namespace) -> int:
             if args.limit is not None and processed >= args.limit:
                 continue
             crop_path = _resolve_crop_path(str(row.get("crop_filepath") or ""), csv_path=review_csv)
-            row["crop_filepath"] = str(crop_path)
             row["suggested_vlm_provider"] = labeler.provider
             row["suggested_vlm_model_name"] = labeler.model_name
             if not crop_path.exists():
@@ -688,7 +692,7 @@ def label_crops(args: argparse.Namespace) -> int:
                 processed += 1
                 continue
             source_label = str(row.get("source_label") or "Car")
-            grouped.setdefault(source_label, []).append((index, row))
+            grouped.setdefault(source_label, []).append((index, crop_path, row))
             processed += 1
 
         completed = 0
@@ -696,11 +700,14 @@ def label_crops(args: argparse.Namespace) -> int:
             for start in range(0, len(indexed_rows), labeler.batch_size):
                 chunk = indexed_rows[start : start + labeler.batch_size]
                 try:
-                    responses = labeler.label_batch([row for _, row in chunk])
-                    for (_, row), response in zip(chunk, responses, strict=False):
+                    responses = labeler.label_batch(
+                        [path for _, path, _ in chunk],
+                        [row for _, _, row in chunk],
+                    )
+                    for (_, _, row), response in zip(chunk, responses, strict=False):
                         row.update(_normalize_label_response(response))
                 except Exception as exc:
-                    for _, row in chunk:
+                    for _, _, row in chunk:
                         row["vlm_label_error"] = str(exc)
                         errors += 1
                 completed += len(chunk)

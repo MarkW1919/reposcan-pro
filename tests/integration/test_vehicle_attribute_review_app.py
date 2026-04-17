@@ -86,6 +86,52 @@ def test_next_pending_index_wraps():
     assert module.next_pending_index(rows, 3, step=1) == 2
 
 
+def test_build_best_suggestion_prefill_does_not_mutate_row():
+    module = _load_review_module()
+    row = {
+        "reposcan_accepted": "false",
+        "reposcan_reviewed": "false",
+        "reposcan_oklahoma_tags": "",
+        "reviewer_notes": "",
+        "suggested_vlm_review_action": "accept_suggestion",
+        "suggested_vlm_confidence": "0.91",
+        "suggested_vlm_provider": "clip_oklahoma",
+        "suggested_vlm_vehicle_make": "Ford",
+        "suggested_vlm_vehicle_model_family": "F-Series",
+        "suggested_vlm_body_type": "pickup",
+        "suggested_vehicle_color": "black",
+        "suggested_vehicle_color_confidence": "0.83",
+    }
+    snapshot = dict(row)
+
+    prefill = module.build_best_suggestion_prefill(row)
+
+    assert row == snapshot, "build_best_suggestion_prefill must not mutate the input row"
+    assert prefill["reposcan_accepted"] == "true"
+
+
+def test_build_reject_prefill_does_not_mutate_row():
+    module = _load_review_module()
+    row = {
+        "reposcan_accepted": "true",
+        "reposcan_reviewed": "false",
+        "reposcan_class_label": "ford_f_series",
+        "reposcan_vehicle_make": "ford",
+        "reposcan_vehicle_model": "f_series",
+        "reposcan_vehicle_year": "2020",
+        "reposcan_vehicle_color": "black",
+        "reposcan_oklahoma_tags": "vehicle_class:pickup",
+        "reviewer_notes": "",
+    }
+    snapshot = dict(row)
+
+    prefill = module.build_reject_prefill(row)
+
+    assert row == snapshot, "build_reject_prefill must not mutate the input row"
+    assert prefill["reposcan_accepted"] == "false"
+    assert prefill["reposcan_reviewed"] == "true"
+
+
 def test_ensure_backup_copies_original(tmp_path):
     module = _load_review_module()
     review_csv = tmp_path / "review.csv"
