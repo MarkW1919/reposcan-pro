@@ -291,6 +291,8 @@ and the existing attribute profiles:
 
 - `configs/training/vehicle-color-classifier-efficientnet.yaml`
 - `configs/training/vehicle-make-model-warmstart-v2.yaml` for warm starts
+- `configs/training/vehicle-make-model-reviewed-seed-cpu.yaml` for small reviewed
+  ImageFolder make/model seed runs on CPU
 - `configs/training/vehicle-year-classifier.yaml`
 
 Keep year labels conservative; year ranges or generation labels are preferable

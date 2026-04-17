@@ -1,0 +1,26 @@
+profile_name: vehicle-make-model-reviewed-seed-cpu
+task: vehicle_make_model_classification
+framework: torchvision
+output_root: runtime/training
+allow_pending_review: false
+dataset_adapter: imagefolder
+base_model: resnet18
+image_size: 192
+epochs: 18
+batch_size: 16
+workers: 2
+patience: 5
+precision: fp32
+device: auto
+augmentation:
+  horizontal_flip: true
+  motion_blur: false
+  defocus_blur: false
+  brightness_contrast: true
+  noise: false
+  compression_artifacts: true
+  perspective_distortion: false
+  synthetic_support_ratio: 0.0
+  notes:
+    - Use this profile for small reviewed ImageFolder make-model manifests on CPU machines.
+    - This is a seed-validation profile for exported crop datasets, not the final roadside field model.
