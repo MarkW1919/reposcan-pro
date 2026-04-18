@@ -79,6 +79,29 @@ The importer:
 - tracks previously-imported source metadata files in a small state file so reruns
   only ingest new captures
 
+## Detection Suggestion Queue
+
+Once a mobile-capture intake bundle exists, run the repo's local inference stack over
+the staged images and emit review-ready vehicle / plate candidates plus exported crops:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\suggest_capture_detections.py `
+  --dataset-manifest .\data\manifests\staged\mobile-capture-intake-20260418.yaml `
+  --output-root .\data\staged\mobile_capture_detection_review_20260418 `
+  --overwrite
+```
+
+This generates:
+
+- `metadata/detection_review.csv` with one row per suggested vehicle / plate box
+- `metadata/frame_summary.csv` with per-frame detection counts and latency
+- `metadata/inference_candidates.jsonl` with full per-frame inference payloads
+- `crops/vehicle/...` and `crops/plate/...` for fast review
+
+Use `--detection-kind vehicle` or `--detection-kind plate` to narrow the queue.
+For deterministic local smoke tests, point `--model-config` at
+`.\configs\models\local-demo-runtime.yaml`.
+
 ## 5. Promote Into Curated Training Sets
 
 - `raw/` keeps untouched drops
