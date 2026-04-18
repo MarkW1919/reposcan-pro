@@ -53,6 +53,32 @@ For capture-based manifests with asset-level records:
 
 This keeps capture sessions together and can reserve dedicated `field_eval` samples when assets are tagged for benchmark use.
 
+## Mobile Capture Intake
+
+Foreground phone captures collected through the separate mobile PWA can be
+imported into RepoScan as a pending `generic_capture` intake bundle:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\import_mobile_capture_intake.py `
+  --capture-root C:\ReposcanCaptureData\incoming `
+  --output-root .\data\staged\mobile_capture_intake_20260418 `
+  --manifest-path .\data\manifests\staged\mobile-capture-intake-20260418.yaml `
+  --review-csv .\data\staged\mobile_capture_intake_20260418\metadata\review_index.csv `
+  --dataset-name mobile-capture-intake-20260418 `
+  --state-path .\runtime\capture_import_state\mobile_capture_import_state.json `
+  --task vehicle_detection `
+  --copy-mode hardlink `
+  --overwrite-manifest
+```
+
+The importer:
+
+- preserves raw uploaded images and JSON sidecars under the staged output root
+- rewrites a pending `generic_capture` manifest from all imported assets
+- emits `metadata/review_index.csv` for review workflows
+- tracks previously-imported source metadata files in a small state file so reruns
+  only ingest new captures
+
 ## 5. Promote Into Curated Training Sets
 
 - `raw/` keeps untouched drops
