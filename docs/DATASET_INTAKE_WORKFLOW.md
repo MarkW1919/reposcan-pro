@@ -164,6 +164,33 @@ Review plate OCR rows with a dedicated local app instead of the generic box edit
 The plate reviewer filters to `detection_kind=plate`, lets you edit OCR text and box
 coordinates, and writes the corrected crop back to disk on save.
 
+When a driving session generates many near-duplicate rows, reduce the queue before
+reviewing it:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\prepare_mobile_capture_priority_review.py plate-ocr `
+  --input-csv .\data\staged\mobile_capture_detection_review_20260419\metadata\detection_review.csv `
+  --output-csv .\data\staged\mobile_capture_detection_review_20260419\metadata\plate_ocr_priority_review.csv `
+  --max-per-group 5 `
+  --overwrite
+```
+
+This groups rows by OCR text and keeps the strongest representatives first.
+
+For vehicle attributes, build a reduced priority queue from the attribute suggestion CSV:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\prepare_mobile_capture_priority_review.py vehicle-attributes `
+  --input-csv .\data\staged\mobile_capture_detection_review_20260419\metadata\vehicle_attribute_clip_suggestions.csv `
+  --output-csv .\data\staged\mobile_capture_detection_review_20260419\metadata\vehicle_attribute_priority_review.csv `
+  --max-per-group 5 `
+  --prefer-accept-suggestions `
+  --overwrite
+```
+
+This groups rows by VLM make/model suggestion or body type and keeps a small set of
+representative crops for each group.
+
 ## 5. Promote Into Curated Training Sets
 
 - `raw/` keeps untouched drops
