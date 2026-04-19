@@ -81,13 +81,17 @@ The importer:
 
 ## Detection Suggestion Queue
 
-Once a mobile-capture intake bundle exists, run the repo's local inference stack over
-the staged images and emit review-ready vehicle / plate candidates plus exported crops:
+Once a mobile-capture intake bundle exists, generate a review-ready detection queue.
+For a stronger vehicle bootstrap, use the Ultralytics COCO detector and start with
+vehicle rows only:
 
 ```powershell
 .\.venv\Scripts\python.exe .\scripts\suggest_capture_detections.py `
   --dataset-manifest .\data\manifests\staged\mobile-capture-intake-20260418.yaml `
-  --output-root .\data\staged\mobile_capture_detection_review_20260418 `
+  --output-root .\data\staged\mobile_capture_detection_review_20260419 `
+  --vehicle-detector-provider ultralytics-coco `
+  --ultralytics-model yolov8n.pt `
+  --detection-kind vehicle `
   --overwrite
 ```
 
@@ -98,9 +102,23 @@ This generates:
 - `metadata/inference_candidates.jsonl` with full per-frame inference payloads
 - `crops/vehicle/...` and `crops/plate/...` for fast review
 
-Use `--detection-kind vehicle` or `--detection-kind plate` to narrow the queue.
 For deterministic local smoke tests, point `--model-config` at
-`.\configs\models\local-demo-runtime.yaml`.
+`.\configs\models\local-demo-runtime.yaml` and leave the detector provider at the default `runtime`.
+
+Review the generated boxes with the local detection reviewer:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\launch_capture_detection_review_app.py `
+  --review-csv .\data\staged\mobile_capture_detection_review_20260419\metadata\detection_review.csv `
+  --port 7861
+```
+
+The reviewer shows the full frame with the current box, a crop preview, and lets you:
+
+- accept / reject the detection
+- edit `class_label`
+- correct `bbox_x`, `bbox_y`, `bbox_w`, and `bbox_h`
+- save the row and rewrite the crop on disk
 
 ## 5. Promote Into Curated Training Sets
 

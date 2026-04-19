@@ -6,7 +6,9 @@ import json
 import shutil
 import sys
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 
 from PIL import Image
@@ -16,8 +18,11 @@ DETECTION_REVIEW_FIELDNAMES = [
     "asset_id",
     "capture_session_id",
     "frame_relative_path",
+    "frame_source_path",
     "metadata_relative_path",
     "timestamp_utc",
+    "frame_width",
+    "frame_height",
     "detection_kind",
     "detection_index",
     "vehicle_index",
@@ -45,6 +50,9 @@ DETECTION_REVIEW_FIELDNAMES = [
     "gps_accuracy_meters",
     "heading_degrees",
     "speed_mps",
+    "vehicle_detector_provider",
+    "plate_detector_provider",
+    "attribute_provider",
     "reposcan_reviewed",
     "reposcan_accepted",
     "reviewer_notes",
@@ -93,6 +101,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--candidates-jsonl")
     parser.add_argument("--model-config", default="configs/models/local-onnx-runtime.yaml")
     parser.add_argument("--pipeline-config", default="configs/pipelines/default-edge.yaml")
+    parser.add_argument(
+        "--vehicle-detector-provider",
+        choices=("runtime", "ultralytics-coco"),
+        default="runtime",
+    )
+    parser.add_argument("--ultralytics-model", default="yolov8n.pt")
+    parser.add_argument("--ultralytics-device", default="cpu")
+    parser.add_argument("--vehicle-class-filter", default="car,motorcycle,bus,truck")
     parser.add_argument("--detection-kind", choices=("vehicle", "plate", "both"), default="both")
     parser.add_argument("--min-vehicle-confidence", type=float)
     parser.add_argument("--min-plate-confidence", type=float)
@@ -146,6 +162,20 @@ def _slugify(value: Any) -> str:
     chars = [character if character.isalnum() else "_" for character in text]
     slug = "_".join(part for part in "".join(chars).split("_") if part)
     return slug or "unknown"
+
+
+@lru_cache(maxsize=4)
+def _load_ultralytics_model(model_name: str):
+    try:
+        from ultralytics import YOLO
+    except ImportError as exc:  # pragma: no cover - exercised in live path
+        raise RuntimeError("ultralytics is required for --vehicle-detector-provider ultralytics-coco") from exc
+    return YOLO(model_name)
+
+
+def _parse_vehicle_class_filter(raw_value: str) -> set[str]:
+    values = {_slugify(item) for item in str(raw_value).split(",") if str(item).strip()}
+    return values or {"car", "motorcycle", "bus", "truck"}
 
 
 def _load_sidecar_metadata(image_path: Path) -> tuple[Path | None, dict[str, Any]]:
@@ -208,6 +238,53 @@ def _ensure_generic_capture_manifest(manifest) -> None:
         raise ValueError("capture detection suggestions require asset-level records in the source manifest")
 
 
+def _predict_ultralytics_vehicle_detections(
+    image_path: Path,
+    *,
+    model_name: str,
+    device: str,
+    min_confidence: float,
+    accepted_labels: set[str],
+):
+    from reposcan_contracts.detection import BoundingBox
+    from reposcan_contracts.inference import VehicleDetection
+
+    model = _load_ultralytics_model(model_name)
+    results = model.predict(
+        source=str(image_path),
+        conf=min_confidence,
+        device=device,
+        verbose=False,
+    )
+
+    detections: list[VehicleDetection] = []
+    for result in results:
+        boxes = getattr(result, "boxes", None)
+        if boxes is None:
+            continue
+        names = getattr(result, "names", {}) or {}
+        xyxy_values = boxes.xyxy.cpu().tolist()
+        confidence_values = boxes.conf.cpu().tolist()
+        class_values = boxes.cls.cpu().tolist()
+        for xyxy, confidence, class_id in zip(xyxy_values, confidence_values, class_values, strict=False):
+            class_label = _slugify(names.get(int(class_id), str(class_id)))
+            if class_label not in accepted_labels:
+                continue
+            x1, y1, x2, y2 = [int(round(value)) for value in xyxy]
+            x = max(0, x1)
+            y = max(0, y1)
+            w = max(1, x2 - x1)
+            h = max(1, y2 - y1)
+            detections.append(
+                VehicleDetection(
+                    bbox=BoundingBox(x=x, y=y, w=w, h=h),
+                    confidence=float(confidence),
+                    class_label=class_label,
+                )
+            )
+    return detections
+
+
 def main() -> int:
     repo_root = Path(__file__).resolve().parents[1]
     _configure_pythonpath(repo_root)
@@ -263,6 +340,7 @@ def main() -> int:
     requested_kinds = _normalize_detection_kind(args.detection_kind)
     min_vehicle_confidence = args.min_vehicle_confidence
     min_plate_confidence = args.min_plate_confidence
+    ultralytics_vehicle_labels = _parse_vehicle_class_filter(args.vehicle_class_filter)
 
     detection_rows: list[dict[str, Any]] = []
     summary_rows: list[dict[str, Any]] = []
@@ -308,8 +386,55 @@ def main() -> int:
         if preprocessing_service is not None:
             prepared_frame = preprocessing_service.prepare(frame)
 
-        candidate = inference_service.run(prepared_frame)
-        candidate_rows.append(candidate.model_dump(mode="json"))
+        started = perf_counter()
+        if args.vehicle_detector_provider == "ultralytics-coco":
+            vehicle_detections = _predict_ultralytics_vehicle_detections(
+                Path(prepared_frame.prepared_frame_path if isinstance(prepared_frame, PreparedFrame) else prepared_frame.frame_path),
+                model_name=args.ultralytics_model,
+                device=args.ultralytics_device,
+                min_confidence=min_vehicle_confidence or 0.25,
+                accepted_labels=ultralytics_vehicle_labels,
+            )
+        else:
+            vehicle_detections = inference_service.adapters.vehicle_detector.detect(prepared_frame)
+
+        plate_detections = []
+        ocr_candidates = []
+        if "plate" in requested_kinds:
+            plate_detections = inference_service.adapters.plate_detector.detect(
+                prepared_frame,
+                vehicle_detections=vehicle_detections,
+                strategy=inference_service.pipeline_config.plate_detection_strategy,
+            )
+            if min_plate_confidence is not None:
+                plate_detections = [
+                    detection for detection in plate_detections if detection.confidence >= min_plate_confidence
+                ]
+            ocr_candidates = inference_service.adapters.ocr.recognize(prepared_frame, plate_detections)
+
+        attribute_predictions = []
+        if "vehicle" in requested_kinds and inference_service.adapters.classifier is not None:
+            attribute_predictions = inference_service.adapters.classifier.predict(prepared_frame, vehicle_detections)
+
+        candidate = {
+            "frame_id": frame.frame_id,
+            "camera_id": frame.camera_id,
+            "timestamp_utc": frame.timestamp_utc,
+            "vehicle_detections": [item.model_dump(mode="json") for item in vehicle_detections],
+            "plate_detections": [item.model_dump(mode="json") for item in plate_detections],
+            "ocr_candidates": [item.model_dump(mode="json") for item in ocr_candidates],
+            "attribute_predictions": [item.model_dump(mode="json") for item in attribute_predictions],
+            "model_versions": inference_service.model_versions().model_dump(mode="json"),
+            "processing_latency_ms": max((perf_counter() - started) * 1000.0, 0.0),
+            "vehicle_detector_provider": args.vehicle_detector_provider,
+            "plate_detector_provider": "runtime" if "plate" in requested_kinds else "disabled",
+            "attribute_provider": (
+                "runtime"
+                if "vehicle" in requested_kinds and inference_service.adapters.classifier is not None
+                else "disabled"
+            ),
+        }
+        candidate_rows.append(candidate)
 
         prepared_relative_path = ""
         if isinstance(prepared_frame, PreparedFrame):
@@ -331,11 +456,11 @@ def main() -> int:
                 "timestamp_utc": timestamp_utc,
                 "frame_width": width,
                 "frame_height": height,
-                "vehicle_detection_count": len(candidate.vehicle_detections),
-                "plate_detection_count": len(candidate.plate_detections),
-                "ocr_candidate_count": len(candidate.ocr_candidates),
-                "attribute_prediction_count": len(candidate.attribute_predictions),
-                "processing_latency_ms": round(candidate.processing_latency_ms, 3),
+                "vehicle_detection_count": len(vehicle_detections),
+                "plate_detection_count": len(plate_detections),
+                "ocr_candidate_count": len(ocr_candidates),
+                "attribute_prediction_count": len(attribute_predictions),
+                "processing_latency_ms": round(float(candidate["processing_latency_ms"]), 3),
                 "preprocessing_artifact_generated": (
                     "true"
                     if preprocessing_service is not None and prepared_relative_path
@@ -346,7 +471,7 @@ def main() -> int:
         )
 
         if "vehicle" in requested_kinds:
-            for detection_index, detection in enumerate(candidate.vehicle_detections):
+            for detection_index, detection in enumerate(vehicle_detections):
                 if min_vehicle_confidence is not None and detection.confidence < min_vehicle_confidence:
                     continue
                 crop_relative_path = (
@@ -359,8 +484,8 @@ def main() -> int:
                 _crop_to_file(image, detection.bbox, crop_path)
 
                 attributes = (
-                    candidate.attribute_predictions[detection_index]
-                    if detection_index < len(candidate.attribute_predictions)
+                    attribute_predictions[detection_index]
+                    if detection_index < len(attribute_predictions)
                     else None
                 )
 
@@ -369,8 +494,11 @@ def main() -> int:
                         "asset_id": asset.asset_id,
                         "capture_session_id": asset.capture_session_id,
                         "frame_relative_path": asset.relative_path,
+                        "frame_source_path": str(image_path),
                         "metadata_relative_path": metadata_relative_path,
                         "timestamp_utc": timestamp_utc,
+                        "frame_width": width,
+                        "frame_height": height,
                         "detection_kind": "vehicle",
                         "detection_index": detection_index,
                         "vehicle_index": detection_index,
@@ -420,6 +548,13 @@ def main() -> int:
                         else "",
                         "heading_degrees": metadata_payload.get("headingDegrees", ""),
                         "speed_mps": metadata_payload.get("speedMps", ""),
+                        "vehicle_detector_provider": args.vehicle_detector_provider,
+                        "plate_detector_provider": "runtime" if "plate" in requested_kinds else "disabled",
+                        "attribute_provider": (
+                            "runtime"
+                            if inference_service.adapters.classifier is not None
+                            else "disabled"
+                        ),
                         "reposcan_reviewed": "false",
                         "reposcan_accepted": "false",
                         "reviewer_notes": "",
@@ -427,9 +562,7 @@ def main() -> int:
                 )
 
         if "plate" in requested_kinds:
-            for detection_index, detection in enumerate(candidate.plate_detections):
-                if min_plate_confidence is not None and detection.confidence < min_plate_confidence:
-                    continue
+            for detection_index, detection in enumerate(plate_detections):
                 crop_relative_path = (
                     Path("crops")
                     / "plate"
@@ -440,18 +573,21 @@ def main() -> int:
                 _crop_to_file(image, detection.bbox, crop_path)
 
                 ocr_candidate = None
-                if detection_index < len(candidate.ocr_candidates):
-                    ocr_candidate = candidate.ocr_candidates[detection_index]
-                elif len(candidate.ocr_candidates) == 1:
-                    ocr_candidate = candidate.ocr_candidates[0]
+                if detection_index < len(ocr_candidates):
+                    ocr_candidate = ocr_candidates[detection_index]
+                elif len(ocr_candidates) == 1:
+                    ocr_candidate = ocr_candidates[0]
 
                 detection_rows.append(
                     {
                         "asset_id": asset.asset_id,
                         "capture_session_id": asset.capture_session_id,
                         "frame_relative_path": asset.relative_path,
+                        "frame_source_path": str(image_path),
                         "metadata_relative_path": metadata_relative_path,
                         "timestamp_utc": timestamp_utc,
+                        "frame_width": width,
+                        "frame_height": height,
                         "detection_kind": "plate",
                         "detection_index": detection_index,
                         "vehicle_index": detection.vehicle_index if detection.vehicle_index is not None else "",
@@ -489,6 +625,13 @@ def main() -> int:
                         else "",
                         "heading_degrees": metadata_payload.get("headingDegrees", ""),
                         "speed_mps": metadata_payload.get("speedMps", ""),
+                        "vehicle_detector_provider": args.vehicle_detector_provider,
+                        "plate_detector_provider": "runtime",
+                        "attribute_provider": (
+                            "runtime"
+                            if inference_service.adapters.classifier is not None
+                            else "disabled"
+                        ),
                         "reposcan_reviewed": "false",
                         "reposcan_accepted": "false",
                         "reviewer_notes": "",
@@ -511,6 +654,7 @@ def main() -> int:
                 "candidates_jsonl": str(candidates_jsonl),
                 "frames_processed": len(summary_rows),
                 "detection_rows": len(detection_rows),
+                "vehicle_detector_provider": args.vehicle_detector_provider,
             },
             indent=2,
         )

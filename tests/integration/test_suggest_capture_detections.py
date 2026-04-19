@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import importlib.util
 import json
 import subprocess
 import sys
@@ -20,6 +21,15 @@ def _run_script(*args: str) -> subprocess.CompletedProcess[str]:
         text=True,
         check=False,
     )
+
+
+def _load_module():
+    module_path = REPO_ROOT / "scripts" / "suggest_capture_detections.py"
+    spec = importlib.util.spec_from_file_location("suggest_capture_detections", module_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _write_image(path: Path, *, color: tuple[int, int, int]) -> None:
@@ -145,3 +155,46 @@ def test_suggest_capture_detections_respects_detection_kind_filter(tmp_path):
     assert len(review_rows) == 1
     assert review_rows[0]["detection_kind"] == "vehicle"
     assert review_rows[0]["suggested_make"] != ""
+
+
+def test_predict_ultralytics_vehicle_detections_filters_to_vehicle_labels(monkeypatch, tmp_path):
+    module = _load_module()
+
+    class _FakeTensor:
+        def __init__(self, values):
+            self._values = values
+
+        def cpu(self):
+            return self
+
+        def tolist(self):
+            return self._values
+
+    class _FakeBoxes:
+        xyxy = _FakeTensor([[10, 20, 110, 120], [5, 6, 15, 16]])
+        conf = _FakeTensor([0.91, 0.88])
+        cls = _FakeTensor([2, 0])
+
+    class _FakeResult:
+        boxes = _FakeBoxes()
+        names = {0: "person", 2: "car"}
+
+    class _FakeModel:
+        def predict(self, **kwargs):
+            return [_FakeResult()]
+
+    monkeypatch.setattr(module, "_load_ultralytics_model", lambda model_name: _FakeModel())
+    image_path = tmp_path / "frame.jpg"
+    _write_image(image_path, color=(10, 10, 10))
+
+    detections = module._predict_ultralytics_vehicle_detections(
+        image_path,
+        model_name="fake.pt",
+        device="cpu",
+        min_confidence=0.1,
+        accepted_labels={"car", "truck"},
+    )
+
+    assert len(detections) == 1
+    assert detections[0].class_label == "car"
+    assert detections[0].bbox.w == 100
