@@ -9,9 +9,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-import yaml
-
-
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
 DEFAULT_CAPTURE_ROOT = Path(r"C:\ReposcanCaptureData\incoming")
 DEFAULT_STATE_PATH = Path("runtime/capture_import_state/mobile_capture_import_state.json")
@@ -79,7 +76,9 @@ def _slugify(value: Any) -> str:
 
 def _write_yaml(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    # The config loader accepts JSON via yaml.safe_load, and JSON avoids edge
+    # cases with unquoted scalar strings in large generated manifests.
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 def _write_json(path: Path, payload: Any) -> None:
@@ -404,4 +403,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
