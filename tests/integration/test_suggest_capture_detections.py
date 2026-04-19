@@ -159,6 +159,7 @@ def test_suggest_capture_detections_respects_detection_kind_filter(tmp_path):
 
 def test_predict_ultralytics_vehicle_detections_filters_to_vehicle_labels(monkeypatch, tmp_path):
     module = _load_module()
+    predict_calls: list[dict[str, object]] = []
 
     class _FakeTensor:
         def __init__(self, values):
@@ -181,6 +182,7 @@ def test_predict_ultralytics_vehicle_detections_filters_to_vehicle_labels(monkey
 
     class _FakeModel:
         def predict(self, **kwargs):
+            predict_calls.append(dict(kwargs))
             return [_FakeResult()]
 
     monkeypatch.setattr(module, "_load_ultralytics_model", lambda model_name: _FakeModel())
@@ -193,8 +195,14 @@ def test_predict_ultralytics_vehicle_detections_filters_to_vehicle_labels(monkey
         device="cpu",
         min_confidence=0.1,
         accepted_labels={"car", "truck"},
+        imgsz=960,
+        iou=0.55,
+        max_det=12,
     )
 
     assert len(detections) == 1
     assert detections[0].class_label == "car"
     assert detections[0].bbox.w == 100
+    assert predict_calls[0]["imgsz"] == 960
+    assert predict_calls[0]["iou"] == 0.55
+    assert predict_calls[0]["max_det"] == 12

@@ -82,16 +82,18 @@ The importer:
 ## Detection Suggestion Queue
 
 Once a mobile-capture intake bundle exists, generate a review-ready detection queue.
-For a stronger vehicle bootstrap, use the Ultralytics COCO detector and start with
-vehicle rows only:
+For a stronger vehicle bootstrap, use the Ultralytics COCO detector. For quick local
+passes `yolov8n.pt` is fine; for better field recall use `yolov8s.pt` with a larger
+inference size:
 
 ```powershell
 .\.venv\Scripts\python.exe .\scripts\suggest_capture_detections.py `
   --dataset-manifest .\data\manifests\staged\mobile-capture-intake-20260418.yaml `
   --output-root .\data\staged\mobile_capture_detection_review_20260419 `
   --vehicle-detector-provider ultralytics-coco `
-  --ultralytics-model yolov8n.pt `
-  --detection-kind vehicle `
+  --ultralytics-model yolov8s.pt `
+  --ultralytics-imgsz 960 `
+  --detection-kind both `
   --overwrite
 ```
 
@@ -119,6 +121,48 @@ The reviewer shows the full frame with the current box, a crop preview, and lets
 - edit `class_label`
 - correct `bbox_x`, `bbox_y`, `bbox_w`, and `bbox_h`
 - save the row and rewrite the crop on disk
+
+## Vehicle Attribute Bootstrap
+
+Convert accepted or pending vehicle detections into the crop-review format used by the
+vehicle attribute labelers:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\prepare_mobile_capture_attribute_review.py `
+  --detection-review-csv .\data\staged\mobile_capture_detection_review_20260419\metadata\detection_review.csv `
+  --output-csv .\data\staged\mobile_capture_detection_review_20260419\metadata\vehicle_attribute_review.csv `
+  --overwrite
+```
+
+Then run a pretrained attribute suggester over those crops. Local fallback:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\label_vehicle_attribute_crops_with_vlm.py label-crops `
+  --review-csv .\data\staged\mobile_capture_detection_review_20260419\metadata\vehicle_attribute_review.csv `
+  --output-csv .\data\staged\mobile_capture_detection_review_20260419\metadata\vehicle_attribute_clip_suggestions.csv `
+  --provider clip_oklahoma `
+  --overwrite
+```
+
+Stronger pretrained options when available:
+
+- `--provider qwen2_5_vl` for local / Colab GPU batch labeling
+- `--provider openai` when an `OPENAI_API_KEY` is available locally
+
+Both should still be treated as suggestion generators, not ground truth.
+
+## Plate OCR Review
+
+Review plate OCR rows with a dedicated local app instead of the generic box editor:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\launch_plate_ocr_review_app.py `
+  --review-csv .\data\staged\mobile_capture_detection_review_20260419\metadata\detection_review.csv `
+  --port 7862
+```
+
+The plate reviewer filters to `detection_kind=plate`, lets you edit OCR text and box
+coordinates, and writes the corrected crop back to disk on save.
 
 ## 5. Promote Into Curated Training Sets
 

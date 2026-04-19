@@ -108,6 +108,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--ultralytics-model", default="yolov8n.pt")
     parser.add_argument("--ultralytics-device", default="cpu")
+    parser.add_argument("--ultralytics-imgsz", type=int, help="Optional Ultralytics inference image size.")
+    parser.add_argument("--ultralytics-iou", type=float, help="Optional Ultralytics IoU threshold.")
+    parser.add_argument("--ultralytics-max-det", type=int, help="Optional Ultralytics max detections per frame.")
     parser.add_argument("--vehicle-class-filter", default="car,motorcycle,bus,truck")
     parser.add_argument("--detection-kind", choices=("vehicle", "plate", "both"), default="both")
     parser.add_argument("--min-vehicle-confidence", type=float)
@@ -245,17 +248,27 @@ def _predict_ultralytics_vehicle_detections(
     device: str,
     min_confidence: float,
     accepted_labels: set[str],
+    imgsz: int | None = None,
+    iou: float | None = None,
+    max_det: int | None = None,
 ):
     from reposcan_contracts.detection import BoundingBox
     from reposcan_contracts.inference import VehicleDetection
 
     model = _load_ultralytics_model(model_name)
-    results = model.predict(
-        source=str(image_path),
-        conf=min_confidence,
-        device=device,
-        verbose=False,
-    )
+    predict_kwargs: dict[str, Any] = {
+        "source": str(image_path),
+        "conf": min_confidence,
+        "device": device,
+        "verbose": False,
+    }
+    if imgsz is not None:
+        predict_kwargs["imgsz"] = imgsz
+    if iou is not None:
+        predict_kwargs["iou"] = iou
+    if max_det is not None:
+        predict_kwargs["max_det"] = max_det
+    results = model.predict(**predict_kwargs)
 
     detections: list[VehicleDetection] = []
     for result in results:
@@ -394,6 +407,9 @@ def main() -> int:
                 device=args.ultralytics_device,
                 min_confidence=min_vehicle_confidence or 0.25,
                 accepted_labels=ultralytics_vehicle_labels,
+                imgsz=args.ultralytics_imgsz,
+                iou=args.ultralytics_iou,
+                max_det=args.ultralytics_max_det,
             )
         else:
             vehicle_detections = inference_service.adapters.vehicle_detector.detect(prepared_frame)
