@@ -84,6 +84,16 @@ def _count_metadata_files(capture_root: Path) -> int:
     return _capture_fingerprint(capture_root)["count"]
 
 
+def _status_fingerprint(status: dict[str, Any]) -> dict[str, int] | None:
+    try:
+        return {
+            "count": int(status["capture_metadata_count"]),
+            "latest_mtime_ns": int(status["capture_latest_mtime_ns"]),
+        }
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 def _run_command(
     command: list[str],
     *,
@@ -348,7 +358,7 @@ def main() -> int:
                 log_path=log_path,
                 process_existing=process_existing,
             )
-            previous_fingerprint = _capture_fingerprint(capture_root)
+            previous_fingerprint = _status_fingerprint(status) or _capture_fingerprint(capture_root)
             if status.get("status") == "failed" and args.retry_failed:
                 previous_fingerprint = {"count": -1, "latest_mtime_ns": -1}
             print(json.dumps(status, indent=2), flush=True)
