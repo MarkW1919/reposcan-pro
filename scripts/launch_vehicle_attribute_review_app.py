@@ -142,7 +142,7 @@ def build_suggestions_markdown(row: dict[str, str]) -> str:
     onnx_label = _clean_text(row.get("suggested_make_model_top1"))
     onnx_confidence = _coerce_float(row.get("suggested_make_model_top1_confidence"))
     if onnx_label:
-        lines.append(f"- ONNX top-1: `{onnx_label}` ({onnx_confidence:.2f})")
+        lines.append(f"- Low-trust runtime make/model: `{onnx_label}` ({onnx_confidence:.2f})")
 
     vlm_provider = _clean_text(row.get("suggested_vlm_provider"))
     vlm_make = _clean_text(row.get("suggested_vlm_vehicle_make"))
@@ -192,13 +192,6 @@ def build_best_suggestion_prefill(row: dict[str, str]) -> dict[str, str]:
         updated["reposcan_class_label"] = _slugify(f"{vlm_make}_{vlm_model}")
         updated["reposcan_accepted"] = "true"
         source = _clean_text(row.get("suggested_vlm_provider")) or "vlm"
-    elif onnx_confidence >= 0.75 and onnx_make and onnx_model:
-        updated["reposcan_vehicle_make"] = onnx_make
-        updated["reposcan_vehicle_model"] = onnx_model
-        updated["reposcan_class_label"] = _slugify(f"{onnx_make}_{onnx_model}")
-        updated["reposcan_accepted"] = "true"
-        source = "onnx"
-
     if color and color_confidence >= 0.70:
         updated["reposcan_vehicle_color"] = color
 

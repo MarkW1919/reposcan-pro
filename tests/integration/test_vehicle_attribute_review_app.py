@@ -47,6 +47,29 @@ def test_build_best_suggestion_prefill_prefers_vlm_and_color():
     assert "prefilled_from:clip_oklahoma" in prefill["reviewer_notes"]
 
 
+def test_build_best_suggestion_prefill_does_not_accept_low_trust_onnx():
+    module = _load_review_module()
+    row = {
+        "reposcan_accepted": "false",
+        "reposcan_reviewed": "false",
+        "reposcan_oklahoma_tags": "",
+        "reviewer_notes": "",
+        "suggested_make_model_top1_confidence": "0.99",
+        "suggested_vehicle_make": "Toyota",
+        "suggested_vehicle_model": "Camry",
+        "suggested_vehicle_color": "white",
+        "suggested_vehicle_color_confidence": "0.90",
+    }
+
+    prefill = module.build_best_suggestion_prefill(row)
+
+    assert prefill["reposcan_accepted"] == "false"
+    assert prefill["reposcan_vehicle_make"] == ""
+    assert prefill["reposcan_vehicle_model"] == ""
+    assert prefill["reposcan_class_label"] == ""
+    assert prefill["reposcan_vehicle_color"] == "white"
+
+
 def test_apply_form_to_row_normalizes_fields():
     module = _load_review_module()
     row = {"crop_id": "crop_1"}

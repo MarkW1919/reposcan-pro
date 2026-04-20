@@ -131,10 +131,32 @@ vehicle attribute labelers:
 .\.venv\Scripts\python.exe .\scripts\prepare_mobile_capture_attribute_review.py `
   --detection-review-csv .\data\staged\mobile_capture_detection_review_20260419\metadata\detection_review.csv `
   --output-csv .\data\staged\mobile_capture_detection_review_20260419\metadata\vehicle_attribute_review.csv `
+  --drop-runtime-attribute-suggestions `
   --overwrite
 ```
 
-Then run a pretrained attribute suggester over those crops. Local fallback:
+Use `--drop-runtime-attribute-suggestions` for mobile field captures unless the
+runtime classifier has already been validated on similar captures. The current
+local ONNX/runtime attribute fixture is useful for plumbing only and should not
+drive make/model review decisions.
+
+Then run a pretrained attribute suggester over those crops. Highest-accuracy
+OpenAI path:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\label_vehicle_attribute_crops_with_vlm.py label-crops `
+  --review-csv .\data\staged\mobile_capture_detection_review_20260419\metadata\vehicle_attribute_review.csv `
+  --output-csv .\data\staged\mobile_capture_detection_review_20260419\metadata\vehicle_attribute_openai_suggestions.csv `
+  --provider openai `
+  --model gpt-5.4 `
+  --overwrite
+```
+
+Use `gpt-5.4` when accuracy matters more than labeling cost. Use
+`gpt-5.4-mini` for lower-cost bulk triage, then reserve `gpt-5.4` for
+ambiguous crops or final pre-review passes.
+
+Local fallback:
 
 ```powershell
 .\.venv\Scripts\python.exe .\scripts\label_vehicle_attribute_crops_with_vlm.py label-crops `
@@ -147,7 +169,7 @@ Then run a pretrained attribute suggester over those crops. Local fallback:
 Stronger pretrained options when available:
 
 - `--provider qwen2_5_vl` for local / Colab GPU batch labeling
-- `--provider openai` when an `OPENAI_API_KEY` is available locally
+- `--provider openai --model gpt-5.4` when an `OPENAI_API_KEY` with quota is available locally
 
 Both should still be treated as suggestion generators, not ground truth.
 

@@ -13,7 +13,7 @@ from typing import Any, NamedTuple, Protocol
 
 
 DEFAULT_QWEN_MODEL = "Qwen/Qwen2.5-VL-7B-Instruct"
-DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
+DEFAULT_OPENAI_MODEL = "gpt-5.4"
 DEFAULT_CLIP_MODEL = "openai/clip-vit-base-patch32"
 
 COLOR_LABELS = {"black", "white", "silver", "gray", "red", "blue", "green", "yellow", "orange", "brown", "other"}

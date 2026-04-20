@@ -53,6 +53,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--accepted-only", action="store_true")
     parser.add_argument("--skip-reviewed", action="store_true")
     parser.add_argument("--priority-reason", default="mobile_capture_vehicle_detection")
+    parser.add_argument(
+        "--drop-runtime-attribute-suggestions",
+        action="store_true",
+        help="Leave runtime make/model/color/year suggestion columns blank when the upstream classifier is untrusted.",
+    )
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
 
@@ -137,6 +142,7 @@ def build_attribute_review_rows(
     accepted_only: bool,
     skip_reviewed: bool,
     priority_reason: str,
+    drop_runtime_attribute_suggestions: bool = False,
 ) -> list[dict[str, str]]:
     output_root = _output_root_from_detection_csv(detection_review_csv)
     rows: list[dict[str, str]] = []
@@ -155,7 +161,13 @@ def build_attribute_review_rows(
         crop_path = output_root / Path(crop_relative_path)
         detection_index = _clean_text(detection_row.get("detection_index")) or "0"
         asset_id = _clean_text(detection_row.get("asset_id")) or "unknown_asset"
-        top_label, top_confidence = _make_model_top1(detection_row)
+        top_label, top_confidence = ("", "") if drop_runtime_attribute_suggestions else _make_model_top1(detection_row)
+        color = "" if drop_runtime_attribute_suggestions else _slugify(detection_row.get("suggested_color"))
+        color_confidence = "" if drop_runtime_attribute_suggestions else _clean_text(detection_row.get("suggested_color_confidence"))
+        make = "" if drop_runtime_attribute_suggestions else _slugify(detection_row.get("suggested_make"))
+        model = "" if drop_runtime_attribute_suggestions else _slugify(detection_row.get("suggested_model"))
+        year = "" if drop_runtime_attribute_suggestions else _clean_text(detection_row.get("suggested_year"))
+        year_confidence = "" if drop_runtime_attribute_suggestions else _clean_text(detection_row.get("suggested_year_confidence"))
 
         rows.append(
             {
@@ -172,14 +184,14 @@ def build_attribute_review_rows(
                 "bbox_y": _clean_text(detection_row.get("bbox_y")),
                 "bbox_w": _clean_text(detection_row.get("bbox_w")),
                 "bbox_h": _clean_text(detection_row.get("bbox_h")),
-                "suggested_vehicle_color": _slugify(detection_row.get("suggested_color")),
-                "suggested_vehicle_color_confidence": _clean_text(detection_row.get("suggested_color_confidence")),
-                "suggested_vehicle_make": _slugify(detection_row.get("suggested_make")),
-                "suggested_vehicle_model": _slugify(detection_row.get("suggested_model")),
+                "suggested_vehicle_color": color,
+                "suggested_vehicle_color_confidence": color_confidence,
+                "suggested_vehicle_make": make,
+                "suggested_vehicle_model": model,
                 "suggested_make_model_top1": top_label,
                 "suggested_make_model_top1_confidence": top_confidence,
-                "suggested_vehicle_year": _clean_text(detection_row.get("suggested_year")),
-                "suggested_vehicle_year_confidence": _clean_text(detection_row.get("suggested_year_confidence")),
+                "suggested_vehicle_year": year,
+                "suggested_vehicle_year_confidence": year_confidence,
                 "vehicle_detector_provider": _clean_text(detection_row.get("vehicle_detector_provider")),
                 "attribute_provider": _clean_text(detection_row.get("attribute_provider")),
                 "reposcan_accepted": "false",
@@ -211,6 +223,7 @@ def main() -> int:
         accepted_only=args.accepted_only,
         skip_reviewed=args.skip_reviewed,
         priority_reason=args.priority_reason,
+        drop_runtime_attribute_suggestions=args.drop_runtime_attribute_suggestions,
     )
     _write_csv(output_csv, rows)
     print(

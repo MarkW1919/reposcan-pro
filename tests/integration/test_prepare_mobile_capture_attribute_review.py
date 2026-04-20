@@ -67,6 +67,7 @@ def test_build_attribute_review_rows_filters_plate_rows_and_maps_vehicle_fields(
         accepted_only=False,
         skip_reviewed=False,
         priority_reason="mobile_capture_vehicle_detection",
+        drop_runtime_attribute_suggestions=False,
     )
 
     assert len(rows) == 1
@@ -78,6 +79,44 @@ def test_build_attribute_review_rows_filters_plate_rows_and_maps_vehicle_fields(
     assert row["suggested_vehicle_model"] == "f_150"
     assert row["suggested_make_model_top1"] == "ford_f_150"
     assert row["suggested_make_model_top1_confidence"] == "0.7500"
+
+
+def test_build_attribute_review_rows_can_drop_runtime_attribute_suggestions(tmp_path):
+    module = _load_module()
+    detection_review_csv = tmp_path / "review" / "metadata" / "detection_review.csv"
+    detection_rows = [
+        {
+            "asset_id": "asset_001",
+            "detection_kind": "vehicle",
+            "detection_index": "0",
+            "crop_relative_path": "crops/vehicle/session_a/asset_001_vehicle_0.jpg",
+            "class_label": "truck",
+            "confidence": "0.91",
+            "suggested_color": "white",
+            "suggested_make": "Toyota",
+            "suggested_model": "Camry",
+            "suggested_make_confidence": "0.99",
+            "suggested_model_confidence": "0.99",
+            "suggested_year": "2018",
+            "suggested_year_confidence": "0.99",
+        }
+    ]
+
+    rows = module.build_attribute_review_rows(
+        detection_rows,
+        detection_review_csv=detection_review_csv,
+        min_confidence=None,
+        accepted_only=False,
+        skip_reviewed=False,
+        priority_reason="mobile_capture_vehicle_detection",
+        drop_runtime_attribute_suggestions=True,
+    )
+
+    assert rows[0]["suggested_vehicle_color"] == ""
+    assert rows[0]["suggested_vehicle_make"] == ""
+    assert rows[0]["suggested_vehicle_model"] == ""
+    assert rows[0]["suggested_make_model_top1"] == ""
+    assert rows[0]["suggested_vehicle_year"] == ""
 
 
 def test_main_writes_output_csv(tmp_path, monkeypatch):
