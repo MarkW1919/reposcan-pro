@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import time
@@ -43,7 +44,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--interval-seconds", type=int, default=180)
     parser.add_argument("--settle-seconds", type=int, default=20)
     parser.add_argument("--run-once", action="store_true")
-    parser.add_argument("--force", action="store_true", help="Run even when the upload count has not changed.")
+    parser.add_argument("--force", action="store_true", help="Run import and downstream processing even when uploads have not changed.")
+    parser.add_argument(
+        "--no-retry-failed",
+        action="store_false",
+        dest="retry_failed",
+        help="Disable automatic retry of incomplete or failed downstream processing after import.",
+    )
     parser.add_argument("--skip-detection", action="store_true", help="Only run import; useful for quick smoke tests.")
     parser.add_argument("--log-dir", default="runtime/mobile_capture_pipeline_watcher")
     return parser.parse_args()
@@ -56,14 +63,25 @@ def _resolve(repo_root: Path, raw_path: str) -> Path:
     return (repo_root / candidate).resolve()
 
 
-def _count_metadata_files(capture_root: Path) -> int:
+def _capture_fingerprint(capture_root: Path) -> dict[str, int]:
     if not capture_root.exists():
-        return 0
-    return sum(
-        1
-        for path in capture_root.rglob("*.json")
-        if path.is_file() and path.name.lower() != "captures.jsonl"
-    )
+        return {"count": 0, "latest_mtime_ns": 0}
+
+    count = 0
+    latest_mtime_ns = 0
+    for path in capture_root.rglob("*.json"):
+        if not path.is_file() or path.name.lower() == "captures.jsonl":
+            continue
+        count += 1
+        try:
+            latest_mtime_ns = max(latest_mtime_ns, path.stat().st_mtime_ns)
+        except OSError:
+            continue
+    return {"count": count, "latest_mtime_ns": latest_mtime_ns}
+
+
+def _count_metadata_files(capture_root: Path) -> int:
+    return _capture_fingerprint(capture_root)["count"]
 
 
 def _run_command(
@@ -110,6 +128,40 @@ def _parse_imported_now(output: str) -> int:
 def _write_status(status_path: Path, payload: dict[str, Any]) -> None:
     status_path.parent.mkdir(parents=True, exist_ok=True)
     status_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _read_status(status_path: Path) -> dict[str, Any]:
+    if not status_path.exists():
+        return {}
+    try:
+        payload = json.loads(status_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _processing_outputs_missing(args: argparse.Namespace, repo_root: Path) -> bool:
+    manifest_path = _resolve(repo_root, args.manifest_path)
+    detection_output_root = _resolve(repo_root, args.detection_output_root)
+    detection_csv = detection_output_root / "metadata" / "detection_review.csv"
+    vehicle_priority_csv = detection_output_root / "metadata" / "vehicle_attribute_priority_review_no_runtime_attrs.csv"
+    plate_priority_csv = detection_output_root / "metadata" / "plate_ocr_priority_review.csv"
+    return manifest_path.exists() and not (
+        detection_csv.exists() and vehicle_priority_csv.exists() and plate_priority_csv.exists()
+    )
+
+
+def _should_process_existing(args: argparse.Namespace, repo_root: Path, status_path: Path) -> bool:
+    if args.force:
+        return True
+    if _processing_outputs_missing(args, repo_root):
+        return True
+    if not args.retry_failed:
+        return False
+    previous_status = _read_status(status_path)
+    if previous_status.get("status") in {"failed", "running"}:
+        return previous_status.get("failed_stage") != "import"
+    return False
 
 
 def _pipeline_commands(args: argparse.Namespace, repo_root: Path) -> dict[str, list[str]]:
@@ -201,14 +253,23 @@ def _pipeline_commands(args: argparse.Namespace, repo_root: Path) -> dict[str, l
     }
 
 
-def run_pipeline_once(args: argparse.Namespace, *, repo_root: Path, status_path: Path, log_path: Path) -> dict[str, Any]:
+def run_pipeline_once(
+    args: argparse.Namespace,
+    *,
+    repo_root: Path,
+    status_path: Path,
+    log_path: Path,
+    process_existing: bool = False,
+) -> dict[str, Any]:
     commands = _pipeline_commands(args, repo_root)
     started = _utc_now()
-    capture_count = _count_metadata_files(Path(args.capture_root))
+    capture_fingerprint = _capture_fingerprint(Path(args.capture_root))
     status: dict[str, Any] = {
         "started_utc": started,
         "status": "running",
-        "capture_metadata_count": capture_count,
+        "capture_metadata_count": capture_fingerprint["count"],
+        "capture_latest_mtime_ns": capture_fingerprint["latest_mtime_ns"],
+        "process_existing": process_existing,
         "commands": {},
     }
     _write_status(status_path, status)
@@ -221,7 +282,7 @@ def run_pipeline_once(args: argparse.Namespace, *, repo_root: Path, status_path:
         _write_status(status_path, status)
         return status
 
-    if args.skip_detection or imported_now == 0:
+    if args.skip_detection or (imported_now == 0 and not process_existing):
         status.update({"status": "idle" if imported_now == 0 else "imported", "completed_utc": _utc_now()})
         _write_status(status_path, status)
         return status
@@ -254,17 +315,19 @@ def main() -> int:
     log_path = log_dir / "pipeline.log"
     capture_root = Path(args.capture_root)
 
-    previous_count = _count_metadata_files(capture_root)
+    previous_fingerprint = _capture_fingerprint(capture_root)
     first_loop = True
     print(
         json.dumps(
             {
                 "status": "watching",
                 "capture_root": str(capture_root.resolve()),
-                "initial_metadata_count": previous_count,
+                "initial_metadata_count": previous_fingerprint["count"],
+                "initial_latest_mtime_ns": previous_fingerprint["latest_mtime_ns"],
                 "interval_seconds": args.interval_seconds,
                 "status_path": str(status_path),
                 "log_path": str(log_path),
+                "pid": os.getpid(),
             },
             indent=2,
         ),
@@ -272,13 +335,22 @@ def main() -> int:
     )
 
     while True:
-        current_count = _count_metadata_files(capture_root)
-        should_run = args.force if first_loop else current_count != previous_count or args.force
+        current_fingerprint = _capture_fingerprint(capture_root)
+        process_existing = _should_process_existing(args, repo_root, status_path) if first_loop or args.force else False
+        should_run = first_loop or process_existing or current_fingerprint != previous_fingerprint or args.force
         if should_run:
             if args.settle_seconds > 0:
                 time.sleep(args.settle_seconds)
-            status = run_pipeline_once(args, repo_root=repo_root, status_path=status_path, log_path=log_path)
-            previous_count = _count_metadata_files(capture_root)
+            status = run_pipeline_once(
+                args,
+                repo_root=repo_root,
+                status_path=status_path,
+                log_path=log_path,
+                process_existing=process_existing,
+            )
+            previous_fingerprint = _capture_fingerprint(capture_root)
+            if status.get("status") == "failed" and args.retry_failed:
+                previous_fingerprint = {"count": -1, "latest_mtime_ns": -1}
             print(json.dumps(status, indent=2), flush=True)
 
         if args.run_once:
