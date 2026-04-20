@@ -159,7 +159,7 @@ def _should_process_existing(args: argparse.Namespace, repo_root: Path, status_p
     if not args.retry_failed:
         return False
     previous_status = _read_status(status_path)
-    if previous_status.get("status") in {"failed", "running"}:
+    if previous_status.get("status") in {"failed", "running", "imported"}:
         return previous_status.get("failed_stage") != "import"
     return False
 
@@ -336,7 +336,7 @@ def main() -> int:
 
     while True:
         current_fingerprint = _capture_fingerprint(capture_root)
-        process_existing = _should_process_existing(args, repo_root, status_path) if first_loop or args.force else False
+        process_existing = _should_process_existing(args, repo_root, status_path)
         should_run = first_loop or process_existing or current_fingerprint != previous_fingerprint or args.force
         if should_run:
             if args.settle_seconds > 0:
