@@ -241,7 +241,7 @@ def apply_form_to_row(
 ) -> dict[str, str]:
     updated = dict(row)
     updated["reposcan_accepted"] = str(bool(accepted)).lower()
-    updated["reposcan_reviewed"] = str(bool(reviewed)).lower()
+    updated["reposcan_reviewed"] = str(bool(reviewed or accepted)).lower()
     updated["reposcan_class_label"] = _slugify(class_label)
     updated["reposcan_vehicle_make"] = _slugify(vehicle_make)
     updated["reposcan_vehicle_model"] = _slugify(vehicle_model)

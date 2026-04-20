@@ -65,7 +65,7 @@ def test_apply_form_to_row_normalizes_fields():
     )
 
     assert updated["reposcan_accepted"] == "true"
-    assert updated["reposcan_reviewed"] == "false"
+    assert updated["reposcan_reviewed"] == "true"
     assert updated["reposcan_class_label"] == "ford_f_series"
     assert updated["reposcan_vehicle_make"] == "ford"
     assert updated["reposcan_vehicle_model"] == "f_series"
