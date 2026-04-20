@@ -8,6 +8,7 @@ RepoScan Pro training is task-specific. Do not train the entire pipeline as a mo
 - train vehicle detection, plate detection, OCR, and classification as separate workstreams
 - design experiments around operational metrics, not vanity metrics
 - keep training outputs and checkpoints outside git
+- follow the pretrained stack and continual-learning direction in [Core Model Strategy](CORE_MODEL_STRATEGY.md)
 
 ## Required Workstreams
 
@@ -72,6 +73,7 @@ Avoid:
 - [Annotation Standards](ANNOTATION_STANDARDS.md)
 - [Dataset Intake Workflow](DATASET_INTAKE_WORKFLOW.md)
 - [Detection Dataset Curation](DETECTION_DATASET_CURATION.md)
+- [Core Model Strategy](CORE_MODEL_STRATEGY.md)
 - [Training Workflows](TRAINING_WORKFLOWS.md)
 - [Model Releases](MODEL_RELEASES.md)
 - [Models](MODELS.md)
