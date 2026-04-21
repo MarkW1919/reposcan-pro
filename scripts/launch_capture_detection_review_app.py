@@ -117,6 +117,7 @@ def build_metadata_markdown(row: dict[str, str]) -> str:
         f"**Confidence** `{_clean_text(row.get('confidence')) or 'n/a'}`  \n"
         f"**Providers** vehicle=`{_clean_text(row.get('vehicle_detector_provider')) or 'unknown'}` "
         f"plate=`{_clean_text(row.get('plate_detector_provider')) or 'unknown'}` "
+        f"ocr=`{_clean_text(row.get('ocr_provider')) or _clean_text(row.get('plate_detector_provider')) or 'unknown'}` "
         f"attr=`{_clean_text(row.get('attribute_provider')) or 'unknown'}`"
     )
 

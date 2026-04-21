@@ -163,7 +163,7 @@ columns, and leaves the authoritative RepoScan review fields untouched:
   --review-csv .\data\staged\review_templates\open_images_vehicle_attribute_crop_suggestions_20260415.csv `
   --output-csv .\data\staged\review_templates\open_images_vehicle_attribute_crop_vlm_suggestions_20260415.csv `
   --provider openai `
-  --model gpt-5.4 `
+  --model gpt-4o `
   --overwrite
 ```
 

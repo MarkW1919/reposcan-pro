@@ -3,8 +3,10 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import statistics
 import shutil
 import sys
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
@@ -52,6 +54,7 @@ DETECTION_REVIEW_FIELDNAMES = [
     "speed_mps",
     "vehicle_detector_provider",
     "plate_detector_provider",
+    "ocr_provider",
     "attribute_provider",
     "reposcan_reviewed",
     "reposcan_accepted",
@@ -106,12 +109,22 @@ def parse_args() -> argparse.Namespace:
         choices=("runtime", "ultralytics-coco"),
         default="runtime",
     )
+    parser.add_argument(
+        "--plate-ocr-provider",
+        choices=("runtime", "fast-alpr"),
+        default="runtime",
+        help="Provider for plate detection plus OCR. Use fast-alpr for the local prebuilt ALPR stack.",
+    )
     parser.add_argument("--ultralytics-model", default="yolov8n.pt")
     parser.add_argument("--ultralytics-device", default="cpu")
     parser.add_argument("--ultralytics-imgsz", type=int, help="Optional Ultralytics inference image size.")
     parser.add_argument("--ultralytics-iou", type=float, help="Optional Ultralytics IoU threshold.")
     parser.add_argument("--ultralytics-max-det", type=int, help="Optional Ultralytics max detections per frame.")
     parser.add_argument("--vehicle-class-filter", default="car,motorcycle,bus,truck")
+    parser.add_argument("--fast-alpr-detector-model", default="yolo-v9-t-384-license-plate-end2end")
+    parser.add_argument("--fast-alpr-ocr-model", default="cct-xs-v2-global-model")
+    parser.add_argument("--fast-alpr-detector-confidence", type=float, default=0.30)
+    parser.add_argument("--fast-alpr-ocr-device", choices=("auto", "cpu", "cuda"), default="auto")
     parser.add_argument("--detection-kind", choices=("vehicle", "plate", "both"), default="both")
     parser.add_argument("--min-vehicle-confidence", type=float)
     parser.add_argument("--min-plate-confidence", type=float)
@@ -179,6 +192,28 @@ def _load_ultralytics_model(model_name: str):
 def _parse_vehicle_class_filter(raw_value: str) -> set[str]:
     values = {_slugify(item) for item in str(raw_value).split(",") if str(item).strip()}
     return values or {"car", "motorcycle", "bus", "truck"}
+
+
+def _plate_text(value: Any) -> str:
+    text = str(value or "").strip().upper()
+    return "".join(character for character in text if character.isalnum())
+
+
+def _mean_confidence(value: Any) -> float:
+    if isinstance(value, Iterable) and not isinstance(value, (str, bytes, bytearray)):
+        numeric_values = []
+        for item in value:
+            try:
+                numeric_values.append(float(item))
+            except (TypeError, ValueError):
+                continue
+        if not numeric_values:
+            return 0.0
+        return max(0.0, min(float(statistics.mean(numeric_values)), 1.0))
+    try:
+        return max(0.0, min(float(value), 1.0))
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _load_sidecar_metadata(image_path: Path) -> tuple[Path | None, dict[str, Any]]:
@@ -296,6 +331,116 @@ def _predict_ultralytics_vehicle_detections(
                 )
             )
     return detections
+
+
+@lru_cache(maxsize=4)
+def _load_fast_alpr(
+    detector_model: str,
+    ocr_model: str,
+    detector_confidence: float,
+    ocr_device: str,
+):
+    try:
+        from fast_alpr import ALPR
+    except ImportError as exc:  # pragma: no cover - exercised in live path
+        raise RuntimeError(
+            "fast-alpr is required for --plate-ocr-provider fast-alpr. "
+            'Install it with: python -m pip install -e ".[prebuilt-alpr]"'
+        ) from exc
+    return ALPR(
+        detector_model=detector_model,
+        detector_conf_thresh=detector_confidence,
+        ocr_model=ocr_model,
+        ocr_device=ocr_device,
+    )
+
+
+def _bbox_from_fast_alpr(raw_bbox: Any, *, frame_width: int, frame_height: int):
+    from reposcan_contracts.detection import BoundingBox
+
+    if hasattr(raw_bbox, "to_xywh"):
+        x, y, w, h = raw_bbox.to_xywh()
+    else:
+        x1 = int(round(float(getattr(raw_bbox, "x1"))))
+        y1 = int(round(float(getattr(raw_bbox, "y1"))))
+        x2 = int(round(float(getattr(raw_bbox, "x2"))))
+        y2 = int(round(float(getattr(raw_bbox, "y2"))))
+        x, y, w, h = x1, y1, x2 - x1, y2 - y1
+
+    x = max(0, min(int(round(x)), max(frame_width - 1, 0)))
+    y = max(0, min(int(round(y)), max(frame_height - 1, 0)))
+    w = max(1, min(int(round(w)), max(frame_width - x, 1)))
+    h = max(1, min(int(round(h)), max(frame_height - y, 1)))
+    return BoundingBox(x=x, y=y, w=w, h=h)
+
+
+def _assign_plate_to_vehicle_index(plate_bbox, vehicle_detections) -> int | None:
+    center_x = plate_bbox.x + plate_bbox.w / 2.0
+    center_y = plate_bbox.y + plate_bbox.h / 2.0
+    best_index: int | None = None
+    best_area: int | None = None
+    for index, detection in enumerate(vehicle_detections):
+        bbox = detection.bbox
+        within_x = bbox.x <= center_x <= bbox.x + bbox.w
+        within_y = bbox.y <= center_y <= bbox.y + bbox.h
+        if not (within_x and within_y):
+            continue
+        area = bbox.w * bbox.h
+        if best_area is None or area < best_area:
+            best_index = index
+            best_area = area
+    return best_index
+
+
+def _predict_fast_alpr_plate_ocr(
+    image_path: Path,
+    *,
+    frame_width: int,
+    frame_height: int,
+    vehicle_detections,
+    detector_model: str,
+    ocr_model: str,
+    detector_confidence: float,
+    ocr_device: str,
+):
+    from reposcan_contracts.detection import PlateCandidate
+    from reposcan_contracts.inference import PlateDetection
+
+    alpr = _load_fast_alpr(detector_model, ocr_model, detector_confidence, ocr_device)
+    raw_results = alpr.predict(str(image_path))
+    plate_detections: list[PlateDetection] = []
+    ocr_candidates_by_index: list[PlateCandidate | None] = []
+
+    for result in raw_results:
+        detection = getattr(result, "detection", None)
+        if detection is None:
+            continue
+        bbox = _bbox_from_fast_alpr(
+            getattr(detection, "bounding_box"),
+            frame_width=frame_width,
+            frame_height=frame_height,
+        )
+        plate_detections.append(
+            PlateDetection(
+                bbox=bbox,
+                confidence=_mean_confidence(getattr(detection, "confidence", 0.0)),
+                vehicle_index=_assign_plate_to_vehicle_index(bbox, vehicle_detections),
+            )
+        )
+
+        ocr = getattr(result, "ocr", None)
+        text = _plate_text(getattr(ocr, "text", "")) if ocr is not None else ""
+        if text:
+            ocr_candidates_by_index.append(
+                PlateCandidate(
+                    text=text,
+                    confidence=_mean_confidence(getattr(ocr, "confidence", 0.0)),
+                )
+            )
+        else:
+            ocr_candidates_by_index.append(None)
+
+    return plate_detections, ocr_candidates_by_index
 
 
 def main() -> int:
@@ -416,17 +561,40 @@ def main() -> int:
 
         plate_detections = []
         ocr_candidates = []
+        ocr_candidates_by_index = []
         if "plate" in requested_kinds:
-            plate_detections = inference_service.adapters.plate_detector.detect(
-                prepared_frame,
-                vehicle_detections=vehicle_detections,
-                strategy=inference_service.pipeline_config.plate_detection_strategy,
-            )
+            if args.plate_ocr_provider == "fast-alpr":
+                plate_detections, ocr_candidates_by_index = _predict_fast_alpr_plate_ocr(
+                    Path(prepared_frame.prepared_frame_path if isinstance(prepared_frame, PreparedFrame) else prepared_frame.frame_path),
+                    frame_width=width,
+                    frame_height=height,
+                    vehicle_detections=vehicle_detections,
+                    detector_model=args.fast_alpr_detector_model,
+                    ocr_model=args.fast_alpr_ocr_model,
+                    detector_confidence=args.fast_alpr_detector_confidence,
+                    ocr_device=args.fast_alpr_ocr_device,
+                )
+            else:
+                plate_detections = inference_service.adapters.plate_detector.detect(
+                    prepared_frame,
+                    vehicle_detections=vehicle_detections,
+                    strategy=inference_service.pipeline_config.plate_detection_strategy,
+                )
+                ocr_candidates = inference_service.adapters.ocr.recognize(prepared_frame, plate_detections)
+                ocr_candidates_by_index = list(ocr_candidates)
+
             if min_plate_confidence is not None:
-                plate_detections = [
-                    detection for detection in plate_detections if detection.confidence >= min_plate_confidence
-                ]
-            ocr_candidates = inference_service.adapters.ocr.recognize(prepared_frame, plate_detections)
+                kept_plate_detections = []
+                kept_ocr_candidates_by_index = []
+                for index, detection in enumerate(plate_detections):
+                    if detection.confidence >= min_plate_confidence:
+                        kept_plate_detections.append(detection)
+                        candidate = ocr_candidates_by_index[index] if index < len(ocr_candidates_by_index) else None
+                        kept_ocr_candidates_by_index.append(candidate)
+                plate_detections = kept_plate_detections
+                ocr_candidates_by_index = kept_ocr_candidates_by_index
+            if args.plate_ocr_provider == "fast-alpr":
+                ocr_candidates = [candidate for candidate in ocr_candidates_by_index if candidate is not None]
 
         attribute_predictions = []
         if "vehicle" in requested_kinds and inference_service.adapters.classifier is not None:
@@ -443,7 +611,8 @@ def main() -> int:
             "model_versions": inference_service.model_versions().model_dump(mode="json"),
             "processing_latency_ms": max((perf_counter() - started) * 1000.0, 0.0),
             "vehicle_detector_provider": args.vehicle_detector_provider,
-            "plate_detector_provider": "runtime" if "plate" in requested_kinds else "disabled",
+            "plate_detector_provider": args.plate_ocr_provider if "plate" in requested_kinds else "disabled",
+            "ocr_provider": args.plate_ocr_provider if "plate" in requested_kinds else "disabled",
             "attribute_provider": (
                 "runtime"
                 if "vehicle" in requested_kinds and inference_service.adapters.classifier is not None
@@ -565,7 +734,8 @@ def main() -> int:
                         "heading_degrees": metadata_payload.get("headingDegrees", ""),
                         "speed_mps": metadata_payload.get("speedMps", ""),
                         "vehicle_detector_provider": args.vehicle_detector_provider,
-                        "plate_detector_provider": "runtime" if "plate" in requested_kinds else "disabled",
+                        "plate_detector_provider": args.plate_ocr_provider if "plate" in requested_kinds else "disabled",
+                        "ocr_provider": args.plate_ocr_provider if "plate" in requested_kinds else "disabled",
                         "attribute_provider": (
                             "runtime"
                             if inference_service.adapters.classifier is not None
@@ -589,10 +759,10 @@ def main() -> int:
                 _crop_to_file(image, detection.bbox, crop_path)
 
                 ocr_candidate = None
-                if detection_index < len(ocr_candidates):
-                    ocr_candidate = ocr_candidates[detection_index]
-                elif len(ocr_candidates) == 1:
-                    ocr_candidate = ocr_candidates[0]
+                if detection_index < len(ocr_candidates_by_index):
+                    ocr_candidate = ocr_candidates_by_index[detection_index]
+                elif len(ocr_candidates_by_index) == 1:
+                    ocr_candidate = ocr_candidates_by_index[0]
 
                 detection_rows.append(
                     {
@@ -642,7 +812,8 @@ def main() -> int:
                         "heading_degrees": metadata_payload.get("headingDegrees", ""),
                         "speed_mps": metadata_payload.get("speedMps", ""),
                         "vehicle_detector_provider": args.vehicle_detector_provider,
-                        "plate_detector_provider": "runtime",
+                        "plate_detector_provider": args.plate_ocr_provider,
+                        "ocr_provider": args.plate_ocr_provider,
                         "attribute_provider": (
                             "runtime"
                             if inference_service.adapters.classifier is not None
@@ -671,6 +842,7 @@ def main() -> int:
                 "frames_processed": len(summary_rows),
                 "detection_rows": len(detection_rows),
                 "vehicle_detector_provider": args.vehicle_detector_provider,
+                "plate_ocr_provider": args.plate_ocr_provider,
             },
             indent=2,
         )

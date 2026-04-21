@@ -13,7 +13,6 @@ from typing import Any
 
 DEFAULT_CAPTURE_ROOT = Path(r"C:\ReposcanCaptureData\incoming")
 DEFAULT_ULTRALYTICS_MODEL = Path("runtime/models/ultralytics/yolov8s.pt")
-DEFAULT_STATE_PATH = Path("runtime/capture_import_state/mobile_capture_import_state_20260420.json")
 
 
 def _utc_now() -> str:
@@ -37,10 +36,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-root", default=f"data/staged/mobile_capture_live_intake_{today}")
     parser.add_argument("--manifest-path", default=f"data/manifests/staged/mobile-capture-live-intake-{today}.yaml")
     parser.add_argument("--detection-output-root", default=f"data/staged/mobile_capture_live_detection_review_{today}")
-    parser.add_argument("--state-path", default=str(DEFAULT_STATE_PATH))
+    parser.add_argument("--state-path", default=f"runtime/capture_import_state/mobile_capture_import_state_{today}.json")
     parser.add_argument("--ultralytics-model", default=str(DEFAULT_ULTRALYTICS_MODEL))
     parser.add_argument("--ultralytics-imgsz", type=int, default=960)
     parser.add_argument("--min-vehicle-confidence", type=float, default=0.10)
+    parser.add_argument(
+        "--plate-ocr-provider",
+        choices=("runtime", "fast-alpr"),
+        default="fast-alpr",
+        help="Provider for plate detection and OCR during live capture processing.",
+    )
+    parser.add_argument("--fast-alpr-detector-confidence", type=float, default=0.30)
+    parser.add_argument("--fast-alpr-ocr-device", choices=("auto", "cpu", "cuda"), default="auto")
     parser.add_argument("--interval-seconds", type=int, default=180)
     parser.add_argument("--settle-seconds", type=int, default=20)
     parser.add_argument("--run-once", action="store_true")
@@ -221,6 +228,12 @@ def _pipeline_commands(args: argparse.Namespace, repo_root: Path) -> dict[str, l
             str(args.ultralytics_imgsz),
             "--detection-kind",
             "both",
+            "--plate-ocr-provider",
+            args.plate_ocr_provider,
+            "--fast-alpr-detector-confidence",
+            str(args.fast_alpr_detector_confidence),
+            "--fast-alpr-ocr-device",
+            args.fast_alpr_ocr_device,
             "--disable-preprocessing",
             "--min-vehicle-confidence",
             str(args.min_vehicle_confidence),

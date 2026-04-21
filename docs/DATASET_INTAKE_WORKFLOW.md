@@ -84,7 +84,7 @@ The importer:
 Once a mobile-capture intake bundle exists, generate a review-ready detection queue.
 For a stronger vehicle bootstrap, use the Ultralytics COCO detector. For quick local
 passes `yolov8n.pt` is fine; for better field recall use `yolov8s.pt` with a larger
-inference size:
+inference size. Use FastALPR for the local prebuilt plate detection/OCR path:
 
 ```powershell
 .\.venv\Scripts\python.exe .\scripts\suggest_capture_detections.py `
@@ -94,6 +94,7 @@ inference size:
   --ultralytics-model yolov8s.pt `
   --ultralytics-imgsz 960 `
   --detection-kind both `
+  --plate-ocr-provider fast-alpr `
   --overwrite
 ```
 
@@ -106,6 +107,15 @@ This generates:
 
 For deterministic local smoke tests, point `--model-config` at
 `.\configs\models\local-demo-runtime.yaml` and leave the detector provider at the default `runtime`.
+If FastALPR is not installed, install the optional local ALPR extra first:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e ".[prebuilt-alpr]"
+```
+
+The live mobile watcher defaults to `--plate-ocr-provider fast-alpr`; pass
+`--plate-ocr-provider runtime` only when you intentionally want the old fixture
+plate detector/OCR path for deterministic smoke tests.
 
 Review the generated boxes with the local detection reviewer:
 
@@ -148,12 +158,12 @@ OpenAI path:
   --review-csv .\data\staged\mobile_capture_detection_review_20260419\metadata\vehicle_attribute_review.csv `
   --output-csv .\data\staged\mobile_capture_detection_review_20260419\metadata\vehicle_attribute_openai_suggestions.csv `
   --provider openai `
-  --model gpt-5.4 `
+  --model gpt-4o `
   --overwrite
 ```
 
-Use `gpt-5.4` when accuracy matters more than labeling cost. Use
-`gpt-5.4-mini` for lower-cost bulk triage, then reserve `gpt-5.4` for
+Use `gpt-4o` when accuracy matters more than labeling cost. Use
+`gpt-4o-mini` for lower-cost bulk triage, then reserve `gpt-4o` for
 ambiguous crops or final pre-review passes.
 
 Local fallback:
@@ -169,7 +179,7 @@ Local fallback:
 Stronger pretrained options when available:
 
 - `--provider qwen2_5_vl` for local / Colab GPU batch labeling
-- `--provider openai --model gpt-5.4` when an `OPENAI_API_KEY` with quota is available locally
+- `--provider openai --model gpt-4o` when an `OPENAI_API_KEY` with quota is available locally
 
 Both should still be treated as suggestion generators, not ground truth.
 
@@ -244,3 +254,4 @@ Today the most reusable legacy sources are:
 - [Annotation Standards](ANNOTATION_STANDARDS.md)
 - [Detection Dataset Curation](DETECTION_DATASET_CURATION.md)
 - [Training](TRAINING.md)
+- [Prebuilt ALPR Integration Guide](PREBUILT_ALPR_INTEGRATION_GUIDE.md)

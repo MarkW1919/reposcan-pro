@@ -23,7 +23,7 @@ upgrade one weak stage without destabilizing the whole product.
 
 3. **Vehicle attributes**
    - Use a high-accuracy VLM as a suggestion generator, not as ground truth. The
-     current preferred hosted path is OpenAI `gpt-5.4` once API quota is available.
+     current preferred hosted path is OpenAI `gpt-4o` once API quota is available.
    - Train the deployed edge attribute model separately from reviewed crops. Start
      with model-family, body type, and color. Treat exact year as a later-stage goal;
      for now, exact year should be human-reviewed or bucketed into year ranges.
@@ -47,7 +47,7 @@ upgrade one weak stage without destabilizing the whole product.
 | Plate detector | YOLO11 license-plate detector checkpoints | Good bootstrap option for experiments and review queue generation | Common HF plate detector checkpoints are AGPL; use for experiments until licensing is settled |
 | Plate OCR | PaddleOCR PP-OCRv5 mobile/server | Strong open OCR family with deployment and training support | PP-OCRv5 can be slower than PP-OCRv4; benchmark both on target hardware |
 | Attribute classifier | DINOv3/timm or ConvNeXt | Strong visual backbone for make/model-family/color after we have labels | Needs a reviewed, balanced dataset; exact year is not reliable from small crops |
-| VLM labeler | OpenAI `gpt-5.4` | Best current hosted suggestion path for difficult vehicle crops | Requires API quota; output is still pending review, not training truth |
+| VLM labeler | OpenAI `gpt-4o` | Best current hosted suggestion path for difficult vehicle crops | Requires API quota; output is still pending review, not training truth |
 
 ## Continual Learning Loop
 
@@ -80,7 +80,7 @@ That creates feedback loops and will make mistakes permanent. Use this loop inst
 - Keep Ultralytics for detection because it is already wired into the repo.
 - Keep runtime/ONNX make-model suggestions disabled until validated.
 - Use the mobile capture watcher to build fresh pending review queues.
-- Use OpenAI `gpt-5.4` for attribute suggestions once quota is active.
+- Use OpenAI `gpt-4o` for attribute suggestions once quota is active.
 
 ### Phase 2: Build RepoScan's First Real Field Models
 
@@ -116,7 +116,7 @@ The best immediate path is:
    if AGPL/enterprise licensing becomes a problem.
 3. **Use PaddleOCR PP-OCR as the OCR core**, with PP-OCRv5 as the next benchmark and
    PP-OCRv4 as a fallback.
-4. **Use OpenAI `gpt-5.4` and/or Qwen as label assistants only**, never as automatic
+4. **Use OpenAI `gpt-4o` and/or Qwen as label assistants only**, never as automatic
    training truth.
 5. **Treat field captures as a continual data engine**, not a live self-training
    loop. Human-reviewed labels and protected holdouts are what make the system

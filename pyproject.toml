@@ -35,6 +35,9 @@ vlm-labeling = [
     "qwen-vl-utils>=0.0.8,<0.1",
     "transformers>=4.51,<5.0",
 ]
+prebuilt-alpr = [
+    "fast-alpr[onnx]>=0.4,<0.5",
+]
 review-ui = [
     "gradio>=5.0,<6.0",
 ]

@@ -206,3 +206,64 @@ def test_predict_ultralytics_vehicle_detections_filters_to_vehicle_labels(monkey
     assert predict_calls[0]["imgsz"] == 960
     assert predict_calls[0]["iou"] == 0.55
     assert predict_calls[0]["max_det"] == 12
+
+
+def test_predict_fast_alpr_plate_ocr_converts_results(monkeypatch, tmp_path):
+    module = _load_module()
+
+    from reposcan_contracts.detection import BoundingBox
+    from reposcan_contracts.inference import VehicleDetection
+
+    class _FakeBbox:
+        x1 = 100
+        y1 = 220
+        x2 = 300
+        y2 = 275
+
+    class _FakeDetection:
+        bounding_box = _FakeBbox()
+        confidence = 0.87
+
+    class _FakeOcr:
+        text = " ok-abc 123 "
+        confidence = [0.80, 0.90, 0.70]
+
+    class _FakeResult:
+        detection = _FakeDetection()
+        ocr = _FakeOcr()
+
+    class _FakeAlpr:
+        def predict(self, image_path: str):
+            assert image_path.endswith("frame.jpg")
+            return [_FakeResult()]
+
+    monkeypatch.setattr(module, "_load_fast_alpr", lambda *args: _FakeAlpr())
+    image_path = tmp_path / "frame.jpg"
+    _write_image(image_path, color=(20, 20, 20))
+    vehicles = [
+        VehicleDetection(
+            bbox=BoundingBox(x=50, y=100, w=420, h=300),
+            confidence=0.91,
+            class_label="truck",
+        )
+    ]
+
+    plate_detections, ocr_candidates = module._predict_fast_alpr_plate_ocr(
+        image_path,
+        frame_width=1280,
+        frame_height=720,
+        vehicle_detections=vehicles,
+        detector_model="detector",
+        ocr_model="ocr",
+        detector_confidence=0.3,
+        ocr_device="cpu",
+    )
+
+    assert len(plate_detections) == 1
+    assert plate_detections[0].bbox.x == 100
+    assert plate_detections[0].bbox.w == 200
+    assert plate_detections[0].vehicle_index == 0
+    assert plate_detections[0].confidence == 0.87
+    assert len(ocr_candidates) == 1
+    assert ocr_candidates[0].text == "OKABC123"
+    assert round(ocr_candidates[0].confidence, 3) == 0.8

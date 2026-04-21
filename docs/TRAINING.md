@@ -9,6 +9,7 @@ RepoScan Pro training is task-specific. Do not train the entire pipeline as a mo
 - design experiments around operational metrics, not vanity metrics
 - keep training outputs and checkpoints outside git
 - follow the pretrained stack and continual-learning direction in [Core Model Strategy](CORE_MODEL_STRATEGY.md)
+- use the local prebuilt ALPR provider plan in [Prebuilt ALPR Integration Guide](PREBUILT_ALPR_INTEGRATION_GUIDE.md)
 
 ## Required Workstreams
 
