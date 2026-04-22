@@ -52,11 +52,36 @@ Those committed tokens are for local testing only and must be replaced in privat
 The API currently uses four coarse roles:
 
 - `viewer`: read dashboard, detections, alerts, recovery accounts, follow-ups, assignments, and search
-- `operator`: submit reviews, manage follow-ups and dispatch assignments, update alert lifecycle state, and start demo runs
+- `operator`: submit reviews, manage follow-ups and dispatch assignments, update alert lifecycle state, start demo runs, and command edge capture state
 - `admin`: create and update recovery accounts
-- `integrator`: read audit events
+- `integrator`: read audit events and post edge runtime heartbeats
 
 `admin` is also allowed to read audit events.
+
+## Edge Runtime Contract
+
+The driver laptop UI uses the edge runtime endpoints to monitor and control the
+truck-mounted capture computer. The phone capture PWA is separate and only feeds
+dataset intake.
+
+- `GET /api/v1/edge/runtime`
+  - role: `viewer`
+  - returns the current edge node ID, capture state, desired capture state,
+    camera counts, model/provider labels, last heartbeat, and last queued command
+- `POST /api/v1/edge/runtime/command`
+  - role: `operator`
+  - body: `{"command":"start_capture"}` where command is one of
+    `start_capture`, `stop_capture`, `restart_capture`, or `mark_faulted`
+  - queues the desired state for the Jetson-side control loop and records an
+    `edge.command` audit event
+- `POST /api/v1/edge/runtime/heartbeat`
+  - role: `integrator`
+  - body includes `edge_node_id`, `capture_state`, `active_camera_count`,
+    `total_camera_count`, and optional provider/runtime/message fields
+  - called by the edge node after it observes real capture state
+
+The API command endpoint records intent. The edge node remains authoritative for
+observed runtime state through heartbeat updates.
 
 ## Search Endpoints
 

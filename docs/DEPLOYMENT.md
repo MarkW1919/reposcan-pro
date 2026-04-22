@@ -95,6 +95,26 @@ Deployment profiles now describe API-specific integration behavior under `api`:
 
 The repository keeps `local-dev` open for the existing UI and demo workflows, and ships `configs/deployments/local-secure-api-example.yaml` as an example-only secured profile for integration testing. Replace those example tokens in a private deployment copy before exposing the API outside a local workstation.
 
+## Driver UI And Edge Runtime
+
+The production operator surface is `apps/ui`, intended for the truck-mounted
+Windows laptop. The temporary phone PWA used during development is only a
+dataset-capture utility and is not part of the deployed driver control path.
+
+The laptop UI now reads and commands the truck edge runtime through the API:
+
+- `GET /api/v1/edge/runtime` feeds the UI footer and System settings status
+- `POST /api/v1/edge/runtime/command` queues operator intent for start, stop,
+  restart, or fault marking
+- `POST /api/v1/edge/runtime/heartbeat` is posted by the Jetson edge node with
+  observed capture state, camera counts, and runtime provider labels
+
+On the Jetson Orin profile, the capture supervisor should poll or subscribe to
+the desired state exposed by the API, start or stop the local camera/inference
+process, then publish heartbeat updates after observing the real state. With API
+security enabled, the laptop needs an `operator` token and the Jetson needs an
+`integrator` token.
+
 ## Runtime Bundle Validation
 
 Before an external promoted bundle is treated as deployment-ready, validate it against the intended deployment profile:

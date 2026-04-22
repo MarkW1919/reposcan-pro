@@ -16,11 +16,13 @@ import {
   fetchDashboardOverview,
   fetchDetectionFrameObjectUrl,
   fetchDetectionPlateCropObjectUrl,
+  fetchEdgeRuntimeStatus,
   fetchHotlists,
   fetchReviews,
   searchAlerts,
   searchAddresses,
   searchDetections,
+  sendEdgeRuntimeCommand,
   sendOperatorSessionHeartbeat,
   setApiClientConfig,
   updateAlert,
@@ -40,6 +42,9 @@ import {
   type DashboardOverviewResponse,
   type DashboardPopupActivityEvent,
   type DetectionSearchFilters,
+  type EdgeCaptureState,
+  type EdgeRuntimeCommand,
+  type EdgeRuntimeStatus,
   type FollowUpPriority,
   type FollowUpRecord,
   type FollowUpStatus,
@@ -1222,6 +1227,58 @@ function serviceHealthTone(state: ServiceHealthState): "success" | "warn" | "cri
     return "critical";
   }
   return "muted";
+}
+
+function edgeCaptureLabel(state: EdgeCaptureState | null | undefined): string {
+  if (state === "running") {
+    return "Running";
+  }
+  if (state === "starting") {
+    return "Starting";
+  }
+  if (state === "stopping") {
+    return "Stopping";
+  }
+  if (state === "stopped") {
+    return "Stopped";
+  }
+  if (state === "degraded") {
+    return "Degraded";
+  }
+  if (state === "faulted") {
+    return "Faulted";
+  }
+  return "Unknown";
+}
+
+function edgeCaptureBadgeTone(state: EdgeCaptureState | null | undefined): "success" | "warn" | "critical" | "muted" {
+  if (state === "running") {
+    return "success";
+  }
+  if (state === "starting" || state === "stopping" || state === "degraded") {
+    return "warn";
+  }
+  if (state === "faulted") {
+    return "critical";
+  }
+  return "muted";
+}
+
+function edgeCaptureFooterTone(state: EdgeCaptureState | null | undefined): "good" | "off" | "warn" {
+  if (state === "running") {
+    return "good";
+  }
+  if (state === "starting" || state === "stopping" || state === "degraded" || state === "faulted") {
+    return "warn";
+  }
+  return "off";
+}
+
+function edgeHeartbeatLabel(edgeRuntime: EdgeRuntimeStatus | null): string {
+  if (!edgeRuntime?.last_heartbeat_at_utc) {
+    return "No heartbeat";
+  }
+  return formatDateTime(edgeRuntime.last_heartbeat_at_utc);
 }
 
 function buildRecognitionVehicleLabel(event: DashboardPopupActivityEvent): string {
@@ -3015,6 +3072,9 @@ function App(): ReactElement {
   const [navigationActive, setNavigationActive] = useState(false);
   const [dataSource, setDataSource] = useState<DataSource>("demo");
   const [overview, setOverview] = useState<DashboardOverviewResponse | null>(null);
+  const [edgeRuntime, setEdgeRuntime] = useState<EdgeRuntimeStatus | null>(null);
+  const [edgeRuntimeError, setEdgeRuntimeError] = useState<string | null>(null);
+  const [edgeRuntimeAction, setEdgeRuntimeAction] = useState<EdgeRuntimeCommand | null>(null);
   const [hotlists, setHotlists] = useState<DashboardHotlist[]>(seedHotlists);
   const [dataError, setDataError] = useState<string | null>(null);
   const [auditEvents, setAuditEvents] = useState<ApiAuditEvent[]>([]);
@@ -3117,9 +3177,10 @@ function App(): ReactElement {
 
     async function loadLiveData(): Promise<void> {
       try {
-        const [nextOverview, nextHotlists] = await Promise.all([
+        const [nextOverview, nextHotlists, nextEdgeRuntime] = await Promise.all([
           fetchDashboardOverview(controller.signal),
           fetchHotlists(controller.signal),
+          fetchEdgeRuntimeStatus(controller.signal),
         ]);
 
         if (controller.signal.aborted) {
@@ -3127,6 +3188,8 @@ function App(): ReactElement {
         }
 
         setOverview(nextOverview);
+        setEdgeRuntime(nextEdgeRuntime);
+        setEdgeRuntimeError(null);
         setHotlists(nextHotlists.length > 0 ? nextHotlists : seedHotlists);
         setLocalFollowUps([]);
         setLocalAssignments([]);
@@ -3138,6 +3201,8 @@ function App(): ReactElement {
         }
 
         setOverview(null);
+        setEdgeRuntime(null);
+        setEdgeRuntimeError(error instanceof Error ? error.message : "Unable to load edge runtime status.");
         setDataSource(apiKey.trim() ? "fallback" : "demo");
         setDataError(error instanceof Error ? error.message : "Unable to reach the live API");
       }
@@ -3617,6 +3682,28 @@ function App(): ReactElement {
   const canViewAudit = dataSource === "live" && overview?.current_principal.capabilities.can_view_audit === true;
   const currentPrincipal = overview?.current_principal ?? null;
   const activeSessionRecords = overview?.active_sessions ?? [];
+
+  async function handleEdgeRuntimeCommand(command: EdgeRuntimeCommand): Promise<void> {
+    if (dataSource !== "live") {
+      setEdgeRuntimeError("Edge controls require the live API.");
+      return;
+    }
+
+    setEdgeRuntimeAction(command);
+    setEdgeRuntimeError(null);
+    try {
+      const updated = await sendEdgeRuntimeCommand({
+        command,
+        operator_id: currentPrincipal?.principal_id ?? "local-operator",
+      });
+      setEdgeRuntime(updated);
+      setRefreshToken((value) => value + 1);
+    } catch (error) {
+      setEdgeRuntimeError(error instanceof Error ? error.message : "Unable to command the edge runtime.");
+    } finally {
+      setEdgeRuntimeAction(null);
+    }
+  }
 
   useEffect(() => {
     if (dataSource !== "live") {
@@ -4688,6 +4775,8 @@ function App(): ReactElement {
   }
 
   const gpsIndicator = buildGpsIndicator(gpsFix);
+  const edgeFooterValue = dataSource === "live" ? edgeCaptureLabel(edgeRuntime?.capture_state) : "Standby";
+  const edgeFooterTone = dataSource === "live" ? edgeCaptureFooterTone(edgeRuntime?.capture_state) : "off";
   const footerIndicators: Array<{
     label: string;
     value: string;
@@ -4697,6 +4786,7 @@ function App(): ReactElement {
   }> = [
     { label: "GPS", value: gpsIndicator.value, tone: gpsIndicator.tone, tip: gpsIndicator.tip, action: () => { switchScreen("settings"); setSettingsSection("map"); } },
     { label: "API", value: dataSource === "live" ? "Live" : dataSource === "fallback" ? "Fallback" : "Demo", tone: dataSource === "live" ? "good" : "off", tip: "Backend connection \u2014 click to open system settings", action: () => { switchScreen("settings"); setSettingsSection("system"); } },
+    { label: "Edge", value: edgeFooterValue, tone: edgeFooterTone, tip: edgeRuntimeError ?? "Truck edge runtime - click to open system settings", action: () => { switchScreen("settings"); setSettingsSection("system"); } },
     { label: "LPR", value: navigationActive ? `Auto ${settings.arrivalRadiusFeet}ft` : settings.arrivalScanEnabled ? "Scanning" : "Off", tone: navigationActive || settings.arrivalScanEnabled ? "good" : "off", tip: "Plate reader status \u2014 click to open map settings", action: () => { switchScreen("settings"); setSettingsSection("map"); } },
     { label: "Cams", value: `${onlineCameraCount}/${availableCameraFeeds.length}`, tone: onlineCameraCount > 0 ? "good" : "off", tip: "Camera feeds \u2014 click to open camera settings", action: () => { switchScreen("settings"); setSettingsSection("cameras"); } },
     { label: "Reads", value: `${totalReads}`, tone: "good", tip: "Total plate reads this session \u2014 click to open search", action: () => { switchScreen("search"); } },
@@ -4937,10 +5027,14 @@ function App(): ReactElement {
               dataError={dataError}
               dataSource={dataSource}
               degradedDependencyCount={degradedDependencyCount}
+              edgeRuntime={edgeRuntime}
+              edgeRuntimeAction={edgeRuntimeAction}
+              edgeRuntimeError={edgeRuntimeError}
               hotlistWarning={hotlistWarning}
               onSettingsSectionChange={setSettingsSection}
               onApiKeyApply={() => setApiKey(apiKeyInput.trim())}
               onApiKeyChange={setApiKeyInput}
+              onEdgeRuntimeCommand={(command) => void handleEdgeRuntimeCommand(command)}
               onRefresh={() => setRefreshToken((value) => value + 1)}
               onlineCameras={onlineCameraCount}
               settings={settings}
@@ -7458,10 +7552,14 @@ function SettingsScreen(props: {
   dataError: string | null;
   dataSource: DataSource;
   degradedDependencyCount: number;
+  edgeRuntime: EdgeRuntimeStatus | null;
+  edgeRuntimeAction: EdgeRuntimeCommand | null;
+  edgeRuntimeError: string | null;
   hotlistWarning: boolean;
   onSettingsSectionChange: (section: SettingsSection) => void;
   onApiKeyApply: () => void;
   onApiKeyChange: (value: string) => void;
+  onEdgeRuntimeCommand: (command: EdgeRuntimeCommand) => void;
   onRefresh: () => void;
   onlineCameras: number;
   settings: UiSettings;
@@ -7478,6 +7576,9 @@ function SettingsScreen(props: {
     { id: "system", title: "System and API", description: "Health, connection, sessions, and audit." },
   ];
   const activeSection = sections.find((section) => section.id === props.settingsSection) ?? sections[0];
+  const canControlEdgeRuntime =
+    props.dataSource === "live" && props.currentPrincipal?.capabilities.can_control_edge_runtime === true;
+  const edgeCommandPending = props.edgeRuntimeAction !== null;
 
   return (
     <section className="screen settings-screen">
@@ -7502,6 +7603,10 @@ function SettingsScreen(props: {
         <div className="settings-summary-tile">
           <span>System</span>
           <strong>{serviceHealthLabel(props.serviceHealthState)}</strong>
+        </div>
+        <div className="settings-summary-tile">
+          <span>Edge</span>
+          <strong>{edgeCaptureLabel(props.edgeRuntime?.capture_state)}</strong>
         </div>
         <div className="settings-summary-tile">
           <span>Alerts</span>
@@ -7545,6 +7650,7 @@ function SettingsScreen(props: {
               {props.settingsSection === "alerts" ? <Badge tone={props.canUpdateAlerts ? "success" : "muted"}>{props.canUpdateAlerts ? "Alert updates" : "Alert read only"}</Badge> : null}
               {props.settingsSection === "cameras" ? <Badge tone={props.onlineCameras > 0 ? "success" : "muted"}>{`${props.onlineCameras}/${Math.max(props.totalCameras, 1)} feeds online`}</Badge> : null}
               {props.settingsSection === "system" ? <Badge tone={serviceHealthTone(props.serviceHealthState)}>{serviceHealthLabel(props.serviceHealthState)}</Badge> : null}
+              {props.settingsSection === "system" ? <Badge tone={edgeCaptureBadgeTone(props.edgeRuntime?.capture_state)}>{edgeCaptureLabel(props.edgeRuntime?.capture_state)}</Badge> : null}
             </div>
           </div>
 
@@ -7601,6 +7707,65 @@ function SettingsScreen(props: {
                 <ReadOnlyRow title="Health" value={serviceHealthLabel(props.serviceHealthState)} detail={props.degradedDependencyCount === 0 ? "All systems normal." : `${props.degradedDependencyCount} warning${props.degradedDependencyCount === 1 ? "" : "s"}.`} />
                 <ReadOnlyRow title="Data source" value={props.dataSource.toUpperCase()} detail={props.dataError ?? "Connected to live API."} />
                 <ReadOnlyRow title="Sync" value={props.dataSource === "live" ? "Online" : "Offline queue"} detail={`${props.activeSessions} active session${props.activeSessions === 1 ? "" : "s"}.`} />
+                <ReadOnlyRow
+                  title="Edge node"
+                  value={props.edgeRuntime?.edge_node_id ?? "Pending"}
+                  detail={props.edgeRuntime?.message ?? "Waiting for Jetson runtime status."}
+                />
+                <ReadOnlyRow
+                  title="Edge capture"
+                  value={edgeCaptureLabel(props.edgeRuntime?.capture_state)}
+                  detail={
+                    props.edgeRuntimeError ??
+                    `Desired ${edgeCaptureLabel(props.edgeRuntime?.desired_capture_state)} - heartbeat ${edgeHeartbeatLabel(props.edgeRuntime)}.`
+                  }
+                />
+                <ReadOnlyRow
+                  title="Edge cameras"
+                  value={`${props.edgeRuntime?.active_camera_count ?? 0}/${Math.max(props.edgeRuntime?.total_camera_count ?? 0, 1)}`}
+                  detail={`OCR ${props.edgeRuntime?.plate_ocr_provider ?? "pending"} - Attributes ${props.edgeRuntime?.vehicle_attribute_provider ?? "pending"}.`}
+                />
+                <ReadOnlyRow
+                  title="Edge runtime"
+                  value={props.edgeRuntime?.inference_runtime ?? "Pending hardware"}
+                  detail={
+                    props.edgeRuntime?.last_command
+                      ? `${titleCase(props.edgeRuntime.last_command)} by ${props.edgeRuntime.last_commanded_by ?? "operator"}`
+                      : "No command queued."
+                  }
+                />
+                <div className="button-row">
+                  <Tooltip text={canControlEdgeRuntime ? "Request truck camera capture start" : "Edge control requires operator API access"}>
+                    <button
+                      className="btn btn--success"
+                      disabled={!canControlEdgeRuntime || edgeCommandPending}
+                      type="button"
+                      onClick={() => props.onEdgeRuntimeCommand("start_capture")}
+                    >
+                      {props.edgeRuntimeAction === "start_capture" ? "Starting..." : "Start Capture"}
+                    </button>
+                  </Tooltip>
+                  <Tooltip text={canControlEdgeRuntime ? "Request truck camera capture stop" : "Edge control requires operator API access"}>
+                    <button
+                      className="btn btn--danger"
+                      disabled={!canControlEdgeRuntime || edgeCommandPending}
+                      type="button"
+                      onClick={() => props.onEdgeRuntimeCommand("stop_capture")}
+                    >
+                      {props.edgeRuntimeAction === "stop_capture" ? "Stopping..." : "Stop Capture"}
+                    </button>
+                  </Tooltip>
+                  <Tooltip text={canControlEdgeRuntime ? "Request capture service restart" : "Edge control requires operator API access"}>
+                    <button
+                      className="btn btn--ghost"
+                      disabled={!canControlEdgeRuntime || edgeCommandPending}
+                      type="button"
+                      onClick={() => props.onEdgeRuntimeCommand("restart_capture")}
+                    >
+                      {props.edgeRuntimeAction === "restart_capture" ? "Restarting..." : "Restart"}
+                    </button>
+                  </Tooltip>
+                </div>
                 <ReadOnlyRow
                   title="Operator"
                   value={props.currentPrincipal?.display_name ?? props.currentPrincipal?.principal_id ?? "Local operator"}

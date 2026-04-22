@@ -227,6 +227,7 @@ export interface OperatorCapabilities {
   can_manage_follow_ups: boolean;
   can_manage_dispatch: boolean;
   can_start_demo_runs: boolean;
+  can_control_edge_runtime: boolean;
   can_view_audit: boolean;
 }
 
@@ -340,6 +341,31 @@ export interface DemoRunSubmission {
   start_frame_number?: number;
   sequence_id?: string;
   plate_text?: string;
+}
+
+export type EdgeCaptureState = "stopped" | "starting" | "running" | "stopping" | "degraded" | "faulted" | "unknown";
+export type EdgeRuntimeCommand = "start_capture" | "stop_capture" | "restart_capture" | "mark_faulted";
+
+export interface EdgeRuntimeStatus {
+  edge_node_id: string;
+  capture_state: EdgeCaptureState;
+  desired_capture_state: EdgeCaptureState;
+  last_command: EdgeRuntimeCommand | null;
+  last_commanded_by: string | null;
+  last_commanded_at_utc: string | null;
+  last_heartbeat_at_utc: string | null;
+  active_camera_count: number;
+  total_camera_count: number;
+  inference_runtime: string | null;
+  plate_ocr_provider: string | null;
+  vehicle_attribute_provider: string | null;
+  message: string | null;
+}
+
+export interface EdgeRuntimeCommandSubmission {
+  command: EdgeRuntimeCommand;
+  operator_id?: string;
+  reason?: string;
 }
 
 export interface DashboardOverviewResponse {
@@ -626,6 +652,29 @@ export async function fetchDemoRuntimeStatus(signal?: AbortSignal): Promise<Demo
     throw new Error(await responseErrorMessage(response, `Failed to load demo runtime status (${response.status})`));
   }
   return (await response.json()) as DemoRuntimeStatus;
+}
+
+export async function fetchEdgeRuntimeStatus(signal?: AbortSignal): Promise<EdgeRuntimeStatus> {
+  const response = await fetch(apiUrl("/edge/runtime"), { signal, headers: authHeaders() });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, `Failed to load edge runtime status (${response.status})`));
+  }
+  return (await response.json()) as EdgeRuntimeStatus;
+}
+
+export async function sendEdgeRuntimeCommand(submission: EdgeRuntimeCommandSubmission): Promise<EdgeRuntimeStatus> {
+  const response = await fetch(apiUrl("/edge/runtime/command"), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders(),
+    },
+    body: JSON.stringify(submission),
+  });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, `Failed to command edge runtime (${response.status})`));
+  }
+  return (await response.json()) as EdgeRuntimeStatus;
 }
 
 export async function startDemoRun(submission: DemoRunSubmission): Promise<DemoRuntimeStatus> {

@@ -77,6 +77,7 @@ class ApiAccessController:
     )
     _operator_roles = (ApiRole.operator, ApiRole.admin)
     _admin_roles = (ApiRole.admin,)
+    _integrator_roles = (ApiRole.integrator, ApiRole.admin)
     _audit_roles = (ApiRole.integrator, ApiRole.admin)
 
     def __init__(self, config: ApiConfig, *, audit_logger: ApiAuditLogger | None = None) -> None:
@@ -246,6 +247,9 @@ class ApiAccessController:
 
     def admin_access(self, request: Request) -> ApiPrincipalContext:
         return self._authorize(request, accepted_roles=self._admin_roles, action="api.admin")
+
+    def integrator_access(self, request: Request) -> ApiPrincipalContext:
+        return self._authorize(request, accepted_roles=self._integrator_roles, action="api.integrator")
 
     def audit_access(self, request: Request) -> ApiPrincipalContext:
         return self._authorize(request, accepted_roles=self._audit_roles, action="audit.read")

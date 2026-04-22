@@ -57,6 +57,16 @@ Hosts operator workflows for live monitoring, review, search, and hotlist respon
 - `apps/api` exposes query and control interfaces
 - `apps/ui` hosts the operator-facing client
 
+## Field Device Topology
+
+- The truck laptop runs `apps/ui` as the driver control surface.
+- The Jetson Orin edge node runs camera capture, preprocessing, inference,
+  tracking, storage writes, and heartbeat publishing.
+- `apps/api` is the contract boundary between them: the UI queues desired edge
+  capture state, and the Jetson posts observed state back to the API.
+- The phone PWA used during development is a dataset intake tool only; it should
+  not be treated as the deployed driver interface.
+
 ## Design Rules
 
 - keep capture, inference, storage, API, and UI as clearly separated concerns

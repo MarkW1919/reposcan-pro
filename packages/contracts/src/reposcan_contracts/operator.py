@@ -17,6 +17,7 @@ class OperatorCapabilities(BaseModel):
     can_manage_follow_ups: bool = False
     can_manage_dispatch: bool = False
     can_start_demo_runs: bool = False
+    can_control_edge_runtime: bool = False
     can_view_audit: bool = False
 
 

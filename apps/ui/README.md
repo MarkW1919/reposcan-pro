@@ -17,9 +17,14 @@ Current preview slice:
 - selected-alert review history and local review submission when the live API is available
 - quick-actions demo runtime controls for launching headless ingest runs from a local frame folder when the live API is available
 - live operator session panel with API-key sign-in, role-aware UI permissions, and active multi-user presence
+- Jetson edge runtime status and start, stop, restart controls in System settings
 - always-on hotlist popup behavior that stays active regardless of navigation or address-scan state
 - live API overview integration with graceful fallback to local demo data when the backend is offline
 - demo-friendly repo workflows while backend and hardware integration continue
+
+Role boundary:
+- `apps/ui` is the wrecker laptop operator console for route, camera, alert, review, and edge runtime control.
+- The separate phone capture PWA is only for collecting field images into the training dataset intake workflow.
 
 Local development notes:
 - the UI will try `http://127.0.0.1:8000/api/v1/dashboard/overview` by default

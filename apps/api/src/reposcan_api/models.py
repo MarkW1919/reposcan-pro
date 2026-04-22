@@ -172,6 +172,56 @@ class DemoRuntimeStatus(BaseModel):
     summary: Optional[DemoRunSummary] = None
 
 
+class EdgeCaptureState(str, Enum):
+    stopped = "stopped"
+    starting = "starting"
+    running = "running"
+    stopping = "stopping"
+    degraded = "degraded"
+    faulted = "faulted"
+    unknown = "unknown"
+
+
+class EdgeRuntimeCommand(str, Enum):
+    start_capture = "start_capture"
+    stop_capture = "stop_capture"
+    restart_capture = "restart_capture"
+    mark_faulted = "mark_faulted"
+
+
+class EdgeRuntimeStatus(BaseModel):
+    edge_node_id: str = Field(..., min_length=1)
+    capture_state: EdgeCaptureState
+    desired_capture_state: EdgeCaptureState
+    last_command: EdgeRuntimeCommand | None = None
+    last_commanded_by: str | None = None
+    last_commanded_at_utc: UtcTimestamp | None = None
+    last_heartbeat_at_utc: UtcTimestamp | None = None
+    active_camera_count: int = Field(0, ge=0)
+    total_camera_count: int = Field(0, ge=0)
+    inference_runtime: str | None = None
+    plate_ocr_provider: str | None = None
+    vehicle_attribute_provider: str | None = None
+    message: str | None = None
+
+
+class EdgeRuntimeCommandSubmission(BaseModel):
+    command: EdgeRuntimeCommand
+    operator_id: str | None = Field(None, min_length=1)
+    reason: str | None = None
+
+
+class EdgeRuntimeHeartbeatSubmission(BaseModel):
+    edge_node_id: str = Field("jetson-orin-nano", min_length=1)
+    capture_state: EdgeCaptureState = EdgeCaptureState.unknown
+    active_camera_count: int = Field(0, ge=0)
+    total_camera_count: int = Field(0, ge=0)
+    inference_runtime: str | None = None
+    plate_ocr_provider: str | None = None
+    vehicle_attribute_provider: str | None = None
+    message: str | None = None
+
+
 class DashboardCounts(BaseModel):
     active_alerts: int = Field(..., ge=0)
     recent_detections: int = Field(..., ge=0)

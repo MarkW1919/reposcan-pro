@@ -641,6 +641,7 @@ def test_dashboard_overview_returns_operator_summary(tmp_path):
     assert payload["hotlists"][0]["entry_id"] == "hl_002"
     assert payload["current_principal"]["principal_id"] == "local_dev"
     assert payload["current_principal"]["capabilities"]["can_manage_dispatch"] is True
+    assert payload["current_principal"]["capabilities"]["can_control_edge_runtime"] is True
     assert payload["follow_ups"] == []
     assert payload["assignments"] == []
     assert payload["active_sessions"] == []
@@ -811,6 +812,50 @@ def test_demo_runtime_reports_failures_for_missing_frame_folder(tmp_path):
     completed = _wait_for_demo_run_completion(client)
     assert completed["state"] == "failed"
     assert "No frame files found" in completed["error_message"]
+
+
+def test_edge_runtime_status_command_and_heartbeat_flow(tmp_path):
+    client, _ = _seeded_client(tmp_path)
+
+    initial = client.get("/edge/runtime")
+    assert initial.status_code == 200
+    assert initial.json()["desired_capture_state"] == "stopped"
+
+    command_response = client.post(
+        "/edge/runtime/command",
+        json={
+            "command": "start_capture",
+            "operator_id": "driver_01",
+            "reason": "Begin route scan",
+        },
+    )
+    assert command_response.status_code == 200
+    commanded = command_response.json()
+    assert commanded["capture_state"] == "starting"
+    assert commanded["desired_capture_state"] == "running"
+    assert commanded["last_command"] == "start_capture"
+    assert commanded["last_commanded_by"] == "driver_01"
+
+    heartbeat_response = client.post(
+        "/edge/runtime/heartbeat",
+        json={
+            "edge_node_id": "jetson_orin_nano_truck_01",
+            "capture_state": "running",
+            "active_camera_count": 2,
+            "total_camera_count": 2,
+            "inference_runtime": "jetson-pytorch-onnxruntime",
+            "plate_ocr_provider": "fast-alpr",
+            "vehicle_attribute_provider": "hf_vehicle_classifier",
+            "message": "Capture loop healthy",
+        },
+    )
+    assert heartbeat_response.status_code == 200
+    heartbeat = heartbeat_response.json()
+    assert heartbeat["edge_node_id"] == "jetson_orin_nano_truck_01"
+    assert heartbeat["capture_state"] == "running"
+    assert heartbeat["desired_capture_state"] == "running"
+    assert heartbeat["active_camera_count"] == 2
+    assert heartbeat["last_heartbeat_at_utc"] is not None
 
 
 def test_versioned_routes_and_security_headers_work_with_legacy_aliases(tmp_path):
@@ -1348,6 +1393,27 @@ def test_secure_api_requires_credentials_and_enforces_roles(tmp_path):
         headers={"X-RepoScan-Api-Key": "operator-demo-token"},
         json={"detection_id": "det_20260320_000001", "status": "queued", "priority": "priority"},
     )
+    viewer_edge_status = client.get("/api/v1/edge/runtime", headers={"X-RepoScan-Api-Key": "viewer-demo-token"})
+    viewer_edge_command = client.post(
+        "/api/v1/edge/runtime/command",
+        headers={"X-RepoScan-Api-Key": "viewer-demo-token"},
+        json={"command": "start_capture"},
+    )
+    operator_edge_command = client.post(
+        "/api/v1/edge/runtime/command",
+        headers={"X-RepoScan-Api-Key": "operator-demo-token"},
+        json={"command": "start_capture"},
+    )
+    operator_edge_heartbeat = client.post(
+        "/api/v1/edge/runtime/heartbeat",
+        headers={"X-RepoScan-Api-Key": "operator-demo-token"},
+        json={"edge_node_id": "truck_01", "capture_state": "running"},
+    )
+    admin_edge_heartbeat = client.post(
+        "/api/v1/edge/runtime/heartbeat",
+        headers={"X-RepoScan-Api-Key": "admin-demo-token"},
+        json={"edge_node_id": "truck_01", "capture_state": "running"},
+    )
     public_health = client.get("/api/v1/health")
 
     assert unauthenticated.status_code == 401
@@ -1358,6 +1424,11 @@ def test_secure_api_requires_credentials_and_enforces_roles(tmp_path):
     assert viewer_follow_up_read.status_code == 200
     assert viewer_assignment_read.status_code == 200
     assert operator_assignment_create.status_code == 201
+    assert viewer_edge_status.status_code == 200
+    assert viewer_edge_command.status_code == 403
+    assert operator_edge_command.status_code == 200
+    assert operator_edge_heartbeat.status_code == 403
+    assert admin_edge_heartbeat.status_code == 200
     assert public_health.status_code == 200
 
 

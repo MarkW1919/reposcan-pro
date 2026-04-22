@@ -60,6 +60,11 @@ from .models import (
     DemoRunSubmission,
     DemoRunSummary,
     DemoRuntimeStatus,
+    EdgeCaptureState,
+    EdgeRuntimeCommand,
+    EdgeRuntimeCommandSubmission,
+    EdgeRuntimeHeartbeatSubmission,
+    EdgeRuntimeStatus,
     FollowUpSubmission,
     GeoSearchFilters,
     GeoShapeType,
@@ -193,6 +198,20 @@ class _AddressSearchCacheEntry:
 
 _address_search_cache: dict[tuple[str, int, str, float | None, float | None], _AddressSearchCacheEntry] = {}
 _address_search_cache_lock = RLock()
+
+
+def _build_default_edge_runtime_status() -> EdgeRuntimeStatus:
+    return EdgeRuntimeStatus(
+        edge_node_id="jetson-orin-nano",
+        capture_state=EdgeCaptureState.unknown,
+        desired_capture_state=EdgeCaptureState.stopped,
+        active_camera_count=0,
+        total_camera_count=0,
+        inference_runtime="pending-hardware",
+        plate_ocr_provider="fast-alpr",
+        vehicle_attribute_provider="hf_vehicle_classifier",
+        message="Waiting for edge hardware heartbeat.",
+    )
 
 
 class AddressSearchProviderError(RuntimeError):
@@ -805,6 +824,7 @@ def _build_operator_capabilities(principal: ApiPrincipalContext) -> OperatorCapa
         can_manage_follow_ups=can_operate,
         can_manage_dispatch=can_operate,
         can_start_demo_runs=can_operate,
+        can_control_edge_runtime=can_operate,
         can_view_audit=ApiRole.admin in roles or ApiRole.integrator in roles,
     )
 
@@ -910,6 +930,30 @@ def create_app(
             rate_limit_enabled=deployment.api.rate_limit.enabled,
         )
 
+    edge_runtime_lock = RLock()
+    edge_runtime_status = _build_default_edge_runtime_status()
+
+    def edge_runtime_snapshot() -> EdgeRuntimeStatus:
+        with edge_runtime_lock:
+            return edge_runtime_status.model_copy(deep=True)
+
+    def update_edge_runtime(status_update: EdgeRuntimeStatus) -> EdgeRuntimeStatus:
+        nonlocal edge_runtime_status
+        with edge_runtime_lock:
+            edge_runtime_status = status_update
+            return edge_runtime_status.model_copy(deep=True)
+
+    def desired_state_for_command(command: EdgeRuntimeCommand) -> EdgeCaptureState:
+        if command == EdgeRuntimeCommand.start_capture:
+            return EdgeCaptureState.running
+        if command == EdgeRuntimeCommand.stop_capture:
+            return EdgeCaptureState.stopped
+        if command == EdgeRuntimeCommand.restart_capture:
+            return EdgeCaptureState.running
+        if command == EdgeRuntimeCommand.mark_faulted:
+            return EdgeCaptureState.faulted
+        return EdgeCaptureState.unknown
+
     def record_audit(
         request: Request,
         *,
@@ -949,6 +993,73 @@ def create_app(
     @api_router.get("/version", response_model=ApiVersionInfo)
     def get_version_info(_principal: ApiPrincipalContext = Depends(access_controller.version_access)) -> ApiVersionInfo:
         return build_version_info()
+
+    @api_router.get("/edge/runtime", response_model=EdgeRuntimeStatus)
+    def get_edge_runtime(
+        _principal: ApiPrincipalContext = Depends(access_controller.viewer_access),
+    ) -> EdgeRuntimeStatus:
+        return edge_runtime_snapshot()
+
+    @api_router.post("/edge/runtime/command", response_model=EdgeRuntimeStatus)
+    def command_edge_runtime(
+        request: Request,
+        submission: EdgeRuntimeCommandSubmission,
+        principal: ApiPrincipalContext = Depends(access_controller.operator_access),
+    ) -> EdgeRuntimeStatus:
+        current = edge_runtime_snapshot()
+        now = _utcnow()
+        desired_state = desired_state_for_command(submission.command)
+        next_capture_state = (
+            EdgeCaptureState.starting
+            if submission.command in {EdgeRuntimeCommand.start_capture, EdgeRuntimeCommand.restart_capture}
+            else EdgeCaptureState.stopping
+            if submission.command == EdgeRuntimeCommand.stop_capture
+            else EdgeCaptureState.faulted
+            if submission.command == EdgeRuntimeCommand.mark_faulted
+            else current.capture_state
+        )
+        updated = current.model_copy(
+            update={
+                "capture_state": next_capture_state,
+                "desired_capture_state": desired_state,
+                "last_command": submission.command,
+                "last_commanded_by": submission.operator_id or principal.principal_id,
+                "last_commanded_at_utc": now,
+                "message": submission.reason or f"Operator command queued: {submission.command.value}",
+            }
+        )
+        updated = update_edge_runtime(updated)
+        record_audit(
+            request,
+            principal=principal,
+            action="edge.command",
+            outcome=AuditOutcome.success,
+            target_type="edge_runtime",
+            target_id=updated.edge_node_id,
+            details={"command": submission.command.value, "desired_capture_state": desired_state.value},
+        )
+        return updated
+
+    @api_router.post("/edge/runtime/heartbeat", response_model=EdgeRuntimeStatus)
+    def heartbeat_edge_runtime(
+        submission: EdgeRuntimeHeartbeatSubmission,
+        _principal: ApiPrincipalContext = Depends(access_controller.integrator_access),
+    ) -> EdgeRuntimeStatus:
+        current = edge_runtime_snapshot()
+        updated = current.model_copy(
+            update={
+                "edge_node_id": submission.edge_node_id,
+                "capture_state": submission.capture_state,
+                "last_heartbeat_at_utc": _utcnow(),
+                "active_camera_count": submission.active_camera_count,
+                "total_camera_count": submission.total_camera_count,
+                "inference_runtime": submission.inference_runtime or current.inference_runtime,
+                "plate_ocr_provider": submission.plate_ocr_provider or current.plate_ocr_provider,
+                "vehicle_attribute_provider": submission.vehicle_attribute_provider or current.vehicle_attribute_provider,
+                "message": submission.message or current.message,
+            }
+        )
+        return update_edge_runtime(updated)
 
     @api_router.get("/dashboard/overview", response_model=DashboardOverview)
     def get_dashboard_overview(
