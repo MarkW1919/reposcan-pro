@@ -24,7 +24,9 @@ Primary source:
 
 FastALPR does not solve vehicle year/make/model/color. It replaces only the
 plate detection plus plate OCR portion of the mobile capture pipeline. Vehicle
-attributes still flow through reviewed crops and VLM/classifier suggestions.
+attributes still flow through reviewed crops and VLM/classifier suggestions; see
+[Free Vehicle Attribute Provider](FREE_VEHICLE_ATTRIBUTE_PROVIDER.md) for the
+current no-cost local attribute suggestion path.
 
 ## Provider Ranking
 

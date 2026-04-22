@@ -48,6 +48,16 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--fast-alpr-detector-confidence", type=float, default=0.30)
     parser.add_argument("--fast-alpr-ocr-device", choices=("auto", "cpu", "cuda"), default="auto")
+    parser.add_argument(
+        "--vehicle-attribute-suggestion-provider",
+        choices=("disabled", "hf_vehicle_classifier", "clip_oklahoma"),
+        default="hf_vehicle_classifier",
+        help="Free local provider used to add suggestions to the small vehicle priority review queue.",
+    )
+    parser.add_argument("--hf-vehicle-batch-size", type=int, default=8)
+    parser.add_argument("--hf-vehicle-top-k", type=int, default=5)
+    parser.add_argument("--hf-vehicle-accept-confidence", type=float, default=0.80)
+    parser.add_argument("--hf-vehicle-device", choices=("auto", "cpu", "cuda"), default="auto")
     parser.add_argument("--interval-seconds", type=int, default=180)
     parser.add_argument("--settle-seconds", type=int, default=20)
     parser.add_argument("--run-once", action="store_true")
@@ -161,7 +171,12 @@ def _processing_outputs_missing(args: argparse.Namespace, repo_root: Path) -> bo
     manifest_path = _resolve(repo_root, args.manifest_path)
     detection_output_root = _resolve(repo_root, args.detection_output_root)
     detection_csv = detection_output_root / "metadata" / "detection_review.csv"
-    vehicle_priority_csv = detection_output_root / "metadata" / "vehicle_attribute_priority_review_no_runtime_attrs.csv"
+    vehicle_priority_name = (
+        "vehicle_attribute_priority_review_hf_free_suggestions.csv"
+        if args.vehicle_attribute_suggestion_provider != "disabled"
+        else "vehicle_attribute_priority_review_no_runtime_attrs.csv"
+    )
+    vehicle_priority_csv = detection_output_root / "metadata" / vehicle_priority_name
     plate_priority_csv = detection_output_root / "metadata" / "plate_ocr_priority_review.csv"
     return manifest_path.exists() and not (
         detection_csv.exists() and vehicle_priority_csv.exists() and plate_priority_csv.exists()
@@ -190,8 +205,12 @@ def _pipeline_commands(args: argparse.Namespace, repo_root: Path) -> dict[str, l
     ultralytics_model = _resolve(repo_root, args.ultralytics_model)
     detection_csv = detection_output_root / "metadata" / "detection_review.csv"
     vehicle_review_csv = detection_output_root / "metadata" / "vehicle_attribute_review_no_runtime_attrs.csv"
+    vehicle_priority_base_csv = detection_output_root / "metadata" / "vehicle_attribute_priority_review_no_runtime_attrs.csv"
+    vehicle_priority_suggestions_csv = (
+        detection_output_root / "metadata" / "vehicle_attribute_priority_review_hf_free_suggestions.csv"
+    )
 
-    return {
+    commands = {
         "import": [
             python,
             "scripts/import_mobile_capture_intake.py",
@@ -268,12 +287,40 @@ def _pipeline_commands(args: argparse.Namespace, repo_root: Path) -> dict[str, l
             "--input-csv",
             str(vehicle_review_csv),
             "--output-csv",
-            str(detection_output_root / "metadata" / "vehicle_attribute_priority_review_no_runtime_attrs.csv"),
+            str(vehicle_priority_base_csv),
             "--max-per-group",
             "5",
             "--overwrite",
         ],
     }
+    if args.vehicle_attribute_suggestion_provider != "disabled":
+        command = [
+            python,
+            "scripts/label_vehicle_attribute_crops_with_vlm.py",
+            "label-crops",
+            "--review-csv",
+            str(vehicle_priority_base_csv),
+            "--output-csv",
+            str(vehicle_priority_suggestions_csv),
+            "--provider",
+            args.vehicle_attribute_suggestion_provider,
+            "--overwrite",
+        ]
+        if args.vehicle_attribute_suggestion_provider == "hf_vehicle_classifier":
+            command.extend(
+                [
+                    "--hf-vehicle-batch-size",
+                    str(args.hf_vehicle_batch_size),
+                    "--hf-vehicle-top-k",
+                    str(args.hf_vehicle_top_k),
+                    "--hf-vehicle-accept-confidence",
+                    str(args.hf_vehicle_accept_confidence),
+                    "--hf-vehicle-device",
+                    args.hf_vehicle_device,
+                ]
+            )
+        commands["vehicle_attribute_suggestions"] = command
+    return commands
 
 
 def run_pipeline_once(
@@ -310,7 +357,10 @@ def run_pipeline_once(
         _write_status(status_path, status)
         return status
 
-    for stage in ("detect", "vehicle_attributes", "plate_priority", "vehicle_priority"):
+    stages = ["detect", "vehicle_attributes", "plate_priority", "vehicle_priority"]
+    if "vehicle_attribute_suggestions" in commands:
+        stages.append("vehicle_attribute_suggestions")
+    for stage in stages:
         exit_code, _ = _run_command(commands[stage], repo_root=repo_root, log_path=log_path)
         status["commands"][stage] = {"exit_code": exit_code}
         _write_status(status_path, status)
@@ -324,6 +374,7 @@ def run_pipeline_once(
             "status": "processed",
             "completed_utc": _utc_now(),
             "detection_output_root": str(_resolve(repo_root, args.detection_output_root)),
+            "vehicle_attribute_suggestion_provider": args.vehicle_attribute_suggestion_provider,
         }
     )
     _write_status(status_path, status)

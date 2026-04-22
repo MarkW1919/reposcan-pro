@@ -287,3 +287,47 @@ def test_clip_generic_response_stays_pending():
     assert response["body_type"] == "suv"
     assert response["make"] is None
     assert response["model"] is None
+
+
+def test_hf_vehicle_classifier_response_maps_common_pickups():
+    module = _load_labeler_module()
+    response = module._response_from_hf_vehicle_candidate(
+        top_candidate={
+            "class_id": 123,
+            "class_name": "Ford F-150 2020",
+            "make": "Ford",
+            "model": "F-150",
+            "confidence": 0.63,
+        },
+        top_candidates=[
+            {
+                "class_id": 123,
+                "class_name": "Ford F-150 2020",
+                "make": "Ford",
+                "model": "F-150",
+                "confidence": 0.63,
+            }
+        ],
+        source_label="Truck",
+        color="black",
+        color_confidence=0.72,
+        accept_confidence=0.60,
+    )
+
+    normalized = module._normalize_label_response(response)
+    assert response["review_action"] == "accept_suggestion"
+    assert normalized["suggested_vlm_vehicle_make"] == "ford"
+    assert normalized["suggested_vlm_vehicle_model"] == "f_150"
+    assert normalized["suggested_vlm_vehicle_model_family"] == "f_series"
+    assert normalized["suggested_vlm_vehicle_year"] == "2020"
+    assert normalized["suggested_vlm_vehicle_color"] == "black"
+    assert normalized["suggested_vlm_body_type"] == "pickup"
+
+
+def test_dominant_vehicle_color_detects_black_crop():
+    module = _load_labeler_module()
+    image = Image.new("RGB", (80, 60), color=(8, 8, 8))
+    color, confidence = module._dominant_vehicle_color(image)
+
+    assert color == "black"
+    assert confidence > 0.95

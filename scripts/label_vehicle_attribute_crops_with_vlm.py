@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import colorsys
 import csv
 import json
 import mimetypes
@@ -15,6 +16,7 @@ from typing import Any, NamedTuple, Protocol
 DEFAULT_QWEN_MODEL = "Qwen/Qwen2.5-VL-7B-Instruct"
 DEFAULT_OPENAI_MODEL = "gpt-4o"
 DEFAULT_CLIP_MODEL = "openai/clip-vit-base-patch32"
+DEFAULT_HF_VEHICLE_CLASSIFIER_MODEL = "Jordo23/vehicle-classifier"
 
 COLOR_LABELS = {"black", "white", "silver", "gray", "red", "blue", "green", "yellow", "orange", "brown", "other"}
 BODY_TYPE_LABELS = {
@@ -151,7 +153,11 @@ def parse_args() -> argparse.Namespace:
     label = subparsers.add_parser("label-crops", help="Add VLM suggestion columns to a crop review CSV.")
     label.add_argument("--review-csv", required=True)
     label.add_argument("--output-csv", required=True)
-    label.add_argument("--provider", choices=["openai", "qwen2_5_vl", "clip_oklahoma", "fixture"], default="qwen2_5_vl")
+    label.add_argument(
+        "--provider",
+        choices=["openai", "qwen2_5_vl", "hf_vehicle_classifier", "clip_oklahoma", "fixture"],
+        default="qwen2_5_vl",
+    )
     label.add_argument("--model", help="Provider model name. Defaults to the provider's recommended baseline.")
     label.add_argument("--fixture-jsonl", help="JSONL fixture for deterministic tests or offline dry runs.")
     label.add_argument("--limit", type=int)
@@ -164,6 +170,10 @@ def parse_args() -> argparse.Namespace:
     label.add_argument("--openai-api-key-env", default="OPENAI_API_KEY")
     label.add_argument("--clip-batch-size", type=int, default=16)
     label.add_argument("--clip-accept-confidence", type=float, default=0.80)
+    label.add_argument("--hf-vehicle-batch-size", type=int, default=8)
+    label.add_argument("--hf-vehicle-top-k", type=int, default=5)
+    label.add_argument("--hf-vehicle-accept-confidence", type=float, default=0.80)
+    label.add_argument("--hf-vehicle-device", choices=["auto", "cpu", "cuda"], default="auto")
 
     consensus = subparsers.add_parser(
         "apply-consensus",
@@ -381,6 +391,165 @@ def _response_from_clip_candidate(
     }
 
 
+def _parse_year_from_class_name(class_name: str) -> str:
+    match = re.search(r"\b((?:19|20)\d{2})\b\s*$", class_name.strip())
+    return match.group(1) if match else ""
+
+
+def _model_family_from_make_model(make: str, model: str) -> str:
+    make_slug = _slugify(make)
+    model_slug = _slugify(model)
+    combined = f"{make_slug}_{model_slug}"
+    common_families = [
+        ("ford", "f_150", "f_series"),
+        ("ford", "f_250", "super_duty"),
+        ("ford", "f_350", "super_duty"),
+        ("ford", "super_duty", "super_duty"),
+        ("chevrolet", "silverado", "silverado"),
+        ("chevy", "silverado", "silverado"),
+        ("gmc", "sierra", "sierra"),
+        ("ram", "1500", "ram_pickup"),
+        ("ram", "2500", "ram_pickup"),
+        ("ram", "3500", "ram_pickup"),
+        ("dodge", "ram", "ram_pickup"),
+        ("toyota", "tacoma", "tacoma"),
+        ("toyota", "tundra", "tundra"),
+        ("nissan", "frontier", "frontier"),
+        ("chevrolet", "tahoe", "tahoe"),
+        ("chevrolet", "suburban", "suburban"),
+        ("gmc", "yukon", "yukon"),
+        ("ford", "explorer", "explorer"),
+        ("ford", "escape", "escape"),
+        ("jeep", "grand_cherokee", "grand_cherokee"),
+        ("jeep", "wrangler", "wrangler"),
+        ("toyota", "rav4", "rav4"),
+        ("honda", "cr_v", "cr_v"),
+        ("nissan", "rogue", "rogue"),
+        ("toyota", "camry", "camry"),
+        ("toyota", "corolla", "corolla"),
+        ("honda", "accord", "accord"),
+        ("honda", "civic", "civic"),
+        ("nissan", "altima", "altima"),
+        ("nissan", "sentra", "sentra"),
+        ("chevrolet", "malibu", "malibu"),
+        ("dodge", "charger", "charger"),
+        ("dodge", "challenger", "challenger"),
+    ]
+    for family_make, family_token, family_label in common_families:
+        if make_slug == family_make and family_token in model_slug:
+            return family_label
+    if combined.startswith("ford_f_"):
+        return "f_series"
+    return model_slug
+
+
+def _body_type_from_source_or_model(source_label: str, make: str, model: str) -> str:
+    source_slug = _slugify(source_label)
+    if source_slug in {"truck", "pickup"}:
+        return "pickup"
+    if source_slug in {"bus", "motorcycle", "van", "minivan"}:
+        return source_slug
+    model_slug = _slugify(f"{make} {model}")
+    pickup_tokens = {"f_150", "f_250", "f_350", "silverado", "sierra", "ram", "tacoma", "tundra", "frontier"}
+    suv_tokens = {"tahoe", "suburban", "yukon", "explorer", "escape", "grand_cherokee", "wrangler", "rav4", "cr_v", "rogue"}
+    sedan_tokens = {"camry", "corolla", "accord", "civic", "altima", "sentra", "malibu", "charger"}
+    if any(token in model_slug for token in pickup_tokens):
+        return "pickup"
+    if any(token in model_slug for token in suv_tokens):
+        return "suv"
+    if any(token in model_slug for token in sedan_tokens):
+        return "sedan"
+    return "unknown"
+
+
+def _pixel_color_label(red: int, green: int, blue: int) -> str:
+    r = red / 255.0
+    g = green / 255.0
+    b = blue / 255.0
+    hue, saturation, value = colorsys.rgb_to_hsv(r, g, b)
+    if value < 0.18:
+        return "black"
+    if saturation < 0.16:
+        if value > 0.78:
+            return "white"
+        if value > 0.55:
+            return "silver"
+        return "gray"
+    if 0.04 <= hue <= 0.12 and value < 0.50:
+        return "brown"
+    if hue < 0.04 or hue >= 0.94:
+        return "red"
+    if hue < 0.10:
+        return "orange"
+    if hue < 0.17:
+        return "yellow"
+    if hue < 0.43:
+        return "green"
+    if hue < 0.72:
+        return "blue"
+    if hue < 0.88:
+        return "other"
+    return "red"
+
+
+def _dominant_vehicle_color(image) -> tuple[str, float]:
+    resized = image.convert("RGB").resize((64, 64))
+    width, height = resized.size
+    left = int(width * 0.08)
+    right = int(width * 0.92)
+    top = int(height * 0.08)
+    bottom = int(height * 0.92)
+    counts: dict[str, int] = {}
+    total = 0
+    for y in range(top, bottom):
+        for x in range(left, right):
+            label = _pixel_color_label(*resized.getpixel((x, y)))
+            counts[label] = counts.get(label, 0) + 1
+            total += 1
+    if total <= 0 or not counts:
+        return "", 0.0
+    color, count = max(counts.items(), key=lambda item: item[1])
+    confidence = min(max(count / total, 0.0), 1.0)
+    return color, confidence
+
+
+def _response_from_hf_vehicle_candidate(
+    *,
+    top_candidate: dict[str, Any],
+    top_candidates: list[dict[str, Any]],
+    source_label: str,
+    color: str,
+    color_confidence: float,
+    accept_confidence: float,
+) -> dict[str, Any]:
+    confidence = _coerce_float(top_candidate.get("confidence"))
+    make = str(top_candidate.get("make") or "").strip()
+    model = str(top_candidate.get("model") or "").strip()
+    year = _parse_year_from_class_name(str(top_candidate.get("class_name") or ""))
+    model_family = _model_family_from_make_model(make, model)
+    body_type = _body_type_from_source_or_model(source_label, make, model)
+    return {
+        "contains_usable_vehicle": bool(make and model),
+        "make": make or None,
+        "model": model or None,
+        "model_family": model_family or None,
+        "year": year or None,
+        "year_range": None,
+        "trim": None,
+        "color": color or None,
+        "body_type": body_type,
+        "confidence": confidence,
+        "evidence": (
+            f"hf_vehicle_classifier top1={top_candidate.get('class_name')} "
+            f"top1_conf={confidence:.4f} color={color or 'unknown'} "
+            f"color_conf={color_confidence:.4f}"
+        ),
+        "review_action": "accept_suggestion" if confidence >= accept_confidence else "needs_human_review",
+        "top_candidates": top_candidates,
+        "color_confidence": color_confidence,
+    }
+
+
 class FixtureLabeler:
     provider = "fixture"
 
@@ -513,6 +682,162 @@ class QwenVehicleLabeler:
         return _extract_json_object(output_text)
 
 
+class HfVehicleClassifierLabeler:
+    provider = "hf_vehicle_classifier"
+
+    def __init__(
+        self,
+        *,
+        model_name: str,
+        batch_size: int,
+        top_k: int,
+        accept_confidence: float,
+        device: str,
+    ):
+        try:
+            import timm
+            import torch
+            from huggingface_hub import hf_hub_download
+            from PIL import Image
+            from torchvision import transforms
+        except ImportError as exc:
+            raise RuntimeError(
+                "Install free vehicle classifier dependencies with "
+                '`python -m pip install -e ".[free-vehicle-attrs]"`.'
+            ) from exc
+
+        self.timm = timm
+        self.torch = torch
+        self.Image = Image
+        self.transforms = transforms
+        self.hf_hub_download = hf_hub_download
+        self.model_name = model_name
+        self.batch_size = max(1, batch_size)
+        self.top_k = max(1, top_k)
+        self.accept_confidence = accept_confidence
+        if device == "auto":
+            self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        elif device == "cuda" and not torch.cuda.is_available():
+            raise RuntimeError("CUDA was requested for hf_vehicle_classifier but torch.cuda is not available.")
+        else:
+            self.device = device
+
+        checkpoint_path = hf_hub_download(repo_id=model_name, filename="vehicle_classifier.pth")
+        mapping_path = hf_hub_download(repo_id=model_name, filename="class_mapping.csv")
+        checkpoint = torch.load(checkpoint_path, map_location="cpu")
+        self.class_mapping = self._load_class_mapping(mapping_path, checkpoint.get("class_mapping", {}))
+        num_classes = int(checkpoint.get("num_classes") or len(self.class_mapping))
+        self.model = timm.create_model("efficientnet_b4", pretrained=False, num_classes=num_classes)
+        self.model.load_state_dict(checkpoint["model_state"])
+        self.model.to(self.device)
+        self.model.eval()
+        self.transform = transforms.Compose(
+            [
+                transforms.Resize((380, 380)),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            ]
+        )
+
+    @staticmethod
+    def _load_class_mapping(mapping_path: str, checkpoint_mapping: dict[Any, Any]) -> dict[int, dict[str, str]]:
+        rows: dict[int, dict[str, str]] = {}
+        with Path(mapping_path).open("r", encoding="utf-8", newline="") as handle:
+            for row in csv.DictReader(handle):
+                try:
+                    class_id = int(row.get("global_class_id") or "")
+                except ValueError:
+                    continue
+                rows[class_id] = {
+                    "class_name": _clean_text(row.get("class_name")),
+                    "make": _clean_text(row.get("make")),
+                    "model": _clean_text(row.get("model")),
+                }
+        for raw_class_id, raw_class_name in checkpoint_mapping.items():
+            try:
+                class_id = int(raw_class_id)
+            except (TypeError, ValueError):
+                continue
+            rows.setdefault(
+                class_id,
+                {
+                    "class_name": _clean_text(raw_class_name),
+                    "make": "",
+                    "model": "",
+                },
+            )
+            if not rows[class_id].get("class_name"):
+                rows[class_id]["class_name"] = _clean_text(raw_class_name)
+        return rows
+
+    def _candidate_for(self, class_id: int, confidence: float) -> dict[str, Any]:
+        record = self.class_mapping.get(class_id, {})
+        return {
+            "class_id": class_id,
+            "class_name": record.get("class_name") or "",
+            "make": record.get("make") or "",
+            "model": record.get("model") or "",
+            "confidence": confidence,
+        }
+
+    def label_batch(
+        self,
+        crop_paths: list[Path],
+        rows: list[dict[str, str]],
+    ) -> list[dict[str, Any]]:
+        if not rows:
+            return []
+        if len(crop_paths) != len(rows):
+            raise ValueError("crop_paths and rows must have equal length")
+
+        tensors = []
+        colors: list[tuple[str, float]] = []
+        images = []
+        for crop_path in crop_paths:
+            image = self.Image.open(crop_path).convert("RGB")
+            images.append(image)
+            colors.append(_dominant_vehicle_color(image))
+            tensors.append(self.transform(image))
+        try:
+            input_tensor = self.torch.stack(tensors).to(self.device)
+            with self.torch.inference_mode():
+                logits = self.model(input_tensor)
+                probabilities = self.torch.softmax(logits, dim=1)
+                top_probs, top_indices = self.torch.topk(
+                    probabilities,
+                    k=min(self.top_k, probabilities.shape[1]),
+                    dim=1,
+                )
+        finally:
+            for image in images:
+                image.close()
+
+        responses: list[dict[str, Any]] = []
+        for row_index, row in enumerate(rows):
+            top_candidates = [
+                self._candidate_for(
+                    int(top_indices[row_index][candidate_index].item()),
+                    float(top_probs[row_index][candidate_index].item()),
+                )
+                for candidate_index in range(top_indices.shape[1])
+            ]
+            color, color_confidence = colors[row_index]
+            responses.append(
+                _response_from_hf_vehicle_candidate(
+                    top_candidate=top_candidates[0],
+                    top_candidates=top_candidates,
+                    source_label=str(row.get("source_label") or ""),
+                    color=color,
+                    color_confidence=color_confidence,
+                    accept_confidence=self.accept_confidence,
+                )
+            )
+        return responses
+
+    def label(self, crop_path: Path, row: dict[str, str]) -> dict[str, Any]:
+        return self.label_batch([crop_path], [row])[0]
+
+
 class ClipOklahomaLabeler:
     provider = "clip_oklahoma"
 
@@ -622,6 +947,14 @@ def _build_labeler(args: argparse.Namespace) -> VehicleAttributeLabeler:
             device_map=args.device_map,
             max_new_tokens=args.max_new_tokens,
         )
+    if args.provider == "hf_vehicle_classifier":
+        return HfVehicleClassifierLabeler(
+            model_name=args.model or DEFAULT_HF_VEHICLE_CLASSIFIER_MODEL,
+            batch_size=args.hf_vehicle_batch_size,
+            top_k=args.hf_vehicle_top_k,
+            accept_confidence=args.hf_vehicle_accept_confidence,
+            device=args.hf_vehicle_device,
+        )
     if args.provider == "clip_oklahoma":
         return ClipOklahomaLabeler(
             model_name=args.model or DEFAULT_CLIP_MODEL,
@@ -675,7 +1008,7 @@ def label_crops(args: argparse.Namespace) -> int:
     errors = 0
     skipped = 0
 
-    if isinstance(labeler, ClipOklahomaLabeler):
+    if isinstance(labeler, (ClipOklahomaLabeler, HfVehicleClassifierLabeler)):
         grouped: dict[str, list[tuple[int, Path, dict[str, str]]]] = {}
         for index, row in enumerate(rows):
             if args.skip_existing and row.get("suggested_vlm_provider") and not row.get("vlm_label_error"):

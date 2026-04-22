@@ -166,20 +166,29 @@ Use `gpt-4o` when accuracy matters more than labeling cost. Use
 `gpt-4o-mini` for lower-cost bulk triage, then reserve `gpt-4o` for
 ambiguous crops or final pre-review passes.
 
-Local fallback:
+Best free local path:
 
 ```powershell
+.\.venv\Scripts\python.exe -m pip install -e ".[free-vehicle-attrs]"
+
 .\.venv\Scripts\python.exe .\scripts\label_vehicle_attribute_crops_with_vlm.py label-crops `
   --review-csv .\data\staged\mobile_capture_detection_review_20260419\metadata\vehicle_attribute_review.csv `
-  --output-csv .\data\staged\mobile_capture_detection_review_20260419\metadata\vehicle_attribute_clip_suggestions.csv `
-  --provider clip_oklahoma `
+  --output-csv .\data\staged\mobile_capture_detection_review_20260419\metadata\vehicle_attribute_hf_free_suggestions.csv `
+  --provider hf_vehicle_classifier `
   --overwrite
 ```
+
+This uses the MIT-licensed `Jordo23/vehicle-classifier` EfficientNet-B4 checkpoint
+from Hugging Face for make/model/year suggestions and a local color heuristic for
+color suggestions. Treat these as review accelerators only; the model reports about
+50% top-1 and 75-80% top-5 accuracy on its source benchmark, so accepted training
+labels still require review.
 
 Stronger pretrained options when available:
 
 - `--provider qwen2_5_vl` for local / Colab GPU batch labeling
 - `--provider openai --model gpt-4o` when an `OPENAI_API_KEY` with quota is available locally
+- `--provider clip_oklahoma` for a very light CPU fallback when the HF classifier is too slow
 
 Both should still be treated as suggestion generators, not ground truth.
 
@@ -213,7 +222,7 @@ For vehicle attributes, build a reduced priority queue from the attribute sugges
 
 ```powershell
 .\.venv\Scripts\python.exe .\scripts\prepare_mobile_capture_priority_review.py vehicle-attributes `
-  --input-csv .\data\staged\mobile_capture_detection_review_20260419\metadata\vehicle_attribute_clip_suggestions.csv `
+  --input-csv .\data\staged\mobile_capture_detection_review_20260419\metadata\vehicle_attribute_hf_free_suggestions.csv `
   --output-csv .\data\staged\mobile_capture_detection_review_20260419\metadata\vehicle_attribute_priority_review.csv `
   --max-per-group 5 `
   --prefer-accept-suggestions `

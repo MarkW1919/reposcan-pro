@@ -24,6 +24,8 @@ upgrade one weak stage without destabilizing the whole product.
 3. **Vehicle attributes**
    - Use a high-accuracy VLM as a suggestion generator, not as ground truth. The
      current preferred hosted path is OpenAI `gpt-4o` once API quota is available.
+   - Use the free local `hf_vehicle_classifier` provider as the default no-cost
+     review assistant while API quota or commercial SDK licensing is unavailable.
    - Train the deployed edge attribute model separately from reviewed crops. Start
      with model-family, body type, and color. Treat exact year as a later-stage goal;
      for now, exact year should be human-reviewed or bucketed into year ranges.
@@ -47,6 +49,7 @@ upgrade one weak stage without destabilizing the whole product.
 | Plate detector | YOLO11 license-plate detector checkpoints | Good bootstrap option for experiments and review queue generation | Common HF plate detector checkpoints are AGPL; use for experiments until licensing is settled |
 | Plate OCR | PaddleOCR PP-OCRv5 mobile/server | Strong open OCR family with deployment and training support | PP-OCRv5 can be slower than PP-OCRv4; benchmark both on target hardware |
 | Attribute classifier | DINOv3/timm or ConvNeXt | Strong visual backbone for make/model-family/color after we have labels | Needs a reviewed, balanced dataset; exact year is not reliable from small crops |
+| Free attribute suggester | `Jordo23/vehicle-classifier` | Best current no-cost local make/model/year review assistant | About 50% top-1 and 75-80% top-5 on its benchmark; do not promote without review |
 | VLM labeler | OpenAI `gpt-4o` | Best current hosted suggestion path for difficult vehicle crops | Requires API quota; output is still pending review, not training truth |
 
 ## Continual Learning Loop
