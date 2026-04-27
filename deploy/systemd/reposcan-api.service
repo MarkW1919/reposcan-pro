@@ -13,6 +13,7 @@ WorkingDirectory=/opt/reposcan-pro
 # Load secrets from the environment file — never commit the real file.
 # Copy deploy/env.example to /etc/reposcan/env and fill in values.
 EnvironmentFile=/etc/reposcan/env
+Environment=PYTHONPATH=/opt/reposcan-pro/packages/contracts/src:/opt/reposcan-pro/apps/api/src:/opt/reposcan-pro/services/alerting/src:/opt/reposcan-pro/services/capture/src:/opt/reposcan-pro/services/inference/src:/opt/reposcan-pro/services/preprocessing/src:/opt/reposcan-pro/services/storage/src:/opt/reposcan-pro/services/sync/src:/opt/reposcan-pro/services/tracking/src
 
 ExecStart=/opt/reposcan-pro/.venv/bin/uvicorn reposcan_api.main:app \
     --host ${REPOSCAN_API_HOST} \

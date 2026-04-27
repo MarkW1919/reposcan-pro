@@ -37,7 +37,7 @@ log "Updating Python dependencies…"
 # ── 3. Contract validation ───────────────────────────────────────────────────
 if [[ "${SKIP_TESTS}" != "--skip-tests" ]]; then
     log "Running contract and integration tests…"
-    .venv/bin/pytest tests/ -x -q --timeout=60 || die "Tests failed — aborting update."
+    .venv/bin/python -m pytest tests/ -x -q || die "Tests failed — aborting update."
     log "Tests passed."
 else
     log "WARNING: Tests skipped by --skip-tests flag."

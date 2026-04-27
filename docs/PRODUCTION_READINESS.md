@@ -186,7 +186,7 @@ Stale reviews are not reviews. Sign the decision record only against evidence da
 Items raised while drafting this review that need a home before a GO decision can be recorded:
 
 - `docs/OPERATOR_TRAINING.md` now exists. OP-4 remains `pending` until the material is reviewed and accepted by the operator lead.
-- No single artifact currently binds the per-criterion field-dataset holdouts to the acceptance run IDs. The acceptance harness (`scripts/acceptance/`) is expected to generate that binding; until it lands, the evidence register rows carry placeholder `<run_id>` tokens.
+- Acceptance runs now write `production_readiness_evidence.json`, which binds run ID, source dataset manifest, derived benchmark manifest, and covered criteria. Evidence register rows still carry placeholder `<run_id>` tokens until a reviewer accepts a specific run.
 - Plate pixel density minimum (P1-3) is asserted by [CAMERA_AND_IMAGING.md](CAMERA_AND_IMAGING.md) but not numerically. The review board must either publish a number or accept the imaging lead's per-rig measurement as the threshold at review time.
 - API auth audit (NF-5) depends on running against the secured deployment profile, not `local-dev`; the secured profile example lives at `configs/deployments/local-secure-api-example.yaml` and example tokens must be replaced before a real audit run.
 

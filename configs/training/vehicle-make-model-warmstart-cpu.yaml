@@ -10,6 +10,8 @@ epochs: 18
 batch_size: 16
 workers: 2
 patience: 5
+seed: 42
+validation_fraction: 0.1
 precision: fp32
 device: auto
 augmentation:

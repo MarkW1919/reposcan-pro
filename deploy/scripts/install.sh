@@ -35,12 +35,22 @@ log "Installing system packages…"
 apt-get update -qq
 apt-get install -y --no-install-recommends \
     python3.11 python3.11-venv python3.11-dev \
-    build-essential git curl \
+    build-essential git curl ca-certificates rsync \
     libpq-dev \
     libopencv-dev python3-opencv \
-    nodejs npm \
     supervisor \
     2>/dev/null || log "Some packages may already be installed."
+
+if ! command -v node >/dev/null 2>&1 || [[ "$(node --version 2>/dev/null || true)" != v24.* ]]; then
+    log "Installing Node.js 24.x runtime..."
+    curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
+    apt-get install -y --no-install-recommends nodejs
+fi
+
+NODE_VERSION="$(node --version)"
+NPM_MAJOR="$(npm --version | cut -d. -f1)"
+[[ "${NODE_VERSION}" == v24.* ]] || die "Node 24.x is required; found ${NODE_VERSION}."
+[[ "${NPM_MAJOR}" == "11" ]] || die "npm 11.x is required; found $(npm --version)."
 
 # ── 2. Service user ───────────────────────────────────────────────────────────
 if ! id "${SERVICE_USER}" &>/dev/null; then

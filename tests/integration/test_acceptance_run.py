@@ -18,6 +18,7 @@ from reposcan_inference import (
     build_acceptance_run_report,
     frame_lanes,
     lane_report_filenames,
+    readiness_evidence_map,
     package_promoted_onnx_bundle,
     render_lane_markdown,
     render_overall_markdown,
@@ -178,6 +179,13 @@ def test_acceptance_run_report_and_artifacts_end_to_end(tmp_path):
     payload = json.loads(sidecar.read_text(encoding="utf-8"))
     assert payload["run_id"] == "acc_test_run"
     assert len(payload["lanes"]) == len(ACCEPTANCE_LANES)
+    evidence_map = json.loads((run_dir / "production_readiness_evidence.json").read_text(encoding="utf-8"))
+    assert evidence_map["run_id"] == "acc_test_run"
+    assert evidence_map["criteria"]["P1-1"]["artifact"] == "long_range_report.md"
+    assert evidence_map["criteria"]["P1-1"]["status"] == "evaluated"
+    assert evidence_map["criteria"]["P2-1"]["artifact"] == "low_light_report.md"
+    assert evidence_map["criteria"]["P4-2"]["metric"] == "character_accuracy"
+    assert readiness_evidence_map(acceptance_report)["criteria"]["moving_platform"]["frames"] == 1
 
 
 def test_acceptance_run_report_marks_missing_lane_as_not_evaluated(tmp_path):

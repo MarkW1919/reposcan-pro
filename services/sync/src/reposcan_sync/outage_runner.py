@@ -507,6 +507,43 @@ def render_outage_markdown(report: OutageAcceptanceReport) -> str:
     return "\n".join(lines) + "\n"
 
 
+def outage_readiness_evidence_map(report: OutageAcceptanceReport) -> dict[str, object]:
+    invariants = {invariant.name: invariant for invariant in report.invariants}
+    return {
+        "run_id": report.run_id,
+        "generated_at_utc": report.generated_at_utc,
+        "deployment_name": report.deployment_name,
+        "workspace_root": report.workspace_root,
+        "criteria": {
+            "P6-1": {
+                "artifact": "outage_report.md",
+                "status": "evaluated",
+                "passed": invariants["local_detections_persist_during_outage"].passed
+                and invariants["sync_queue_retains_pending_items"].passed
+                and invariants["sync_queue_drains_on_recovery"].passed,
+                "detections_ingested": report.detections_ingested,
+                "outage_queue_depth": report.outage.sync_queue_depth,
+                "recovery_queue_depth": report.recovery.sync_queue_depth,
+            },
+            "P6-2": {
+                "artifact": "outage_report.md",
+                "status": "evaluated",
+                "passed": invariants["local_alerts_persist_during_outage"].passed
+                and invariants["alerts_redeliver_on_recovery"].passed,
+                "outage_alerts": report.outage.alerts_in_storage,
+                "recovery_alerts": report.recovery.alerts_in_storage,
+            },
+            "NF-3": {
+                "artifact": "outage_report.md",
+                "status": "evaluated",
+                "passed": invariants["sync_queue_drains_on_recovery"].passed,
+                "recovery_synced": report.recovery.detections_synced,
+                "recovery_failed": report.recovery.detections_failed_sync,
+            },
+        },
+    }
+
+
 def write_outage_artifacts(
     report: OutageAcceptanceReport,
     *,
@@ -528,4 +565,8 @@ def write_outage_artifacts(
         ],
     }
     (run_dir / "run_manifest.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    (run_dir / "production_readiness_evidence.json").write_text(
+        json.dumps(outage_readiness_evidence_map(report), indent=2),
+        encoding="utf-8",
+    )
     return run_dir

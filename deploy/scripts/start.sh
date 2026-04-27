@@ -23,6 +23,7 @@ fi
 REPOSCAN_DEPLOY_PROFILE="${REPOSCAN_DEPLOY_PROFILE:-local-dev}"
 REPOSCAN_API_HOST="${REPOSCAN_API_HOST:-127.0.0.1}"
 REPOSCAN_API_PORT="${REPOSCAN_API_PORT:-8000}"
+export PYTHONPATH="${REPO_ROOT}/packages/contracts/src:${REPO_ROOT}/apps/api/src:${REPO_ROOT}/services/alerting/src:${REPO_ROOT}/services/capture/src:${REPO_ROOT}/services/inference/src:${REPO_ROOT}/services/preprocessing/src:${REPO_ROOT}/services/storage/src:${REPO_ROOT}/services/sync/src:${REPO_ROOT}/services/tracking/src${PYTHONPATH:+:${PYTHONPATH}}"
 
 log() { echo "[$(date -u +%H:%M:%SZ)] $*"; }
 

@@ -10,6 +10,7 @@ production-readiness review register consumes.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
@@ -274,6 +275,80 @@ def lane_report_filenames() -> dict[str, str]:
     }
 
 
+def readiness_evidence_map(report: AcceptanceRunReport) -> dict[str, object]:
+    """Return the production-readiness criteria covered by an acceptance run.
+
+    This map is intentionally conservative: it only marks whether the run
+    generated evidence for a criterion, not whether a reviewer has accepted it.
+    Field-vs-fixture suitability remains a review-board decision.
+    """
+
+    lanes = {lane.lane: lane for lane in report.lanes}
+    long_range = lanes[LONG_RANGE_LANE]
+    low_light = lanes[LOW_LIGHT_LANE]
+    moving_platform = lanes[MOVING_PLATFORM_LANE]
+    return {
+        "run_id": report.run_id,
+        "generated_at_utc": report.generated_at_utc,
+        "source_dataset_name": report.source_dataset_name,
+        "source_dataset_version": report.source_dataset_version,
+        "source_dataset_manifest_path": report.source_dataset_manifest_path,
+        "benchmark_manifest_path": report.benchmark_manifest_path,
+        "criteria": {
+            "P1-1": {
+                "artifact": "long_range_report.md",
+                "lane": LONG_RANGE_LANE,
+                "status": long_range.status,
+                "frames": long_range.frames,
+                "metric": "exact_match_rate",
+                "value": long_range.metrics.exact_match_rate if long_range.metrics else None,
+            },
+            "P1-2": {
+                "artifact": "long_range_report.md",
+                "lane": LONG_RANGE_LANE,
+                "status": long_range.status,
+                "frames": long_range.frames,
+                "review_note": "Requires field-captured source footage before acceptance.",
+            },
+            "P2-1": {
+                "artifact": "low_light_report.md",
+                "lane": LOW_LIGHT_LANE,
+                "status": low_light.status,
+                "frames": low_light.frames,
+                "metric": "exact_match_rate",
+                "value": low_light.metrics.exact_match_rate if low_light.metrics else None,
+            },
+            "P2-2": {
+                "artifact": "low_light_report.md",
+                "lane": LOW_LIGHT_LANE,
+                "status": low_light.status,
+                "frames": low_light.frames,
+                "review_note": "Requires field-captured dusk, night, no-light, glare, and IR-assisted scenes.",
+            },
+            "P4-1": {
+                "artifact": "overall_report.md",
+                "status": "evaluated" if report.overall.frames > 0 else "not_evaluated",
+                "frames": report.overall.frames,
+                "metric": "exact_match_rate",
+                "value": report.overall.exact_match_rate,
+            },
+            "P4-2": {
+                "artifact": "overall_report.md",
+                "status": "evaluated" if report.overall.frames > 0 else "not_evaluated",
+                "frames": report.overall.frames,
+                "metric": "character_accuracy",
+                "value": report.overall.character_accuracy,
+            },
+            "moving_platform": {
+                "artifact": "moving_platform_report.md",
+                "lane": MOVING_PLATFORM_LANE,
+                "status": moving_platform.status,
+                "frames": moving_platform.frames,
+            },
+        },
+    }
+
+
 def write_acceptance_artifacts(
     report: AcceptanceRunReport,
     *,
@@ -292,5 +367,11 @@ def write_acceptance_artifacts(
 
     sidecar_path = run_dir / "acceptance_report.json"
     sidecar_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
+
+    evidence_map_path = run_dir / "production_readiness_evidence.json"
+    evidence_map_path.write_text(
+        json.dumps(readiness_evidence_map(report), indent=2),
+        encoding="utf-8",
+    )
 
     return run_dir

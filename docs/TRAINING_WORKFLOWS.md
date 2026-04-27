@@ -28,7 +28,20 @@ These scripts are prepare-first.
 - `configs/training/vehicle-color-classifier.yaml`
 - `configs/training/vehicle-color-classifier-efficientnet.yaml`
 - `configs/training/vehicle-make-model-warmstart.yaml`
+- `configs/training/vehicle-make-model-warmstart-v2.yaml`
+- `configs/training/vehicle-make-model-warmstart-regularized.yaml`
 - `configs/training/vehicle-make-model-warmstart-cpu.yaml`
+- `configs/training/vehicle-make-model-reviewed-seed-cpu.yaml`
+
+## Current Make/Model Baseline
+
+The strongest completed make/model warm-start run on this workstation is currently:
+
+- run: `runtime/training/vehicle-make-model-warmstart-v2_20260409_141756`
+- validation accuracy: `0.8534`
+- Stanford Cars holdout accuracy: `0.8493`
+
+Treat CPU-only runs such as `vehicle-make-model-warmstart-cpu` as workflow validation unless they beat that baseline. For production promotion, prefer field-reviewed make/model crops and qualified long-range / low-light holdouts over another Stanford-only comparison.
 
 ## Detection Dataset Promotion
 

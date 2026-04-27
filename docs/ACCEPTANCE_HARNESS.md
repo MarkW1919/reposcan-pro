@@ -73,6 +73,7 @@ artifacts/acceptance/<run_id>/
 |-- run_manifest.json         # run id, git HEAD, inputs, lane status summary
 |-- acceptance_report.json    # structured AcceptanceRunReport sidecar
 |-- benchmark_report.json     # raw PromotedModelBenchmarkReport sidecar
+|-- production_readiness_evidence.json # criterion-to-artifact evidence map
 |-- overall_report.md         # overall metrics + lane summary table
 |-- long_range_report.md      # long-range lane metrics or "not evaluated"
 |-- low_light_report.md       # low-light lane metrics or "not evaluated"
@@ -80,6 +81,7 @@ artifacts/acceptance/<run_id>/
 ```
 
 These paths intentionally match the evidence register paths in [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md) so an approved run can be referenced directly in the go/no-go decision.
+The `production_readiness_evidence.json` sidecar binds the run ID, source dataset manifest, derived benchmark manifest, and covered readiness criteria so reviewers can trace evidence rows without reconstructing that mapping from separate files.
 
 ## How lanes get marked "not evaluated"
 

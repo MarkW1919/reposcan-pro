@@ -14,6 +14,7 @@ from reposcan_sync import (
     render_outage_markdown,
     run_internet_outage_acceptance,
     write_outage_artifacts,
+    outage_readiness_evidence_map,
 )
 
 
@@ -106,9 +107,11 @@ def test_outage_artifacts_round_trip(tmp_path: Path):
     md_path = run_dir / "outage_report.md"
     json_path = run_dir / "outage_report.json"
     summary_path = run_dir / "run_manifest.json"
+    evidence_path = run_dir / "production_readiness_evidence.json"
     assert md_path.exists()
     assert json_path.exists()
     assert summary_path.exists()
+    assert evidence_path.exists()
 
     markdown = md_path.read_text(encoding="utf-8")
     assert "Internet-outage acceptance run outage_test_artifacts" in markdown
@@ -124,6 +127,14 @@ def test_outage_artifacts_round_trip(tmp_path: Path):
     assert summary["run_id"] == "outage_test_artifacts"
     assert summary["detections_ingested"] == 3
     assert summary["passed"] is True
+
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    assert evidence["run_id"] == "outage_test_artifacts"
+    assert evidence["criteria"]["P6-1"]["artifact"] == "outage_report.md"
+    assert evidence["criteria"]["P6-1"]["passed"] is True
+    assert evidence["criteria"]["P6-2"]["passed"] is True
+    assert evidence["criteria"]["NF-3"]["passed"] is True
+    assert outage_readiness_evidence_map(report)["criteria"]["P6-1"]["detections_ingested"] == 3
 
 
 def test_render_outage_markdown_contains_phase_snapshot(tmp_path: Path):

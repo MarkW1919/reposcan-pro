@@ -64,11 +64,13 @@ Every run lands in `artifacts/acceptance/outage/<run_id>/`:
 ```text
 artifacts/acceptance/outage/<run_id>/
 |-- run_manifest.json   # run id, deployment, pass/fail, per-invariant summary
+|-- production_readiness_evidence.json # P6/NF criterion-to-artifact evidence map
 |-- outage_report.json  # full OutageAcceptanceReport sidecar
 `-- outage_report.md    # operator-readable summary with phase snapshot + invariant tables
 ```
 
 The workspace directory under `<run_id>/workspace/` holds the run's isolated storage metadata and sync queue. It is safe to delete after the run.
+The `production_readiness_evidence.json` sidecar binds the outage run to P6-1, P6-2, and NF-3 so reviewers can trace local-first evidence without hand-mapping invariant names to readiness rows.
 
 ## How the outage is simulated
 
