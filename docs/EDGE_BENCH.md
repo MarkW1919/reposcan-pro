@@ -2,7 +2,7 @@
 
 The edge bench harness produces the latency, memory, and thermal evidence artifacts that close §12.183 (edge inference sign-off) in [PROJECT_STATUS_CHECKLIST.md](PROJECT_STATUS_CHECKLIST.md) and feed row P3-1 of [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md).
 
-The harness drives the existing `InferenceService` pipeline — the same code that runs in production — and records per-stage latency distributions, cold-start timing, peak RSS, and a pluggable thermal/power telemetry stream. The same CLI is used on a developer workstation to keep the pipeline exercised and on the Jetson Orin rig to produce the hardware sign-off numbers.
+The harness drives the existing `InferenceService` pipeline — the same code that runs in production — and records per-stage latency distributions, cold-start timing, deployment-profile budgets, peak RSS, and a pluggable thermal/power telemetry stream. The same CLI is used on a developer workstation to keep the pipeline exercised and on the Jetson Orin Nano Super rig to produce the hardware sign-off numbers.
 
 ## When to use it
 
@@ -13,7 +13,7 @@ Run the edge bench every time any of these change:
 - the deployment profile for a target device changes
 - a production-readiness review is about to be signed
 
-Until the Orin rig ships, run the harness on a developer workstation so regressions in stage-level latency and memory are caught before they reach hardware.
+Until the Nano Super rig ships, run the harness on a developer workstation so regressions in stage-level latency and memory are caught before they reach hardware.
 
 ## Prerequisites
 
@@ -30,7 +30,7 @@ On Windows:
 .\.venv\Scripts\python.exe .\scripts\run_edge_bench.py `
   --model-config .\configs\models\example-model-stack.yaml `
   --benchmark-manifest .\configs\benchmarks\example-promoted-onnx-benchmark.yaml `
-  --deployment-config .\configs\deployments\jetson-orin-edge.yaml
+  --deployment-config .\configs\deployments\jetson-orin-nano-super.yaml
 ```
 
 Key flags:
@@ -57,22 +57,23 @@ artifacts/bench/edge/<run_id>/
 ## What the report contains
 
 - **Cold-start latency**: the first frame is timed in isolation so it can be compared against the steady-state distribution
+- **Deployment budget**: target hardware, target FPS per camera, maximum active cameras, p95 latency budget, and memory budget from the selected deployment profile
 - **End-to-end latency**: average, p50, p95, p99, and max across all frames (including the cold-start frame)
 - **Per-stage latency**: the same distribution for `vehicle_detect`, `plate_detect`, `ocr`, and `classify`. A stage with `count=0` means that stage was never called (for example `classify` when the model stack has no classifier)
 - **Peak RSS**: best-effort peak resident-set size. On Linux/macOS the harness uses `resource.ru_maxrss` from the standard library; on Windows it falls back to `psutil.Process.memory_info.rss`; if neither is available the field is `null` and the report records that state explicitly
-- **Thermal samples**: on a developer workstation the default sampler records a single informational row so the absence of hardware telemetry is explicit. On the Orin rig an operator wires in a tegrastats-based sampler (see below)
+- **Thermal samples**: on a developer workstation the default sampler records a single informational row so the absence of hardware telemetry is explicit. On the Nano Super rig an operator wires in a tegrastats-based sampler (see below)
 
-## CPU-vs-Orin delta
+## CPU-vs-Nano-Super delta
 
-Runs on a developer CPU are valid for regression detection but are **not** acceptable evidence for criterion P3-1 in the production-readiness register. The Orin rig produces materially different numbers for three reasons:
+Runs on a developer CPU are valid for regression detection but are **not** acceptable evidence for criterion P3-1 in the production-readiness register. The Nano Super rig produces materially different numbers for three reasons:
 
 1. TensorRT detector exports are only exercised on Jetson; CPU runs exercise the ONNX Runtime CPU provider
-2. The Orin memory hierarchy (unified CPU/GPU memory) changes peak RSS envelopes
-3. Thermal throttling on the Orin changes the tail of the latency distribution under sustained load
+2. The Nano Super memory hierarchy (unified CPU/GPU memory) changes peak RSS envelopes
+3. Thermal throttling on the Nano Super changes the tail of the latency distribution under sustained load
 
-A CPU run proves the pipeline is alive and the harness is wired. Only an Orin run with the promoted TensorRT bundle closes P3-1.
+A CPU run proves the pipeline is alive and the harness is wired. Only a Nano Super run with the promoted TensorRT bundle closes P3-1 for the truck-edge profile.
 
-## Wiring a thermal sampler on the Orin rig
+## Wiring a thermal sampler on the Nano Super rig
 
 The harness accepts any object that implements `reposcan_inference.ThermalSampler`:
 
@@ -81,7 +82,7 @@ class ThermalSampler(Protocol):
     def sample(self) -> list[ThermalSample]: ...
 ```
 
-On the Orin rig, the field operator implements a sampler that shells out to `tegrastats` (or reads `/sys/class/thermal/thermal_zone*/temp` plus the `ina3221` power sysfs paths) and returns one or more `ThermalSample` records per call. The harness calls `sample()` twice per run (before the first frame and after the last frame). Drop-in hook:
+On the Nano Super rig, the field operator implements a sampler that shells out to `tegrastats` (or reads `/sys/class/thermal/thermal_zone*/temp` plus the `ina3221` power sysfs paths) and returns one or more `ThermalSample` records per call. The harness calls `sample()` twice per run (before the first frame and after the last frame). Drop-in hook:
 
 ```python
 from reposcan_inference import run_edge_bench, ThermalSample

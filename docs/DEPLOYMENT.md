@@ -1,6 +1,6 @@
 # DEPLOYMENT.md
 
-RepoScan Pro is designed for local development on a workstation and deployment on edge GPU hardware such as Jetson Orin-class systems or equivalent.
+RepoScan Pro is designed for local development on a workstation and deployment on edge GPU hardware. The primary production target is the Jetson Orin Nano Super truck-edge appliance.
 
 ## Local Development Baseline
 
@@ -16,6 +16,22 @@ RepoScan Pro is designed for local development on a workstation and deployment o
 - camera reconnect resilience
 - persistent local queues and storage
 - runtime visibility through health and logging surfaces
+- hardware budgets that match the selected deployment profile
+- local-first repossession hotlist matching and evidence export during network outages
+
+## Jetson Orin Nano Super Target
+
+Use [configs/deployments/jetson-orin-nano-super.yaml](../configs/deployments/jetson-orin-nano-super.yaml) for the first deployable truck-edge target. The profile is intentionally more conservative than the generic Orin profile:
+
+- TensorRT runtime bundle required
+- one active camera by default
+- detector batch size fixed at `1` until target-hardware evidence proves a better setting
+- `12` frame queue depth to limit memory pressure
+- `250 ms` p95 end-to-end latency budget
+- `6144 MB` process RSS budget
+- `10 FPS` sustained per-camera target
+
+NVIDIA lists the [Jetson Orin Nano Super Developer Kit](https://www.nvidia.com/en-us/autonomous-machines/embedded-systems/jetson-orin/nano-super-developer-kit/) at 67 INT8 TOPS with 8 GB LPDDR5 memory, 102 GB/s memory bandwidth, and a 7 W to 25 W power range. Treat those as hardware capabilities, not readiness evidence; production sign-off still requires the RepoScan edge benchmark, tegrastats capture, and TensorRT bundle validation on the actual device.
 
 ## Packaging Direction
 
@@ -61,6 +77,12 @@ When using the Postgres backend, initialize the schema with:
 
 ```powershell
 .\.venv\Scripts\python.exe .\scripts\bootstrap_postgres_storage.py --deployment-config .\configs\deployments\jetson-orin-edge.yaml
+```
+
+For the Nano Super truck-edge profile:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\bootstrap_postgres_storage.py --deployment-config .\configs\deployments\jetson-orin-nano-super.yaml
 ```
 
 The Postgres adapter expects `psycopg` support in the environment, which is declared in the repo's `postgres` optional dependency group.
@@ -115,6 +137,11 @@ process, then publish heartbeat updates after observing the real state. With API
 security enabled, the laptop needs an `operator` token and the Jetson needs an
 `integrator` token.
 
+For the Nano Super profile, run the same control loop but keep the edge node as
+the local source of truth during connectivity loss. The upstream sync endpoint is
+a replay target; it must not block capture, inference, alerting, or local
+evidence export.
+
 ## Runtime Bundle Validation
 
 Before an external promoted bundle is treated as deployment-ready, validate it against the intended deployment profile:
@@ -123,6 +150,14 @@ Before an external promoted bundle is treated as deployment-ready, validate it a
 .\.venv\Scripts\python.exe .\scripts\validate_edge_runtime_bundle.py `
   --model-config C:\artifacts\models\promoted\bundle-20260322\promoted-tensorrt.yaml `
   --deployment-config .\configs\deployments\jetson-orin-edge.yaml
+```
+
+Nano Super validation uses the dedicated profile:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\validate_edge_runtime_bundle.py `
+  --model-config C:\artifacts\models\promoted\bundle-20260322\promoted-tensorrt.yaml `
+  --deployment-config .\configs\deployments\jetson-orin-nano-super.yaml
 ```
 
 This catches mismatches between the promoted bundle and the deployment target, including:

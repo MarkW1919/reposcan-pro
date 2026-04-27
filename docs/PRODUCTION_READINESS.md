@@ -12,6 +12,7 @@ In scope:
 
 - RepoScan Pro local workstation deployment profile ([configs/deployments/local-dev.yaml](../configs/deployments/local-dev.yaml))
 - RepoScan Pro Jetson Orin edge deployment profile ([configs/deployments/jetson-orin-edge.yaml](../configs/deployments/jetson-orin-edge.yaml))
+- RepoScan Pro Jetson Orin Nano Super truck-edge deployment profile ([configs/deployments/jetson-orin-nano-super.yaml](../configs/deployments/jetson-orin-nano-super.yaml))
 - All subsystems listed in [CLAUDE.md](../CLAUDE.md) Required Subsystems
 - API surface at `/api/v1` and the operator UI apps under [apps/](../apps/)
 
@@ -45,12 +46,12 @@ Criteria are organized by the engineering priority order in [CLAUDE.md](../CLAUD
 
 | ID | Criterion | Threshold | Evidence |
 |---|---|---|---|
-| P3-1 | End-to-end frame latency on target hardware stays below the profile's real-time budget at p95. | p95 end-to-end <= real-time budget declared in [configs/deployments/jetson-orin-edge.yaml](../configs/deployments/jetson-orin-edge.yaml) | `artifacts/bench/edge/<run_id>/edge_bench_report.md` |
+| P3-1 | End-to-end frame latency on target hardware stays below the profile's real-time budget at p95. | p95 end-to-end <= `performance.latency_budget_ms_p95` in the target deployment profile; Nano Super default is 250 ms | `artifacts/bench/edge/<run_id>/edge_bench_report.md` |
 | P3-2 | Peak RSS memory during a sustained run stays below the target device's documented ceiling. | peak RSS <= device ceiling in the edge deployment profile | `artifacts/bench/edge/<run_id>/edge_bench_report.json` |
 | P3-3 | Cold-start to first-frame-ready on the target device completes within the documented startup budget. | startup time <= profile budget | `artifacts/bench/edge/<run_id>/edge_bench_report.json` |
 | P3-4 | Watchdog-supervised multi-service startup returns to steady-state within the documented budget after a forced process kill of each subsystem in turn. | each subsystem recovery <= profile budget; zero silent data loss | `artifacts/recovery/<run_id>/subsystem_kill_matrix.md` |
 | P3-5 | Camera reconnect resilience validated on target hardware against the RTSP and USB ingest paths. | reconnect success after each of >= 5 disconnect events per ingest path; zero silent data loss | `artifacts/recovery/<run_id>/camera_reconnect_report.md` |
-| P3-6 | TensorRT promoted bundle passes deployment-profile validation on the Orin rig and executes the qualified benchmark without error. | `validate_edge_runtime_bundle.py` passes on Orin; benchmark completes | `artifacts/bench/edge/<run_id>/tensorrt_validation.json` |
+| P3-6 | TensorRT promoted bundle passes deployment-profile validation on the Orin Nano Super rig and executes the qualified benchmark without error. | `validate_edge_runtime_bundle.py` passes against `jetson-orin-nano-super`; benchmark completes on the Nano Super | `artifacts/bench/edge/<run_id>/tensorrt_validation.json` |
 
 ### P4 OCR accuracy
 
@@ -144,7 +145,7 @@ Risks carried into review from existing project state. Mitigations must be in pl
 
 | Risk | Source | Owner | Mitigation | Residual severity |
 |---|---|---|---|---|
-| CPU workstation mistaken for target-hardware evidence | [EXECUTION_PLAN.md](EXECUTION_PLAN.md) | Edge | Edge bench report must be labeled with device identity; acceptance register only accepts Orin-sourced P3 evidence | medium |
+| CPU workstation mistaken for target-hardware evidence | [EXECUTION_PLAN.md](EXECUTION_PLAN.md) | Edge | Edge bench report must be labeled with device identity; acceptance register only accepts Nano Super-sourced P3 evidence for the truck-edge profile | medium |
 | Synthetic holdouts mistaken for field evidence | [INFERENCE_RUNTIME_EVIDENCE.md](INFERENCE_RUNTIME_EVIDENCE.md) scope boundary | ML | Register only accepts field-captured artifacts for P1-2, P2-2 | medium |
 | Legacy training assets bypassing typed manifests | ADR-023 in [DECISIONS.md](DECISIONS.md) | ML | Dataset intake gate enforces typed manifests; no raw folders accepted | low |
 | TensorRT bundle validated without real engine execution | ADR-020, ADR-021 in [DECISIONS.md](DECISIONS.md) | Edge | P3-6 requires execution on Orin, not just validation | medium |
@@ -188,7 +189,7 @@ Items raised while drafting this review that need a home before a GO decision ca
 - `docs/OPERATOR_TRAINING.md` now exists. OP-4 remains `pending` until the material is reviewed and accepted by the operator lead.
 - Acceptance runs now write `production_readiness_evidence.json`, which binds run ID, source dataset manifest, derived benchmark manifest, and covered criteria. Evidence register rows still carry placeholder `<run_id>` tokens until a reviewer accepts a specific run.
 - Plate pixel density minimum (P1-3) is asserted by [CAMERA_AND_IMAGING.md](CAMERA_AND_IMAGING.md) but not numerically. The review board must either publish a number or accept the imaging lead's per-rig measurement as the threshold at review time.
-- API auth audit (NF-5) depends on running against the secured deployment profile, not `local-dev`; the secured profile example lives at `configs/deployments/local-secure-api-example.yaml` and example tokens must be replaced before a real audit run.
+- API auth audit (NF-5) depends on running against a secured private copy of the target deployment profile, not `local-dev`; the secured profile example lives at `configs/deployments/local-secure-api-example.yaml` and example tokens must be replaced before a real audit run.
 - NF-2 can now be exercised with `scripts/run_secret_scan.py`, which writes `secret_scan.json`; the row remains `pending` until a pre-ship run is reviewed.
 
 ## Related Documents

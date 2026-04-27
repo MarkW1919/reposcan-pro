@@ -59,7 +59,12 @@ class InferenceProfiler:
 
 def recommend_runtime_tuning(deployment: DeploymentConfig, model_stack: ModelStackConfig) -> list[str]:
     recommendations: list[str] = []
-    if deployment.target_hardware in {TargetHardware.jetson_orin, TargetHardware.jetson_xavier}:
+    jetson_targets = {
+        TargetHardware.jetson_orin,
+        TargetHardware.jetson_orin_nano_super,
+        TargetHardware.jetson_xavier,
+    }
+    if deployment.target_hardware in jetson_targets:
         detector_backends = {
             model_stack.vehicle_detector.backend.value,
             model_stack.plate_detector.backend.value,
@@ -68,6 +73,11 @@ def recommend_runtime_tuning(deployment: DeploymentConfig, model_stack: ModelSta
             recommendations.append("Benchmark TensorRT exports for detector stages on Jetson hardware.")
         if deployment.performance.frame_queue_depth > 24:
             recommendations.append("Reduce frame_queue_depth on Jetson to limit memory pressure.")
+        if deployment.target_hardware == TargetHardware.jetson_orin_nano_super:
+            if deployment.performance.inference_batch_size > 1:
+                recommendations.append("Keep Nano Super detector batching at 1 unless target-hardware benchmarks prove a gain.")
+            if deployment.performance.max_active_cameras > 1:
+                recommendations.append("Validate multi-camera Nano Super operation with tegrastats before field deployment.")
     else:
         if deployment.performance.inference_batch_size > 1:
             recommendations.append("Validate that batching improves latency on the current CPU profile.")

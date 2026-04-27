@@ -102,6 +102,19 @@ def test_validate_edge_runtime_bundle_accepts_tensorrt_bundle_for_jetson_orin(tm
     assert report.error_count == 0
 
 
+def test_validate_edge_runtime_bundle_accepts_tensorrt_bundle_for_jetson_orin_nano_super(tmp_path):
+    deployment = load_deployment_config("configs/deployments/jetson-orin-nano-super.yaml")
+    config_path = _build_tensorrt_bundle(tmp_path / "nano-super-bundle")
+    stack = load_model_config(config_path)
+
+    report = validate_deployment_runtime_bundle(stack, deployment)
+
+    assert report.runtime_ready is True
+    assert report.promotion_ready is True
+    assert report.ready is True
+    assert report.error_count == 0
+
+
 def test_validate_edge_runtime_bundle_rejects_compute_capability_mismatch(tmp_path):
     deployment = load_deployment_config("configs/deployments/jetson-orin-edge.yaml")
     config_path = _build_tensorrt_bundle(tmp_path / "jetson-bundle", compute_capability="7.2")

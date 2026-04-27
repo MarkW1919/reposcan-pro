@@ -340,6 +340,24 @@ class TestDeploymentConfigSchema:
         assert dep.api.hardening.expose_docs is False
         assert dep.api.rate_limit.requests_per_minute == 600
 
+    def test_jetson_orin_nano_super_profile_parses(self):
+        dep = load_deployment_config(CONFIGS / "deployments" / "jetson-orin-nano-super.yaml")
+        assert dep.target_hardware == TargetHardware.jetson_orin_nano_super
+        assert dep.enabled_services.sync is True
+        assert dep.infrastructure.metadata_backend.value == "postgres"
+        assert dep.performance.inference_batch_size == 1
+        assert dep.performance.frame_queue_depth == 12
+        assert dep.performance.max_active_cameras == 1
+        assert dep.performance.latency_budget_ms_p95 == pytest.approx(250.0)
+        assert dep.performance.memory_budget_mb == 6144
+        assert dep.storage_pressure.warning_free_space_gb == pytest.approx(10.0)
+        assert dep.storage_pressure.minimum_free_space_gb == pytest.approx(5.0)
+        assert dep.runtime.required_backend == InferenceBackend.tensorrt
+        assert dep.runtime.required_path_base == ArtifactPathBase.config_dir
+        assert dep.runtime.required_compute_capability == "8.7"
+        assert dep.api.hardening.expose_docs is False
+        assert dep.api.rate_limit.requests_per_minute == 480
+
     def test_secure_api_example_profile_parses(self):
         dep = load_deployment_config(CONFIGS / "deployments" / "local-secure-api-example.yaml")
         assert dep.api.security.enabled is True

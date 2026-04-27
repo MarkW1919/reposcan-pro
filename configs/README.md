@@ -8,6 +8,7 @@ Design rule:
 Current examples include:
 - local workstation development under `deployments/local-dev.yaml`
 - Jetson Orin edge deployment tuning under `deployments/jetson-orin-edge.yaml`
+- Jetson Orin Nano Super truck-edge tuning under `deployments/jetson-orin-nano-super.yaml`
 - secure API example routing/auth config under `deployments/local-secure-api-example.yaml`
 - RTSP camera registration under `cameras/example-camera.yaml`
 - USB camera registration under `cameras/example-usb-camera.yaml`

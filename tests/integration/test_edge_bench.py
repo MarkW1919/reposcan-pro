@@ -98,7 +98,7 @@ def _build_service(*, with_classifier: bool = True) -> InferenceService:
 
 def test_run_edge_bench_records_stage_and_end_to_end_stats():
     service = _build_service()
-    deployment = load_deployment_config("configs/deployments/jetson-orin-edge.yaml")
+    deployment = load_deployment_config("configs/deployments/jetson-orin-nano-super.yaml")
 
     report = run_edge_bench(
         service,
@@ -123,7 +123,11 @@ def test_run_edge_bench_records_stage_and_end_to_end_stats():
         assert stage.max_ms >= stage.average_ms
         assert stage.p99_ms >= stage.p95_ms
 
-    assert report.target_hardware == "jetson_orin"
+    assert report.target_hardware == "jetson_orin_nano_super"
+    assert report.target_fps_per_camera == 10.0
+    assert report.max_active_cameras == 1
+    assert report.latency_budget_ms_p95 == 250.0
+    assert report.memory_budget_mb == 6144
     assert any("TensorRT" in rec for rec in report.recommendations)
     assert report.thermal_samples  # noop sampler still records informational rows
 

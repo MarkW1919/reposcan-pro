@@ -17,6 +17,7 @@ class TargetHardware(str, Enum):
     cpu = "cpu"
     cuda = "cuda"
     jetson_orin = "jetson_orin"
+    jetson_orin_nano_super = "jetson_orin_nano_super"
     jetson_xavier = "jetson_xavier"
 
 
@@ -114,6 +115,36 @@ class PerformanceConfig(BaseModel):
     max_worker_threads: int = Field(4, ge=1)
     frame_queue_depth: int = Field(30, ge=1)
     enable_profiling: bool = False
+    target_fps_per_camera: float = Field(
+        10.0,
+        gt=0.0,
+        description="Sustained inference target per active camera.",
+    )
+    max_active_cameras: int = Field(
+        1,
+        ge=1,
+        description="Maximum cameras expected to run concurrently on this profile.",
+    )
+    latency_budget_ms_p95: float = Field(
+        250.0,
+        gt=0.0,
+        description="Maximum accepted end-to-end p95 frame latency for edge readiness.",
+    )
+    memory_budget_mb: int | None = Field(
+        None,
+        gt=0,
+        description="Optional process RSS ceiling for edge readiness evidence.",
+    )
+    startup_budget_seconds: float = Field(
+        60.0,
+        gt=0.0,
+        description="Maximum accepted cold service startup time.",
+    )
+    recovery_budget_seconds: float = Field(
+        30.0,
+        gt=0.0,
+        description="Maximum accepted watchdog recovery time after a subsystem failure.",
+    )
 
 
 class RuntimeCompatibilityConfig(BaseModel):

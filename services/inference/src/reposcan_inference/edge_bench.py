@@ -105,6 +105,10 @@ class EdgeBenchReport(BaseModel):
     pipeline_name: str | None = None
     deployment_name: str | None = None
     target_hardware: str | None = None
+    target_fps_per_camera: float | None = None
+    max_active_cameras: int | None = None
+    latency_budget_ms_p95: float | None = None
+    memory_budget_mb: int | None = None
     host_platform: str = Field(..., min_length=1)
     frames_processed: int = Field(..., ge=0)
     cold_start_latency_ms: float = Field(..., ge=0.0)
@@ -251,6 +255,10 @@ def run_edge_bench(
             pipeline_name=getattr(service.pipeline_config, "pipeline_name", None),
             deployment_name=deployment.deployment_name if deployment is not None else None,
             target_hardware=deployment.target_hardware.value if deployment is not None else None,
+            target_fps_per_camera=deployment.performance.target_fps_per_camera if deployment is not None else None,
+            max_active_cameras=deployment.performance.max_active_cameras if deployment is not None else None,
+            latency_budget_ms_p95=deployment.performance.latency_budget_ms_p95 if deployment is not None else None,
+            memory_budget_mb=deployment.performance.memory_budget_mb if deployment is not None else None,
             host_platform=sys.platform,
             frames_processed=0,
             cold_start_latency_ms=0.0,
@@ -294,6 +302,10 @@ def run_edge_bench(
         pipeline_name=getattr(service.pipeline_config, "pipeline_name", None),
         deployment_name=deployment.deployment_name if deployment is not None else None,
         target_hardware=deployment.target_hardware.value if deployment is not None else None,
+        target_fps_per_camera=deployment.performance.target_fps_per_camera if deployment is not None else None,
+        max_active_cameras=deployment.performance.max_active_cameras if deployment is not None else None,
+        latency_budget_ms_p95=deployment.performance.latency_budget_ms_p95 if deployment is not None else None,
+        memory_budget_mb=deployment.performance.memory_budget_mb if deployment is not None else None,
         host_platform=sys.platform,
         frames_processed=len(frames),
         cold_start_latency_ms=cold_total_ms,
@@ -334,6 +346,14 @@ def render_edge_bench_markdown(report: EdgeBenchReport) -> str:
         lines.append(f"- deployment profile: {report.deployment_name}")
     if report.target_hardware:
         lines.append(f"- target hardware: {report.target_hardware}")
+    if report.target_fps_per_camera is not None:
+        lines.append(f"- target FPS per camera: {report.target_fps_per_camera:.1f}")
+    if report.max_active_cameras is not None:
+        lines.append(f"- max active cameras: {report.max_active_cameras}")
+    if report.latency_budget_ms_p95 is not None:
+        lines.append(f"- p95 latency budget: {_format_ms(report.latency_budget_ms_p95)}")
+    if report.memory_budget_mb is not None:
+        lines.append(f"- memory budget: {report.memory_budget_mb} MB")
 
     lines.extend(
         [
