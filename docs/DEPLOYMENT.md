@@ -134,6 +134,16 @@ This catches mismatches between the promoted bundle and the deployment target, i
 
 After a bundle passes deployment validation and benchmark review, register it into an external release registry and move the deployment channel pointer rather than hand-tracking "current" bundles in notes or folder names. This keeps rollback to the previous accepted bundle explicit and audit-friendly.
 
+## Pre-Ship Secret Scan
+
+Generate the NF-2 readiness artifact before any production handoff:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\run_secret_scan.py --output-root .\artifacts\ops
+```
+
+The scanner inspects tracked files only, ignores documented placeholders and demo tokens, and writes `secret_scan.json` under the selected output root. A production review should accept NF-2 only when that report has zero findings.
+
 ## Related Documents
 
 - [Requirements](REQUIREMENTS.md)

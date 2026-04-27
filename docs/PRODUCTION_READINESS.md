@@ -189,6 +189,7 @@ Items raised while drafting this review that need a home before a GO decision ca
 - Acceptance runs now write `production_readiness_evidence.json`, which binds run ID, source dataset manifest, derived benchmark manifest, and covered criteria. Evidence register rows still carry placeholder `<run_id>` tokens until a reviewer accepts a specific run.
 - Plate pixel density minimum (P1-3) is asserted by [CAMERA_AND_IMAGING.md](CAMERA_AND_IMAGING.md) but not numerically. The review board must either publish a number or accept the imaging lead's per-rig measurement as the threshold at review time.
 - API auth audit (NF-5) depends on running against the secured deployment profile, not `local-dev`; the secured profile example lives at `configs/deployments/local-secure-api-example.yaml` and example tokens must be replaced before a real audit run.
+- NF-2 can now be exercised with `scripts/run_secret_scan.py`, which writes `secret_scan.json`; the row remains `pending` until a pre-ship run is reviewed.
 
 ## Related Documents
 
