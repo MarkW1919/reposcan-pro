@@ -905,6 +905,33 @@ select:focus-visible {
   white-space: nowrap;
 }
 
+.recovery-command-strip__checklist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.recovery-command-strip__checklist span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(145, 166, 179, 0.18);
+  background: rgba(3, 9, 13, 0.54);
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.recovery-command-strip--critical .recovery-command-strip__checklist span {
+  border-color: rgba(255, 191, 72, 0.24);
+  color: #ffdca0;
+}
+
 .recovery-command-strip__facts {
   display: grid;
   grid-template-columns: 0.78fr 1.15fr 0.62fr;

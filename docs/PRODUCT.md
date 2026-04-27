@@ -59,3 +59,4 @@ The first version is successful only if it can:
 - [Requirements](REQUIREMENTS.md)
 - [Models](MODELS.md)
 - [UI Workflows](UI_WORKFLOWS.md)
+- [Professional UI Strategy](UI_PRO_GRADE_STRATEGY.md)

@@ -5938,6 +5938,11 @@ function ConsoleScreen(props: {
             <strong>{commandRow?.plate1 ?? "No read selected"}</strong>
             <span>{commandRow?.vehicle ?? (props.navigationActive ? props.activeDestination : "Waiting for vehicle reads")}</span>
           </div>
+          <div className="recovery-command-strip__checklist" aria-label="Operator verification checklist">
+            <span>{commandRow?.hotlist ? "Verify read" : "Read quality"}</span>
+            <span>{commandRow?.hotlist ? "Match vehicle" : "Vehicle context"}</span>
+            <span>{commandRow?.hotlist ? "Update account" : "Keep scanning"}</span>
+          </div>
         </div>
         <div className="recovery-command-strip__facts">
           <div>
