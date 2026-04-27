@@ -4855,13 +4855,16 @@ function App(): ReactElement {
               onApplyDestinationTarget={applyDestinationTarget}
               onClearDestinationDraft={clearDestinationDraft}
               onCloseDestinationModal={closeDestinationModal}
+              onCopyPlate={handleCopyPlate}
               onDestinationChange={handleDestinationInputChange}
               onEndRoute={endRoute}
+              onOpenAccount={openAccountsForRow}
               onOpenDetail={openDetail}
               onOpenDestinationModal={openDestinationModal}
               onRemoveRecentDestination={removeRecentDestination}
               onSelectCamera={setSelectedCameraId}
               onSelectDetection={setSelectedDetectionId}
+              onRouteToDetection={routeToRow}
               onSelectGeocodedAddress={selectGeocodedAddress}
               onStageResolvedDestination={stageResolvedDestination}
               onStageDestination={stageDestination}
@@ -5823,11 +5826,14 @@ function ConsoleScreen(props: {
   onCloseDestinationModal: () => void;
   onDestinationChange: (value: string) => void;
   onEndRoute: () => void;
+  onCopyPlate: (plate: string) => Promise<void>;
+  onOpenAccount: (row: ConsoleDetectionRow) => void;
   onOpenDetail: (row: ConsoleDetectionRow) => void;
   onOpenDestinationModal: () => void;
   onRemoveRecentDestination: (id: string) => void;
   onSelectCamera: (cameraId: string) => void;
   onSelectDetection: (rowId: string) => void;
+  onRouteToDetection: (row: ConsoleDetectionRow) => void;
   onSelectGeocodedAddress: (address: string, coords: DestinationCoords) => void;
   onStageResolvedDestination: (address: string, coords: DestinationCoords) => void;
   onStageDestination: () => void;
@@ -5918,9 +5924,70 @@ function ConsoleScreen(props: {
     onToggleLayerMenu: props.onToggleLayerMenu,
     onToggleRadiusRing: props.onToggleRadiusRing,
   } as const;
+  const selectedConsoleRow = props.allRows.find((row) => row.id === props.selectedDetectionId) ?? props.allRows[0] ?? null;
+  const recoveryRows = props.allRows.filter((row) => row.hotlist || row.alertStatus === "active");
+  const commandRow = recoveryRows[0] ?? selectedConsoleRow;
+  const commandTone = commandRow?.hotlist ? "critical" : props.navigationActive ? "active" : "idle";
 
   return (
     <section className="screen">
+      <section className={`recovery-command-strip recovery-command-strip--${commandTone}`}>
+        <div className="recovery-command-strip__identity">
+          <span className="eyebrow">{commandRow?.hotlist ? "Recovery match" : props.navigationActive ? "Route active" : "Patrol scan"}</span>
+          <div className="recovery-command-strip__title">
+            <strong>{commandRow?.plate1 ?? "No read selected"}</strong>
+            <span>{commandRow?.vehicle ?? (props.navigationActive ? props.activeDestination : "Waiting for vehicle reads")}</span>
+          </div>
+        </div>
+        <div className="recovery-command-strip__facts">
+          <div>
+            <span>Last seen</span>
+            <strong>{commandRow ? `${commandRow.camera} ${commandRow.time}` : "None"}</strong>
+          </div>
+          <div>
+            <span>Location</span>
+            <strong>{commandRow?.gps ?? props.activeDestination}</strong>
+          </div>
+          <div>
+            <span>Confidence</span>
+            <strong>{commandRow ? confidenceLabel(commandRow.conf) : "--"}</strong>
+          </div>
+        </div>
+        <div className="recovery-command-strip__actions">
+          <button
+            className="btn btn--primary btn--compact"
+            disabled={!commandRow}
+            type="button"
+            onClick={() => commandRow && props.onRouteToDetection(commandRow)}
+          >
+            Route
+          </button>
+          <button
+            className="btn btn--ghost btn--compact"
+            disabled={!commandRow}
+            type="button"
+            onClick={() => commandRow && props.onOpenDetail(commandRow)}
+          >
+            Inspect
+          </button>
+          <button
+            className="btn btn--ghost btn--compact"
+            disabled={!commandRow}
+            type="button"
+            onClick={() => commandRow && void props.onCopyPlate(commandRow.plate1)}
+          >
+            Copy Tag
+          </button>
+          <button
+            className="btn btn--ghost btn--compact"
+            disabled={!commandRow}
+            type="button"
+            onClick={() => commandRow && props.onOpenAccount(commandRow)}
+          >
+            Account
+          </button>
+        </div>
+      </section>
       <div
         ref={layoutRef}
         className="console-layout"
@@ -6028,10 +6095,19 @@ function ConsoleScreen(props: {
             confidenceTone={confidenceTone}
             rows={props.allRows}
             selectedDetectionId={props.selectedDetectionId}
+            onCopyPlate={(plate) => {
+              void props.onCopyPlate(plate);
+            }}
             onOpenDetail={(rowId) => {
               const row = props.allRows.find((item) => item.id === rowId);
               if (row) {
                 props.onOpenDetail(row);
+              }
+            }}
+            onRouteToDetection={(rowId) => {
+              const row = props.allRows.find((item) => item.id === rowId);
+              if (row) {
+                props.onRouteToDetection(row);
               }
             }}
             onSelectDetection={props.onSelectDetection}

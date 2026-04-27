@@ -852,6 +852,155 @@ select:focus-visible {
   gap: 0;
 }
 
+.recovery-command-strip {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.9fr) minmax(360px, 1.25fr) auto;
+  align-items: stretch;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(56, 232, 255, 0.14);
+  background: rgba(8, 15, 21, 0.96);
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.26);
+}
+
+.recovery-command-strip--critical {
+  border-color: rgba(255, 77, 94, 0.34);
+  background: linear-gradient(90deg, rgba(52, 12, 18, 0.96), rgba(8, 15, 21, 0.96) 52%);
+}
+
+.recovery-command-strip--active {
+  border-color: rgba(61, 220, 151, 0.28);
+}
+
+.recovery-command-strip__identity,
+.recovery-command-strip__facts,
+.recovery-command-strip__actions {
+  min-width: 0;
+}
+
+.recovery-command-strip__identity {
+  display: grid;
+  align-content: center;
+  gap: 6px;
+}
+
+.recovery-command-strip__title {
+  display: grid;
+  gap: 2px;
+}
+
+.recovery-command-strip__title strong {
+  font-family: var(--mono);
+  font-size: clamp(1.32rem, 2.4vw, 2rem);
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.recovery-command-strip__title span {
+  color: var(--muted);
+  font-size: 0.88rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recovery-command-strip__facts {
+  display: grid;
+  grid-template-columns: 0.78fr 1.15fr 0.62fr;
+  gap: 8px;
+}
+
+.recovery-command-strip__facts > div {
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(145, 166, 179, 0.14);
+  background: rgba(3, 9, 13, 0.54);
+}
+
+.recovery-command-strip__facts span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.recovery-command-strip__facts strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.recovery-command-strip__actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(82px, 1fr));
+  align-content: stretch;
+  gap: 8px;
+}
+
+@media (max-width: 980px) {
+  .recovery-command-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .recovery-command-strip__facts {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .recovery-command-strip__actions {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .recovery-command-strip {
+    padding: 10px;
+  }
+
+  .recovery-command-strip__facts {
+    grid-template-columns: 1fr;
+  }
+
+  .recovery-command-strip__actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .recovery-command-strip__actions .btn {
+    min-width: 0;
+    padding: 0 10px;
+  }
+
+  .detection-feed-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .detection-feed-row__body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .detection-feed-row__signals {
+    justify-items: start;
+    grid-template-columns: repeat(2, max-content);
+  }
+
+  .detection-feed-row__gps {
+    grid-column: 1 / -1;
+    max-width: 100%;
+  }
+
+  .detection-feed-row__actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 /* --- resize handle between panels --- */
 .resize-handle {
   display: flex;
@@ -2177,10 +2326,10 @@ select:focus-visible {
 
 .detection-feed-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(96px, auto);
   gap: 10px;
   padding: 14px 14px 14px 18px;
-  border-radius: 18px;
+  border-radius: 8px;
   border: 1px solid rgba(56, 232, 255, 0.08);
   background: rgba(13, 22, 28, 0.9);
   transition:
@@ -2209,7 +2358,7 @@ select:focus-visible {
   cursor: pointer;
   text-align: left;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(118px, auto);
   gap: 12px;
   align-items: center;
 }
@@ -2254,6 +2403,15 @@ select:focus-visible {
   font-size: 0.82rem;
 }
 
+.detection-feed-row__vehicle {
+  color: var(--text);
+  font-size: 0.84rem;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .detection-feed-row__meta {
   display: flex;
   flex-wrap: wrap;
@@ -2269,6 +2427,7 @@ select:focus-visible {
   display: grid;
   justify-items: end;
   gap: 8px;
+  min-width: 0;
 }
 
 .detection-feed-row__status {
@@ -2301,9 +2460,27 @@ select:focus-visible {
   color: #a9f6ff;
 }
 
+.detection-feed-row__gps {
+  max-width: 160px;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detection-feed-row__actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+.detection-feed-row__quick-action,
 .detection-feed-row__inspect {
   min-width: 84px;
-  border-radius: 14px;
+  min-height: 34px;
+  border-radius: 8px;
   border: 1px solid rgba(56, 232, 255, 0.12);
   background: rgba(9, 17, 22, 0.9);
   color: var(--text);
@@ -2311,11 +2488,18 @@ select:focus-visible {
   font-size: 0.8rem;
   font-weight: 700;
   letter-spacing: 0.04em;
-  padding: 0 14px;
+  padding: 0 12px;
 }
 
+.detection-feed-row__quick-action--primary {
+  border-color: rgba(61, 220, 151, 0.24);
+  background: rgba(11, 35, 25, 0.86);
+  color: #bff8df;
+}
+
+.detection-feed-row__quick-action:hover,
 .detection-feed-row__inspect:hover,
-.detection-feed-row__body:hover + .detection-feed-row__inspect {
+.detection-feed-row__body:hover + .detection-feed-row__actions .detection-feed-row__inspect {
   border-color: rgba(56, 232, 255, 0.26);
   background: rgba(14, 26, 34, 0.96);
 }
@@ -5440,6 +5624,30 @@ select:focus-visible {
   .detection-feed-row__status {
     font-size: 0.66rem;
     padding: 4px 8px;
+  }
+}
+
+@media (max-width: 620px) {
+  .detection-feed-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .detection-feed-row__body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .detection-feed-row__signals {
+    justify-items: start;
+    grid-template-columns: repeat(2, max-content);
+  }
+
+  .detection-feed-row__gps {
+    grid-column: 1 / -1;
+    max-width: 100%;
+  }
+
+  .detection-feed-row__actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 

@@ -5,7 +5,9 @@ import { DetectionFeedRow, type DetectionFeedItem } from "./DetectionFeedRow";
 interface DetectionFeedProps {
   confidenceLabel: (value: number) => string;
   confidenceTone: (value: number) => "high" | "medium" | "low";
+  onCopyPlate?: (plate: string) => void;
   onOpenDetail: (rowId: string) => void;
+  onRouteToDetection?: (rowId: string) => void;
   onSelectDetection: (rowId: string) => void;
   rows: DetectionFeedItem[];
   selectedDetectionId: string | null;
@@ -95,6 +97,22 @@ export function DetectionFeed(props: DetectionFeedProps): ReactElement {
                 lockFeed(row.id);
                 props.onOpenDetail(row.id);
               }}
+              onRouteToDetection={
+                props.onRouteToDetection
+                  ? () => {
+                      lockFeed(row.id);
+                      props.onRouteToDetection?.(row.id);
+                    }
+                  : undefined
+              }
+              onCopyPlate={
+                props.onCopyPlate
+                  ? () => {
+                      lockFeed(row.id);
+                      props.onCopyPlate?.(row.plate1);
+                    }
+                  : undefined
+              }
               onSelect={() => {
                 lockFeed(row.id);
                 props.onSelectDetection(row.id);
