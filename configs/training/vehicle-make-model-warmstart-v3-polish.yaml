@@ -1,0 +1,36 @@
+profile_name: vehicle-make-model-warmstart-v3-polish
+task: vehicle_make_model_classification
+framework: torchvision
+output_root: runtime/training
+allow_pending_review: true
+dataset_adapter: stanford_cars
+base_model: efficientnet_b0
+image_size: 260
+epochs: 24
+batch_size: 24
+workers: 4
+patience: 8
+seed: 42
+learning_rate: 0.00004
+weight_decay: 0.0003
+label_smoothing: 0.04
+dropout: 0.3
+freeze_backbone_epochs: 0
+validation_fraction: 0.15
+precision: fp32
+device: auto
+augmentation:
+  horizontal_flip: true
+  motion_blur: true
+  defocus_blur: true
+  brightness_contrast: true
+  noise: true
+  compression_artifacts: true
+  perspective_distortion: true
+  random_erasing: true
+  mixup_alpha: 0.05
+  synthetic_support_ratio: 0.0
+  notes:
+    - Fine-tune from the current V2 EfficientNet-B0 checkpoint with a lower learning rate.
+    - Preserve the V2 validation split so validation and holdout metrics remain comparable.
+    - Use lighter Mixup and label smoothing than V2 to polish a strong checkpoint without washing out class boundaries.
