@@ -240,7 +240,7 @@ def main() -> int:
 
     onnx_deployment_report = validate_deployment_runtime_bundle(onnx_stack, local_deployment)
     tensorrt_stack = load_model_config(tensorrt_config_path)
-    jetson_deployment = load_deployment_config(repo_root / "configs" / "deployments" / "jetson-orin-edge.yaml")
+    jetson_deployment = load_deployment_config(repo_root / "configs" / "deployments" / "jetson-orin-nano-super.yaml")
     tensorrt_deployment_report = validate_deployment_runtime_bundle(tensorrt_stack, jetson_deployment)
 
     reports_root = output_root / "reports"
@@ -248,7 +248,7 @@ def main() -> int:
     _write_json(reports_root / "promoted-onnx-runtime.benchmark.json", benchmark_report_dict)
     _write_json(reports_root / "promoted-onnx-runtime.local-dev.validation.json", onnx_deployment_report.model_dump(mode="json"))
     _write_json(
-        reports_root / "promoted-tensorrt-runtime.jetson-orin.validation.json",
+        reports_root / "promoted-tensorrt-runtime.jetson-orin-nano-super.validation.json",
         tensorrt_deployment_report.model_dump(mode="json"),
     )
 
@@ -258,7 +258,7 @@ def main() -> int:
     print(f"Qualification report: {reports_root / 'runtime-benchmark-qualified-holdout.qualification.json'}")
     print(f"Benchmark report: {reports_root / 'promoted-onnx-runtime.benchmark.json'}")
     print(f"Local-dev validation: {reports_root / 'promoted-onnx-runtime.local-dev.validation.json'}")
-    print(f"Jetson validation: {reports_root / 'promoted-tensorrt-runtime.jetson-orin.validation.json'}")
+    print(f"Jetson validation: {reports_root / 'promoted-tensorrt-runtime.jetson-orin-nano-super.validation.json'}")
     return 0
 
 

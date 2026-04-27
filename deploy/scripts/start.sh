@@ -6,7 +6,7 @@
 #
 # Usage:
 #   ./deploy/scripts/start.sh                   # uses REPOSCAN_DEPLOY_PROFILE env var
-#   REPOSCAN_DEPLOY_PROFILE=jetson-orin-edge ./deploy/scripts/start.sh
+#   REPOSCAN_DEPLOY_PROFILE=jetson-orin-nano-super ./deploy/scripts/start.sh
 
 set -euo pipefail
 

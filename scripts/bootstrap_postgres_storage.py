@@ -16,7 +16,7 @@ def _configure_pythonpath(repo_root: Path) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Initialize the Postgres/PostGIS storage schema.")
-    parser.add_argument("--deployment-config", default="configs/deployments/jetson-orin-edge.yaml")
+    parser.add_argument("--deployment-config", default="configs/deployments/jetson-orin-nano-super.yaml")
     return parser.parse_args()
 
 

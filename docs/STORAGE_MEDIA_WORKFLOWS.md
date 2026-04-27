@@ -24,12 +24,13 @@ Current profile defaults:
 
 - `configs/deployments/local-dev.yaml` -> `metadata_backend: json`
 - `configs/deployments/jetson-orin-edge.yaml` -> `metadata_backend: postgres`
+- `configs/deployments/jetson-orin-nano-super.yaml` -> `metadata_backend: postgres`
 
 When a deployment profile uses `metadata_backend: postgres`, initialize the metadata schema with:
 
 ```powershell
 .\.venv\Scripts\python.exe .\scripts\bootstrap_postgres_storage.py `
-  --deployment-config .\configs\deployments\jetson-orin-edge.yaml
+  --deployment-config .\configs\deployments\jetson-orin-nano-super.yaml
 ```
 
 The bootstrap path:

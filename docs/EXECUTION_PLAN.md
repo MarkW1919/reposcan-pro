@@ -69,7 +69,7 @@ The GPU training environment is for:
 
 The target deployment rig is for:
 
-- [jetson-orin-edge](../configs/deployments/jetson-orin-edge.yaml) validation
+- [jetson-orin-nano-super](../configs/deployments/jetson-orin-nano-super.yaml) validation
 - camera reconnect and power-loss behavior on deployment-intended hardware
 - validation of the live GPS ingest path on deployment hardware
 - TensorRT bundle validation

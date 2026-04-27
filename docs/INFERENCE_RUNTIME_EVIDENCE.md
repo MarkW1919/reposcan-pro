@@ -43,7 +43,7 @@ From the repo-tracked qualification report:
 From the deployment validation reports:
 
 - promoted ONNX fixture bundle validates cleanly for `local-dev`
-- promoted TensorRT contract bundle validates cleanly for `jetson-orin-edge`
+- promoted TensorRT contract bundle validates cleanly for `jetson-orin-nano-super`
 
 ## Regenerate
 

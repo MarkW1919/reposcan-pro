@@ -135,7 +135,7 @@ Then validate the promoted bundle against the target deployment profile:
 ```powershell
 .\.venv\Scripts\python.exe .\scripts\validate_edge_runtime_bundle.py `
   --model-config C:\artifacts\models\promoted\bundle-20260322\promoted-tensorrt.yaml `
-  --deployment-config .\configs\deployments\jetson-orin-edge.yaml
+  --deployment-config .\configs\deployments\jetson-orin-nano-super.yaml
 ```
 
 This deployment-level check verifies that bundle metadata matches the intended target environment rather than just checking the bundle in isolation.

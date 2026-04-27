@@ -19,5 +19,5 @@ Useful commands:
 ```powershell
 .\.venv\Scripts\python.exe .\scripts\run_storage_maintenance.py --deployment-config .\configs\deployments\local-dev.yaml --json
 .\.venv\Scripts\python.exe .\scripts\export_detection_package.py --detection-id det_20260320_010001 --json
-.\.venv\Scripts\python.exe .\scripts\bootstrap_postgres_storage.py --deployment-config .\configs\deployments\jetson-orin-edge.yaml
+.\.venv\Scripts\python.exe .\scripts\bootstrap_postgres_storage.py --deployment-config .\configs\deployments\jetson-orin-nano-super.yaml
 ```

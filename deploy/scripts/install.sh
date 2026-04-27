@@ -4,10 +4,10 @@
 # Installs system dependencies, copies the repo, sets up the Python venv,
 # builds the UI, installs systemd units, and enables services for auto-start.
 #
-# Tested on: Ubuntu 22.04 LTS, JetPack 6.x (Jetson Orin)
+# Tested on: Ubuntu 22.04 LTS, JetPack 6.x (Jetson Orin Nano Super target)
 #
 # Usage (as root or with sudo):
-#   sudo ./deploy/scripts/install.sh [--profile jetson-orin-edge]
+#   sudo ./deploy/scripts/install.sh [--profile jetson-orin-nano-super]
 
 set -euo pipefail
 
@@ -15,7 +15,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 INSTALL_DIR="${INSTALL_DIR:-/opt/reposcan-pro}"
 SERVICE_USER="${SERVICE_USER:-reposcan}"
-DEPLOY_PROFILE="${2:-local-dev}"
+DEPLOY_PROFILE="jetson-orin-nano-super"
 
 # Parse --profile flag
 while [[ $# -gt 0 ]]; do
