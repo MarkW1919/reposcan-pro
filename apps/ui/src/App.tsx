@@ -2253,6 +2253,13 @@ function MapStagePanel(props: {
     : hasDestination
       ? "Target staged"
       : "No destination staged";
+  const nextGuidanceLabel = props.navigationActive
+    ? props.withinRadius
+      ? "Arrival ring reached - verify plate and vehicle before account action"
+      : "Proceed to last-seen point - scan stays armed on approach"
+    : hasDestination
+      ? "Destination staged - start route when ready"
+      : "Set a destination from a recovery account, alert, or last-seen read";
 
   return (
     <div className={`map-stage ${compact ? "map-stage--overview" : ""}`.trim()}>
@@ -2284,13 +2291,27 @@ function MapStagePanel(props: {
       </div>
 
       <div className={`map-stage__overlay ${compact ? "map-stage__overlay--compact" : ""}`.trim()}>
-        <div className="map-stage__route-card">
-          <span className="map-stage__route-label">{props.navigationActive ? "Active route" : "Map workspace"}</span>
-          <strong>{hasDestination ? props.activeDestination : "No destination staged"}</strong>
-          <div className="map-stage__route-meta">
-            <span>{routeSummaryLabel}</span>
-            <span>{scanStatusLabel}</span>
-            {props.navigationActive ? <span>{props.withinRadius ? "Arrival window open" : "Tracking to destination"}</span> : null}
+        <div className="map-stage__route-hud">
+          <div className="map-stage__route-status">
+            <span className="map-stage__route-label">{props.navigationActive ? "Navigating" : hasDestination ? "Staged target" : "Map ready"}</span>
+            <strong>{hasDestination ? props.activeDestination : "No destination staged"}</strong>
+          </div>
+          <div className="map-stage__route-metrics">
+            <div>
+              <span>Distance</span>
+              <strong>{props.navigationActive ? props.routeDistance : "--"}</strong>
+            </div>
+            <div>
+              <span>ETA</span>
+              <strong>{props.navigationActive ? props.routeEta : "--"}</strong>
+            </div>
+            <div>
+              <span>Scan</span>
+              <strong>{scanStatusLabel}</strong>
+            </div>
+          </div>
+          <div className={`map-stage__guidance ${props.withinRadius ? "map-stage__guidance--arrival" : ""}`}>
+            {nextGuidanceLabel}
           </div>
         </div>
 
@@ -2350,15 +2371,15 @@ function MapStagePanel(props: {
           <strong>{props.rows.length}</strong>
         </button>
         <button className={`map-stage__dock-chip ${props.settings.showActiveAlertPins ? "is-active" : ""}`.trim()} type="button" onClick={props.onToggleActiveAlertPins}>
-          <span>Active Alerts</span>
+          <span>Active</span>
           <strong>{activeAlertCount}</strong>
         </button>
         <button className={`map-stage__dock-chip ${props.settings.showHistoricalAlertPins ? "is-active" : ""}`.trim()} type="button" onClick={props.onToggleHistoricalAlertPins}>
-          <span>Prior Alerts</span>
+          <span>Prior</span>
           <strong>{historicalAlertCount}</strong>
         </button>
         <div className="map-stage__dock-status">
-          <span>{scanStatusLabel}</span>
+          <span>{props.navigationActive ? routeSummaryLabel : scanStatusLabel}</span>
         </div>
       </div>
 

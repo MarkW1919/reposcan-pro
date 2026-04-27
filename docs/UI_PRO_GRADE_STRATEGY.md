@@ -36,6 +36,7 @@ Search, reporting, account editing, and audit history remain secondary screens.
 
 - Add a true recovery hit workflow state machine in the UI: `new_hit -> verifying -> routed -> onsite -> recovered | dismissed | false_positive`.
 - Add a one-screen evidence comparison view optimized for plate crop plus vehicle overview.
+- Refine the map as a navigation HUD: route state, distance, ETA, scan radius, active alerts, and layer controls should be visible without covering the target area.
 - Add keyboard and hardware-button shortcuts for `route`, `confirm`, `dismiss`, and `mute`.
 - Add audible/visual alert policy controls with audit entries for mute/dismiss/false-positive events.
 - Add per-account recovery instructions: gate code, tow constraints, safety notes, client-specific restrictions, and contact policy.
@@ -54,4 +55,3 @@ The UI is professional-grade only when a trained recovery agent can complete the
 - log confirmation, correction, false positive, or dismissal
 - export a defensible evidence package
 - understand whether the system is live, local-only, or degraded
-
