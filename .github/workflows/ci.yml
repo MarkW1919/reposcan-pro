@@ -1,0 +1,55 @@
+name: RepoScan Pro CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - codex/bootstrap
+
+jobs:
+  validate:
+    name: Validate software baseline
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install Python dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,postgres]"
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Contract tests
+        run: python -m pytest tests/contracts
+
+      - name: Focused integration tests
+        run: >
+          python -m pytest
+          tests/integration/test_acceptance_run.py
+          tests/integration/test_outage_acceptance.py
+          tests/integration/test_capture_sources.py
+          tests/integration/test_capture_inference_flow.py
+          tests/integration/test_api_app.py
+
+      - name: UI build
+        run: npm run ui:build
+
+      - name: Secret scan
+        run: python scripts/run_secret_scan.py --output-root artifacts/ops --run-id ci-secret-scan
