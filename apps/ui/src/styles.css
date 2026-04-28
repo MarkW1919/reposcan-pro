@@ -853,8 +853,8 @@ select:focus-visible {
 }
 
 .console-layout--ops {
-  grid-template-columns: minmax(250px, 300px) minmax(360px, 0.9fr) minmax(420px, 1.25fr);
-  grid-template-rows: minmax(0, 1fr) minmax(168px, 0.34fr);
+  grid-template-columns: minmax(250px, 300px) minmax(0, 1fr);
+  grid-template-rows: minmax(210px, 0.68fr) minmax(330px, 1fr) minmax(148px, 0.32fr);
   gap: 12px;
   min-height: 0;
 }
@@ -1089,8 +1089,11 @@ select:focus-visible {
 }
 
 .ops-camera-grid {
+  grid-column: 2;
+  grid-row: 1;
   display: grid;
-  grid-template-rows: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: minmax(0, 1fr);
   gap: 12px;
 }
 
@@ -1127,8 +1130,8 @@ select:focus-visible {
 }
 
 .ops-window--map {
-  grid-column: 3;
-  grid-row: 1;
+  grid-column: 2;
+  grid-row: 2;
 }
 
 .ops-window--map .map-stage {
@@ -1136,12 +1139,12 @@ select:focus-visible {
 }
 
 .ops-window--map .map-stage__overlay {
-  grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1fr);
+  grid-template-columns: minmax(240px, 0.48fr) minmax(0, 1fr);
 }
 
 .ops-read-panel {
-  grid-column: 2 / 4;
-  grid-row: 2;
+  grid-column: 2;
+  grid-row: 3;
   border-radius: 8px;
 }
 
@@ -6373,7 +6376,8 @@ kbd {
 
 @media (max-width: 1280px) and (min-width: 961px) {
   .console-layout--ops {
-    grid-template-columns: minmax(232px, 270px) minmax(320px, 0.88fr) minmax(380px, 1.12fr);
+    grid-template-columns: minmax(232px, 270px) minmax(0, 1fr);
+    grid-template-rows: minmax(190px, 0.62fr) minmax(300px, 1fr) minmax(140px, 0.3fr);
   }
 }
 
