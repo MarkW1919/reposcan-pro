@@ -20,6 +20,18 @@ The industry-leading UI for this project should be:
 - **Low-distraction**: avoid marketing-style cards, oversized decoration, and analytics charts on the driving console.
 - **Touch-capable**: primary actions must remain reachable on a laptop touchscreen or small in-cab display.
 
+## First Deployment Scope
+
+The first deployment is a single-operator recovery console. It should not include driver-to-driver coordination, dispatch boards, assigned unit status, en route state, on-scene state, or handoff to another LPR system. Those concepts add screen clutter and belong in a future multi-operator/dispatcher release.
+
+The first deployment should use a smaller recovery state model:
+
+- `active`: a matched account needs operator verification.
+- `acknowledged`: the operator has seen the hit and is verifying or routing to the last-seen point.
+- `dismissed`: the hit is not actionable right now.
+- `recovered`: the account has been completed after verification.
+- `false_positive`: the read or vehicle match was rejected.
+
 ## Current Design Direction
 
 The console should prioritize, in this order:
@@ -32,16 +44,23 @@ The console should prioritize, in this order:
 
 Search, reporting, account editing, and audit history remain secondary screens.
 
+## Implemented First Deployment Enhancements
+
+- Removed dispatcher, assigned-unit, en route, on-scene, and driver handoff surfaces from the visible operator UI.
+- Added a verification gate for OCR, vehicle, account, and location context on recovery cases and alert overlays.
+- Added recovery alert keyboard controls for route, confirm, false positive, mute, view record, mark recovered, and dismiss.
+- Kept backend assignment contract types available for future compatibility while excluding them from first-deployment screens.
+
 ## Recommended Roadmap
 
-- Add a true recovery hit workflow state machine in the UI: `new_hit -> verifying -> routed -> onsite -> recovered | dismissed | false_positive`.
+- Add a true recovery hit workflow state machine in the UI: `active -> acknowledged -> recovered | dismissed | false_positive`.
 - Add a one-screen evidence comparison view optimized for plate crop plus vehicle overview.
 - Refine the map as a navigation HUD: route state, distance, ETA, scan radius, active alerts, and layer controls should be visible without covering the target area.
 - Add keyboard and hardware-button shortcuts for `route`, `confirm`, `dismiss`, and `mute`.
 - Add audible/visual alert policy controls with audit entries for mute/dismiss/false-positive events.
 - Add per-account recovery instructions: gate code, tow constraints, safety notes, client-specific restrictions, and contact policy.
 - Add operator shift mode with large typography, reduced decoration, and persistent GPS/API/camera status.
-- Add a supervisor/dispatcher view separate from the driver console. The driver UI should not inherit dispatcher density.
+- Defer supervisor, dispatcher, unit assignment, and external LPR handoff views until after the first deployment.
 - Add usability tests built around timed tasks: acknowledge hit, verify OCR, route to last seen, mark false positive, export evidence, and recover account.
 
 ## Acceptance Bar

@@ -7,9 +7,7 @@ export type PanelId =
   | "selectedAlert"
   | "routePlanner"
   | "statusStack"
-  | "recoveryLog"
-  | "dispatchBoard"
-  | "crewChat";
+  | "recoveryLog";
 
 export type SlotId = "railTop" | "railBottom" | "hero" | "support" | "board" | "detail";
 export type CameraMode = "quad" | "priority" | "strip" | "dual";
@@ -27,7 +25,7 @@ export interface FieldSettings {
   routeTrafficOverlay: boolean;
   ocrConfidenceThreshold: number;
   maxActiveTargets: number;
-  autoMarkOnScene: boolean;
+  autoArmArrivalScan: boolean;
   silentShiftMode: boolean;
   lowStorageWarning: boolean;
 }
@@ -43,8 +41,8 @@ export interface AlertItem {
   confidence: number;
   gps: string;
   severity: "critical" | "priority" | "watch";
-  scenario: "assignment" | "visual_match" | "departure_risk" | "tow_ready";
-  status: "en_route" | "onsite" | "monitoring" | "cleared";
+  scenario: "account_match" | "visual_match" | "departure_risk" | "tow_ready";
+  status: "active" | "acknowledged" | "monitoring" | "cleared";
   routeAction: string;
   location: string;
   distance: string;
@@ -123,14 +121,6 @@ export const panelCatalog: Record<PanelId, { label: string; description: string 
     label: "Case Log",
     description: "Active repossession cases and recent status changes.",
   },
-  dispatchBoard: {
-    label: "Repo Workflow",
-    description: "Follow-up, dispatch, and alert actions for the selected target.",
-  },
-  crewChat: {
-    label: "Crew Handoff",
-    description: "Real-time messaging, evidence notes, and crew handoff coordination.",
-  },
 };
 
 export const dashboardPresets: Record<LayoutPresetId, DashboardLayout> = {
@@ -155,7 +145,7 @@ export const dashboardPresets: Record<LayoutPresetId, DashboardLayout> = {
       hero: "selectedAlert",
       support: "hotlistFeed",
       board: "cameraMatrix",
-      detail: "dispatchBoard",
+      detail: "routePlanner",
     },
   },
   streetSweep: {
@@ -167,7 +157,7 @@ export const dashboardPresets: Record<LayoutPresetId, DashboardLayout> = {
       hero: "cameraMatrix",
       support: "hotlistFeed",
       board: "opsMap",
-      detail: "dispatchBoard",
+      detail: "selectedAlert",
     },
   },
   cameraOps: {
@@ -178,7 +168,7 @@ export const dashboardPresets: Record<LayoutPresetId, DashboardLayout> = {
       railBottom: "statusStack",
       hero: "hotlistFeed",
       support: "selectedAlert",
-      board: "dispatchBoard",
+      board: "cameraMatrix",
       detail: "recoveryLog",
     },
   },
@@ -214,7 +204,7 @@ export const defaultFieldSettings: FieldSettings = {
   routeTrafficOverlay: true,
   ocrConfidenceThreshold: 0.8,
   maxActiveTargets: 10,
-  autoMarkOnScene: true,
+  autoArmArrivalScan: true,
   silentShiftMode: false,
   lowStorageWarning: true,
 };
@@ -231,11 +221,11 @@ export const alerts: AlertItem[] = [
     gps: "37.42172, -122.08408",
     severity: "critical",
     scenario: "tow_ready",
-    status: "onsite",
-    routeAction: "Stage and Confirm",
+    status: "active",
+    routeAction: "Verify and Route",
     location: "Shoreline Blvd curbside",
     distance: "0.2 mi",
-    notes: "Target is parked curbside. Spotter reported the driver is away from the vehicle.",
+    notes: "Target is parked curbside. Verify plate, vehicle, and account notes before recovery action.",
     bestApproach: "Roll past once, confirm the plate and VIN, then return from the rear with a clear hookup line.",
   },
   {
@@ -253,7 +243,7 @@ export const alerts: AlertItem[] = [
     routeAction: "Circle and Reacquire",
     location: "Apartment entrance off Rengstorff Ave",
     distance: "0.6 mi",
-    notes: "Vehicle moved within the last five minutes. Keep visual contact and avoid tipping the driver.",
+    notes: "Vehicle moved within the last five minutes. Keep visual contact and verify before taking account action.",
     bestApproach: "Circle the block and reacquire from the cross street before committing.",
   },
   {
@@ -267,8 +257,8 @@ export const alerts: AlertItem[] = [
     gps: "37.42061, -122.08155",
     severity: "priority",
     scenario: "visual_match",
-    status: "en_route",
-    routeAction: "Mark and Stage",
+    status: "acknowledged",
+    routeAction: "Verify Match",
     location: "Office frontage on Plymouth St",
     distance: "1.1 mi",
     notes: "Photo match is strong. Confirm rear plate before stopping the truck.",
@@ -284,7 +274,7 @@ export const alerts: AlertItem[] = [
     confidence: 0.82,
     gps: "37.41983, -122.08544",
     severity: "watch",
-    scenario: "assignment",
+    scenario: "account_match",
     status: "monitoring",
     routeAction: "Watch Only",
     location: "Elm side street curb line",
@@ -357,23 +347,6 @@ export const recoveryLog: RecoveryLogEntry[] = [
   },
 ];
 
-export interface CrewChatMessage {
-  id: string;
-  sender: string;
-  body: string;
-  timestamp: string;
-  type: "message" | "handoff" | "system";
-}
-
-export const demoChatMessages: CrewChatMessage[] = [
-  { id: "msg-001", sender: "Unit 7", body: "Eyes on target vehicle, silver Camry curbside on Shoreline", timestamp: "04:12", type: "message" },
-  { id: "msg-002", sender: "Dispatch", body: "Copy Unit 7. Unit 3 en route for backup, ETA 4 min", timestamp: "04:13", type: "message" },
-  { id: "msg-003", sender: "System", body: "Handoff: Unit 3 assigned to assignment asg_001", timestamp: "04:14", type: "handoff" },
-  { id: "msg-004", sender: "Unit 3", body: "Confirmed, approaching from the westbound cross street", timestamp: "04:15", type: "message" },
-  { id: "msg-005", sender: "System", body: "Hotlist match: 6BZN220 detected on cam-front-1", timestamp: "04:16", type: "system" },
-  { id: "msg-006", sender: "Unit 7", body: "Plates confirmed visual match. Ready for tow", timestamp: "04:17", type: "message" },
-];
-
 export const layoutSlotLabels: Record<SlotId, string> = {
   railTop: "Left Rail Upper",
   railBottom: "Left Rail Lower",
@@ -385,7 +358,7 @@ export const layoutSlotLabels: Record<SlotId, string> = {
 
 export const presetDescriptions: Record<LayoutPresetId, string> = {
   route: "Map-first driving layout with hotlist and radius status close by.",
-  recovery: "Target-first layout for on-scene confirmation and hookup decisions.",
+  recovery: "Target-first layout for plate, vehicle, and account verification.",
   streetSweep: "Camera-led sweep for curbside, apartment, office, and roadside searches.",
   cameraOps: "Quad camera grid with queue and target detail for fast confirmation.",
   navLpr: "Drive route, active radius scan state, and vehicle recognition together.",
@@ -393,15 +366,15 @@ export const presetDescriptions: Record<LayoutPresetId, string> = {
 };
 
 export const scenarioLabels: Record<AlertItem["scenario"], string> = {
-  assignment: "Assignment",
+  account_match: "Account Match",
   visual_match: "Visual Match",
   departure_risk: "Departure Risk",
   tow_ready: "Tow Ready",
 };
 
 export const statusLabels: Record<AlertItem["status"], string> = {
-  en_route: "En Route",
-  onsite: "On Scene",
+  active: "Active",
+  acknowledged: "Acknowledged",
   monitoring: "Monitoring",
   cleared: "Cleared",
 };

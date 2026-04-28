@@ -1049,8 +1049,8 @@ export function mapOverviewToAlertItems(
     const detection = detectionsById.get(alert.detection_id);
     const gps = formatGps(alert.gps_latitude ?? detection?.gps_latitude, alert.gps_longitude ?? detection?.gps_longitude);
     const severity = alert.status === "active" ? "critical" : alert.status === "acknowledged" ? "priority" : "watch";
-    const scenario = alert.status === "active" ? "tow_ready" : alert.status === "acknowledged" ? "visual_match" : "assignment";
-    const status = alert.status === "active" ? "monitoring" : alert.status === "acknowledged" ? "onsite" : "cleared";
+    const scenario = alert.status === "active" ? "tow_ready" : alert.status === "acknowledged" ? "visual_match" : "account_match";
+    const status = alert.status === "active" || alert.status === "acknowledged" ? "monitoring" : "cleared";
     const routeAction = alert.status === "active" ? "Acknowledge" : alert.status === "acknowledged" ? "Stand down" : "Re-open";
     const fieldNotes = [`${titleCase(alert.match_type)} match`, alert.notes, alert.response_notes].filter(Boolean).join(" \u00b7 ");
     return {

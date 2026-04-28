@@ -1,6 +1,6 @@
 # PRODUCT.md
 
-RepoScan Pro is a repossession-focused, edge-first LPR and vehicle intelligence system for long-range and low-light vehicle observation, plate capture, OCR, vehicle attribute classification, local hotlist matching, and evidence handoff.
+RepoScan Pro is a repossession-focused, edge-first LPR and vehicle intelligence system for long-range and low-light vehicle observation, plate capture, OCR, vehicle attribute classification, local hotlist matching, and evidence export.
 
 ## Problem Statement
 
@@ -22,7 +22,7 @@ Generic OCR demos fail in repossession deployments because the mission is constr
 - match reads against local recovery-account and hotlist data without requiring internet
 - attach GPS, timestamp, camera, and media metadata to each detection
 - store results locally and sync only when connectivity permits
-- export a self-contained detection package for account review, dispute handling, or chain-of-custody handoff
+- export a self-contained detection package for account review, dispute handling, or chain-of-custody records
 
 ## Product Principles
 
