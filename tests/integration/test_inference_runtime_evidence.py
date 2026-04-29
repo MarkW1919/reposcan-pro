@@ -40,7 +40,7 @@ def test_generate_inference_runtime_evidence_writes_fixture_reports(tmp_path):
         (output_root / "reports" / "promoted-onnx-runtime.local-dev.validation.json").read_text(encoding="utf-8")
     )
     jetson_validation = json.loads(
-        (output_root / "reports" / "promoted-tensorrt-runtime.jetson-orin.validation.json").read_text(encoding="utf-8")
+        (output_root / "reports" / "promoted-tensorrt-runtime.jetson-orin-nano-super.validation.json").read_text(encoding="utf-8")
     )
 
     assert qualification_report["qualified"] is True

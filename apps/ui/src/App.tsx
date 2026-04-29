@@ -769,10 +769,6 @@ function trimValue(value: string | null | undefined): string {
   return (value ?? "").trim();
 }
 
-function hotlistHasProfile(entry: Pick<DashboardHotlist, "vehicle_make" | "vehicle_model">): boolean {
-  return Boolean(trimValue(entry.vehicle_make) && trimValue(entry.vehicle_model));
-}
-
 function hotlistIdentifierSummary(entry: Pick<DashboardHotlist, "plate_text" | "vin" | "vehicle_year" | "vehicle_make" | "vehicle_model">): string {
   if (trimValue(entry.plate_text)) {
     return trimValue(entry.plate_text);
@@ -976,10 +972,6 @@ function buildCameraUiFeeds(
   }));
 }
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
-
 function alertStatusTone(status: DashboardAlertStatus): "critical" | "warn" | "muted" {
   if (status === "active") {
     return "critical";
@@ -1051,16 +1043,6 @@ function isTypingTarget(target: EventTarget | null): boolean {
   }
   const tagName = target.tagName.toLowerCase();
   return target.isContentEditable || tagName === "input" || tagName === "textarea" || tagName === "select";
-}
-
-function followUpStatusTone(status: FollowUpStatus): "critical" | "warn" | "success" {
-  if (status === "open") {
-    return "critical";
-  }
-  if (status === "monitoring") {
-    return "warn";
-  }
-  return "success";
 }
 
 function followUpOperationalSignal(record: FollowUpRecord): OperationalSignal {
@@ -1857,13 +1839,6 @@ function confidenceTone(value: number): "high" | "medium" | "low" {
     return "medium";
   }
   return "low";
-}
-
-function interpolatePosition(progress: number): { lat: number; lng: number } {
-  return {
-    lat: routeStart.lat + (targetRoute.lat - routeStart.lat) * progress,
-    lng: routeStart.lng + (targetRoute.lng - routeStart.lng) * progress,
-  };
 }
 
 function buildDetectionBoxPosition(cameraId: string, compact = false): CSSProperties {
@@ -5361,16 +5336,6 @@ function SearchResultCard(props: {
   );
 }
 
-function StatusRow(props: { label: string; value: string; tone: "good" | "off" }): ReactElement {
-  return (
-    <div className="status-row">
-      <span>{props.label}</span>
-      <strong>{props.value}</strong>
-      <i className={`status-dot status-dot--${props.tone}`} />
-    </div>
-  );
-}
-
 function SettingsToggleRow(props: {
   title: string;
   detail: string;
@@ -5784,24 +5749,24 @@ function ConsoleScreen(props: {
             </div>
             {commandRow ? <VerificationChecklist compact items={commandChecklist} /> : null}
             <div className="ops-status-icons" aria-label="System status actions">
-              <Tooltip text={`GPS and map tools. ${props.withinRadius ? "Inside target radius." : "Outside target radius."}`}>
-                <button className={`ops-icon-button ${props.withinRadius ? "is-active" : ""}`} type="button" onClick={props.onOpenDestinationModal}>
+              <Tooltip text={`Open destination tools. ${props.withinRadius ? "Inside arrival ring." : "Outside arrival ring."}`}>
+                <button className={`ops-icon-button ${props.withinRadius ? "is-active" : ""}`} aria-label="Open destination tools" type="button" onClick={props.onOpenDestinationModal}>
                   <span>MAP</span>
                 </button>
               </Tooltip>
-              <Tooltip text={`${props.cameraFeedsList.filter((feed) => feed.status === "Online").length} of ${props.cameraFeedsList.length} cameras online. Select to review cameras.`}>
-                <button className="ops-icon-button" type="button" onClick={() => props.onStageViewChange("camera")}>
+              <Tooltip text={`${props.cameraFeedsList.filter((feed) => feed.status === "Online").length} of ${props.cameraFeedsList.length} cameras online. Switch to camera view.`}>
+                <button className="ops-icon-button" aria-label="Switch to camera view" type="button" onClick={() => props.onStageViewChange("camera")}>
                   <span>CAM</span>
                 </button>
               </Tooltip>
-              <Tooltip text={`${props.activeAlerts} active recovery match${props.activeAlerts === 1 ? "" : "es"}.`}>
-                <button className={`ops-icon-button ${props.activeAlerts > 0 ? "is-critical" : ""}`} disabled={!commandRow} type="button" onClick={() => commandRow && props.onOpenAccount(commandRow)}>
+              <Tooltip text={`${props.activeAlerts} active recovery match${props.activeAlerts === 1 ? "" : "es"}. Open account.`}>
+                <button className={`ops-icon-button ${props.activeAlerts > 0 ? "is-critical" : ""}`} aria-label="Open recovery account" disabled={!commandRow} type="button" onClick={() => commandRow && props.onOpenAccount(commandRow)}>
                   <span>REC</span>
                 </button>
               </Tooltip>
-              <Tooltip text="Open selected read details and evidence.">
-                <button className="ops-icon-button" disabled={!commandRow} type="button" onClick={() => commandRow && props.onOpenDetail(commandRow)}>
-                  <span>EV</span>
+              <Tooltip text="View evidence and read details for the selected vehicle.">
+                <button className="ops-icon-button" aria-label="View read evidence" disabled={!commandRow} type="button" onClick={() => commandRow && props.onOpenDetail(commandRow)}>
+                  <span>VIEW</span>
                 </button>
               </Tooltip>
             </div>
@@ -5896,26 +5861,36 @@ function ConsoleScreen(props: {
           <section className="ops-window ops-window--camera">
             <div className="ops-window__header">
               <strong>{props.currentCamera?.shortLabel ?? "Camera 1"}</strong>
-              <Badge tone={cameraFeedTone(props.currentCamera?.status ?? "Unknown")}>{cameraFeedBadgeLabel(props.currentCamera?.status ?? "Unknown").toUpperCase()}</Badge>
+              <div className="ops-window__header-actions">
+                <Badge tone={cameraFeedTone(props.currentCamera?.status ?? "Unknown")}>
+                  {cameraFeedBadgeLabel(props.currentCamera?.status ?? "Unknown").toUpperCase()}
+                </Badge>
+                <div className="camera-tab-strip camera-tab-strip--compact" role="tablist" aria-label="Select primary camera">
+                  {props.cameraFeedsList.slice(0, 4).map((feed) => (
+                    <button
+                      key={feed.id}
+                      className={`camera-tab camera-tab--icon ${props.selectedCameraId === feed.id ? "is-active" : ""}`}
+                      title={`${feed.label} - ${feed.status}`}
+                      type="button"
+                      role="tab"
+                      aria-selected={props.selectedCameraId === feed.id ? "true" : "false"}
+                      aria-label={`Show ${feed.label} as primary`}
+                      onClick={() => props.onSelectCamera(feed.id)}
+                    >
+                      <span className={`camera-dot camera-dot--${cameraFeedDotTone(feed.status)}`} />
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
             <CameraViewport cameraId={props.selectedCameraId} row={props.cameraFocusRow} dataSource={props.dataSource} compact />
           </section>
           <section className="ops-window ops-window--camera">
             <div className="ops-window__header">
               <strong>{secondaryCamera?.shortLabel ?? "Camera 2"}</strong>
-              <div className="camera-tab-strip camera-tab-strip--compact">
-                {props.cameraFeedsList.slice(0, 4).map((feed) => (
-                  <button
-                    key={feed.id}
-                    className={`camera-tab camera-tab--icon ${props.selectedCameraId === feed.id ? "is-active" : ""}`}
-                    title={`${feed.label} - ${feed.status}`}
-                    type="button"
-                    onClick={() => props.onSelectCamera(feed.id)}
-                  >
-                    <span className={`camera-dot camera-dot--${cameraFeedDotTone(feed.status)}`} />
-                  </button>
-                ))}
-              </div>
+              <Badge tone={cameraFeedTone(secondaryCamera?.status ?? "Unknown")}>
+                {cameraFeedBadgeLabel(secondaryCamera?.status ?? "Unknown").toUpperCase()}
+              </Badge>
             </div>
             <CameraViewport cameraId={secondaryCamera?.id ?? props.selectedCameraId} row={secondaryCameraRow} dataSource={props.dataSource} compact />
           </section>

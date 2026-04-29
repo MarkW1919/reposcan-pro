@@ -1121,6 +1121,13 @@ select:focus-visible {
   white-space: nowrap;
 }
 
+.ops-window__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
 .ops-window--camera .camera-stage {
   padding: 8px;
 }
