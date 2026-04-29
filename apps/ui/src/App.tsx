@@ -2092,18 +2092,6 @@ function MapStagePanel(props: {
     : props.idleScanEnabled
       ? "Idle scan on"
       : "Idle scan off";
-  const routeSummaryLabel = props.navigationActive
-    ? `${props.routeDistance} • ETA ${props.routeEta}`
-    : hasDestination
-      ? "Target staged"
-      : "No destination staged";
-  const nextGuidanceLabel = props.navigationActive
-    ? props.withinRadius
-      ? "Arrival ring reached - verify plate and vehicle before account action"
-      : "Proceed to last-seen point - scan stays armed on approach"
-    : hasDestination
-      ? "Destination staged - start route when ready"
-      : "Set a destination from a recovery account, alert, or last-seen read";
 
   return (
     <div className={`map-stage ${compact ? "map-stage--overview" : ""}`.trim()}>
@@ -2134,62 +2122,39 @@ function MapStagePanel(props: {
         {props.routeStatusLabel}
       </div>
 
-      <div className={`map-stage__overlay ${compact ? "map-stage__overlay--compact" : ""}`.trim()}>
-        <div className="map-stage__route-hud">
-          <div className="map-stage__route-status">
-            <span className="map-stage__route-label">{props.navigationActive ? "Navigating" : hasDestination ? "Staged target" : "Map ready"}</span>
-            <strong>{hasDestination ? props.activeDestination : "No destination staged"}</strong>
-          </div>
-          <div className="map-stage__route-metrics">
-            <div>
-              <span>Distance</span>
-              <strong>{props.navigationActive ? props.routeDistance : "--"}</strong>
-            </div>
-            <div>
-              <span>ETA</span>
-              <strong>{props.navigationActive ? props.routeEta : "--"}</strong>
-            </div>
-            <div>
-              <span>Scan</span>
-              <strong>{scanStatusLabel}</strong>
-            </div>
-          </div>
-          <div className={`map-stage__guidance ${props.withinRadius ? "map-stage__guidance--arrival" : ""}`}>
-            {nextGuidanceLabel}
-          </div>
-        </div>
-
-        <div className="map-stage__toolbar-actions">
-          <Tooltip text="Stage or update the route destination from the map">
-            <button className="pill-button is-active" type="button" onClick={props.onOpenDestinationModal}>
-              {hasDestination ? "Change Destination" : "Set Destination"}
+      <div className="map-stage__controls" role="toolbar" aria-label="Map controls">
+        <Tooltip text="Stage or update the route destination">
+          <button className="map-stage__control" type="button" onClick={props.onOpenDestinationModal}>
+            {hasDestination ? "Change" : "Destination"}
+          </button>
+        </Tooltip>
+        {!props.navigationActive && hasDestination ? (
+          <Tooltip text="Begin navigation to the staged destination">
+            <button className="map-stage__control map-stage__control--primary" type="button" onClick={props.onStartRoute}>
+              Start
             </button>
           </Tooltip>
-          {!props.navigationActive && hasDestination ? (
-            <Tooltip text="Begin navigation to the staged destination">
-              <button className="pill-button" type="button" onClick={props.onStartRoute}>
-                Start Route
-              </button>
-            </Tooltip>
-          ) : null}
-          {props.navigationActive ? (
-            <Tooltip text="End the current route and return to idle map mode">
-              <button className="pill-button" type="button" onClick={props.onEndRoute}>
-                End Route
-              </button>
-            </Tooltip>
-          ) : null}
-          <Tooltip text="Toggle alert and read layers">
-            <button className={`pill-button ${props.layerMenuOpen ? "is-active" : ""}`.trim()} type="button" onClick={props.onToggleLayerMenu}>
-              Layers
+        ) : null}
+        {props.navigationActive ? (
+          <Tooltip text="End the current route">
+            <button className="map-stage__control" type="button" onClick={props.onEndRoute}>
+              End
             </button>
           </Tooltip>
-        </div>
+        ) : null}
+        <Tooltip text="Toggle map layers">
+          <button className={`map-stage__control ${props.layerMenuOpen ? "is-active" : ""}`.trim()} type="button" aria-pressed={props.layerMenuOpen ? "true" : "false"} onClick={props.onToggleLayerMenu}>
+            Layers
+          </button>
+        </Tooltip>
       </div>
 
       {props.layerMenuOpen ? (
-        <div className="map-stage__layer-menu">
-          <strong>Map Layers</strong>
+        <div className="map-stage__layer-menu" role="menu">
+          <div className="map-stage__layer-menu-header">
+            <strong>Map Layers</strong>
+            <span>{`${activeAlertCount} active · ${historicalAlertCount} prior · ${props.rows.length} reads`}</span>
+          </div>
           <button className={`map-stage__layer-toggle ${props.settings.showActiveAlertPins ? "is-active" : ""}`.trim()} type="button" onClick={props.onToggleActiveAlertPins}>
             <span>Active alerts</span>
             <strong>{props.settings.showActiveAlertPins ? "On" : "Off"}</strong>
@@ -2209,22 +2174,9 @@ function MapStagePanel(props: {
         </div>
       ) : null}
 
-      <div className="map-stage__dock">
-        <button className={`map-stage__dock-chip ${props.settings.showDetectionPins ? "is-active" : ""}`.trim()} type="button" onClick={props.onToggleDetectionPins}>
-          <span>Reads</span>
-          <strong>{props.rows.length}</strong>
-        </button>
-        <button className={`map-stage__dock-chip ${props.settings.showActiveAlertPins ? "is-active" : ""}`.trim()} type="button" onClick={props.onToggleActiveAlertPins}>
-          <span>Active</span>
-          <strong>{activeAlertCount}</strong>
-        </button>
-        <button className={`map-stage__dock-chip ${props.settings.showHistoricalAlertPins ? "is-active" : ""}`.trim()} type="button" onClick={props.onToggleHistoricalAlertPins}>
-          <span>Prior</span>
-          <strong>{historicalAlertCount}</strong>
-        </button>
-        <div className="map-stage__dock-status">
-          <span>{props.navigationActive ? routeSummaryLabel : scanStatusLabel}</span>
-        </div>
+      <div className="map-stage__footer">
+        <span className="map-stage__footer-meta">{scanStatusLabel}</span>
+        <span className="map-stage__footer-meta map-stage__footer-meta--muted">{`${activeAlertCount} active · ${props.rows.length} reads`}</span>
       </div>
 
       {props.destinationModalOpen ? (
@@ -5604,8 +5556,6 @@ function ConsoleScreen(props: {
   onToggleRadiusRing: () => void;
 }): ReactElement {
   const [quickPlateVin, setQuickPlateVin] = useState("");
-  const [quickAddress, setQuickAddress] = useState("");
-  const [quickVehicle, setQuickVehicle] = useState("");
   const [quickSearchFeedback, setQuickSearchFeedback] = useState<string | null>(null);
 
   const mapPanelProps = {
@@ -5669,62 +5619,47 @@ function ConsoleScreen(props: {
 
   function handleQuickSearchSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
-    const plateOrVin = quickPlateVin.trim();
-    const address = quickAddress.trim();
-    const vehicle = quickVehicle.trim();
+    const query = quickPlateVin.trim();
+    if (!query) {
+      return;
+    }
 
-    if (plateOrVin) {
-      const normalizedQuery = normalizePlate(plateOrVin);
-      const matchedRow = props.allRows.find((row) =>
-        [row.plate1, row.plate2, ...row.plateCandidates.map((candidate) => candidate.text)].some((candidate) =>
-          normalizePlate(candidate).includes(normalizedQuery),
-        ),
+    const normalizedQuery = normalizePlate(query);
+    const lowerQuery = query.toLowerCase();
+
+    const matchedRow = props.allRows.find((row) => {
+      const plateMatch = [row.plate1, row.plate2, ...row.plateCandidates.map((candidate) => candidate.text)].some(
+        (candidate) => normalizePlate(candidate).includes(normalizedQuery),
       );
-      if (matchedRow) {
-        props.onSelectDetection(matchedRow.id);
-        props.onOpenDetail(matchedRow);
-        setQuickSearchFeedback(`Opened read ${matchedRow.plate1}.`);
-        return;
+      if (plateMatch) {
+        return true;
       }
-
-      const matchedAccount = props.hotlists.find((entry) => {
-        const fields = [entry.plate_text, entry.vin, entry.label, entry.vehicle_make, entry.vehicle_model].filter(
-          (value): value is string => Boolean(value),
-        );
-        return fields.some((value) => normalizePlate(value).includes(normalizedQuery));
-      });
-      if (matchedAccount) {
-        const accountTarget = props.destinationTargets.find((target) => target.id === `target-account-${matchedAccount.entry_id}`);
-        if (accountTarget) {
-          useRouteTarget(accountTarget);
-        }
-        props.onOpenHotlist(matchedAccount);
-        setQuickSearchFeedback(`Opened account ${hotlistIdentifierSummary(matchedAccount)}.`);
-        return;
-      }
-
-      setQuickSearchFeedback(`No plate, VIN, or account match for ${plateOrVin}.`);
+      return row.vehicle.toLowerCase().includes(lowerQuery);
+    });
+    if (matchedRow) {
+      props.onSelectDetection(matchedRow.id);
+      props.onOpenDetail(matchedRow);
+      setQuickSearchFeedback(`Opened read ${matchedRow.plate1}.`);
       return;
     }
 
-    if (address) {
-      props.onDestinationChange(address);
-      props.onOpenDestinationModal();
-      setQuickSearchFeedback("Opened destination search.");
+    const matchedAccount = props.hotlists.find((entry) => {
+      const fields = [entry.plate_text, entry.vin, entry.label, entry.vehicle_make, entry.vehicle_model].filter(
+        (value): value is string => Boolean(value),
+      );
+      return fields.some((value) => normalizePlate(value).includes(normalizedQuery) || value.toLowerCase().includes(lowerQuery));
+    });
+    if (matchedAccount) {
+      const accountTarget = props.destinationTargets.find((target) => target.id === `target-account-${matchedAccount.entry_id}`);
+      if (accountTarget) {
+        useRouteTarget(accountTarget);
+      }
+      props.onOpenHotlist(matchedAccount);
+      setQuickSearchFeedback(`Opened account ${hotlistIdentifierSummary(matchedAccount)}.`);
       return;
     }
 
-    if (vehicle) {
-      const normalizedVehicle = vehicle.toLowerCase();
-      const matched = props.allRows.find((row) => row.vehicle.toLowerCase().includes(normalizedVehicle));
-      if (matched) {
-        props.onSelectDetection(matched.id);
-        props.onOpenDetail(matched);
-        setQuickSearchFeedback(`Opened vehicle read ${matched.plate1}.`);
-        return;
-      }
-      setQuickSearchFeedback(`No vehicle read matched ${vehicle}.`);
-    }
+    setQuickSearchFeedback(`No match for ${query}. Try the Search screen for full filters.`);
   }
 
   function useRouteTarget(target: DestinationTarget): void {
@@ -5737,6 +5672,14 @@ function ConsoleScreen(props: {
     }
   }
 
+  const scanStatusLabel = props.navigationActive
+    ? props.settings.autoArrivalScan
+      ? `Auto-scan ${props.settings.arrivalRadiusFeet} ft`
+      : "Auto-scan off"
+    : props.idleScanEnabled
+      ? "Idle scan on"
+      : "Idle scan off";
+
   return (
     <section className="screen">
       <div className="console-layout console-layout--ops">
@@ -5748,6 +5691,20 @@ function ConsoleScreen(props: {
               <span>{commandRow?.vehicle ?? (props.navigationActive ? props.activeDestination : "Awaiting reads")}</span>
             </div>
             {commandRow ? <VerificationChecklist compact items={commandChecklist} /> : null}
+            <div className="ops-route-metrics" aria-label="Route metrics">
+              <div>
+                <span>Distance</span>
+                <strong>{props.navigationActive ? props.routeDistance : "--"}</strong>
+              </div>
+              <div>
+                <span>ETA</span>
+                <strong>{props.navigationActive ? props.routeEta : "--"}</strong>
+              </div>
+              <div>
+                <span>Scan</span>
+                <strong>{scanStatusLabel}</strong>
+              </div>
+            </div>
             <div className="ops-status-icons" aria-label="System status actions">
               <Tooltip text={`Open destination tools. ${props.withinRadius ? "Inside arrival ring." : "Outside arrival ring."}`}>
                 <button className={`ops-icon-button ${props.withinRadius ? "is-active" : ""}`} aria-label="Open destination tools" type="button" onClick={props.onOpenDestinationModal}>
@@ -5803,35 +5760,16 @@ function ConsoleScreen(props: {
               </button>
             </div>
 
-            <label className="form-label" htmlFor="console-plate-vin">Plate or VIN</label>
+            <label className="form-label" htmlFor="console-quick-lookup">Quick lookup</label>
             <input
-              id="console-plate-vin"
+              id="console-quick-lookup"
               className="text-input"
-              placeholder="ABC1234 or VIN"
+              placeholder="Plate, VIN, or vehicle"
               value={quickPlateVin}
               onChange={(event) => setQuickPlateVin(event.target.value)}
             />
-
-            <label className="form-label" htmlFor="console-address-search">Address search</label>
-            <input
-              id="console-address-search"
-              className="text-input"
-              placeholder="Account or sighting address"
-              value={quickAddress}
-              onChange={(event) => setQuickAddress(event.target.value)}
-            />
-
-            <label className="form-label" htmlFor="console-vehicle-search">Vehicle search</label>
-            <input
-              id="console-vehicle-search"
-              className="text-input"
-              placeholder="Make, model, color"
-              value={quickVehicle}
-              onChange={(event) => setQuickVehicle(event.target.value)}
-            />
-
-            <button className="btn btn--primary btn--compact" type="submit">
-              Search
+            <button className="btn btn--ghost btn--compact" type="submit">
+              Find
             </button>
             {quickSearchFeedback ? <p className="ops-input-feedback">{quickSearchFeedback}</p> : null}
           </form>
