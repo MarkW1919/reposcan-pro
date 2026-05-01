@@ -48,9 +48,13 @@ def main() -> int:
     from reposcan_alerting import AlertingService
     from reposcan_capture import CameraRegistry, CaptureService, LiveFrameSource
     from reposcan_contracts.config.camera import SourceType
-    from reposcan_contracts.config.loader import load_model_config, load_pipeline_config
+    from reposcan_contracts.config.loader import (
+        load_deployment_config,
+        load_model_config,
+        load_pipeline_config,
+    )
     from reposcan_inference import InferenceService
-    from reposcan_inference.adapter_factory import build_runtime_adapter_bundle
+    from reposcan_inference.adapter_factory import build_deployment_runtime_adapter_bundle
     from reposcan_inference.workflow import FrameToCandidateWorkflow
     from reposcan_preprocessing import PreprocessingService
     from reposcan_storage.service import create_development_storage_service
@@ -81,7 +85,16 @@ def main() -> int:
 
     model_stack = load_model_config(_resolve(repo_root, args.model_config))
     pipeline_config = load_pipeline_config(_resolve(repo_root, args.pipeline_config))
-    adapters = build_runtime_adapter_bundle(model_stack)
+    deployment_config = load_deployment_config(_resolve(repo_root, args.deployment_config))
+    adapters = build_deployment_runtime_adapter_bundle(model_stack, deployment_config)
+    if adapters is None:
+        print(
+            "ERROR: No usable inference adapter bundle could be built for the configured model stack "
+            f"'{model_stack.stack_name}' under deployment '{deployment_config.deployment_name}'. "
+            "Refusing to start live ingest with placeholder adapters.",
+            file=sys.stderr,
+        )
+        return 2
     inference_service = InferenceService.from_config_paths(
         model_config_path=_resolve(repo_root, args.model_config),
         pipeline_config_path=_resolve(repo_root, args.pipeline_config),

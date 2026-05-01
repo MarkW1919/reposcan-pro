@@ -53,7 +53,17 @@ from .edge_bench import (
     run_edge_bench,
     write_edge_bench_artifacts,
 )
-from .onnx_adapters import build_onnx_adapter_bundle, validate_onnx_artifact
+from .onnx_adapters import (
+    build_onnx_adapter_bundle,
+    get_default_onnx_providers,
+    set_default_onnx_providers,
+    validate_onnx_artifact,
+)
+from .trt_adapters import build_tensorrt_adapter_bundle, tensorrt_available
+from .adapter_factory import (
+    RuntimeAdapterUnavailableError,
+    build_deployment_runtime_adapter_bundle,
+)
 from .profiling import InferenceLatencyProfile, InferenceProfiler, recommend_runtime_tuning
 from .promotion import (
     PromotedBundlePackageReport,
@@ -156,6 +166,12 @@ __all__ = [
     "build_demo_adapter_bundle",
     "build_benchmark_manifest_from_eval_holdout",
     "build_runtime_adapter_bundle",
+    "build_deployment_runtime_adapter_bundle",
+    "build_tensorrt_adapter_bundle",
+    "get_default_onnx_providers",
+    "set_default_onnx_providers",
+    "tensorrt_available",
+    "RuntimeAdapterUnavailableError",
     "benchmark_promoted_model",
     "load_model_artifact_manifest",
     "package_exported_onnx_bundle",

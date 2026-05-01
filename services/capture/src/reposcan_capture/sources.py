@@ -162,7 +162,22 @@ class OpenCvImageGrabber:
         if not success or frame is None:
             return None
 
-        image = Image.fromarray(frame[:, :, ::-1])
+        try:
+            import cv2  # type: ignore
+        except ImportError as exc:  # pragma: no cover - cv2 must already be present after open()
+            raise CaptureSourceError("OpenCV is required to read frames") from exc
+
+        if frame.ndim == 2:
+            rgb = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
+        elif frame.ndim == 3 and frame.shape[2] == 4:
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGRA2RGB)
+        elif frame.ndim == 3 and frame.shape[2] == 3:
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        else:
+            raise CaptureSourceError(
+                f"Unexpected frame shape from capture source: {getattr(frame, 'shape', None)}"
+            )
+        image = Image.fromarray(rgb)
         return CapturedImage(
             image=image,
             timestamp_utc=_format_utc_timestamp(datetime.now(timezone.utc)),

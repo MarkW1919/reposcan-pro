@@ -675,12 +675,26 @@ class StorageService:
             cutoff = reference_time - timedelta(days=days)
             deleted = 0
             kept = 0
+            if not root.exists():
+                deleted_counts[name] = deleted
+                kept_counts[name] = kept
+                continue
             for path in root.rglob("*"):
-                if not path.is_file():
+                try:
+                    if not path.is_file():
+                        continue
+                    modified_at = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+                except (OSError, FileNotFoundError):
                     continue
-                modified_at = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
                 if modified_at < cutoff:
-                    path.unlink()
+                    try:
+                        path.unlink()
+                    except FileNotFoundError:
+                        # Concurrent retention sweep already removed it; treat as deleted.
+                        pass
+                    except OSError:
+                        kept += 1
+                        continue
                     deleted += 1
                 else:
                     kept += 1

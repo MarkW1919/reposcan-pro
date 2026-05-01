@@ -431,7 +431,7 @@ class PostgresStorageRepository:
             if active_only:
                 rows = self._fetchall(
                     "SELECT payload_json FROM hotlists WHERE active = %s ORDER BY updated_at_utc DESC LIMIT %s",
-                    (1 if self.dialect == "sqlite" else True, limit),
+                    (1, limit),
                 )
             else:
                 rows = self._fetchall(
@@ -452,7 +452,9 @@ class PostgresStorageRepository:
 
     def upsert_hotlist(self, entry: HotlistEntry) -> HotlistEntry:
         payload = json.dumps(entry.model_dump(mode="json"))
-        active_value = entry.active if self.dialect == "postgres" else (1 if entry.active else 0)
+        # The hotlists.active column is INTEGER in both dialects, so a Python
+        # bool would be a type mismatch under psycopg's strict adapters.
+        active_value = 1 if entry.active else 0
         with self._lock:
             cursor = self._execute(
                 """

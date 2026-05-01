@@ -31,7 +31,10 @@ from .adapters import (
     StaticPlateDetectorAdapter,
     StaticVehicleDetectorAdapter,
 )
-from .adapter_factory import build_runtime_adapter_bundle
+from .adapter_factory import (
+    build_deployment_runtime_adapter_bundle,
+    build_runtime_adapter_bundle,
+)
 from .service import InferenceService
 from .workflow import FrameToCandidateWorkflow
 
@@ -101,6 +104,14 @@ def build_configured_adapter_bundle(
     *,
     plate_text: str = "6BZN220",
 ) -> ModelAdapterBundle:
+    """Demo / headless-runner bundle builder.
+
+    Used by the headless file-sequence demo path. Falls back to deterministic
+    static adapters when no real backend can be assembled. Production capture
+    paths must use ``build_runtime_adapter_bundle`` directly so a missing
+    real adapter is a loud failure rather than fake plate reads.
+    """
+
     configured = build_runtime_adapter_bundle(model_stack, default_plate_text=plate_text)
     if configured is not None:
         return configured

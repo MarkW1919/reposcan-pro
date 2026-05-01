@@ -72,9 +72,9 @@ class HttpSyncTransport:
         )
 
         try:
+            # urllib raises HTTPError for any 4xx/5xx, so we just need to drain the body.
             with request.urlopen(outbound_request, timeout=self.timeout_seconds) as response:
-                if response.status >= 400:
-                    raise RetryableSyncTransportError(f"sync endpoint returned HTTP {response.status}")
+                response.read(0)
                 return
         except error.HTTPError as exc:
             body = _load_error_body(exc)

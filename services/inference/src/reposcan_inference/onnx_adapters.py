@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import logging
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Sequence
 
 import numpy as np
 from PIL import Image
+
+_logger = logging.getLogger(__name__)
 
 from reposcan_contracts.classifier_export import ClassifierExportMetadata, parse_vehicle_make_model_year
 from reposcan_contracts.config.model import ClassifierModelConfig, DetectorModelConfig, InferenceBackend, ModelStackConfig, OcrModelConfig
@@ -393,10 +397,79 @@ def _attribute_prediction_from_logits(
     )
 
 
-@lru_cache(maxsize=16)
-def _load_session(path: str):
+_DEFAULT_PROVIDERS: tuple[str, ...] = ("CPUExecutionProvider",)
+
+
+def _env_providers() -> tuple[str, ...] | None:
+    raw = os.environ.get("REPOSCAN_ONNX_PROVIDERS")
+    if not raw:
+        return None
+    parts = [item.strip() for item in raw.split(",") if item.strip()]
+    return tuple(parts) if parts else None
+
+
+def _filter_available(providers: Sequence[str]) -> tuple[str, ...]:
     runtime = _require_onnxruntime()
-    return runtime.InferenceSession(str(Path(path)), providers=["CPUExecutionProvider"])
+    available = set(runtime.get_available_providers())
+    selected: list[str] = []
+    skipped: list[str] = []
+    for provider in providers:
+        if provider in available:
+            selected.append(provider)
+        else:
+            skipped.append(provider)
+    if skipped:
+        _logger.warning(
+            "ONNX providers not available in this runtime, skipping: %s", ", ".join(skipped)
+        )
+    if not selected:
+        if "CPUExecutionProvider" not in available:
+            raise RuntimeError(
+                "No usable ONNX execution providers found (not even CPUExecutionProvider)."
+            )
+        _logger.warning("Falling back to CPUExecutionProvider; no requested providers were available.")
+        return ("CPUExecutionProvider",)
+    if "CPUExecutionProvider" not in selected and "CPUExecutionProvider" in available:
+        # Always keep CPU as the final safety net, mirroring onnxruntime's recommendation.
+        selected.append("CPUExecutionProvider")
+    return tuple(selected)
+
+
+def _resolve_providers(providers: Sequence[str] | None) -> tuple[str, ...]:
+    if providers is not None:
+        return _filter_available(tuple(providers))
+    env_providers = _env_providers()
+    if env_providers is not None:
+        return _filter_available(env_providers)
+    return _filter_available(_DEFAULT_PROVIDERS)
+
+
+def set_default_onnx_providers(providers: Sequence[str]) -> None:
+    """Set the process-wide default ONNX provider chain.
+
+    Falls back to CPU-only if no entries are valid on this runtime. Cached sessions
+    built before this call still use whatever providers were active when they were
+    created.
+    """
+
+    global _DEFAULT_PROVIDERS
+    if not providers:
+        raise ValueError("providers must not be empty")
+    _DEFAULT_PROVIDERS = tuple(providers)
+
+
+def get_default_onnx_providers() -> tuple[str, ...]:
+    return _DEFAULT_PROVIDERS
+
+
+@lru_cache(maxsize=16)
+def _load_session_cached(path: str, providers_key: tuple[str, ...]):
+    runtime = _require_onnxruntime()
+    return runtime.InferenceSession(str(Path(path)), providers=list(providers_key))
+
+
+def _load_session(path: str, providers: Sequence[str] | None = None):
+    return _load_session_cached(path, _resolve_providers(providers))
 
 
 def validate_onnx_artifact(
@@ -475,10 +548,16 @@ def validate_onnx_artifact(
 
 
 class OnnxVehicleDetectorAdapter:
-    def __init__(self, model_config: DetectorModelConfig, *, artifact_path: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        model_config: DetectorModelConfig,
+        *,
+        artifact_path: str | Path | None = None,
+        providers: Sequence[str] | None = None,
+    ) -> None:
         self.model_config = model_config
         self.artifact_path = str(artifact_path or model_config.artifact_path)
-        self.session = _load_session(self.artifact_path)
+        self.session = _load_session(self.artifact_path, providers)
         self.input_name = self.session.get_inputs()[0].name
 
     def detect(self, frame: InferenceFrame) -> list[VehicleDetection]:
@@ -523,10 +602,16 @@ class OnnxVehicleDetectorAdapter:
 
 
 class OnnxPlateDetectorAdapter:
-    def __init__(self, model_config: DetectorModelConfig, *, artifact_path: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        model_config: DetectorModelConfig,
+        *,
+        artifact_path: str | Path | None = None,
+        providers: Sequence[str] | None = None,
+    ) -> None:
         self.model_config = model_config
         self.artifact_path = str(artifact_path or model_config.artifact_path)
-        self.session = _load_session(self.artifact_path)
+        self.session = _load_session(self.artifact_path, providers)
         self.input_name = self.session.get_inputs()[0].name
 
     def detect(
@@ -617,11 +702,12 @@ class OnnxOcrAdapter:
         *,
         default_plate_text: str | None = None,
         artifact_path: str | Path | None = None,
+        providers: Sequence[str] | None = None,
     ) -> None:
         self.model_config = model_config
         self.default_plate_text = default_plate_text
         self.artifact_path = str(artifact_path or model_config.artifact_path)
-        self.session = _load_session(self.artifact_path)
+        self.session = _load_session(self.artifact_path, providers)
         self.input_name = self.session.get_inputs()[0].name
 
     def recognize(self, frame: InferenceFrame, plate_detections: Sequence[PlateDetection]) -> list[PlateCandidate]:
@@ -662,10 +748,11 @@ class OnnxClassifierAdapter:
         *,
         artifact_path: str | Path | None = None,
         label_metadata_path: str | Path | None = None,
+        providers: Sequence[str] | None = None,
     ) -> None:
         self.model_config = model_config
         self.artifact_path = str(artifact_path or model_config.artifact_path)
-        self.session = _load_session(self.artifact_path)
+        self.session = _load_session(self.artifact_path, providers)
         self.input_name = self.session.get_inputs()[0].name
         resolved_metadata_path = label_metadata_path or model_config.label_metadata_path
         self.metadata = _load_classifier_metadata(str(resolved_metadata_path)) if resolved_metadata_path else None
@@ -742,6 +829,7 @@ def build_onnx_adapter_bundle(
     model_stack: ModelStackConfig,
     *,
     default_plate_text: str | None = None,
+    providers: Sequence[str] | None = None,
 ) -> ModelAdapterBundle | None:
     backend_values = {
         model_stack.vehicle_detector.backend,
@@ -776,21 +864,25 @@ def build_onnx_adapter_bundle(
                 if model_stack.classifier.label_metadata_path
                 else None
             ),
+            providers=providers,
         )
 
     return ModelAdapterBundle(
         vehicle_detector=OnnxVehicleDetectorAdapter(
             model_stack.vehicle_detector,
             artifact_path=model_stack.resolve_artifact_path(model_stack.vehicle_detector.artifact_path),
+            providers=providers,
         ),
         plate_detector=OnnxPlateDetectorAdapter(
             model_stack.plate_detector,
             artifact_path=model_stack.resolve_artifact_path(model_stack.plate_detector.artifact_path),
+            providers=providers,
         ),
         ocr=OnnxOcrAdapter(
             model_stack.ocr,
             default_plate_text=default_plate_text,
             artifact_path=model_stack.resolve_artifact_path(model_stack.ocr.artifact_path),
+            providers=providers,
         ),
         classifier=classifier,
     )
