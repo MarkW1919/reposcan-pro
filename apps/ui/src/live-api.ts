@@ -856,6 +856,18 @@ export interface AddressSearchResult {
   results: AddressSearchSuggestion[];
 }
 
+export interface ReverseAddressResult {
+  display_name: string;
+  latitude: number;
+  longitude: number;
+  house_number: string | null;
+  road: string | null;
+  city: string | null;
+  state: string | null;
+  postal_code: string | null;
+  provider: string;
+}
+
 export interface AddressSearchOptions {
   bias_latitude?: number;
   bias_longitude?: number;
@@ -934,5 +946,21 @@ export async function searchAddresses(
     throw new Error(await responseErrorMessage(response, `Failed to search addresses (${response.status})`));
   }
   return (await response.json()) as AddressSearchResult;
+}
+
+export async function reverseAddressLookup(
+  latitude: number,
+  longitude: number,
+  signal?: AbortSignal,
+): Promise<ReverseAddressResult> {
+  const params = new URLSearchParams({
+    latitude: String(latitude),
+    longitude: String(longitude),
+  });
+  const response = await fetch(apiUrl(`/search/reverse-address?${params.toString()}`), { signal, headers: authHeaders() });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, `Failed to resolve current address (${response.status})`));
+  }
+  return (await response.json()) as ReverseAddressResult;
 }
 

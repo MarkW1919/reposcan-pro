@@ -138,6 +138,46 @@ Both search endpoints return:
 - `page.offset`
 - `results`
 
+Address lookup:
+
+- `GET /api/v1/search/addresses`
+
+Supported query parameters:
+
+- `q`
+- `limit`
+- `bias_latitude`
+- `bias_longitude`
+
+This route is intended for operator destination entry and map-driven address suggestions.
+It returns `results`, where each result includes a provider display label, normalized
+address components, provider name, and resolved latitude and longitude.
+
+Current-location reverse lookup:
+
+- `GET /api/v1/search/reverse-address`
+
+Supported query parameters:
+
+- `latitude`
+- `longitude`
+
+This route returns a compact current-location address record for the driver map,
+including:
+
+- `display_name`
+- `latitude`
+- `longitude`
+- `house_number`
+- `road`
+- `city`
+- `state`
+- `postal_code`
+- `provider`
+
+This reverse-address route is a lightweight provider-backed geocode helper. It does not
+reintroduce the previously removed advanced local address-enrichment workflow.
+
 ## Audit Surface
 
 The API is the audit boundary for operator-visible mutations and secured search actions.
@@ -158,6 +198,8 @@ Current audited success actions include:
 
 - `search.detections`
 - `search.alerts`
+- `search.addresses`
+- `search.reverse_address`
 - `review.create`
 - `follow_up.create`
 - `follow_up.update`

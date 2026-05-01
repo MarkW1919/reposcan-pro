@@ -9,6 +9,8 @@
 
 - PaddleOCR recognition training workflow with PP-OCRv5 config discovery
 - synthetic OCR support stays supplemental to reviewed field plate crops
+- public OpenALPR US OCR imports are valid real-data candidates when their import summary and manifest validation are clean
+- failed OCR probe workspaces are not promotion candidates unless they have a completed status, `best_accuracy` checkpoint, exported inference directory, and recorded validation or holdout metric
 
 ## Classification
 

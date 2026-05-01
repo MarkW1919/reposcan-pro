@@ -114,6 +114,8 @@ to discover the active package version, API version, canonical prefix, and wheth
 - `GET /api/v1/detections/{id}/frame` and `GET /api/v1/detections/{id}/plate-crop` for evidence media
 - `GET /api/v1/search/detections` for plate, date, camera, GPS-region, vehicle-attribute, and related alert-state filtering
 - `GET /api/v1/search/alerts` for alert-state and joined detection-attribute filtering
+- `GET /api/v1/search/addresses` for operator destination lookup, biased local address search, and route-entry suggestions
+- `GET /api/v1/search/reverse-address` for resolving the current unit latitude and longitude into a compact operator-readable address
 - `POST /api/v1/reviews/{id}` and `GET /api/v1/reviews/{id}` for operator review workflows
 - `GET /api/v1/alerts`, `GET /api/v1/alerts/{id}`, and `PUT /api/v1/alerts/{id}` for alert lifecycle management
 - `GET /api/v1/hotlists`, `POST /api/v1/hotlists`, and `PUT /api/v1/hotlists/{id}` for recovery account management
@@ -129,6 +131,13 @@ to discover the active package version, API version, canonical prefix, and wheth
 - operator-visible mutations and secured search actions are audit logged
 - request throttling and security headers are deployment-configurable
 - trusted hosts and OpenAPI exposure are deployment-configurable
+
+Address lookup specifics:
+
+- `GET /api/v1/search/addresses` accepts `q`, `limit`, and optional `bias_latitude` plus `bias_longitude`
+- `GET /api/v1/search/reverse-address` accepts `latitude` and `longitude`
+- both address lookup routes use the same secured search boundary and emit audit actions
+- reverse-address lookup is intentionally limited to compact street-address context and provider provenance; it does not restore the previously removed advanced local enrichment flow
 
 ## Local-First Semantics
 

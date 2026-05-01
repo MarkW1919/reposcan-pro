@@ -281,6 +281,18 @@ class AddressSearchResponse(BaseModel):
     results: list[AddressSearchSuggestion]
 
 
+class ReverseAddressResponse(BaseModel):
+    display_name: str = Field(..., min_length=1)
+    latitude: float = Field(..., ge=-90.0, le=90.0)
+    longitude: float = Field(..., ge=-180.0, le=180.0)
+    house_number: str | None = None
+    road: str | None = None
+    city: str | None = None
+    state: str | None = None
+    postal_code: str | None = None
+    provider: str = Field(..., min_length=1)
+
+
 class ApiVersionInfo(BaseModel):
     service: str = Field(..., description="Logical service identifier")
     package_version: str = Field(..., description="Application package version")

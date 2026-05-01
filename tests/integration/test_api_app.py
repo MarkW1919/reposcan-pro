@@ -1154,6 +1154,66 @@ def test_versioned_address_search_returns_502_when_provider_fails(tmp_path, monk
     assert response.json()["detail"] == "Address search unavailable"
 
 
+def test_versioned_reverse_address_returns_current_location_context_and_writes_audit_event(tmp_path, monkeypatch):
+    client, _ = _secure_seeded_client(tmp_path)
+    viewer_headers = {"X-RepoScan-Api-Key": "viewer-demo-token"}
+    admin_headers = {"X-RepoScan-Api-Key": "admin-demo-token"}
+    captured: dict[str, float] = {}
+
+    def fake_reverse(latitude: float, longitude: float):
+        captured["latitude"] = latitude
+        captured["longitude"] = longitude
+        return api_app_module.ReverseAddressResponse(
+            display_name="4128 W Fulton St, Chicago, Illinois",
+            latitude=latitude,
+            longitude=longitude,
+            house_number="4128",
+            road="W Fulton St",
+            city="Chicago",
+            state="Illinois",
+            postal_code="60624",
+            provider="nominatim",
+        )
+
+    monkeypatch.setattr(api_app_module, "_reverse_address_lookup", fake_reverse)
+
+    response = client.get(
+        "/api/v1/search/reverse-address",
+        headers=viewer_headers,
+        params={"latitude": 41.8862, "longitude": -87.7282},
+    )
+    audit_response = client.get("/api/v1/audit/events", headers=admin_headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["house_number"] == "4128"
+    assert payload["road"] == "W Fulton St"
+    assert payload["display_name"] == "4128 W Fulton St, Chicago, Illinois"
+    assert captured == {"latitude": 41.8862, "longitude": -87.7282}
+    assert audit_response.status_code == 200
+    actions = [event["action"] for event in audit_response.json()["events"]]
+    assert "search.reverse_address" in actions
+
+
+def test_versioned_reverse_address_returns_502_when_provider_fails(tmp_path, monkeypatch):
+    client, _ = _secure_seeded_client(tmp_path)
+    viewer_headers = {"X-RepoScan-Api-Key": "viewer-demo-token"}
+
+    def fake_reverse(latitude: float, longitude: float):
+        raise api_app_module.AddressSearchProviderError("provider down")
+
+    monkeypatch.setattr(api_app_module, "_reverse_address_lookup", fake_reverse)
+
+    response = client.get(
+        "/api/v1/search/reverse-address",
+        headers=viewer_headers,
+        params={"latitude": 41.8862, "longitude": -87.7282},
+    )
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "Reverse address lookup unavailable"
+
+
 def test_versioned_address_search_allows_unauthenticated_requests(tmp_path, monkeypatch):
     client, _ = _secure_seeded_client(tmp_path)
 

@@ -7,6 +7,7 @@ The operator experience should support fast decision-making under field conditio
 - show current camera status and ingest health
 - surface active detections with image previews and confidence
 - elevate hotlist hits immediately with location and timestamp context
+- keep the map usable as a first-class operator surface, including current unit position, compact current-location address context, and destination guidance without leaving the console
 
 ## Review Workflow
 
@@ -30,6 +31,7 @@ The operator experience should support fast decision-making under field conditio
 - attach a target address, lot label, and recovery instructions to the account
 - make it explicit when a record is intake-only versus ready for live plate alerting
 - allow operators to open account management without routing through the active case queue
+- support routing workflows through lightweight address lookup and reverse-geocode context, without depending on the removed advanced local enrichment feature set
 
 ## Alert Workflow
 

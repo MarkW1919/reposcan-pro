@@ -249,6 +249,23 @@ Example import for the public US OCR benchmark:
 
 That benchmark is small, so it should usually be the primary real OCR dataset plus synthetic support manifests, not the only OCR training source.
 
+Before using an imported OCR dataset as a real-data source, keep these checks green:
+
+- `import_summary.json` has `missing_source_image_count` at `0` or every missing file is reviewed and accepted
+- the generated manifest validates with `scripts/validate_training_dataset_manifest.py`
+- train, validation, and holdout splits are non-empty
+- labels normalize to `0-9A-Z` and match the configured OCR character dictionary
+- duplicate count is `0` in the import or preparation manifest
+
+Do not promote failed OCR training workspaces just because they contain checkpoints. For OCR promotion, require:
+
+- `training_status.json` state is `completed`
+- a PaddleOCR `output/best_accuracy` checkpoint exists
+- `inference_export/` was produced successfully
+- validation or holdout accuracy is recorded in the run notes, benchmark report, or release handoff
+
+Historical failed probes under `runtime/training` are useful only as debugging evidence. They should stay out of release manifests and promoted bundles.
+
 ## What This Does Not Prove Yet
 
 - that the required training frameworks are installed on every machine

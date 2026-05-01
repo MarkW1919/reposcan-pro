@@ -18,6 +18,7 @@ import {
   fetchEdgeRuntimeStatus,
   fetchHotlists,
   fetchReviews,
+  reverseAddressLookup,
   searchAlerts,
   searchAddresses,
   searchDetections,
@@ -47,6 +48,7 @@ import {
   type OperatorPrincipal,
   type OperatorSessionRecord,
   type PlateCandidate,
+  type ReverseAddressResult,
   type ReviewAction,
   type ReviewRecord,
 } from "./live-api";
@@ -234,6 +236,18 @@ interface OperationalSignal {
   tone: "critical" | "warn" | "success" | "muted" | "cyan";
 }
 
+interface NavigationGuidance {
+  active: boolean;
+  mode: "idle" | "preview" | "routing" | "arrival" | "blocked";
+  primary: string;
+  secondary: string;
+  distanceToNext: string;
+  distanceToDestination: string;
+  eta: string;
+  bearingLabel: string;
+  progressPercent: number;
+}
+
 interface VerificationChecklistItem {
   label: string;
   detail: string;
@@ -249,6 +263,7 @@ const recentDestinationsLimit = 6;
 const sessionIdStorageKey = "reposcan.ui.session-id.v1";
 const geocodeDebounceMs = 500;
 const geocodeMinChars = 3;
+const reverseGeocodeMinMoveFeet = 45;
 const destinationLocalSuggestionMinChars = 2;
 
 interface GeocodeSuggestion {
@@ -509,6 +524,39 @@ function haversineFeet(a: DestinationCoords, b: DestinationCoords): number {
   return Math.round(meters * 3.28084);
 }
 
+function bearingDegrees(a: DestinationCoords, b: DestinationCoords): number {
+  const toRad = (value: number): number => (value * Math.PI) / 180;
+  const toDeg = (value: number): number => (value * 180) / Math.PI;
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const y = Math.sin(dLng) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+  return (toDeg(Math.atan2(y, x)) + 360) % 360;
+}
+
+function bearingDeltaDegrees(from: number, to: number): number {
+  return ((to - from + 540) % 360) - 180;
+}
+
+function bearingCardinalLabel(degrees: number): string {
+  const labels = ["north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest"];
+  return labels[Math.round(degrees / 45) % labels.length];
+}
+
+function guidanceVerb(delta: number): string {
+  const abs = Math.abs(delta);
+  if (abs < 22) return "Continue";
+  if (abs < 65) return delta > 0 ? "Bear right" : "Bear left";
+  if (abs < 135) return delta > 0 ? "Turn right" : "Turn left";
+  return "Make a U-turn";
+}
+
+function formatMph(speedMetersPerSecond: number | null): string {
+  if (speedMetersPerSecond == null || !Number.isFinite(speedMetersPerSecond) || speedMetersPerSecond < 0.25) return "0 mph";
+  return `${Math.round(speedMetersPerSecond * 2.23694)} mph`;
+}
+
 function formatRelativeTime(timestampUtc: string, now: number = Date.now()): string {
   const ts = Date.parse(timestampUtc);
   if (Number.isNaN(ts)) return "";
@@ -539,6 +587,8 @@ interface GpsFixState {
   lat: number | null;
   lng: number | null;
   accuracyMeters: number | null;
+  headingDegrees: number | null;
+  speedMetersPerSecond: number | null;
   lastFixAtMs: number | null;
   message: string | null;
 }
@@ -548,6 +598,8 @@ const initialGpsFixState: GpsFixState = {
   lat: null,
   lng: null,
   accuracyMeters: null,
+  headingDegrees: null,
+  speedMetersPerSecond: null,
   lastFixAtMs: null,
   message: null,
 };
@@ -603,6 +655,71 @@ function gpsFixToCoords(fix: GpsFixState): DestinationCoords | null {
   return null;
 }
 
+interface LiveAddressState {
+  status: "idle" | "loading" | "resolved" | "error";
+  address: ReverseAddressResult | null;
+  error: string | null;
+  requestedCoords: DestinationCoords | null;
+}
+
+function useLiveReverseAddress(coords: DestinationCoords | null): LiveAddressState {
+  const [state, setState] = useState<LiveAddressState>({
+    status: "idle",
+    address: null,
+    error: null,
+    requestedCoords: null,
+  });
+  const lastRequestedRef = useRef<DestinationCoords | null>(null);
+
+  useEffect(() => {
+    if (!coords) {
+      lastRequestedRef.current = null;
+      setState((current) => ({ ...current, status: "idle", error: null, requestedCoords: null }));
+      return;
+    }
+
+    const lastRequested = lastRequestedRef.current;
+    if (lastRequested && haversineFeet(lastRequested, coords) < reverseGeocodeMinMoveFeet) {
+      return;
+    }
+
+    const controller = new AbortController();
+    const requestCoords = coords;
+    lastRequestedRef.current = requestCoords;
+    setState((current) => ({
+      ...current,
+      status: current.address ? "resolved" : "loading",
+      error: null,
+      requestedCoords: requestCoords,
+    }));
+
+    reverseAddressLookup(requestCoords.lat, requestCoords.lng, controller.signal)
+      .then((address) => {
+        setState({
+          status: "resolved",
+          address,
+          error: null,
+          requestedCoords: requestCoords,
+        });
+      })
+      .catch((error) => {
+        if ((error as DOMException)?.name === "AbortError") {
+          return;
+        }
+        setState((current) => ({
+          ...current,
+          status: "error",
+          error: error instanceof Error ? error.message : "Current address unavailable",
+          requestedCoords: requestCoords,
+        }));
+      });
+
+    return () => controller.abort();
+  }, [coords?.lat, coords?.lng]);
+
+  return state;
+}
+
 function useBrowserGeolocation(): GpsFixState {
   const [fix, setFix] = useState<GpsFixState>(() => {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
@@ -624,6 +741,8 @@ function useBrowserGeolocation(): GpsFixState {
           lat: position.coords.latitude,
           lng: position.coords.longitude,
           accuracyMeters,
+          headingDegrees: typeof position.coords.heading === "number" && Number.isFinite(position.coords.heading) ? position.coords.heading : null,
+          speedMetersPerSecond: typeof position.coords.speed === "number" && Number.isFinite(position.coords.speed) ? position.coords.speed : null,
           lastFixAtMs: position.timestamp ?? Date.now(),
           message: null,
         });
@@ -741,6 +860,73 @@ function formatEta(feet: number, active: boolean): string {
     return "<1 min";
   }
   return `${Math.max(1, Math.round(feet / 850))} min`;
+}
+
+function buildNavigationGuidance(options: {
+  active: boolean;
+  destination: string;
+  destinationCoords: DestinationCoords | null;
+  routePath: [number, number][];
+  unitPosition: DestinationCoords;
+  gpsFix: GpsFixState;
+  routeDistance: string;
+  routeEta: string;
+  routeFeet: number | null;
+  arrivalRadiusFeet: number;
+}): NavigationGuidance {
+  const destinationLabel = options.destination.trim() || "No destination set";
+
+  if (!options.destinationCoords) {
+    return {
+      active: false,
+      mode: options.destination ? "blocked" : "idle",
+      primary: options.destination ? "Resolve destination coordinates" : "Set a destination",
+      secondary: options.destination ? destinationLabel : "Pick an address or route to a recovery read.",
+      distanceToNext: "--",
+      distanceToDestination: options.routeDistance,
+      eta: options.routeEta,
+      bearingLabel: "--",
+      progressPercent: 0,
+    };
+  }
+
+  const routeFeet = options.routeFeet ?? haversineFeet(options.unitPosition, options.destinationCoords);
+  if (options.active && routeFeet <= options.arrivalRadiusFeet) {
+    return {
+      active: true,
+      mode: "arrival",
+      primary: "Arriving at target",
+      secondary: destinationLabel,
+      distanceToNext: formatDistance(routeFeet),
+      distanceToDestination: formatDistance(routeFeet),
+      eta: "<1 min",
+      bearingLabel: "arrival",
+      progressPercent: 100,
+    };
+  }
+
+  const nextPointTuple = options.routePath[1] ?? [options.destinationCoords.lat, options.destinationCoords.lng];
+  const nextPoint = { lat: nextPointTuple[0], lng: nextPointTuple[1] };
+  const nextBearing = bearingDegrees(options.unitPosition, nextPoint);
+  const referenceHeading = options.gpsFix.headingDegrees ?? nextBearing;
+  const delta = bearingDeltaDegrees(referenceHeading, nextBearing);
+  const verb = guidanceVerb(delta);
+  const nextDistanceFeet = Math.max(25, haversineFeet(options.unitPosition, nextPoint));
+  const bearingLabel = bearingCardinalLabel(nextBearing);
+  const routeStartFeet = Math.max(routeFeet + nextDistanceFeet, routeFeet, 1);
+  const progressPercent = Math.max(0, Math.min(100, Math.round(((routeStartFeet - routeFeet) / routeStartFeet) * 100)));
+
+  return {
+    active: options.active,
+    mode: options.active ? "routing" : "preview",
+    primary: `${verb} ${bearingLabel}`,
+    secondary: options.active ? `Toward ${destinationLabel}` : `Preview to ${destinationLabel}`,
+    distanceToNext: formatDistance(nextDistanceFeet),
+    distanceToDestination: options.routeDistance,
+    eta: options.routeEta,
+    bearingLabel,
+    progressPercent,
+  };
 }
 
 function normalizePlate(value: string | null | undefined): string {
@@ -1920,12 +2106,56 @@ function MapViewportSync(props: {
   return null;
 }
 
+function formatCoords(coords: DestinationCoords): string {
+  return `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`;
+}
+
+function formatAccuracy(accuracyMeters: number | null): string {
+  if (accuracyMeters == null) return "accuracy --";
+  return `+/-${Math.round(accuracyMeters)} m`;
+}
+
+function MapResizeSync(): null {
+  const map = useMap();
+
+  useLayoutEffect(() => {
+    const container = map.getContainer();
+    const invalidate = (): void => {
+      map.invalidateSize({ animate: false });
+    };
+
+    invalidate();
+    const frame = window.requestAnimationFrame(invalidate);
+    const timeout = window.setTimeout(invalidate, 250);
+    const observer = new ResizeObserver(invalidate);
+    observer.observe(container);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timeout);
+      observer.disconnect();
+    };
+  }, [map]);
+
+  return null;
+}
+
 function makeDotIcon(color: string, size: number): L.DivIcon {
   return L.divIcon({
     className: "map-dot-icon",
     html: `<span class="map-dot" style="width:${size}px;height:${size}px;background:${color}"></span>`,
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
+  });
+}
+
+function makeUnitIcon(headingDegrees: number | null): L.DivIcon {
+  const rotation = typeof headingDegrees === "number" && Number.isFinite(headingDegrees) ? headingDegrees : 0;
+  return L.divIcon({
+    className: "map-unit-icon",
+    html: `<span class="map-unit" style="--unit-heading:${rotation}deg"><span></span></span>`,
+    iconSize: [34, 34],
+    iconAnchor: [17, 17],
   });
 }
 
@@ -1938,15 +2168,15 @@ function makePlateIcon(plate: string, critical: boolean): L.DivIcon {
   });
 }
 
-const unitIcon = makeDotIcon("#38E8FF", 14);
-const targetIcon = makeDotIcon("#F0F4F8", 12);
-const activeAlertIcon = makeDotIcon("#FF4D5E", 12);
-const acknowledgedAlertIcon = makeDotIcon("#FFBF48", 10);
-const historicalAlertIcon = makeDotIcon("#91A6B3", 10);
+const targetIcon = makeDotIcon("#F8FBF7", 12);
+const activeAlertIcon = makeDotIcon("#FB7185", 12);
+const acknowledgedAlertIcon = makeDotIcon("#FBBF24", 10);
+const historicalAlertIcon = makeDotIcon("#A9BBB4", 10);
 
 function OpsMap(props: {
   autoCenter: boolean;
   unitPosition: { lat: number; lng: number };
+  unitHeadingDegrees: number | null;
   destinationCoords: DestinationCoords | null;
   routePath: [number, number][];
   rows: ConsoleDetectionRow[];
@@ -1966,6 +2196,7 @@ function OpsMap(props: {
   return (
     <MapContainer center={[initialCenter.lat, initialCenter.lng]} zoom={14} scrollWheelZoom={true} className="map-stage__canvas">
       <TileLayer attribution="OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+      <MapResizeSync />
       <MapViewportSync
         autoCenter={props.autoCenter}
         unitPosition={props.unitPosition}
@@ -1973,7 +2204,7 @@ function OpsMap(props: {
         showRoute={props.showRoute}
       />
 
-      <Marker position={[props.unitPosition.lat, props.unitPosition.lng]} icon={unitIcon}>
+      <Marker position={[props.unitPosition.lat, props.unitPosition.lng]} icon={makeUnitIcon(props.unitHeadingDegrees)}>
         <Popup>Recovery unit</Popup>
       </Marker>
 
@@ -1988,7 +2219,7 @@ function OpsMap(props: {
           center={[props.destinationCoords.lat, props.destinationCoords.lng]}
           radius={props.radiusFeet * 0.3048}
           pathOptions={{
-            color: "#38E8FF",
+            color: "#5EEAD4",
             fillColor: "rgba(56,232,255,0.10)",
             fillOpacity: 0.3,
             weight: 2,
@@ -1997,7 +2228,7 @@ function OpsMap(props: {
         />
       ) : null}
 
-      {props.showRoute && props.routePath.length >= 2 ? <Polyline positions={props.routePath} pathOptions={{ color: "#38E8FF", opacity: 0.8, weight: 4 }} /> : null}
+      {props.showRoute && props.routePath.length >= 2 ? <Polyline positions={props.routePath} pathOptions={{ color: "#5EEAD4", opacity: 0.8, weight: 4 }} /> : null}
 
       {props.showDetectionPins
         ? props.rows.map((row) => (
@@ -2053,6 +2284,7 @@ function MapStagePanel(props: {
   idleScanEnabled: boolean;
   layerMenuOpen: boolean;
   navigationActive: boolean;
+  navigationGuidance: NavigationGuidance;
   routeDistance: string;
   routeEta: string;
   routePath: [number, number][];
@@ -2060,6 +2292,8 @@ function MapStagePanel(props: {
   rows: ConsoleDetectionRow[];
   selectedRowId: string | null;
   settings: UiSettings;
+  gpsFix: GpsFixState;
+  liveAddress: LiveAddressState;
   unitPosition: { lat: number; lng: number };
   withinRadius: boolean;
   onApplyDestinationTarget: (target: DestinationTarget) => void;
@@ -2085,6 +2319,27 @@ function MapStagePanel(props: {
   const hasDestination = props.activeDestination.trim().length > 0;
   const activeAlertCount = props.alertMarkers.filter((marker) => marker.status === "active").length;
   const historicalAlertCount = props.alertMarkers.filter((marker) => marker.status !== "active").length;
+  const gpsCoords = gpsFixToCoords(props.gpsFix);
+  const liveAddressLine = props.liveAddress.address
+    ? [props.liveAddress.address.house_number, props.liveAddress.address.road].filter(Boolean).join(" ") || props.liveAddress.address.display_name
+    : props.gpsFix.status === "denied"
+      ? "Location permission denied"
+      : props.gpsFix.status === "unsupported"
+        ? "GPS unavailable"
+        : props.liveAddress.status === "loading"
+          ? "Resolving current address..."
+          : "Current address pending";
+  const liveAddressMeta = props.liveAddress.address
+    ? [props.liveAddress.address.city, props.liveAddress.address.state, props.liveAddress.address.postal_code].filter(Boolean).join(", ")
+    : gpsCoords
+      ? formatCoords(gpsCoords)
+      : "Enable location access for live street numerics";
+  const liveLocationTone =
+    props.gpsFix.status === "locked" || props.gpsFix.status === "fair"
+      ? "good"
+      : props.gpsFix.status === "weak" || props.gpsFix.status === "stale" || props.gpsFix.status === "acquiring"
+        ? "warn"
+        : "off";
   const scanStatusLabel = props.navigationActive
     ? props.settings.autoArrivalScan
       ? `Auto-scan ${props.settings.arrivalRadiusFeet} ft`
@@ -2098,13 +2353,14 @@ function MapStagePanel(props: {
       <OpsMap
         autoCenter={props.settings.autoCenterVehicle}
         unitPosition={props.unitPosition}
+        unitHeadingDegrees={props.gpsFix.headingDegrees}
         destinationCoords={props.destinationCoords}
         routePath={props.routePath}
         rows={props.rows}
         alertMarkers={props.alertMarkers}
         destinationLabel={props.activeDestination}
         radiusFeet={props.settings.arrivalRadiusFeet}
-        showRoute={props.navigationActive}
+        showRoute={props.navigationActive || hasDestination}
         showDestination={hasDestination}
         showRadiusRing={props.settings.showRadiusRing}
         showActiveAlertPins={props.settings.showActiveAlertPins}
@@ -2122,7 +2378,38 @@ function MapStagePanel(props: {
         {props.routeStatusLabel}
       </div>
 
-      <div className="map-stage__controls" role="toolbar" aria-label="Map controls">
+      <div className={`map-stage__location-chip map-stage__location-chip--${liveLocationTone}`} aria-live="polite">
+        <span className="map-stage__location-label">Current location</span>
+        <strong>{liveAddressLine}</strong>
+        <span>{liveAddressMeta || formatCoords(props.unitPosition)}</span>
+        <small>
+          {gpsCoords
+            ? `${formatCoords(gpsCoords)} / ${formatAccuracy(props.gpsFix.accuracyMeters)} / ${formatMph(props.gpsFix.speedMetersPerSecond)}`
+            : "Map is showing demo fallback position"}
+        </small>
+      </div>
+
+      {hasDestination || props.navigationActive ? (
+        <div className={`map-stage__guidance map-stage__guidance--${props.navigationGuidance.mode}`} aria-live="polite">
+          <div className="map-stage__guidance-turn">
+            <span>{props.navigationGuidance.mode === "arrival" ? "ARR" : props.navigationGuidance.bearingLabel.slice(0, 2).toUpperCase()}</span>
+          </div>
+          <div className="map-stage__guidance-main">
+            <span className="map-stage__location-label">{props.navigationGuidance.active ? "Next guidance" : "Route preview"}</span>
+            <strong>{props.navigationGuidance.primary}</strong>
+            <small>{props.navigationGuidance.secondary}</small>
+          </div>
+          <div className="map-stage__guidance-metrics">
+            <span>{props.navigationGuidance.distanceToNext}</span>
+            <strong>{props.navigationGuidance.eta}</strong>
+          </div>
+          <div className="map-stage__guidance-progress" aria-hidden="true">
+            <span style={{ width: `${props.navigationGuidance.progressPercent}%` }} />
+          </div>
+        </div>
+      ) : null}
+
+      <div className="map-stage__controls tooltip-zone--below" role="toolbar" aria-label="Map controls">
         <Tooltip text="Stage or update the route destination">
           <button className="map-stage__control" type="button" onClick={props.onOpenDestinationModal}>
             {hasDestination ? "Change" : "Destination"}
@@ -2886,7 +3173,7 @@ function ScreenHeader(props: { title: string; subtitle?: string; meta?: ReactEle
 function App(): ReactElement {
   const gpsFix = useBrowserGeolocation();
   const [screen, setScreen] = useState<AppScreen>("console");
-  const [stageView, setStageView] = useState<StageView>("camera");
+  const [stageView, setStageView] = useState<StageView>("map");
   const [selectedCameraId, setSelectedCameraId] = useState<string>("");
   const [selectedDetectionId, setSelectedDetectionId] = useState<string | null>(null);
   const [detailDetectionId, setDetailDetectionId] = useState<string | null>(null);
@@ -3300,8 +3587,9 @@ function App(): ReactElement {
   const cameraRows = allRows.filter((row) => row.cameraId === primaryCameraId);
   const cameraFocusRow = cameraRows[0] ?? selectedRow;
   const unitPosition = gpsFixToCoords(gpsFix) ?? routeStart;
+  const liveAddress = useLiveReverseAddress(gpsFixToCoords(gpsFix));
   const activeRouteFeet = activeDestinationCoords ? haversineFeet(unitPosition, activeDestinationCoords) : null;
-  const routePath = navigationActive && activeDestinationCoords ? buildRoutePath(unitPosition, activeDestinationCoords) : [];
+  const routePath = activeDestinationCoords ? buildRoutePath(unitPosition, activeDestinationCoords) : [];
   const withinRadius = navigationActive && activeRouteFeet != null && activeRouteFeet <= settings.arrivalRadiusFeet;
   const idleScanEnabled = !navigationActive && settings.arrivalScanEnabled;
   const totalReads = overview?.counts.recent_detections ?? 142;
@@ -3310,6 +3598,7 @@ function App(): ReactElement {
   const followUps = overview?.follow_ups ?? localFollowUps;
   const openFollowUps = overview?.counts.open_follow_ups ?? followUps.filter((item) => item.status !== "resolved").length;
   const onlineCameraCount = availableCameraFeeds.filter((feed) => feed.status === "Online").length;
+  const activeHotlistCount = hotlists.filter((entry) => entry.active).length;
   const routeStatusLabel = !navigationActive
     ? idleScanEnabled
       ? "Idle scan live"
@@ -3323,6 +3612,18 @@ function App(): ReactElement {
       : "Routing";
   const routeEta = activeRouteFeet != null ? formatEta(activeRouteFeet, navigationActive) : navigationActive ? "Resolve loc" : "Standby";
   const routeDistance = activeRouteFeet != null ? formatDistance(activeRouteFeet) : navigationActive ? "Pending" : "--";
+  const navigationGuidance = buildNavigationGuidance({
+    active: navigationActive,
+    destination: activeDestination,
+    destinationCoords: activeDestinationCoords,
+    routePath,
+    unitPosition,
+    gpsFix,
+    routeDistance,
+    routeEta,
+    routeFeet: activeRouteFeet,
+    arrivalRadiusFeet: settings.arrivalRadiusFeet,
+  });
   const detailTimeline = detailRow ? allRows.filter((row) => normalizePlate(row.plate1) === normalizePlate(detailRow.plate1)) : [];
   const groupedSearchResults = searchGroupByPlate ? buildPlateGroups(searchResults) : [];
   const hotlistWarning = !settings.hotlistAlerts || !settings.soundEnabled;
@@ -4536,36 +4837,24 @@ function App(): ReactElement {
     { label: "Reads", value: `${totalReads}`, tone: "good", tip: "Total plate reads this session \u2014 click to open search", action: () => { switchScreen("search"); } },
     { label: "Recoveries", value: `${activeAlerts}`, tone: activeAlerts > 0 ? "warn" : "good", tip: "Active recovery matches - click to view the queue", action: () => { switchScreen("hotlists"); } },
   ];
+  const footerNavItems: Array<{
+    label: string;
+    value: string;
+    screen: AppScreen;
+    tone: "good" | "off" | "warn";
+    tip: string;
+    action?: () => void;
+  }> = [
+    { label: "Drive", value: navigationActive ? routeEta : "Map", screen: "console", tone: screen === "console" ? "good" : "off", tip: "Open the driving map" },
+    { label: "Locate", value: `${totalReads}`, screen: "search", tone: screen === "search" ? "good" : "off", tip: "Search reads and history" },
+    { label: "Accounts", value: `${activeHotlistCount}`, screen: "accounts", tone: screen === "accounts" ? "good" : "off", tip: "Manage recovery accounts" },
+    { label: "Recoveries", value: `${activeAlerts}`, screen: "hotlists", tone: activeAlerts > 0 ? "warn" : screen === "hotlists" ? "good" : "off", tip: "Open recovery matches" },
+    { label: "Settings", value: dataSource.toUpperCase(), screen: "settings", tone: screen === "settings" ? "good" : "off", tip: "Open system settings" },
+  ];
 
   return (
     <>
       <div className="ops-app">
-        <NavPanel
-          activeScreen={screen}
-          activeAlerts={activeAlerts}
-          activeHotlists={hotlists.filter((entry) => entry.active).length}
-          cameraOnlineCount={onlineCameraCount}
-          cameraTotalCount={availableCameraFeeds.length}
-          dataSource={dataSource}
-          idleScanEnabled={idleScanEnabled}
-          navigationActive={navigationActive}
-          onOpenAlert={openLatestHotlistAlert}
-          onOpenRoute={() => {
-            setStageView("map");
-            switchScreen("console");
-          }}
-          onScreenChange={switchScreen}
-          onToggleIdleScan={() => {
-            if (idleScanEnabled) {
-              updateSetting("arrivalScanEnabled", false);
-            } else {
-              armIdleScan();
-            }
-          }}
-          routeEta={routeEta}
-          totalReads={totalReads}
-        />
-
         <main className="workspace">
           {screen === "console" ? (
             <ConsoleScreen
@@ -4587,10 +4876,13 @@ function App(): ReactElement {
               idleScanEnabled={idleScanEnabled}
               layerMenuOpen={mapLayerMenuOpen}
               navigationActive={navigationActive}
+              navigationGuidance={navigationGuidance}
               selectedCameraId={primaryCameraId}
               selectedDetectionId={selectedDetectionId}
               settings={settings}
               stageView={stageView}
+              gpsFix={gpsFix}
+              liveAddress={liveAddress}
               unitPosition={unitPosition}
               routeDistance={routeDistance}
               routeEta={routeEta}
@@ -4790,15 +5082,71 @@ function App(): ReactElement {
         </main>
 
         <footer className="status-footer">
-          {footerIndicators.map((indicator) => (
-            <Tooltip key={indicator.label} text={indicator.tip}>
-              <button className="status-footer__item status-footer__item--clickable" type="button" onClick={indicator.action}>
-                <span className={`status-dot status-dot--${indicator.tone}`} />
-                <strong>{indicator.label}</strong>
-                <span>{indicator.value}</span>
+          <div className="status-footer__group status-footer__group--brand" aria-label="Product">
+            <button className="status-footer__item status-footer__item--brand" type="button" onClick={() => switchScreen("console")}>
+              <span className="status-footer__mark">SIF</span>
+              <strong>RepoScan</strong>
+            </button>
+          </div>
+
+          <nav className="status-footer__group status-footer__group--nav" aria-label="Primary navigation">
+            {footerNavItems.map((item) => (
+              <Tooltip key={item.label} text={item.tip}>
+              <button
+                  className={`status-footer__item status-footer__item--clickable status-footer__item--nav status-footer__item--${item.tone} ${screen === item.screen ? "is-active" : ""}`.trim()}
+                  type="button"
+                  onClick={() => (item.action ? item.action() : switchScreen(item.screen))}
+                >
+                  <strong>{item.label}</strong>
+                  <span>{item.value}</span>
+                </button>
+              </Tooltip>
+            ))}
+          </nav>
+
+          <div className="status-footer__group status-footer__group--actions" aria-label="Driver actions">
+            <Tooltip text={navigationActive ? "Open active route on the map" : idleScanEnabled ? "Pause idle scanning" : "Start idle scanning"}>
+              <button
+                className={`status-footer__item status-footer__item--clickable status-footer__item--action status-footer__item--${navigationActive || idleScanEnabled ? "good" : "off"} is-primary`}
+                type="button"
+                onClick={() => {
+                  if (navigationActive) {
+                    setStageView("map");
+                    switchScreen("console");
+                  } else if (idleScanEnabled) {
+                    updateSetting("arrivalScanEnabled", false);
+                  } else {
+                    armIdleScan();
+                  }
+                }}
+              >
+                <strong>{navigationActive ? "Route" : "Scan"}</strong>
+                <span>{navigationActive ? routeEta : idleScanEnabled ? "Live" : "Paused"}</span>
               </button>
             </Tooltip>
-          ))}
+            <Tooltip text="Open the latest recovery match">
+              <button
+                className={`status-footer__item status-footer__item--clickable status-footer__item--action status-footer__item--${activeAlerts > 0 ? "warn" : "off"}`}
+                disabled={activeAlerts === 0}
+                type="button"
+                onClick={openLatestHotlistAlert}
+              >
+                <strong>Open</strong>
+                <span>Recovery</span>
+              </button>
+            </Tooltip>
+          </div>
+
+          <div className="status-footer__group status-footer__group--system" aria-label="System status">
+            {footerIndicators.map((indicator) => (
+              <Tooltip key={indicator.label} text={indicator.tip}>
+                <button className={`status-footer__item status-footer__item--clickable status-footer__item--${indicator.tone}`} type="button" onClick={indicator.action}>
+                  <strong>{indicator.label}</strong>
+                  <span>{indicator.value}</span>
+                </button>
+              </Tooltip>
+            ))}
+          </div>
         </footer>
       </div>
 
@@ -5519,10 +5867,13 @@ function ConsoleScreen(props: {
   idleScanEnabled: boolean;
   layerMenuOpen: boolean;
   navigationActive: boolean;
+  navigationGuidance: NavigationGuidance;
   selectedCameraId: string;
   selectedDetectionId: string | null;
   settings: UiSettings;
   stageView: StageView;
+  gpsFix: GpsFixState;
+  liveAddress: LiveAddressState;
   unitPosition: { lat: number; lng: number };
   routeDistance: string;
   routeEta: string;
@@ -5569,6 +5920,7 @@ function ConsoleScreen(props: {
     idleScanEnabled: props.idleScanEnabled,
     layerMenuOpen: props.layerMenuOpen,
     navigationActive: props.navigationActive,
+    navigationGuidance: props.navigationGuidance,
     routeDistance: props.routeDistance,
     routeEta: props.routeEta,
     routePath: props.routePath,
@@ -5576,6 +5928,8 @@ function ConsoleScreen(props: {
     rows: props.allRows.slice(0, 8),
     selectedRowId: props.selectedDetectionId,
     settings: props.settings,
+    gpsFix: props.gpsFix,
+    liveAddress: props.liveAddress,
     unitPosition: props.unitPosition,
     withinRadius: props.withinRadius,
     onApplyDestinationTarget: props.onApplyDestinationTarget,
@@ -5679,10 +6033,13 @@ function ConsoleScreen(props: {
     : props.idleScanEnabled
       ? "Idle scan on"
       : "Idle scan off";
+  const driverActionLabel = props.navigationActive ? "End Route" : props.activeDestination ? "Start Nav" : "Set Destination";
+  const driverAction = props.navigationActive ? props.onEndRoute : props.activeDestination ? props.onStartRoute : props.onOpenDestinationModal;
+  const layoutClassName = `console-layout console-layout--ops ${props.stageView === "camera" ? "console-layout--camera-mode" : ""}`.trim();
 
   return (
     <section className="screen">
-      <div className="console-layout console-layout--ops">
+      <div className={layoutClassName}>
         <aside className="ops-command-sidebar">
           <section className={`ops-status-card ops-status-card--${commandTone}`}>
             <div className="ops-status-card__header">
@@ -5737,56 +6094,68 @@ function ConsoleScreen(props: {
             </div>
           </section>
 
-          <form className="ops-input-panel" onSubmit={handleQuickSearchSubmit}>
-            <label className="form-label" htmlFor="console-destination">Destination</label>
-            <div className="ops-input-row">
-              <input
-                id="console-destination"
-                className="text-input"
-                placeholder="Enter address or place"
-                value={props.destinationInput}
-                onChange={(event) => props.onDestinationChange(event.target.value)}
-              />
-              <button className="icon-cta" title="Open destination tools" type="button" onClick={props.onOpenDestinationModal}>
-                MAP
-              </button>
+          <section className="ops-driver-panel" aria-label="Driver controls">
+            <div className="ops-target-card">
+              <span className="eyebrow">{props.navigationActive ? "Active Target" : "Next Target"}</span>
+              <strong>{props.activeDestination || "No destination set"}</strong>
+              <div className="ops-target-card__meta">
+                <span>{props.navigationActive ? props.routeEta : "ETA --"}</span>
+                <span>{props.navigationActive ? props.routeDistance : "Distance --"}</span>
+                <span>{scanStatusLabel}</span>
+              </div>
+              {props.activeDestination ? (
+                <div className={`ops-guidance-strip ops-guidance-strip--${props.navigationGuidance.mode}`}>
+                  <div>
+                    <span>{props.navigationActive ? "Next" : "Preview"}</span>
+                    <strong>{props.navigationGuidance.primary}</strong>
+                  </div>
+                  <div>
+                    <span>{props.navigationGuidance.distanceToNext}</span>
+                    <strong>{props.navigationGuidance.eta}</strong>
+                  </div>
+                </div>
+              ) : null}
             </div>
-            <div className="ops-input-actions">
-              <button className="btn btn--ghost btn--compact" type="button" onClick={props.onStageDestination}>
-                Set
+
+            <div className="ops-driver-actions" aria-label="Large driver actions">
+              <button className={`ops-driver-action ${props.navigationActive ? "ops-driver-action--danger" : "ops-driver-action--primary"}`} type="button" onClick={driverAction}>
+                <strong>{driverActionLabel}</strong>
+                <span>{props.navigationActive ? "Stop guidance" : props.activeDestination ? "Begin route" : "Pick address"}</span>
               </button>
-              <button className="btn btn--primary btn--compact" disabled={!props.activeDestination} type="button" onClick={props.onStartRoute}>
-                Start
+              <button className={`ops-driver-action ${props.stageView === "map" ? "is-active" : ""}`} type="button" onClick={() => props.onStageViewChange("map")}>
+                <strong>Drive Map</strong>
+                <span>{props.routeStatusLabel}</span>
+              </button>
+              <button className={`ops-driver-action ${props.activeAlerts > 0 ? "ops-driver-action--critical" : ""}`} type="button" disabled={props.activeAlerts === 0} onClick={() => commandRow && props.onOpenAccount(commandRow)}>
+                <strong>Hotlist</strong>
+                <span>{props.activeAlerts > 0 ? `${props.activeAlerts} active` : "Clear"}</span>
+              </button>
+              <button className={`ops-driver-action ${props.stageView === "camera" ? "is-active" : ""}`} type="button" onClick={() => props.onStageViewChange("camera")}>
+                <strong>Camera</strong>
+                <span>{`${props.cameraFeedsList.filter((feed) => feed.status === "Online").length}/${props.cameraFeedsList.length} live`}</span>
               </button>
             </div>
 
-            <label className="form-label" htmlFor="console-quick-lookup">Quick lookup</label>
-            <input
-              id="console-quick-lookup"
-              className="text-input"
-              placeholder="Plate, VIN, or vehicle"
-              value={quickPlateVin}
-              onChange={(event) => setQuickPlateVin(event.target.value)}
-            />
-            <button className="btn btn--ghost btn--compact" type="submit">
-              Find
-            </button>
-            {quickSearchFeedback ? <p className="ops-input-feedback">{quickSearchFeedback}</p> : null}
-          </form>
+            <form className="ops-lookup-strip" onSubmit={handleQuickSearchSubmit}>
+              <label className="form-label" htmlFor="console-quick-lookup">Plate lookup</label>
+              <div className="ops-input-row">
+                <input
+                  id="console-quick-lookup"
+                  className="text-input"
+                  placeholder="Plate, VIN, vehicle"
+                  value={quickPlateVin}
+                  onChange={(event) => setQuickPlateVin(event.target.value)}
+                />
+                <button className="icon-cta" type="submit">
+                  Find
+                </button>
+              </div>
+              {quickSearchFeedback ? <p className="ops-input-feedback">{quickSearchFeedback}</p> : null}
+            </form>
 
-          <section className="ops-target-panel" aria-label="Quick route targets">
-            <div className="ops-target-panel__header">
-              <strong>Route Targets</strong>
-              <span>{props.navigationActive ? `${props.routeDistance} / ${props.routeEta}` : props.activeDestination || "No destination set"}</span>
-            </div>
-            <div className="ops-target-list">
-              {props.destinationTargets.slice(0, 5).map((target) => (
-                <button
-                  key={target.id}
-                  className={`ops-target-button ops-target-button--${target.accent ?? "muted"}`}
-                  type="button"
-                  onClick={() => useRouteTarget(target)}
-                >
+            <div className="ops-target-rail" aria-label="Fast route targets">
+              {props.destinationTargets.slice(0, 3).map((target) => (
+                <button key={target.id} className={`ops-target-button ops-target-button--${target.accent ?? "muted"}`} type="button" onClick={() => useRouteTarget(target)}>
                   <span>{target.label}</span>
                   <strong>{target.address}</strong>
                 </button>

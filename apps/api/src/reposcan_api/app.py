@@ -70,6 +70,7 @@ from .models import (
     GeoShapeType,
     HotlistSubmission,
     OperatorSessionHeartbeatSubmission,
+    ReverseAddressResponse,
     ReviewSubmission,
     SearchPageInfo,
     SearchPlateMatchMode,
@@ -80,6 +81,7 @@ from .security import ApiAccessController, ApiPrincipalContext, principal_detail
 _DASHBOARD_SUPPORTING_RECORD_LIMIT = 200
 _ADDRESS_SEARCH_PROVIDER = "nominatim"
 _ADDRESS_SEARCH_URL = "https://nominatim.openstreetmap.org/search"
+_ADDRESS_REVERSE_URL = "https://nominatim.openstreetmap.org/reverse"
 _ADDRESS_SEARCH_TIMEOUT_SECONDS = 3.0
 _ADDRESS_SEARCH_CACHE_FRESH_SECONDS = 300.0
 _ADDRESS_SEARCH_CACHE_STALE_SECONDS = 1800.0
@@ -198,6 +200,8 @@ class _AddressSearchCacheEntry:
 
 _address_search_cache: dict[tuple[str, int, str, float | None, float | None], _AddressSearchCacheEntry] = {}
 _address_search_cache_lock = RLock()
+_reverse_address_cache: dict[tuple[float, float], tuple[float, ReverseAddressResponse]] = {}
+_reverse_address_cache_lock = RLock()
 
 
 def _build_default_edge_runtime_status() -> EdgeRuntimeStatus:
@@ -506,6 +510,105 @@ def _store_cached_address_results(
             key=lambda item: item[1].cached_at_monotonic,
         )[0]
         _address_search_cache.pop(oldest_key, None)
+
+
+def _reverse_address_cache_key(latitude: float, longitude: float) -> tuple[float, float]:
+    return round(latitude, 4), round(longitude, 4)
+
+
+def _get_cached_reverse_address(latitude: float, longitude: float, *, max_age_seconds: float) -> ReverseAddressResponse | None:
+    cache_key = _reverse_address_cache_key(latitude, longitude)
+    with _reverse_address_cache_lock:
+        entry = _reverse_address_cache.get(cache_key)
+        if entry is None:
+            return None
+        cached_at_monotonic, result = entry
+        if time.monotonic() - cached_at_monotonic > max_age_seconds:
+            return None
+        return result.model_copy(deep=True)
+
+
+def _store_cached_reverse_address(result: ReverseAddressResponse) -> None:
+    cache_key = _reverse_address_cache_key(result.latitude, result.longitude)
+    with _reverse_address_cache_lock:
+        _reverse_address_cache[cache_key] = (time.monotonic(), result.model_copy(deep=True))
+        if len(_reverse_address_cache) <= _ADDRESS_SEARCH_CACHE_MAX_ENTRIES:
+            return
+        oldest_key = min(_reverse_address_cache.items(), key=lambda item: item[1][0])[0]
+        _reverse_address_cache.pop(oldest_key, None)
+
+
+def _reverse_address_lookup(latitude: float, longitude: float) -> ReverseAddressResponse:
+    cached_result = _get_cached_reverse_address(
+        latitude,
+        longitude,
+        max_age_seconds=_ADDRESS_SEARCH_CACHE_FRESH_SECONDS,
+    )
+    if cached_result is not None:
+        return cached_result
+
+    params = urlencode(
+        {
+            "lat": f"{latitude:.7f}",
+            "lon": f"{longitude:.7f}",
+            "format": "jsonv2",
+            "addressdetails": "1",
+            "zoom": "18",
+        }
+    )
+    request = UrlRequest(
+        f"{_ADDRESS_REVERSE_URL}?{params}",
+        headers={
+            "Accept": "application/json",
+            "Accept-Language": "en-US,en;q=0.9",
+            "User-Agent": "RepoScanPro/1.0 (repossession field tool)",
+        },
+    )
+
+    try:
+        with urlopen(request, timeout=_ADDRESS_SEARCH_TIMEOUT_SECONDS) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+        stale_result = _get_cached_reverse_address(
+            latitude,
+            longitude,
+            max_age_seconds=_ADDRESS_SEARCH_CACHE_STALE_SECONDS,
+        )
+        if stale_result is not None:
+            return stale_result
+        raise AddressSearchProviderError("Address reverse-geocode provider unavailable") from exc
+
+    if not isinstance(payload, dict):
+        raise AddressSearchProviderError("Address reverse-geocode provider returned invalid data")
+
+    address = payload.get("address")
+    address_parts = address if isinstance(address, dict) else {}
+    display_name = str(payload.get("display_name") or "").strip()
+    if not display_name:
+        road = str(address_parts.get("road") or address_parts.get("pedestrian") or address_parts.get("path") or "").strip()
+        house_number = str(address_parts.get("house_number") or "").strip()
+        display_name = " ".join(part for part in (house_number, road) if part) or f"{latitude:.5f}, {longitude:.5f}"
+
+    result = ReverseAddressResponse(
+        display_name=display_name,
+        latitude=latitude,
+        longitude=longitude,
+        house_number=str(address_parts.get("house_number") or "").strip() or None,
+        road=str(address_parts.get("road") or address_parts.get("pedestrian") or address_parts.get("path") or "").strip() or None,
+        city=str(
+            address_parts.get("city")
+            or address_parts.get("town")
+            or address_parts.get("village")
+            or address_parts.get("hamlet")
+            or ""
+        ).strip()
+        or None,
+        state=str(address_parts.get("state") or "").strip() or None,
+        postal_code=str(address_parts.get("postcode") or "").strip() or None,
+        provider=_ADDRESS_SEARCH_PROVIDER,
+    )
+    _store_cached_reverse_address(result)
+    return result
 
 
 def _search_address_candidates(
@@ -1302,6 +1405,34 @@ def create_app(
             },
         )
         return AddressSearchResponse(results=results)
+
+    @api_router.get("/search/reverse-address", response_model=ReverseAddressResponse)
+    def reverse_address(
+        request: Request,
+        latitude: float = Query(..., ge=-90.0, le=90.0),
+        longitude: float = Query(..., ge=-180.0, le=180.0),
+        principal: ApiPrincipalContext = Depends(access_controller.address_search_access),
+    ) -> ReverseAddressResponse:
+        try:
+            result = _reverse_address_lookup(latitude, longitude)
+        except AddressSearchProviderError as exc:
+            record_audit(
+                request,
+                principal=principal,
+                action="search.reverse_address",
+                outcome=AuditOutcome.error,
+                details={"latitude": latitude, "longitude": longitude, "detail": str(exc)},
+            )
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Reverse address lookup unavailable") from exc
+
+        record_audit(
+            request,
+            principal=principal,
+            action="search.reverse_address",
+            outcome=AuditOutcome.success,
+            details={"latitude": latitude, "longitude": longitude, "provider": result.provider},
+        )
+        return result
 
     @api_router.get("/demo/runtime", response_model=DemoRuntimeStatus)
     def get_demo_runtime_status(
