@@ -25,6 +25,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--support-dataset-manifest", action="append", default=[])
     parser.add_argument("--paddleocr-root")
     parser.add_argument("--run-name")
+    parser.add_argument("--resume-checkpoint")
     parser.add_argument("--allow-pending", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--execute", action="store_true")
@@ -120,6 +121,24 @@ def _estimate_eval_interval(train_list: str, batch_size: int) -> int:
     return min(2000, max(10, estimated_steps))
 
 
+def _count_label_rows(label_file: str) -> int:
+    with Path(label_file).open("r", encoding="utf-8") as handle:
+        return sum(1 for _ in handle)
+
+
+def _estimate_eval_batch_size(validation_list: str, batch_size: int) -> int:
+    validation_rows = _count_label_rows(validation_list)
+    if validation_rows <= 0:
+        return batch_size
+    if sys.platform != "win32":
+        return batch_size
+    if validation_rows > batch_size:
+        return batch_size
+    # PaddleOCR skips len(dataloader) - 1 batches on Windows. Keep at least two
+    # validation batches so a small validation split is actually evaluated.
+    return max(1, validation_rows // 2)
+
+
 def _build_train_command(
     *,
     paddle_root: Path,
@@ -130,11 +149,13 @@ def _build_train_command(
     validation_list: str,
     char_dict: str,
     base_model: Path | None,
+    resume_checkpoint: Path | None,
     profile,
 ) -> list[str]:
     use_gpu = _should_use_gpu(profile)
     workers = _loader_workers(profile)
     eval_interval = _estimate_eval_interval(train_list, profile.batch_size)
+    eval_batch_size = _estimate_eval_batch_size(validation_list, profile.batch_size)
     command = [
         str(Path(sys.executable).resolve()),
         str((paddle_root / "tools" / "train.py").resolve()),
@@ -155,11 +176,13 @@ def _build_train_command(
         "Global.save_epoch_step=1",
         f"Global.eval_batch_step=[0,{eval_interval}]",
         f"Train.loader.batch_size_per_card={profile.batch_size}",
-        f"Eval.loader.batch_size_per_card={profile.batch_size}",
+        f"Eval.loader.batch_size_per_card={eval_batch_size}",
         f"Train.loader.num_workers={workers}",
         f"Eval.loader.num_workers={workers}",
     ]
-    if base_model is not None:
+    if resume_checkpoint is not None:
+        command.append(f"Global.checkpoints={resume_checkpoint.as_posix()}")
+    elif base_model is not None:
         command.append(f"Global.pretrained_model={base_model.as_posix()}")
     return command
 
@@ -196,6 +219,7 @@ def _build_wrapper_training_command(
     paddle_root: Path,
     run_name: str,
     allow_pending: bool,
+    resume_checkpoint: Path | None,
 ) -> list[str]:
     command = [
         str(Path(sys.executable).resolve()),
@@ -215,6 +239,8 @@ def _build_wrapper_training_command(
         command.extend(["--support-dataset-manifest", str(support_manifest_path)])
     if allow_pending:
         command.append("--allow-pending")
+    if resume_checkpoint is not None:
+        command.extend(["--resume-checkpoint", str(resume_checkpoint)])
     return command
 
 
@@ -239,6 +265,13 @@ def main() -> int:
         (repo_root / raw_path).resolve() if not Path(raw_path).is_absolute() else Path(raw_path).resolve()
         for raw_path in args.support_dataset_manifest
     ]
+    resume_checkpoint = (
+        (repo_root / args.resume_checkpoint).resolve()
+        if args.resume_checkpoint and not Path(args.resume_checkpoint).is_absolute()
+        else Path(args.resume_checkpoint).resolve()
+        if args.resume_checkpoint
+        else None
+    )
 
     profile = load_training_profile(profile_path)
     dataset_manifest = load_training_dataset_manifest(dataset_manifest_path)
@@ -284,6 +317,7 @@ def main() -> int:
             validation_list=context["validation_list"],
             char_dict=context["char_dict_path"],
             base_model=base_model_path,
+            resume_checkpoint=resume_checkpoint,
             profile=profile,
         )
         export_command = _build_export_command(
@@ -300,6 +334,7 @@ def main() -> int:
             paddle_root=paddle_root,
             run_name=run_name,
             allow_pending=profile.allow_pending_review or args.allow_pending,
+            resume_checkpoint=resume_checkpoint,
         )
     else:
         notes.append("paddleocr_root required for command generation and execution")

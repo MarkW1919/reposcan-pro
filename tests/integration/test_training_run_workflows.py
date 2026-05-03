@@ -1007,6 +1007,48 @@ def test_ocr_training_script_detects_ppocrv4_mobile_config(tmp_path):
     assert any("en_PP-OCRv4_mobile_rec.yml" in token for token in run_manifest["export_command"])
 
 
+def test_ocr_eval_batch_size_avoids_empty_windows_eval(tmp_path, monkeypatch):
+    module = _load_script_module("train_ocr_recognizer_eval_batch", REPO_ROOT / "scripts" / "train_ocr_recognizer.py")
+    validation_list = tmp_path / "validation_list.txt"
+    validation_list.write_text("\n".join(f"validation/images/{index:04d}.png\tABC{index:03d}" for index in range(77)) + "\n")
+
+    monkeypatch.setattr(module.sys, "platform", "win32")
+
+    assert module._estimate_eval_batch_size(str(validation_list), 128) == 38
+
+
+def test_ocr_train_command_can_resume_checkpoint(tmp_path):
+    module = _load_script_module("train_ocr_recognizer_resume", REPO_ROOT / "scripts" / "train_ocr_recognizer.py")
+
+    train_list = tmp_path / "train_list.txt"
+    validation_list = tmp_path / "validation_list.txt"
+    train_list.write_text("\n".join(f"train/images/{index:04d}.png\tABC{index:03d}" for index in range(128)) + "\n")
+    validation_list.write_text("\n".join(f"validation/images/{index:04d}.png\tVAL{index:03d}" for index in range(77)) + "\n")
+
+    class Profile:
+        batch_size = 128
+        device = "cpu"
+        workers = 4
+        epochs = 80
+
+    command = module._build_train_command(
+        paddle_root=tmp_path / "PaddleOCR",
+        config_path=tmp_path / "PaddleOCR" / "configs" / "rec" / "PP-OCRv4" / "en_PP-OCRv4_mobile_rec.yml",
+        workspace_dir=tmp_path / "runs" / "ocr-resume",
+        storage_root=str(tmp_path / "ocr_dataset"),
+        train_list=str(train_list),
+        validation_list=str(validation_list),
+        char_dict=str(tmp_path / "us_plate_dict.txt"),
+        base_model=tmp_path / "base" / "best_accuracy",
+        resume_checkpoint=tmp_path / "previous" / "latest",
+        profile=Profile(),
+    )
+
+    assert any(token.endswith("Eval.loader.batch_size_per_card=38") for token in command)
+    assert any(token.endswith("Global.checkpoints=" + (tmp_path / "previous" / "latest").as_posix()) for token in command)
+    assert not any(token.startswith("Global.pretrained_model=") for token in command)
+
+
 def test_ocr_training_script_execute_writes_status_and_exports(tmp_path):
     storage_root = tmp_path / "ocr_dataset"
     for split in ("train", "validation", "holdout"):
