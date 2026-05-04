@@ -158,6 +158,27 @@ def _search_pages(query: str, *, limit: int) -> list[int]:
     return [int(page_id) for page_id in pages]
 
 
+def _build_info_record(page_id: int, page: dict[str, Any]) -> dict[str, Any]:
+    image_info = (page.get("imageinfo") or [{}])[0]
+    ext = image_info.get("extmetadata") or {}
+    return {
+        "page_id": int(page_id),
+        "title": page.get("title", ""),
+        "url": image_info.get("thumburl") or image_info.get("url", ""),
+        "thumb_url": image_info.get("thumburl", ""),
+        "original_url": image_info.get("url", ""),
+        "description_url": image_info.get("descriptionurl", ""),
+        "mime": image_info.get("mime", ""),
+        "width": image_info.get("thumbwidth") or image_info.get("width"),
+        "height": image_info.get("thumbheight") or image_info.get("height"),
+        "license_short_name": _metadata_value(ext, "LicenseShortName"),
+        "license_url": _metadata_value(ext, "LicenseUrl"),
+        "usage_terms": _metadata_value(ext, "UsageTerms"),
+        "artist": _metadata_value(ext, "Artist"),
+        "credit": _metadata_value(ext, "Credit"),
+    }
+
+
 def _page_image_infos(page_ids: list[int], *, thumbnail_width: int) -> list[dict[str, Any]]:
     if not page_ids:
         return []
@@ -171,28 +192,10 @@ def _page_image_infos(page_ids: list[int], *, thumbnail_width: int) -> list[dict
             "iiurlwidth": thumbnail_width,
         }
     )
-    infos: list[dict[str, Any]] = []
-    for page_id, page in (payload.get("query", {}).get("pages", {}) or {}).items():
-        image_info = (page.get("imageinfo") or [{}])[0]
-        ext = image_info.get("extmetadata") or {}
-        infos.append(
-            {
-                "page_id": int(page_id),
-                "title": page.get("title", ""),
-                "url": image_info.get("thumburl") or image_info.get("url", ""),
-                "original_url": image_info.get("url", ""),
-                "description_url": image_info.get("descriptionurl", ""),
-                "mime": image_info.get("mime", ""),
-                "width": image_info.get("thumbwidth") or image_info.get("width"),
-                "height": image_info.get("thumbheight") or image_info.get("height"),
-                "license_short_name": _metadata_value(ext, "LicenseShortName"),
-                "license_url": _metadata_value(ext, "LicenseUrl"),
-                "usage_terms": _metadata_value(ext, "UsageTerms"),
-                "artist": _metadata_value(ext, "Artist"),
-                "credit": _metadata_value(ext, "Credit"),
-            }
-        )
-    return infos
+    return [
+        _build_info_record(int(page_id), page)
+        for page_id, page in (payload.get("query", {}).get("pages", {}) or {}).items()
+    ]
 
 
 def _category_image_infos(category: str, *, limit: int, thumbnail_width: int) -> list[dict[str, Any]]:
@@ -209,28 +212,10 @@ def _category_image_infos(category: str, *, limit: int, thumbnail_width: int) ->
             "iiurlwidth": thumbnail_width,
         }
     )
-    infos: list[dict[str, Any]] = []
-    for page_id, page in (payload.get("query", {}).get("pages", {}) or {}).items():
-        image_info = (page.get("imageinfo") or [{}])[0]
-        ext = image_info.get("extmetadata") or {}
-        infos.append(
-            {
-                "page_id": int(page_id),
-                "title": page.get("title", ""),
-                "url": image_info.get("thumburl") or image_info.get("url", ""),
-                "original_url": image_info.get("url", ""),
-                "description_url": image_info.get("descriptionurl", ""),
-                "mime": image_info.get("mime", ""),
-                "width": image_info.get("thumbwidth") or image_info.get("width"),
-                "height": image_info.get("thumbheight") or image_info.get("height"),
-                "license_short_name": _metadata_value(ext, "LicenseShortName"),
-                "license_url": _metadata_value(ext, "LicenseUrl"),
-                "usage_terms": _metadata_value(ext, "UsageTerms"),
-                "artist": _metadata_value(ext, "Artist"),
-                "credit": _metadata_value(ext, "Credit"),
-            }
-        )
-    return infos
+    return [
+        _build_info_record(int(page_id), page)
+        for page_id, page in (payload.get("query", {}).get("pages", {}) or {}).items()
+    ]
 
 
 def _metadata_value(extmetadata: dict[str, Any], key: str) -> str:
@@ -243,10 +228,37 @@ def _license_is_usable(info: dict[str, Any]) -> bool:
     return any(prefix in text for prefix in USABLE_LICENSE_PREFIXES)
 
 
-def _download_image(url: str, destination: Path) -> bool:
-    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(request, timeout=60) as response:
-        content = response.read()
+def _strip_tracking_params(url: str) -> str:
+    parsed = urllib.parse.urlparse(url)
+    if not parsed.query:
+        return url
+    kept = [
+        (key, value)
+        for key, value in urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+        if not key.lower().startswith("utm_")
+    ]
+    return urllib.parse.urlunparse(parsed._replace(query=urllib.parse.urlencode(kept)))
+
+
+def _download_image(url: str, destination: Path, *, retries: int = 4) -> bool:
+    clean_url = _strip_tracking_params(url)
+    request = urllib.request.Request(clean_url, headers={"User-Agent": USER_AGENT})
+    last_exc: Exception | None = None
+    for attempt in range(retries):
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                content = response.read()
+            break
+        except urllib.error.HTTPError as exc:
+            last_exc = exc
+            if exc.code == 429 and attempt < retries - 1:
+                time.sleep(8 * (attempt + 1))
+                continue
+            raise
+    else:
+        if last_exc is not None:
+            raise last_exc
+        return False
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_bytes(content)
     try:
@@ -468,6 +480,8 @@ def _maybe_download_record(
 ) -> dict[str, Any] | None:
     page_id = info["page_id"]
     if not str(info.get("mime", "")).lower().startswith("image/"):
+        return None
+    if not info.get("thumb_url"):
         return None
     if not info.get("url") or not _license_is_usable(info):
         return None
