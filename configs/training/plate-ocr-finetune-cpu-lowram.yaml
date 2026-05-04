@@ -1,0 +1,25 @@
+profile_name: plate-ocr-finetune-cpu-lowram
+task: plate_ocr
+framework: paddleocr
+output_root: runtime/training
+allow_pending_review: false
+dataset_adapter: manifest_split
+base_model: en_PP-OCRv4_rec_train/best_accuracy
+image_size: 256
+epochs: 80
+batch_size: 16
+workers: 1
+patience: 10
+precision: fp32
+device: cpu
+augmentation:
+  motion_blur: true
+  defocus_blur: true
+  brightness_contrast: true
+  noise: true
+  compression_artifacts: true
+  perspective_distortion: true
+  synthetic_support_ratio: 0.2
+  notes:
+    - Low-RAM CPU profile for Windows development hosts without CUDA acceleration.
+    - Reduces memory pressure versus the default OCR finetune profile.
