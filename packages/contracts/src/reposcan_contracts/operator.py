@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from enum import Enum
 from typing import Optional
 
 from pydantic import BaseModel, Field
@@ -29,6 +30,20 @@ class OperatorPrincipal(BaseModel):
     capabilities: OperatorCapabilities = Field(default_factory=OperatorCapabilities)
 
 
+class ScanSessionState(str, Enum):
+    idle = "idle"
+    approaching_radius = "approaching_radius"
+    active_lpr_scan = "active_lpr_scan"
+    post_scan_vehicle_enrichment = "post_scan_vehicle_enrichment"
+    completed = "completed"
+
+
+class ScanProcessingMode(str, Enum):
+    standby = "standby"
+    realtime_lpr = "realtime_lpr"
+    deferred_vehicle_recognition = "deferred_vehicle_recognition"
+
+
 class OperatorSessionRecord(BaseModel):
     session_id: str = Field(..., min_length=1)
     principal_id: str = Field(..., min_length=1)
@@ -41,7 +56,14 @@ class OperatorSessionRecord(BaseModel):
     selected_alert_id: Optional[str] = Field(None, min_length=1)
     destination_label: Optional[str] = None
     arrival_radius_feet: Optional[int] = Field(None, ge=1)
+    current_distance_feet: Optional[float] = Field(None, ge=0.0)
     idle_scan_enabled: bool = False
     visible_map_layers: list[str] = Field(default_factory=list)
     navigation_active: bool = False
+    scan_state: ScanSessionState = ScanSessionState.idle
+    scan_processing_mode: ScanProcessingMode = ScanProcessingMode.standby
+    lpr_realtime_enabled: bool = False
+    vehicle_enrichment_deferred: bool = True
+    primary_ai_camera_id: Optional[str] = None
+    secondary_context_camera_id: Optional[str] = None
     last_seen_at_utc: UtcTimestamp

@@ -111,6 +111,11 @@ class AlertDeliveryConfig(BaseModel):
 
 
 class PerformanceConfig(BaseModel):
+    physical_camera_count: int = Field(
+        1,
+        ge=1,
+        description="Physical cameras installed on the edge node, including context-only cameras.",
+    )
     inference_batch_size: int = Field(1, ge=1, description="Frames per inference batch")
     max_worker_threads: int = Field(4, ge=1)
     frame_queue_depth: int = Field(30, ge=1)
@@ -123,7 +128,16 @@ class PerformanceConfig(BaseModel):
     max_active_cameras: int = Field(
         1,
         ge=1,
-        description="Maximum cameras expected to run concurrently on this profile.",
+        description="Maximum cameras expected to run concurrent full AI inference on this profile.",
+    )
+    primary_ai_camera_count: int = Field(
+        1,
+        ge=1,
+        description="Primary cameras allowed to consume the real-time AI budget at once.",
+    )
+    defer_secondary_ai_until_post_scan: bool = Field(
+        False,
+        description="Run secondary vehicle recognition after the real-time LPR scan window.",
     )
     latency_budget_ms_p95: float = Field(
         250.0,

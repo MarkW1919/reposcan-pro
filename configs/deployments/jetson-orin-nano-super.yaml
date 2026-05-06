@@ -50,12 +50,15 @@ alert_delivery:
   timeout_seconds: 4.0
 
 performance:
+  physical_camera_count: 2
   inference_batch_size: 1
   max_worker_threads: 4
   frame_queue_depth: 12
   enable_profiling: true
   target_fps_per_camera: 10.0
   max_active_cameras: 1
+  primary_ai_camera_count: 1
+  defer_secondary_ai_until_post_scan: true
   latency_budget_ms_p95: 250.0
   memory_budget_mb: 6144
   startup_budget_seconds: 60.0

@@ -1,0 +1,43 @@
+# Wide low-light context camera for the two-camera truck pod.
+# This stream records scene evidence and runs deferred vehicle recognition.
+
+camera_id: cam_overview_context
+display_name: "Wide Low-Light Context"
+source_type: rtsp
+stream_url: "rtsp://192.168.1.102/stream1"
+device_index: null
+
+sensor:
+  type: sony_starvis2_imx678_preferred
+  resolution_w: 3840
+  resolution_h: 2160
+  fps: 30
+  bits_per_pixel: 10
+  color_mode: color
+
+optics:
+  focal_length_mm: 8.0
+  aperture_f: 1.4
+  ir_illuminator: true
+  ir_wavelength_nm: 850
+
+exposure:
+  mode: auto
+  target_brightness: 128
+  shutter_speed_us: null
+  gain_db: null
+
+mounting:
+  height_m: 2.5
+  angle_deg: -10.0
+  orientation: fixed
+  gps_latitude: null
+  gps_longitude: null
+  gps_accuracy_m: null
+
+capture:
+  target_fps: 15
+  reconnect_delay_s: 5.0
+  max_reconnect_attempts: 0
+
+enabled: false

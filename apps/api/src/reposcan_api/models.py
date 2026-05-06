@@ -13,7 +13,7 @@ from reposcan_contracts.detection import DetectionRecord
 from reposcan_contracts.followup import FollowUpPriority, FollowUpRecord, FollowUpStatus
 from reposcan_contracts.health import CameraHealthRecord, HealthResponse
 from reposcan_contracts.hotlist import HotlistEntry
-from reposcan_contracts.operator import OperatorPrincipal, OperatorSessionRecord
+from reposcan_contracts.operator import OperatorPrincipal, OperatorSessionRecord, ScanProcessingMode, ScanSessionState
 from reposcan_contracts.popup import PopupActivityEvent
 from reposcan_contracts.review import ReviewAction
 from reposcan_contracts.types import UtcTimestamp
@@ -110,9 +110,16 @@ class OperatorSessionHeartbeatSubmission(BaseModel):
     selected_alert_id: Optional[str] = Field(None, min_length=1)
     destination_label: Optional[str] = None
     arrival_radius_feet: Optional[int] = Field(None, ge=1)
+    current_distance_feet: Optional[float] = Field(None, ge=0.0)
     idle_scan_enabled: bool = False
     visible_map_layers: list[str] = Field(default_factory=list)
     navigation_active: bool = False
+    scan_state: ScanSessionState = ScanSessionState.idle
+    scan_processing_mode: ScanProcessingMode = ScanProcessingMode.standby
+    lpr_realtime_enabled: bool = False
+    vehicle_enrichment_deferred: bool = True
+    primary_ai_camera_id: Optional[str] = Field(None, min_length=1)
+    secondary_context_camera_id: Optional[str] = Field(None, min_length=1)
 
 
 class GeoShapeType(str, Enum):
@@ -202,6 +209,12 @@ class EdgeRuntimeStatus(BaseModel):
     inference_runtime: str | None = None
     plate_ocr_provider: str | None = None
     vehicle_attribute_provider: str | None = None
+    scan_state: ScanSessionState = ScanSessionState.idle
+    scan_processing_mode: ScanProcessingMode = ScanProcessingMode.standby
+    primary_ai_camera_id: str | None = None
+    secondary_context_camera_id: str | None = None
+    realtime_lpr_enabled: bool = False
+    deferred_vehicle_recognition_enabled: bool = True
     message: str | None = None
 
 
@@ -219,6 +232,12 @@ class EdgeRuntimeHeartbeatSubmission(BaseModel):
     inference_runtime: str | None = None
     plate_ocr_provider: str | None = None
     vehicle_attribute_provider: str | None = None
+    scan_state: ScanSessionState = ScanSessionState.idle
+    scan_processing_mode: ScanProcessingMode = ScanProcessingMode.standby
+    primary_ai_camera_id: str | None = Field(None, min_length=1)
+    secondary_context_camera_id: str | None = Field(None, min_length=1)
+    realtime_lpr_enabled: bool = False
+    deferred_vehicle_recognition_enabled: bool = True
     message: str | None = None
 
 

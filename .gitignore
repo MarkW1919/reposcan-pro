@@ -43,6 +43,9 @@ SILVERADO_DATASET_BUILD_STATUS.md
 postgres_data/
 redis_data/
 
+# Claude Code runtime state
+.claude/scheduled_tasks.lock
+
 # Deployment secrets — never commit real env files
 deploy/.env
 deploy/env

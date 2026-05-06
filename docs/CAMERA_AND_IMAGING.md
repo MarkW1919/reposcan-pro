@@ -31,9 +31,17 @@ Camera and imaging quality set the upper bound on RepoScan Pro performance. If t
 - reject hardware or mounting plans that cannot produce usable plate evidence
 - review capture examples before approving model changes
 
+## Two-Camera Scan Workflow
+
+The truck-edge profile is designed around two physical cameras but one primary real-time AI budget on Jetson Orin Nano Super:
+
+- the long-range LPR camera is the primary AI stream inside the configured address radius
+- the wide low-light camera records context and can run lower-rate or deferred vehicle recognition
+- when the operator exits the scan radius, vehicle make/model/color enrichment runs against the saved scan-session frames and is attached to the same GPS/address evidence package
+- do not size the Nano profile as a continuous two-camera full-inference appliance; use Orin NX/AGX only if both cameras must run heavy AI concurrently
+
 ## Related Documents
 
 - [Product](PRODUCT.md)
 - [Models](MODELS.md)
 - [Low-Light Validation Skill](../.claude/skills/low-light-validation/SKILL.md)
-

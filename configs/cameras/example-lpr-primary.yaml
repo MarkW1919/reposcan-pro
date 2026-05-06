@@ -1,0 +1,43 @@
+# Primary long-range LPR camera for the two-camera truck pod.
+# Replace stream_url and final optics after field mounting.
+
+camera_id: cam_lpr_primary
+display_name: "Primary Long-Range LPR"
+source_type: rtsp
+stream_url: "rtsp://192.168.1.101/stream1"
+device_index: null
+
+sensor:
+  type: sony_starvis2_imx678_preferred
+  resolution_w: 3840
+  resolution_h: 2160
+  fps: 30
+  bits_per_pixel: 10
+  color_mode: dual
+
+optics:
+  focal_length_mm: 50.0
+  aperture_f: 1.4
+  ir_illuminator: true
+  ir_wavelength_nm: 850
+
+exposure:
+  mode: manual
+  target_brightness: 128
+  shutter_speed_us: 1000
+  gain_db: null
+
+mounting:
+  height_m: 2.5
+  angle_deg: -8.0
+  orientation: fixed
+  gps_latitude: null
+  gps_longitude: null
+  gps_accuracy_m: null
+
+capture:
+  target_fps: 30
+  reconnect_delay_s: 5.0
+  max_reconnect_attempts: 0
+
+enabled: false

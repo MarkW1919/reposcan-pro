@@ -214,6 +214,9 @@ def _build_default_edge_runtime_status() -> EdgeRuntimeStatus:
         inference_runtime="pending-hardware",
         plate_ocr_provider="fast-alpr",
         vehicle_attribute_provider="hf_vehicle_classifier",
+        primary_ai_camera_id="cam_lpr_primary",
+        secondary_context_camera_id="cam_overview_context",
+        deferred_vehicle_recognition_enabled=True,
         message="Waiting for edge hardware heartbeat.",
     )
 
@@ -1159,6 +1162,14 @@ def create_app(
                 "inference_runtime": submission.inference_runtime or current.inference_runtime,
                 "plate_ocr_provider": submission.plate_ocr_provider or current.plate_ocr_provider,
                 "vehicle_attribute_provider": submission.vehicle_attribute_provider or current.vehicle_attribute_provider,
+                "scan_state": submission.scan_state,
+                "scan_processing_mode": submission.scan_processing_mode,
+                "primary_ai_camera_id": submission.primary_ai_camera_id or current.primary_ai_camera_id,
+                "secondary_context_camera_id": (
+                    submission.secondary_context_camera_id or current.secondary_context_camera_id
+                ),
+                "realtime_lpr_enabled": submission.realtime_lpr_enabled,
+                "deferred_vehicle_recognition_enabled": submission.deferred_vehicle_recognition_enabled,
                 "message": submission.message or current.message,
             }
         )
@@ -1224,9 +1235,16 @@ def create_app(
             selected_alert_id=submission.selected_alert_id,
             destination_label=submission.destination_label,
             arrival_radius_feet=submission.arrival_radius_feet,
+            current_distance_feet=submission.current_distance_feet,
             idle_scan_enabled=submission.idle_scan_enabled,
             visible_map_layers=submission.visible_map_layers,
             navigation_active=submission.navigation_active,
+            scan_state=submission.scan_state,
+            scan_processing_mode=submission.scan_processing_mode,
+            lpr_realtime_enabled=submission.lpr_realtime_enabled,
+            vehicle_enrichment_deferred=submission.vehicle_enrichment_deferred,
+            primary_ai_camera_id=submission.primary_ai_camera_id,
+            secondary_context_camera_id=submission.secondary_context_camera_id,
             last_seen_at_utc=_utcnow(),
         )
         return service.touch_operator_session(session)

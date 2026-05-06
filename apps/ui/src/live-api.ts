@@ -251,11 +251,26 @@ export interface OperatorSessionRecord {
   selected_alert_id: string | null;
   destination_label: string | null;
   arrival_radius_feet: number | null;
+  current_distance_feet: number | null;
   idle_scan_enabled: boolean;
   visible_map_layers: string[];
   navigation_active: boolean;
+  scan_state: ScanSessionState;
+  scan_processing_mode: ScanProcessingMode;
+  lpr_realtime_enabled: boolean;
+  vehicle_enrichment_deferred: boolean;
+  primary_ai_camera_id: string | null;
+  secondary_context_camera_id: string | null;
   last_seen_at_utc: string;
 }
+
+export type ScanSessionState =
+  | "idle"
+  | "approaching_radius"
+  | "active_lpr_scan"
+  | "post_scan_vehicle_enrichment"
+  | "completed";
+export type ScanProcessingMode = "standby" | "realtime_lpr" | "deferred_vehicle_recognition";
 
 export interface OperatorSessionHeartbeatSubmission {
   session_id: string;
@@ -265,9 +280,16 @@ export interface OperatorSessionHeartbeatSubmission {
   selected_alert_id?: string;
   destination_label?: string;
   arrival_radius_feet?: number;
+  current_distance_feet?: number;
   idle_scan_enabled?: boolean;
   visible_map_layers?: string[];
   navigation_active: boolean;
+  scan_state?: ScanSessionState;
+  scan_processing_mode?: ScanProcessingMode;
+  lpr_realtime_enabled?: boolean;
+  vehicle_enrichment_deferred?: boolean;
+  primary_ai_camera_id?: string;
+  secondary_context_camera_id?: string;
 }
 
 export type AuditOutcome = "success" | "denied" | "rejected" | "error";
@@ -357,6 +379,12 @@ export interface EdgeRuntimeStatus {
   inference_runtime: string | null;
   plate_ocr_provider: string | null;
   vehicle_attribute_provider: string | null;
+  scan_state: ScanSessionState;
+  scan_processing_mode: ScanProcessingMode;
+  primary_ai_camera_id: string | null;
+  secondary_context_camera_id: string | null;
+  realtime_lpr_enabled: boolean;
+  deferred_vehicle_recognition_enabled: boolean;
   message: string | null;
 }
 

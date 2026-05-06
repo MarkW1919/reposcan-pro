@@ -846,6 +846,12 @@ def test_edge_runtime_status_command_and_heartbeat_flow(tmp_path):
             "inference_runtime": "jetson-pytorch-onnxruntime",
             "plate_ocr_provider": "fast-alpr",
             "vehicle_attribute_provider": "hf_vehicle_classifier",
+            "scan_state": "active_lpr_scan",
+            "scan_processing_mode": "realtime_lpr",
+            "primary_ai_camera_id": "cam_lpr_primary",
+            "secondary_context_camera_id": "cam_overview_context",
+            "realtime_lpr_enabled": True,
+            "deferred_vehicle_recognition_enabled": True,
             "message": "Capture loop healthy",
         },
     )
@@ -855,7 +861,47 @@ def test_edge_runtime_status_command_and_heartbeat_flow(tmp_path):
     assert heartbeat["capture_state"] == "running"
     assert heartbeat["desired_capture_state"] == "running"
     assert heartbeat["active_camera_count"] == 2
+    assert heartbeat["scan_state"] == "active_lpr_scan"
+    assert heartbeat["scan_processing_mode"] == "realtime_lpr"
+    assert heartbeat["primary_ai_camera_id"] == "cam_lpr_primary"
+    assert heartbeat["secondary_context_camera_id"] == "cam_overview_context"
+    assert heartbeat["realtime_lpr_enabled"] is True
+    assert heartbeat["deferred_vehicle_recognition_enabled"] is True
     assert heartbeat["last_heartbeat_at_utc"] is not None
+
+
+def test_operator_session_tracks_radius_scan_workflow(tmp_path):
+    client, service = _seeded_client(tmp_path)
+
+    response = client.post(
+        "/operator/sessions/heartbeat",
+        json={
+            "session_id": "scan_session_001",
+            "client_label": "cab_console_01",
+            "workspace": "console",
+            "destination_label": "Target address",
+            "arrival_radius_feet": 75,
+            "current_distance_feet": 41.5,
+            "idle_scan_enabled": False,
+            "visible_map_layers": ["active_alerts", "arrival_ring"],
+            "navigation_active": True,
+            "scan_state": "active_lpr_scan",
+            "scan_processing_mode": "realtime_lpr",
+            "lpr_realtime_enabled": True,
+            "vehicle_enrichment_deferred": True,
+            "primary_ai_camera_id": "cam_lpr_primary",
+            "secondary_context_camera_id": "cam_overview_context",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["scan_state"] == "active_lpr_scan"
+    assert payload["scan_processing_mode"] == "realtime_lpr"
+    assert payload["current_distance_feet"] == 41.5
+    assert payload["lpr_realtime_enabled"] is True
+    assert payload["vehicle_enrichment_deferred"] is True
+    assert service.list_operator_sessions(limit=10)[0].primary_ai_camera_id == "cam_lpr_primary"
 
 
 def test_versioned_routes_and_security_headers_work_with_legacy_aliases(tmp_path):

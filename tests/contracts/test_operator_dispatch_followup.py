@@ -5,7 +5,13 @@ from pydantic import ValidationError
 
 from reposcan_contracts.dispatch import DispatchAssignmentRecord, DispatchAssignmentStatus
 from reposcan_contracts.followup import FollowUpPriority, FollowUpRecord, FollowUpStatus
-from reposcan_contracts.operator import OperatorCapabilities, OperatorPrincipal, OperatorSessionRecord
+from reposcan_contracts.operator import (
+    OperatorCapabilities,
+    OperatorPrincipal,
+    OperatorSessionRecord,
+    ScanProcessingMode,
+    ScanSessionState,
+)
 
 
 class TestFollowUpRecord:
@@ -99,3 +105,26 @@ class TestOperatorPresenceContracts:
                     "last_seen_at_utc": "2026-03-26 04:16:00",
                 }
             )
+
+    def test_operator_session_tracks_scan_state(self):
+        record = OperatorSessionRecord.model_validate(
+            {
+                "session_id": "session_scan_001",
+                "principal_id": "operator_demo",
+                "workspace": "console",
+                "arrival_radius_feet": 75,
+                "current_distance_feet": 42.0,
+                "navigation_active": True,
+                "scan_state": "active_lpr_scan",
+                "scan_processing_mode": "realtime_lpr",
+                "lpr_realtime_enabled": True,
+                "vehicle_enrichment_deferred": True,
+                "primary_ai_camera_id": "cam_lpr_primary",
+                "secondary_context_camera_id": "cam_overview_context",
+                "last_seen_at_utc": "2026-03-26T04:16:00Z",
+            }
+        )
+
+        assert record.scan_state == ScanSessionState.active_lpr_scan
+        assert record.scan_processing_mode == ScanProcessingMode.realtime_lpr
+        assert record.lpr_realtime_enabled is True
