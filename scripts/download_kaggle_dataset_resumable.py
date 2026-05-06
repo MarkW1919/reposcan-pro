@@ -92,6 +92,17 @@ def main() -> int:
         )
         try:
             with urllib.request.urlopen(request, timeout=60) as response:
+                status_code = getattr(response, "status", response.getcode())
+                if start_byte > 0 and status_code != 206:
+                    print(
+                        f"Server did not honor Range resume (HTTP {status_code}); restarting download",
+                        file=sys.stderr,
+                    )
+                    output_path.unlink(missing_ok=True)
+                    total_size = None
+                    backoff = args.initial_backoff
+                    continue
+
                 if total_size is None:
                     total_size = _read_total_size_from_headers(response.headers, start_byte)
                     if total_size:

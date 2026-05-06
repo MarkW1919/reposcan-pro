@@ -77,9 +77,6 @@ function resolveScanSessionState(params: {
   if (params.navigationActive && params.activeRouteFeet !== null && !params.withinRadius) {
     return { state: "approaching_radius", mode: "standby", lprRealtime: false };
   }
-  if (!params.navigationActive && params.arrivalScanEnabled) {
-    return { state: "post_scan_vehicle_enrichment", mode: "deferred_vehicle_recognition", lprRealtime: false };
-  }
   return { state: "idle", mode: "standby", lprRealtime: false };
 }
 
@@ -88,7 +85,7 @@ function scanSessionLabel(state: ScanSessionState): string {
     case "active_lpr_scan":
       return "Live LPR";
     case "post_scan_vehicle_enrichment":
-      return "Vehicle AI";
+      return "Vehicle AI Queue";
     case "approaching_radius":
       return "Armed";
     case "completed":
@@ -3375,68 +3372,6 @@ function App(): ReactElement {
     return () => clearInterval(pollId);
   }, [dataSource]);
 
-  useEffect(() => {
-    if (dataSource !== "live") {
-      return;
-    }
-
-    const controller = new AbortController();
-    const overlayAlertId =
-      screen !== "hotlists" && hotlistOverlayId
-        ? (overview?.alerts ?? []).find((alert) => alert.detection_id === hotlistOverlayId.replace(/^live-/, ""))?.alert_id
-        : undefined;
-
-    async function sendHeartbeat(): Promise<void> {
-      try {
-        await sendOperatorSessionHeartbeat(
-          {
-            session_id: operatorSessionId,
-            client_label: "reposcan-ops-console",
-            workspace: screen,
-            selected_detection_id: selectedDetectionId ?? undefined,
-            selected_alert_id: screen === "hotlists" ? selectedAlertId ?? undefined : overlayAlertId,
-            destination_label: activeDestination || undefined,
-            arrival_radius_feet: settings.arrivalRadiusFeet,
-            idle_scan_enabled: !navigationActive && settings.arrivalScanEnabled,
-            visible_map_layers: [
-              settings.showActiveAlertPins ? "active_alerts" : null,
-              settings.showHistoricalAlertPins ? "historical_alerts" : null,
-              settings.showDetectionPins ? "detections" : null,
-              settings.showRadiusRing ? "arrival_ring" : null,
-            ].filter((value): value is string => value !== null),
-            navigation_active: navigationActive,
-          },
-          controller.signal,
-        );
-      } catch {
-        // heartbeat failures are silent — the backend will expire stale sessions
-      }
-    }
-
-    void sendHeartbeat();
-    const intervalId = setInterval(() => void sendHeartbeat(), 30_000);
-
-    return () => {
-      controller.abort();
-      clearInterval(intervalId);
-    };
-  }, [
-    activeDestination,
-    dataSource,
-    hotlistOverlayId,
-    navigationActive,
-    overview?.alerts,
-    screen,
-    selectedAlertId,
-    selectedDetectionId,
-    settings.arrivalRadiusFeet,
-    settings.arrivalScanEnabled,
-    settings.showActiveAlertPins,
-    settings.showDetectionPins,
-    settings.showHistoricalAlertPins,
-    settings.showRadiusRing,
-  ]);
-
   const allRows = useMemo(() => {
     const rows =
       dataSource === "live"
@@ -3643,7 +3578,7 @@ function App(): ReactElement {
   const activeHotlistCount = hotlists.filter((entry) => entry.active).length;
   const routeStatusLabel = !navigationActive
     ? idleScanEnabled
-      ? "Post-scan vehicle AI"
+      ? "Manual scan armed"
       : "Route idle"
     : activeDestinationCoords == null
       ? "Route pending coordinates"
@@ -4950,7 +4885,7 @@ function App(): ReactElement {
     { label: "GPS", value: gpsIndicator.value, tone: gpsIndicator.tone, tip: gpsIndicator.tip, action: () => { switchScreen("settings"); setSettingsSection("map"); } },
     { label: "API", value: dataSource === "live" ? "Live" : dataSource === "fallback" ? "Fallback" : "Demo", tone: dataSource === "live" ? "good" : "off", tip: "Backend connection \u2014 click to open system settings", action: () => { switchScreen("settings"); setSettingsSection("system"); } },
     { label: "Edge", value: edgeFooterValue, tone: edgeFooterTone, tip: edgeRuntimeError ?? "Truck edge runtime - click to open system settings", action: () => { switchScreen("settings"); setSettingsSection("system"); } },
-    { label: "LPR", value: scanSessionLabel(scanSession.state), tone: scanSession.lprRealtime || scanSession.mode === "deferred_vehicle_recognition" ? "good" : scanSession.state === "approaching_radius" ? "warn" : "off", tip: "Plate reader and deferred vehicle AI status - click to open map settings", action: () => { switchScreen("settings"); setSettingsSection("map"); } },
+    { label: "LPR", value: scanSessionLabel(scanSession.state), tone: scanSession.lprRealtime || scanSession.state === "approaching_radius" ? "good" : "off", tip: "Plate reader status; vehicle recognition queues behind LPR during active scans - click to open map settings", action: () => { switchScreen("settings"); setSettingsSection("map"); } },
     { label: "Cams", value: `${onlineCameraCount}/${availableCameraFeeds.length}`, tone: onlineCameraCount > 0 ? "good" : "off", tip: "Camera feeds \u2014 click to open camera settings", action: () => { switchScreen("settings"); setSettingsSection("cameras"); } },
     { label: "Reads", value: `${totalReads}`, tone: "good", tip: "Total plate reads this session \u2014 click to open search", action: () => { switchScreen("search"); } },
     { label: "Recoveries", value: `${activeAlerts}`, tone: activeAlerts > 0 ? "warn" : "good", tip: "Active recovery matches - click to view the queue", action: () => { switchScreen("hotlists"); } },

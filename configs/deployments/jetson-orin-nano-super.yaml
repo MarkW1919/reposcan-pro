@@ -58,7 +58,8 @@ performance:
   target_fps_per_camera: 10.0
   max_active_cameras: 1
   primary_ai_camera_count: 1
-  defer_secondary_ai_until_post_scan: true
+  defer_secondary_ai_until_post_scan: false
+  queue_secondary_ai_during_lpr: true
   latency_budget_ms_p95: 250.0
   memory_budget_mb: 6144
   startup_budget_seconds: 60.0

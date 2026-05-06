@@ -37,7 +37,7 @@ The truck-edge profile is designed around two physical cameras but one primary r
 
 - the long-range LPR camera is the primary AI stream inside the configured address radius
 - the wide low-light camera records context and can run lower-rate or deferred vehicle recognition
-- when the operator exits the scan radius, vehicle make/model/color enrichment runs against the saved scan-session frames and is attached to the same GPS/address evidence package
+- after each LPR event, vehicle make/model/color enrichment is queued at lower priority against saved scan-session frames and attached to the same GPS/address evidence package
 - do not size the Nano profile as a continuous two-camera full-inference appliance; use Orin NX/AGX only if both cameras must run heavy AI concurrently
 
 ## Related Documents

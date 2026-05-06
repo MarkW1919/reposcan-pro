@@ -139,6 +139,10 @@ class PerformanceConfig(BaseModel):
         False,
         description="Run secondary vehicle recognition after the real-time LPR scan window.",
     )
+    queue_secondary_ai_during_lpr: bool = Field(
+        False,
+        description="Queue lower-priority vehicle recognition while real-time LPR remains the active priority.",
+    )
     latency_budget_ms_p95: float = Field(
         250.0,
         gt=0.0,
