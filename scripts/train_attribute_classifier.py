@@ -24,6 +24,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--profile", required=True)
     parser.add_argument("--dataset-manifest", required=True)
     parser.add_argument("--initial-checkpoint")
+    parser.add_argument(
+        "--initial-checkpoint-replace-head",
+        action="store_true",
+        help=(
+            "Load only the backbone weights from --initial-checkpoint and reinitialize"
+            " the classifier head for a new class space."
+        ),
+    )
     parser.add_argument("--resume-last", action="store_true")
     parser.add_argument("--run-name")
     parser.add_argument("--export-only", action="store_true")
@@ -179,6 +187,7 @@ def _load_initial_checkpoint(
     class_names: list[str],
     head_path: str,
     target_keys: set[str],
+    replace_head: bool = False,
 ):
     import torch
 
@@ -186,19 +195,28 @@ def _load_initial_checkpoint(
     if not isinstance(checkpoint, dict) or "state_dict" not in checkpoint:
         raise ValueError(f"initial checkpoint '{checkpoint_path}' is missing a state_dict payload")
 
-    checkpoint_classes = checkpoint.get("classes")
-    if checkpoint_classes is not None and list(checkpoint_classes) != list(class_names):
-        raise ValueError(
-            "initial checkpoint classes do not match the current dataset classes"
-        )
+    if not replace_head:
+        checkpoint_classes = checkpoint.get("classes")
+        if checkpoint_classes is not None and list(checkpoint_classes) != list(class_names):
+            raise ValueError(
+                "initial checkpoint classes do not match the current dataset classes"
+            )
     state_dict = checkpoint["state_dict"]
     if not isinstance(state_dict, dict):
         raise ValueError(f"initial checkpoint '{checkpoint_path}' state_dict payload is invalid")
-    return _remap_classifier_head_state_dict(
+    state_dict = _remap_classifier_head_state_dict(
         state_dict,
         head_path=head_path,
         target_keys=target_keys,
     )
+    if replace_head:
+        head_prefixes = (f"{head_path}.weight", f"{head_path}.bias", f"{head_path}.")
+        state_dict = {
+            key: value
+            for key, value in state_dict.items()
+            if not (key.startswith(head_prefixes[2]) or key in head_prefixes[:2])
+        }
+    return state_dict
 
 
 def _module_from_path(root, path: str):
@@ -827,6 +845,8 @@ def main() -> int:
     ]
     if initial_checkpoint_path is not None and not args.resume_last:
         training_command.extend(["--initial-checkpoint", str(initial_checkpoint_path)])
+        if args.initial_checkpoint_replace_head:
+            training_command.append("--initial-checkpoint-replace-head")
     if args.resume_last:
         training_command.append("--resume-last")
 
@@ -941,15 +961,22 @@ def main() -> int:
         dropout=getattr(profile, 'dropout', 0.0),
     )
     if initial_checkpoint_path is not None:
+        replace_head = args.initial_checkpoint_replace_head and not args.resume_last
         state_dict = _load_initial_checkpoint(
             checkpoint_path=initial_checkpoint_path,
             class_names=class_names,
             head_path=head_path,
             target_keys=set(model.state_dict().keys()),
+            replace_head=replace_head,
         )
-        model.load_state_dict(state_dict, strict=True)
+        model.load_state_dict(state_dict, strict=not replace_head)
         if args.resume_last:
             print(f"Resuming from last checkpoint: {initial_checkpoint_path}")
+        elif replace_head:
+            print(
+                f"Loaded backbone weights from {initial_checkpoint_path}; "
+                f"classifier head '{head_path}' reinitialized for {len(class_names)} classes"
+            )
         else:
             print(f"Loaded initial checkpoint: {initial_checkpoint_path}")
     device = torch.device("cuda" if torch.cuda.is_available() and profile.device != "cpu" else "cpu")
