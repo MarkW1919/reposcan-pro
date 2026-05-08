@@ -60,6 +60,14 @@ class TrainingProfileConfig(BaseModel):
     device: str = Field("auto", min_length=1)
     class_names: list[str] = Field(default_factory=list)
     use_amp: bool = True
+    use_weighted_sampler: bool = Field(
+        False,
+        description=(
+            "When true, the imagefolder loader uses a class-balanced WeightedRandomSampler so"
+            " under-represented classes are seen as often as over-represented ones during"
+            " training. Useful when expanding the class space with uneven data sources."
+        ),
+    )
     augmentation: AugmentationPolicy = Field(default_factory=AugmentationPolicy)
 
     @model_validator(mode="after")

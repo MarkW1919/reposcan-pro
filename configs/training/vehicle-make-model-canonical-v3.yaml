@@ -1,0 +1,40 @@
+profile_name: vehicle-make-model-canonical-v3
+task: vehicle_make_model_classification
+framework: torchvision
+output_root: runtime/training
+allow_pending_review: true
+dataset_adapter: imagefolder
+base_model: efficientnet_b0
+image_size: 260
+epochs: 35
+batch_size: 24
+workers: 4
+patience: 10
+seed: 42
+learning_rate: 0.0005
+weight_decay: 0.0005
+label_smoothing: 0.05
+dropout: 0.3
+freeze_backbone_epochs: 3
+validation_fraction: 0.15
+precision: fp32
+device: auto
+use_weighted_sampler: true
+augmentation:
+  horizontal_flip: true
+  motion_blur: true
+  defocus_blur: true
+  brightness_contrast: true
+  noise: true
+  compression_artifacts: true
+  perspective_distortion: true
+  random_erasing: true
+  mixup_alpha: 0.1
+  synthetic_support_ratio: 0.0
+  notes:
+    - Canonical-v3 expands the make/model taxonomy from 20 to 30 classes by adding Jeep Grand Cherokee, Jeep Wrangler, GMC Yukon, Dodge Charger, Dodge Durango, Toyota Corolla, Toyota Highlander, Toyota 4Runner, Hyundai Sonata, and Kia Sorento.
+    - Also adds 18 modern-generation (2017+) gap-fills for existing classes so the model handles current-year vehicles, not just the 2008-2016 VMMRdb cutoff.
+    - use_weighted_sampler is enabled because the new classes have 40-64 train samples vs existing 320-400; without sampler weighting the model would over-predict the bigger classes (this was the canonical-v2 lesson).
+    - Warm-start from canonical-v1 backbone via --initial-checkpoint-replace-head; the head must be reinitialized because the class space grew from 20 to 30.
+    - Higher LR (5e-4) than v2 because we are training a new head on more classes; freeze_backbone_epochs=3 lets the new head warm up before the full network unfreezes.
+    - Patience 10 is conservative; the larger class space and weighted sampler may take longer to converge.

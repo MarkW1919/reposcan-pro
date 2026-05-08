@@ -596,6 +596,26 @@ def _warn_if_profile_is_heavy_for_device(profile, device) -> str | None:
     )
 
 
+def _extract_dataset_targets(dataset):
+    """Extract per-sample class indices from an ImageFolder, transformed Subset wrapper,
+    or random_split Subset so a WeightedRandomSampler can be built without re-walking
+    the filesystem."""
+    if hasattr(dataset, "targets") and isinstance(dataset.targets, list):
+        return list(dataset.targets)
+    if hasattr(dataset, "samples") and isinstance(dataset.samples, list):
+        return [target for _, target in dataset.samples]
+    inner = getattr(dataset, "subset", None) or getattr(dataset, "dataset", None)
+    indices = getattr(dataset, "indices", None)
+    if inner is not None:
+        inner_targets = _extract_dataset_targets(inner)
+        if inner_targets is None:
+            return None
+        if indices is not None:
+            return [inner_targets[i] for i in indices]
+        return inner_targets
+    return None
+
+
 def _build_imagefolder_loaders(profile, manifest, repo_root: Path):
     import torch
     from torchvision import datasets
@@ -641,10 +661,30 @@ def _build_imagefolder_loaders(profile, manifest, repo_root: Path):
     # DataLoader. On Linux (Jetson) the profile value is used as configured.
     import platform
     num_workers = 0 if platform.system() == "Windows" else profile.workers
+    train_sampler = None
+    train_shuffle = True
+    if getattr(profile, "use_weighted_sampler", False):
+        train_targets = _extract_dataset_targets(train_dataset)
+        if train_targets is not None and len(train_targets) > 0:
+            class_counts: dict[int, int] = {}
+            for target in train_targets:
+                class_counts[target] = class_counts.get(target, 0) + 1
+            sample_weights = [1.0 / class_counts[target] for target in train_targets]
+            train_sampler = torch.utils.data.WeightedRandomSampler(
+                weights=sample_weights,
+                num_samples=len(sample_weights),
+                replacement=True,
+            )
+            train_shuffle = False
+            print(
+                f"weighted_sampler enabled: {len(class_counts)} classes, "
+                f"min={min(class_counts.values())}, max={max(class_counts.values())}"
+            )
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
         batch_size=profile.batch_size,
-        shuffle=True,
+        shuffle=train_shuffle,
+        sampler=train_sampler,
         num_workers=num_workers,
     )
     validation_loader = torch.utils.data.DataLoader(
