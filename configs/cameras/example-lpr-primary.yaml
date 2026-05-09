@@ -1,5 +1,11 @@
 # Primary long-range LPR camera for the two-camera truck pod.
 # Replace stream_url and final optics after field mounting.
+#
+# Hardware: Sony STARVIS 2 IMX585. Quad-bayer 4K with optional 2x2 binning to
+# 1920x1080 for ~6 dB additional low-light SNR — the binned mode is the
+# recommended LPR night setting since plate retroreflective response is the
+# primary signal and per-pixel resolution drops below the saturation limit
+# anyway. Day mode runs full 4K for maximum plate-pixel density at long range.
 
 camera_id: cam_lpr_primary
 display_name: "Primary Long-Range LPR"
@@ -8,7 +14,7 @@ stream_url: "rtsp://192.168.1.101/stream1"
 device_index: null
 
 sensor:
-  type: sony_starvis2_imx678_preferred
+  type: sony_starvis2_imx585
   resolution_w: 3840
   resolution_h: 2160
   fps: 30
