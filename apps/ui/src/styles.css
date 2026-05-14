@@ -789,6 +789,8 @@ select:focus-visible {
 .screen {
   height: 100%;
   min-height: 0;
+  width: min(1680px, 100%);
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
   gap: clamp(10px, 1.2vh, 14px);
@@ -4515,6 +4517,159 @@ select:focus-visible {
   gap: 12px;
 }
 
+.repo-admin-screen .hotlists-grid {
+  grid-template-columns: minmax(320px, 0.88fr) minmax(0, 1.12fr);
+  gap: 20px;
+}
+
+.repo-admin-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.repo-admin-summary-tile,
+.repo-admin-overview-card,
+.repo-admin-metric {
+  min-width: 0;
+  border-radius: 18px;
+  border: 1px solid rgba(94, 234, 212, 0.08);
+  background: linear-gradient(180deg, rgba(11, 19, 25, 0.96), rgba(8, 15, 20, 0.92));
+  display: grid;
+  gap: 6px;
+}
+
+.repo-admin-summary-tile,
+.repo-admin-overview-card {
+  padding: 14px 16px;
+}
+
+.repo-admin-summary-tile span,
+.repo-admin-overview-card span,
+.repo-admin-metric span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.repo-admin-summary-tile strong,
+.repo-admin-overview-card strong,
+.repo-admin-metric strong {
+  color: var(--text);
+  font-family: var(--mono);
+}
+
+.repo-admin-summary-tile small,
+.repo-admin-overview-card small {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.repo-admin-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.repo-admin-filter-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.repo-admin-row__primary {
+  display: grid;
+  gap: 4px;
+}
+
+.repo-admin-detail-header {
+  align-items: start;
+}
+
+.repo-admin-detail-header > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.repo-admin-header-actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.repo-admin-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.repo-admin-form {
+  gap: 16px;
+}
+
+.repo-admin-section {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(94, 234, 212, 0.08);
+  background: rgba(10, 18, 24, 0.86);
+}
+
+.repo-admin-section__header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.repo-admin-section__header > div {
+  display: grid;
+  gap: 4px;
+}
+
+.repo-admin-section__header h4,
+.repo-admin-section__header p {
+  margin: 0;
+}
+
+.repo-admin-section__header p {
+  color: var(--muted);
+  max-width: 58ch;
+  line-height: 1.45;
+}
+
+.repo-admin-fields {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.repo-admin-field--wide {
+  grid-column: 1 / -1;
+}
+
+.repo-admin-inline-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.repo-admin-metric {
+  padding: 12px 14px;
+}
+
+.repo-admin-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.repo-admin-actions .btn {
+  width: 100%;
+  justify-content: center;
+}
+
 .recovery-queue-grid {
   flex: 1;
   min-height: 0;
@@ -4546,6 +4701,10 @@ select:focus-visible {
   gap: 12px;
 }
 
+.admin-settings-summary-strip {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
 .settings-summary-tile {
   border-radius: 18px;
   border: 1px solid rgba(94, 234, 212, 0.08);
@@ -4558,6 +4717,11 @@ select:focus-visible {
 .settings-summary-tile strong {
   font-family: var(--mono);
   color: var(--text);
+}
+
+.settings-summary-tile small {
+  color: var(--muted);
+  line-height: 1.45;
 }
 
 .settings-summary-tile span,
@@ -4632,6 +4796,70 @@ select:focus-visible {
   justify-content: flex-end;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.settings-section-banner {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(260px, 0.8fr);
+  gap: 14px;
+  padding: 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(94, 234, 212, 0.08);
+  background: linear-gradient(180deg, rgba(10, 19, 25, 0.96), rgba(7, 14, 19, 0.9));
+}
+
+.settings-section-banner__copy,
+.settings-subsection__copy {
+  display: grid;
+  gap: 4px;
+}
+
+.settings-section-banner__copy span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.settings-section-banner__copy strong {
+  color: var(--text);
+  font-family: var(--mono);
+}
+
+.settings-section-banner__copy p,
+.settings-subsection__copy p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.settings-section-banner__stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.settings-section-banner__stat {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(94, 234, 212, 0.08);
+  background: rgba(8, 16, 22, 0.9);
+}
+
+.settings-section-banner__stat span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.settings-section-banner__stat strong {
+  color: var(--text);
+  font-family: var(--mono);
 }
 
 .hotlists-list-card,
@@ -5653,11 +5881,28 @@ kbd {
 .settings-subsection {
   display: grid;
   gap: 12px;
+  padding: 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(94, 234, 212, 0.08);
+  background: rgba(10, 18, 24, 0.86);
+}
+
+.settings-subsection__header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.settings-subsection__copy h4,
+.settings-subsection__copy p {
+  margin: 0;
 }
 
 .settings-session-list {
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
 .settings-session-row {
@@ -5668,7 +5913,7 @@ kbd {
   padding: 12px 14px;
   border-radius: 16px;
   border: 1px solid rgba(94, 234, 212, 0.08);
-  background: rgba(13, 22, 28, 0.86);
+  background: rgba(7, 14, 19, 0.9);
 }
 
 .settings-session-row strong {
@@ -5820,6 +6065,10 @@ kbd {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .admin-settings-summary-strip {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .settings-workspace {
     grid-template-columns: minmax(220px, 250px) minmax(0, 1fr);
   }
@@ -5829,6 +6078,12 @@ kbd {
   }
 
   .hotlists-summary-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .repo-admin-summary-strip,
+  .repo-admin-overview-grid,
+  .repo-admin-inline-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -6009,6 +6264,11 @@ kbd {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .admin-settings-summary-strip,
+  .settings-section-banner__stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .settings-workspace {
     grid-template-columns: 1fr;
     grid-template-rows: auto;
@@ -6026,6 +6286,19 @@ kbd {
 
   .hotlists-summary-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .repo-admin-toolbar,
+  .repo-admin-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .repo-admin-filter-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .settings-section-banner {
+    grid-template-columns: 1fr;
   }
 
   .settings-nav-list {
@@ -6641,11 +6914,22 @@ kbd {
   .locate-intelligence-strip,
   .locate-intelligence-summary,
   .hotlists-summary-strip,
+  .repo-admin-summary-strip,
+  .admin-settings-summary-strip,
+  .repo-admin-overview-grid,
+  .repo-admin-inline-metrics,
+  .settings-section-banner__stats,
   .detail-summary-strip,
   .detail-summary-strip--compact,
   .settings-summary-strip,
   .settings-nav-list,
   .case-editor-grid--split {
+    grid-template-columns: 1fr;
+  }
+
+  .repo-admin-filter-tabs,
+  .repo-admin-fields,
+  .repo-admin-actions {
     grid-template-columns: 1fr;
   }
 

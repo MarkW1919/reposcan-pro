@@ -3,8 +3,29 @@ import { Circle, MapContainer, Marker, Polyline, Popup, TileLayer, useMap } from
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
-import { DetectionFeed } from "./components/console/DetectionFeed";
+import { AddressIntelligenceCard } from "./components/dashboard/AddressIntelligenceCard";
+import { CompactDetectionCard } from "./components/dashboard/CompactDetectionCard";
+import { DashboardCustomizePanel } from "./components/dashboard/DashboardCustomizePanel";
+import { DashboardShell } from "./components/dashboard/DashboardShell";
+import { DashboardWidgetFrame } from "./components/dashboard/DashboardWidgetFrame";
+import { InstrumentStatusBar } from "./components/dashboard/InstrumentStatusBar";
+import { LprCameraPanel } from "./components/dashboard/LprCameraPanel";
+import { RecentDetectionHistoryCard } from "./components/dashboard/RecentDetectionHistoryCard";
+import { StatusPill, type StatusPillTone } from "./components/dashboard/StatusPill";
+import { UconnectStyleToolbar, type ToolbarItem } from "./components/dashboard/UconnectStyleToolbar";
 import { DetectionEvidenceHero } from "./components/detections/DetectionEvidenceHero";
+import {
+  loadDashboardConfig,
+  reorderDashboardWidget,
+  resetDashboardConfig,
+  updateLayoutMode,
+  updateWidgetSize,
+  updateWidgetVisibility,
+  type DashboardConfig,
+  type DashboardLayoutMode,
+  type DashboardWidgetId,
+  type DashboardWidgetSize,
+} from "./dashboard-config";
 import { cameraFeeds, defaultFieldSettings } from "./demo-data";
 import {
   fetchAuditEvents,
@@ -54,9 +75,10 @@ import {
   type ScanProcessingMode,
   type ScanSessionState,
 } from "./live-api";
-import { detectionSeverityForRow } from "./presentation/detectionSeverity";
+import { detectionSeverityForRow, detectionSeverityLabel } from "./presentation/detectionSeverity";
 
 type AppScreen = "console" | "search" | "accounts" | "hotlists" | "settings";
+type AppShell = "operations" | "admin";
 type StageView = "camera" | "map";
 type SearchMode = "plate" | "camera" | "vehicle" | "alert";
 type DataSource = "demo" | "live" | "fallback";
@@ -64,6 +86,19 @@ type AlertPersistence = "until-dismissed" | "15 sec" | "60 sec";
 type HotlistsWorkspaceTab = "alerts" | "recognition";
 type SettingsSection = "workspace" | "alerts" | "cameras" | "map" | "system";
 type ServiceHealthState = HealthState | "demo" | "offline";
+
+function shellForScreen(screen: AppScreen): AppShell {
+  switch (screen) {
+    case "accounts":
+    case "settings":
+      return "admin";
+    case "console":
+    case "search":
+    case "hotlists":
+    default:
+      return "operations";
+  }
+}
 
 function resolveScanSessionState(params: {
   navigationActive: boolean;
@@ -1147,6 +1182,100 @@ function cameraFeedDotTone(status: CameraUiFeed["status"]): "live" | "warn" | "o
     return "warn";
   }
   return "off";
+}
+
+function dashboardToneForDetection(row: ConsoleDetectionRow): StatusPillTone {
+  const severity = detectionSeverityForRow(row);
+  if (severity === "critical") {
+    return "red";
+  }
+  if (severity === "priority") {
+    return "amber";
+  }
+  if (severity === "watch") {
+    return "cyan";
+  }
+  return "gray";
+}
+
+function dashboardToneForCamera(status: CameraUiFeed["status"]): StatusPillTone {
+  if (status === "Online") {
+    return "green";
+  }
+  if (status === "Unknown") {
+    return "amber";
+  }
+  return "gray";
+}
+
+function dashboardToneForService(state: ServiceHealthState): StatusPillTone {
+  if (state === "ok") {
+    return "green";
+  }
+  if (state === "degraded") {
+    return "amber";
+  }
+  if (state === "down") {
+    return "red";
+  }
+  return "gray";
+}
+
+function dashboardToneForFollowUp(status: FollowUpStatus | null | undefined): StatusPillTone {
+  if (status === "resolved") {
+    return "green";
+  }
+  if (status === "monitoring") {
+    return "amber";
+  }
+  if (status === "open") {
+    return "cyan";
+  }
+  return "gray";
+}
+
+function recoveryProbabilityForRow(
+  row: ConsoleDetectionRow | null,
+  hotlistEntry: DashboardHotlist | null,
+  followUp: FollowUpRecord | null,
+): { label: string; tone: StatusPillTone } {
+  if (!row) {
+    return { label: "Standby", tone: "gray" };
+  }
+  const score = confidencePercent(row.conf) + (hotlistEntry ? 15 : 0) + (followUp ? 10 : 0);
+  if (score >= 108) {
+    return { label: "High", tone: "red" };
+  }
+  if (score >= 92) {
+    return { label: "Elevated", tone: "amber" };
+  }
+  if (score >= 80) {
+    return { label: "Ready", tone: "cyan" };
+  }
+  return { label: "Low", tone: "gray" };
+}
+
+function summarizeVehicleIdentity(row: ConsoleDetectionRow | null, hotlistEntry: DashboardHotlist | null): string {
+  if (hotlistEntry) {
+    const parts = [hotlistEntry.vehicle_year, hotlistEntry.vehicle_color, hotlistEntry.vehicle_make, hotlistEntry.vehicle_model].filter(Boolean);
+    if (parts.length > 0) {
+      return parts.join(" ");
+    }
+  }
+  return row?.vehicle ?? "Vehicle not identified";
+}
+
+function inferNoteField(notes: string | null | undefined, keywords: string[], whenFound: string, whenMissing = "Not logged"): string {
+  const source = (notes ?? "").toLowerCase();
+  return keywords.some((keyword) => source.includes(keyword)) ? whenFound : whenMissing;
+}
+
+function widgetConfigForId(config: DashboardConfig, id: DashboardWidgetId): { visible: boolean; size: DashboardWidgetSize } {
+  const widget = config.widgets.find((item) => item.id === id);
+  return {
+    visible: widget?.visible ?? false,
+    size: widget?.size ?? "standard",
+  };
 }
 
 function buildCameraUiFeeds(
@@ -3186,6 +3315,21 @@ function CameraViewport(props: {
   );
 }
 
+function CompactDetectionSnapshot(props: {
+  dataSource: DataSource;
+  detectionId?: string;
+  plate: string;
+  vehicle: string;
+}): ReactElement {
+  const plateCropUrl = useDetectionPlateCropImage(props.detectionId, props.dataSource === "live");
+
+  return (
+    <div className="compact-detection-snapshot" aria-hidden="true">
+      {plateCropUrl ? <img alt="" src={plateCropUrl} /> : <span>{props.plate || props.vehicle}</span>}
+    </div>
+  );
+}
+
 function ScreenHeader(props: { title: string; subtitle?: string; meta?: ReactElement; actions?: ReactElement }): ReactElement {
   return (
     <header className="screen-header">
@@ -3206,12 +3350,16 @@ function ScreenHeader(props: { title: string; subtitle?: string; meta?: ReactEle
 function App(): ReactElement {
   const gpsFix = useBrowserGeolocation();
   const [screen, setScreen] = useState<AppScreen>("console");
+  const [lastOperationsScreen, setLastOperationsScreen] = useState<AppScreen>("console");
+  const [lastAdminScreen, setLastAdminScreen] = useState<AppScreen>("accounts");
   const [stageView, setStageView] = useState<StageView>("map");
   const [selectedCameraId, setSelectedCameraId] = useState<string>("");
   const [selectedDetectionId, setSelectedDetectionId] = useState<string | null>(null);
   const [detailDetectionId, setDetailDetectionId] = useState<string | null>(null);
   const [detailImageUrl, setDetailImageUrl] = useState<string | null>(null);
   const [settings, setSettings] = useState<UiSettings>(() => loadStoredSettings());
+  const [dashboardConfig, setDashboardConfig] = useState<DashboardConfig>(() => loadDashboardConfig());
+  const [dashboardCustomizeOpen, setDashboardCustomizeOpen] = useState(false);
   const [apiKey, setApiKey] = useState<string>(() => loadStoredString(apiKeyStorageKey));
   const [apiKeyInput, setApiKeyInput] = useState<string>(() => loadStoredString(apiKeyStorageKey));
   const [activeDestination, setActiveDestination] = useState<string>(() => loadStoredString(targetAddressStorageKey));
@@ -3969,7 +4117,19 @@ function App(): ReactElement {
   }, [overview?.alerts, settings.hotlistAlerts, allRows]);
 
   function switchScreen(nextScreen: AppScreen): void {
+    if (nextScreen !== "console") {
+      setDashboardCustomizeOpen(false);
+    }
+    if (shellForScreen(nextScreen) === "operations") {
+      setLastOperationsScreen(nextScreen);
+    } else {
+      setLastAdminScreen(nextScreen);
+    }
     startTransition(() => setScreen(nextScreen));
+  }
+
+  function switchShell(nextShell: AppShell): void {
+    switchScreen(nextShell === "operations" ? lastOperationsScreen : lastAdminScreen);
   }
 
   function updateSetting<Key extends keyof UiSettings>(key: Key, value: UiSettings[Key]): void {
@@ -3977,6 +4137,26 @@ function App(): ReactElement {
       ...current,
       [key]: value,
     }));
+  }
+
+  function handleDashboardModeChange(mode: DashboardLayoutMode): void {
+    setDashboardConfig((current) => updateLayoutMode(current, mode));
+  }
+
+  function handleDashboardWidgetVisibility(widgetId: DashboardWidgetId, visible: boolean): void {
+    setDashboardConfig((current) => updateWidgetVisibility(current, widgetId, visible));
+  }
+
+  function handleDashboardWidgetSize(widgetId: DashboardWidgetId, size: DashboardWidgetSize): void {
+    setDashboardConfig((current) => updateWidgetSize(current, widgetId, size));
+  }
+
+  function handleDashboardWidgetMove(sourceWidgetId: DashboardWidgetId, targetWidgetId: DashboardWidgetId): void {
+    setDashboardConfig((current) => reorderDashboardWidget(current, sourceWidgetId, targetWidgetId));
+  }
+
+  function handleDashboardReset(): void {
+    setDashboardConfig(resetDashboardConfig());
   }
 
   function rememberDestination(address: string, coords: DestinationCoords | null, label?: string): void {
@@ -4873,37 +5053,129 @@ function App(): ReactElement {
   }
 
   const gpsIndicator = buildGpsIndicator(gpsFix);
-  const edgeFooterValue = dataSource === "live" ? edgeCaptureLabel(edgeRuntime?.capture_state) : "Standby";
-  const edgeFooterTone = dataSource === "live" ? edgeCaptureFooterTone(edgeRuntime?.capture_state) : "off";
-  const footerIndicators: Array<{
-    label: string;
-    value: string;
-    tone: "good" | "off" | "warn";
-    tip: string;
-    action: () => void;
-  }> = [
-    { label: "GPS", value: gpsIndicator.value, tone: gpsIndicator.tone, tip: gpsIndicator.tip, action: () => { switchScreen("settings"); setSettingsSection("map"); } },
-    { label: "API", value: dataSource === "live" ? "Live" : dataSource === "fallback" ? "Fallback" : "Demo", tone: dataSource === "live" ? "good" : "off", tip: "Backend connection \u2014 click to open system settings", action: () => { switchScreen("settings"); setSettingsSection("system"); } },
-    { label: "Edge", value: edgeFooterValue, tone: edgeFooterTone, tip: edgeRuntimeError ?? "Truck edge runtime - click to open system settings", action: () => { switchScreen("settings"); setSettingsSection("system"); } },
-    { label: "LPR", value: scanSessionLabel(scanSession.state), tone: scanSession.lprRealtime || scanSession.state === "approaching_radius" ? "good" : "off", tip: "Plate reader status; vehicle recognition queues behind LPR during active scans - click to open map settings", action: () => { switchScreen("settings"); setSettingsSection("map"); } },
-    { label: "Cams", value: `${onlineCameraCount}/${availableCameraFeeds.length}`, tone: onlineCameraCount > 0 ? "good" : "off", tip: "Camera feeds \u2014 click to open camera settings", action: () => { switchScreen("settings"); setSettingsSection("cameras"); } },
-    { label: "Reads", value: `${totalReads}`, tone: "good", tip: "Total plate reads this session \u2014 click to open search", action: () => { switchScreen("search"); } },
-    { label: "Recoveries", value: `${activeAlerts}`, tone: activeAlerts > 0 ? "warn" : "good", tip: "Active recovery matches - click to view the queue", action: () => { switchScreen("hotlists"); } },
-  ];
-  const footerNavItems: Array<{
-    label: string;
-    value: string;
-    screen: AppScreen;
-    tone: "good" | "off" | "warn";
-    tip: string;
-    action?: () => void;
-  }> = [
-    { label: "Drive", value: navigationActive ? routeEta : "Map", screen: "console", tone: screen === "console" ? "good" : "off", tip: "Open the driving map" },
-    { label: "Locate", value: `${totalReads}`, screen: "search", tone: screen === "search" ? "good" : "off", tip: "Search reads and history" },
-    { label: "Accounts", value: `${activeHotlistCount}`, screen: "accounts", tone: screen === "accounts" ? "good" : "off", tip: "Manage recovery accounts" },
-    { label: "Recoveries", value: `${activeAlerts}`, screen: "hotlists", tone: activeAlerts > 0 ? "warn" : screen === "hotlists" ? "good" : "off", tip: "Open recovery matches" },
-    { label: "Settings", value: dataSource.toUpperCase(), screen: "settings", tone: screen === "settings" ? "good" : "off", tip: "Open system settings" },
-  ];
+  const currentShell = shellForScreen(screen);
+  const shellCopy =
+    currentShell === "operations"
+      ? {
+          title: "Operations Workspace",
+          detail: `${activeAlerts} live hit${activeAlerts === 1 ? "" : "s"} · ${activeHotlistCount} active order${activeHotlistCount === 1 ? "" : "s"} · ${onlineCameraCount}/${Math.max(availableCameraFeeds.length, 1)} camera${availableCameraFeeds.length === 1 ? "" : "s"} online`,
+        }
+      : {
+          title: "Admin Panel",
+          detail: `${hotlists.length} repo order${hotlists.length === 1 ? "" : "s"} · ${canManageHotlistAccounts ? "edit enabled" : "read only"} · ${degradedDependencyCount === 0 ? "system healthy" : `${degradedDependencyCount} system warning${degradedDependencyCount === 1 ? "" : "s"}`}`,
+        };
+  const toolbarItems: ToolbarItem[] =
+    currentShell === "operations"
+      ? [
+          {
+            id: "workspace",
+            label: "Workspace",
+            value: screen === "console" ? "ACTIVE" : "READY",
+            tone: screen === "console" ? "cyan" : "gray",
+            active: screen === "console",
+            onClick: () => switchScreen("console"),
+          },
+          {
+            id: "map",
+            label: "Map",
+            value: navigationActive ? "ROUTING" : screen === "console" && stageView === "map" ? "ACTIVE" : "READY",
+            tone: navigationActive ? "green" : screen === "console" && stageView === "map" ? "cyan" : "gray",
+            active: screen === "console" && stageView === "map",
+            onClick: () => {
+              setStageView("map");
+              switchScreen("console");
+            },
+          },
+          {
+            id: "lpr-hits",
+            label: "LPR Hits",
+            value: activeAlerts > 0 ? `${activeAlerts} ACTIVE` : "READY",
+            tone: activeAlerts > 0 ? "green" : "gray",
+            active: screen === "hotlists",
+            onClick: () => switchScreen("hotlists"),
+          },
+          {
+            id: "search",
+            label: "Search",
+            value: totalReads > 0 ? `${Math.min(totalReads, 8)} INDEXED` : "READY",
+            tone: totalReads > 0 ? "cyan" : "gray",
+            active: screen === "search",
+            onClick: () => switchScreen("search"),
+          },
+          {
+            id: "cameras",
+            label: "Cameras",
+            value: onlineCameraCount > 0 ? "LIVE" : "OFFLINE",
+            tone: onlineCameraCount > 0 ? "green" : "gray",
+            active: screen === "console" && stageView === "camera",
+            onClick: () => {
+              setStageView("camera");
+              switchScreen("console");
+            },
+          },
+          {
+            id: "scan",
+            label: "Scan LPR",
+            value: navigationActive ? "SCANNING" : scanSession.lprRealtime || idleScanEnabled ? "ON" : "READY",
+            tone: navigationActive || scanSession.lprRealtime || idleScanEnabled ? "green" : "gray",
+            active: navigationActive || idleScanEnabled,
+            onClick: () => armIdleScan(),
+          },
+        ]
+      : [
+          {
+            id: "repo-orders",
+            label: "Repo Orders",
+            value: activeHotlistCount > 0 ? `${activeHotlistCount} ACTIVE` : "READY",
+            tone: activeHotlistCount > 0 ? "cyan" : "gray",
+            active: screen === "accounts",
+            onClick: () => switchScreen("accounts"),
+          },
+          {
+            id: "field-settings",
+            label: "Field Settings",
+            value: settings.autoArrivalScan ? "TUNED" : "REVIEW",
+            tone: settings.autoArrivalScan ? "cyan" : "amber",
+            active: screen === "settings" && settingsSection === "workspace",
+            onClick: () => {
+              setSettingsSection("workspace");
+              switchScreen("settings");
+            },
+          },
+          {
+            id: "alerts",
+            label: "Alerts",
+            value: settings.hotlistAlerts ? "ARMED" : "MUTED",
+            tone: settings.hotlistAlerts ? "green" : "gray",
+            active: screen === "settings" && settingsSection === "alerts",
+            onClick: () => {
+              setSettingsSection("alerts");
+              switchScreen("settings");
+            },
+          },
+          {
+            id: "audit",
+            label: "Audit",
+            value: canViewAudit ? (auditEvents.length > 0 ? `${Math.min(auditEvents.length, 9)} EVENTS` : "READY") : "LOCKED",
+            tone: canViewAudit ? "purple" : "gray",
+            active: screen === "settings" && settingsSection === "system",
+            onClick: () => {
+              setSettingsSection("system");
+              switchScreen("settings");
+            },
+          },
+          {
+            id: "system",
+            label: "System",
+            value: dataSource === "live" ? gpsIndicator.value.toUpperCase() : dataSource.toUpperCase(),
+            tone: dataSource === "live" ? (gpsIndicator.tone === "good" ? "green" : gpsIndicator.tone === "warn" ? "amber" : "gray") : "gray",
+            active: screen === "settings" && settingsSection === "system",
+            onClick: () => {
+              setSettingsSection("system");
+              switchScreen("settings");
+            },
+          },
+        ];
 
   return (
     <>
@@ -4919,17 +5191,21 @@ function App(): ReactElement {
               cameraFocusRow={cameraFocusRow}
               currentCamera={currentCamera}
               dataSource={dataSource}
+              dashboardConfig={dashboardConfig}
+              dashboardCustomizeOpen={dashboardCustomizeOpen}
               hotlists={hotlists}
               destinationCoords={activeDestinationCoords}
               destinationInput={destinationInput}
               destinationModalOpen={destinationModalOpen}
               destinationTargets={destinationTargets}
               destinationPreview={destinationPreview}
+              followUps={followUps}
               recentDestinations={recentDestinations}
               idleScanEnabled={idleScanEnabled}
               layerMenuOpen={mapLayerMenuOpen}
               navigationActive={navigationActive}
               navigationGuidance={navigationGuidance}
+              serviceHealthState={serviceHealthState}
               selectedCameraId={primaryCameraId}
               selectedDetectionId={selectedDetectionId}
               settings={settings}
@@ -4944,18 +5220,26 @@ function App(): ReactElement {
               withinRadius={withinRadius}
               onApplyDestinationTarget={applyDestinationTarget}
               onClearDestinationDraft={clearDestinationDraft}
+              onCloseDashboardCustomize={() => setDashboardCustomizeOpen(false)}
               onCloseDestinationModal={closeDestinationModal}
               onCopyPlate={handleCopyPlate}
               onDestinationChange={handleDestinationInputChange}
               onEndRoute={endRoute}
               onOpenAccount={openAccountsForRow}
+              onOpenDashboardCustomize={() => setDashboardCustomizeOpen(true)}
               onOpenDetail={openDetail}
               onOpenDestinationModal={openDestinationModal}
               onOpenHotlist={(entry) => {
                 loadHotlist(entry);
                 switchScreen("accounts");
               }}
+              onOpenRecoveries={() => switchScreen("hotlists")}
+              onOpenSettings={() => {
+                setSettingsSection("workspace");
+                switchScreen("settings");
+              }}
               onRemoveRecentDestination={removeRecentDestination}
+              onResetDashboardConfig={handleDashboardReset}
               onSelectCamera={setSelectedCameraId}
               onSelectDetection={setSelectedDetectionId}
               onRouteToDetection={routeToRow}
@@ -4970,6 +5254,10 @@ function App(): ReactElement {
               onToggleHistoricalAlertPins={() => updateSetting("showHistoricalAlertPins", !settings.showHistoricalAlertPins)}
               onToggleLayerMenu={() => setMapLayerMenuOpen((current) => !current)}
               onToggleRadiusRing={() => updateSetting("showRadiusRing", !settings.showRadiusRing)}
+              onUpdateDashboardLayoutMode={handleDashboardModeChange}
+              onUpdateDashboardWidgetMove={handleDashboardWidgetMove}
+              onUpdateDashboardWidgetSize={handleDashboardWidgetSize}
+              onUpdateDashboardWidgetVisibility={handleDashboardWidgetVisibility}
             />
           ) : null}
 
@@ -5134,72 +5422,33 @@ function App(): ReactElement {
           ) : null}
         </main>
 
-        <footer className="status-footer">
-          <div className="status-footer__group status-footer__group--brand" aria-label="Product">
-            <button className="status-footer__item status-footer__item--brand" type="button" onClick={() => switchScreen("console")}>
-              <span className="status-footer__mark">SIF</span>
-              <strong>RepoScan</strong>
-            </button>
-          </div>
-
-          <nav className="status-footer__group status-footer__group--nav" aria-label="Primary navigation">
-            {footerNavItems.map((item) => (
-              <Tooltip key={item.label} text={item.tip}>
+        <footer className="dashboard-footer">
+          <div className="dashboard-footer__shell">
+            <div className="dashboard-footer__shell-copy">
+              <span>Product Area</span>
+              <strong>{shellCopy.title}</strong>
+              <small>{shellCopy.detail}</small>
+            </div>
+            <div className="dashboard-footer__shell-toggle" role="tablist" aria-label="Workspace area">
               <button
-                  className={`status-footer__item status-footer__item--clickable status-footer__item--nav status-footer__item--${item.tone} ${screen === item.screen ? "is-active" : ""}`.trim()}
-                  type="button"
-                  onClick={() => (item.action ? item.action() : switchScreen(item.screen))}
-                >
-                  <strong>{item.label}</strong>
-                  <span>{item.value}</span>
-                </button>
-              </Tooltip>
-            ))}
-          </nav>
-
-          <div className="status-footer__group status-footer__group--actions" aria-label="Driver actions">
-            <Tooltip text={navigationActive ? "Open active route on the map" : idleScanEnabled ? "Pause idle scanning" : "Start idle scanning"}>
-              <button
-                className={`status-footer__item status-footer__item--clickable status-footer__item--action status-footer__item--${navigationActive || idleScanEnabled ? "good" : "off"} is-primary`}
+                className={currentShell === "operations" ? "is-active" : ""}
+                aria-pressed={currentShell === "operations"}
                 type="button"
-                onClick={() => {
-                  if (navigationActive) {
-                    setStageView("map");
-                    switchScreen("console");
-                  } else if (idleScanEnabled) {
-                    updateSetting("arrivalScanEnabled", false);
-                  } else {
-                    armIdleScan();
-                  }
-                }}
+                onClick={() => switchShell("operations")}
               >
-                <strong>{navigationActive ? "Route" : "Scan"}</strong>
-                <span>{navigationActive ? routeEta : idleScanEnabled ? "Live" : "Paused"}</span>
+                Operations
               </button>
-            </Tooltip>
-            <Tooltip text="Open the latest recovery match">
               <button
-                className={`status-footer__item status-footer__item--clickable status-footer__item--action status-footer__item--${activeAlerts > 0 ? "warn" : "off"}`}
-                disabled={activeAlerts === 0}
+                className={currentShell === "admin" ? "is-active" : ""}
+                aria-pressed={currentShell === "admin"}
                 type="button"
-                onClick={openLatestHotlistAlert}
+                onClick={() => switchShell("admin")}
               >
-                <strong>Open</strong>
-                <span>Recovery</span>
+                Admin
               </button>
-            </Tooltip>
+            </div>
           </div>
-
-          <div className="status-footer__group status-footer__group--system" aria-label="System status">
-            {footerIndicators.map((indicator) => (
-              <Tooltip key={indicator.label} text={indicator.tip}>
-                <button className={`status-footer__item status-footer__item--clickable status-footer__item--${indicator.tone}`} type="button" onClick={indicator.action}>
-                  <strong>{indicator.label}</strong>
-                  <span>{indicator.value}</span>
-                </button>
-              </Tooltip>
-            ))}
-          </div>
+          <UconnectStyleToolbar items={toolbarItems} />
         </footer>
       </div>
 
@@ -5770,6 +6019,26 @@ function ReadOnlyRow(props: { title: string; detail: string; value: string }): R
   );
 }
 
+function SettingsSectionBlock(props: {
+  title: string;
+  description: string;
+  badge?: ReactNode;
+  children: ReactNode;
+}): ReactElement {
+  return (
+    <section className="settings-subsection">
+      <div className="settings-subsection__header">
+        <div className="settings-subsection__copy">
+          <h4>{props.title}</h4>
+          <p>{props.description}</p>
+        </div>
+        {props.badge ?? null}
+      </div>
+      {props.children}
+    </section>
+  );
+}
+
 function DetailField(props: { label: string; value: string; tone?: "critical" | "cyan" }): ReactElement {
   return (
     <div className="detail-field">
@@ -5910,17 +6179,21 @@ function ConsoleScreen(props: {
   cameraFocusRow: ConsoleDetectionRow | null;
   currentCamera: CameraUiFeed | undefined;
   dataSource: DataSource;
+  dashboardConfig: DashboardConfig;
+  dashboardCustomizeOpen: boolean;
   hotlists: DashboardHotlist[];
   destinationCoords: DestinationCoords | null;
   destinationInput: string;
   destinationModalOpen: boolean;
   destinationTargets: DestinationTarget[];
   destinationPreview: { distance: string; eta: string; feet: number } | null;
+  followUps: FollowUpRecord[];
   recentDestinations: RecentDestination[];
   idleScanEnabled: boolean;
   layerMenuOpen: boolean;
   navigationActive: boolean;
   navigationGuidance: NavigationGuidance;
+  serviceHealthState: ServiceHealthState;
   selectedCameraId: string;
   selectedDetectionId: string | null;
   settings: UiSettings;
@@ -5935,15 +6208,20 @@ function ConsoleScreen(props: {
   withinRadius: boolean;
   onApplyDestinationTarget: (target: DestinationTarget) => void;
   onClearDestinationDraft: () => void;
+  onCloseDashboardCustomize: () => void;
   onCloseDestinationModal: () => void;
   onDestinationChange: (value: string) => void;
   onEndRoute: () => void;
   onCopyPlate: (plate: string) => Promise<void>;
   onOpenAccount: (row: ConsoleDetectionRow) => void;
+  onOpenDashboardCustomize: () => void;
   onOpenDetail: (row: ConsoleDetectionRow) => void;
   onOpenDestinationModal: () => void;
   onOpenHotlist: (entry: DashboardHotlist) => void;
+  onOpenRecoveries: () => void;
+  onOpenSettings: () => void;
   onRemoveRecentDestination: (id: string) => void;
+  onResetDashboardConfig: () => void;
   onSelectCamera: (cameraId: string) => void;
   onSelectDetection: (rowId: string) => void;
   onRouteToDetection: (row: ConsoleDetectionRow) => void;
@@ -5958,6 +6236,10 @@ function ConsoleScreen(props: {
   onToggleHistoricalAlertPins: () => void;
   onToggleLayerMenu: () => void;
   onToggleRadiusRing: () => void;
+  onUpdateDashboardLayoutMode: (mode: DashboardLayoutMode) => void;
+  onUpdateDashboardWidgetMove: (sourceWidgetId: DashboardWidgetId, targetWidgetId: DashboardWidgetId) => void;
+  onUpdateDashboardWidgetSize: (widgetId: DashboardWidgetId, size: DashboardWidgetSize) => void;
+  onUpdateDashboardWidgetVisibility: (widgetId: DashboardWidgetId, visible: boolean) => void;
 }): ReactElement {
   const [quickPlateVin, setQuickPlateVin] = useState("");
   const [quickSearchFeedback, setQuickSearchFeedback] = useState<string | null>(null);
@@ -6007,22 +6289,34 @@ function ConsoleScreen(props: {
   const selectedConsoleRow = props.allRows.find((row) => row.id === props.selectedDetectionId) ?? props.allRows[0] ?? null;
   const recoveryRows = props.allRows.filter((row) => row.hotlist || row.alertStatus === "active");
   const commandRow = recoveryRows[0] ?? selectedConsoleRow;
-  const commandTone = commandRow?.hotlist ? "critical" : props.navigationActive ? "active" : "idle";
   const secondaryCamera = props.cameraFeedsList.find((feed) => feed.id !== props.selectedCameraId) ?? props.cameraFeedsList[1] ?? props.cameraFeedsList[0];
   const secondaryCameraRow =
     props.allRows.find((row) => row.cameraId === secondaryCamera?.id) ?? props.allRows.find((row) => row.id !== props.cameraFocusRow?.id) ?? null;
-  const commandChecklist = commandRow
-    ? buildVerificationChecklist({
-        accountLabel: hotlistLabelForRow(commandRow, props.hotlists),
-        confidence: commandRow.conf,
-        gps: commandRow.gps,
-        hasFrame: true,
-        hasPlateCrop: true,
-        notes: commandRow.alertNotes,
-        plateText: commandRow.plate1,
-        vehicleLabel: commandRow.vehicle,
-      })
-    : [];
+  const activeHotlistEntry = commandRow ? hotlistEntryForRow(commandRow, props.hotlists) : null;
+  const activeFollowUp = commandRow ? matchingFollowUpsForRow(commandRow, props.followUps)[0] ?? null : null;
+  const responseCue = commandRow ? buildOperationalSignal(commandRow, activeFollowUp, null) : null;
+  const recoveryProbability = recoveryProbabilityForRow(commandRow, activeHotlistEntry, activeFollowUp);
+  const dashboardClock = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const scanStatusLabel = props.navigationActive
+    ? props.settings.autoArrivalScan
+      ? `Auto-scan ${props.settings.arrivalRadiusFeet} ft`
+      : "Auto-scan off"
+    : props.idleScanEnabled
+      ? "Idle scan on"
+      : "Idle scan off";
+  const driverActionLabel = props.navigationActive ? "End Route" : props.activeDestination ? "Start Recovery" : "Set Target";
+  const driverAction = props.navigationActive ? props.onEndRoute : props.activeDestination ? props.onStartRoute : props.onOpenDestinationModal;
+  const notesSummary = [activeHotlistEntry?.notes, activeFollowUp?.summary, activeFollowUp?.notes, commandRow?.alertNotes].filter(
+    (value): value is string => Boolean(value),
+  );
+  const visibleWidgets = props.dashboardConfig.widgets
+    .filter((widget) => widget.visible && widget.id !== "reports")
+    .sort((a, b) => a.order - b.order);
+  const widgetAvailability: Partial<Record<DashboardWidgetId, boolean>> = { reports: false };
+  const heroWidget = visibleWidgets[0] ?? null;
+  const supportWidgets = visibleWidgets.slice(1);
+  const [sidePrimaryWidget, sideSecondaryWidget, sideTertiaryWidget, lowerLeftWidget, lowerRightPrimaryWidget, lowerRightSecondaryWidget, footerWidget] =
+    supportWidgets;
 
   function handleQuickSearchSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
@@ -6078,30 +6372,89 @@ function ConsoleScreen(props: {
       props.onOpenDestinationModal();
     }
   }
+  const cameraFocusCount = props.cameraFeedsList.filter((feed) => feed.status === "Online").length;
+  function renderWidget(widgetId: DashboardWidgetId, size: DashboardWidgetSize): ReactElement | null {
+    if (widgetId === "map") {
+      return (
+        <DashboardWidgetFrame
+          title="Recovery Map"
+          eyebrow="Center navigation"
+          size={size}
+          className="dashboard-widget--map-frame"
+          meta={<StatusPill label={props.routeStatusLabel} tone={props.withinRadius ? "green" : props.navigationActive ? "cyan" : "gray"} />}
+        >
+          <MapStagePanel {...mapPanelProps} compact={size === "compact"} />
+        </DashboardWidgetFrame>
+      );
+    }
 
-  const scanStatusLabel = props.navigationActive
-    ? props.settings.autoArrivalScan
-      ? `Auto-scan ${props.settings.arrivalRadiusFeet} ft`
-      : "Auto-scan off"
-    : props.idleScanEnabled
-      ? "Idle scan on"
-      : "Idle scan off";
-  const driverActionLabel = props.navigationActive ? "End Route" : props.activeDestination ? "Start Nav" : "Set Destination";
-  const driverAction = props.navigationActive ? props.onEndRoute : props.activeDestination ? props.onStartRoute : props.onOpenDestinationModal;
-  const layoutClassName = `console-layout console-layout--ops ${props.stageView === "camera" ? "console-layout--camera-mode" : ""}`.trim();
+    if (widgetId === "addressIntelligence") {
+      return (
+        <AddressIntelligenceCard
+          size={size}
+          address={props.activeDestination || activeHotlistEntry?.address_line1 || commandRow?.gps || "No address staged"}
+          subtitle={activeHotlistEntry ? hotlistAddressSummary(activeHotlistEntry) : commandRow?.source ?? "Route target pending"}
+          recoveryProbability={recoveryProbability.label}
+          recoveryTone={recoveryProbability.tone}
+          recommendation={responseCue?.label ?? "Hold"}
+          recommendationDetail={responseCue?.detail ?? "Select a target vehicle or stage a destination to unlock recovery guidance."}
+          recentSummary={
+            commandRow
+              ? `${formatRelativeTime(commandRow.timestampUtc)} at ${commandRow.source}. ${props.allRows.filter((row) => row.plate1 === commandRow.plate1).length} related sighting(s) in the current dashboard feed.`
+              : "No recent sighting is selected."
+          }
+          fields={[
+            { label: "Address Label", value: activeHotlistEntry?.address_label ?? "Address on file" },
+            { label: "Vehicle Profile", value: summarizeVehicleIdentity(commandRow, activeHotlistEntry) },
+            { label: "Last Seen Source", value: commandRow?.source ?? "Not available" },
+            { label: "Follow-Up", value: activeFollowUp ? titleCase(activeFollowUp.status) : "None" },
+            { label: "Garage", value: inferNoteField(activeHotlistEntry?.notes, ["garage", "carport"], "Flagged in notes") },
+            { label: "Fence / Gate", value: inferNoteField(activeHotlistEntry?.notes, ["gate", "fence"], "Flagged in notes") },
+            { label: "Camera Notes", value: inferNoteField(activeHotlistEntry?.notes, ["camera", "ring", "cctv"], "Flagged in notes") },
+            { label: "Parking Visibility", value: commandRow?.gps ? "Last-seen point logged" : "Not available" },
+          ]}
+        />
+      );
+    }
 
-  return (
-    <section className="screen">
-      <div className={layoutClassName}>
-        <aside className="ops-command-sidebar">
-          <section className={`ops-status-card ops-status-card--${commandTone}`}>
-            <div className="ops-status-card__header">
-              <span className="eyebrow">{commandRow?.hotlist ? "Recovery match" : props.navigationActive ? "Route active" : "Patrol scan"}</span>
-              <strong>{commandRow?.plate1 ?? "No read"}</strong>
-              <span>{commandRow?.vehicle ?? (props.navigationActive ? props.activeDestination : "Awaiting reads")}</span>
+    if (widgetId === "aiInsight") {
+      return (
+        <DashboardWidgetFrame
+          title="AI Insight"
+          eyebrow="Field recommendation"
+          size={size}
+          meta={<StatusPill label={responseCue?.label ?? "Ready"} tone={responseCue?.tone === "critical" ? "red" : responseCue?.tone === "warn" ? "amber" : "cyan"} />}
+        >
+          <div className="dashboard-insight-card">
+            <strong>{responseCue?.label ?? "Awaiting target vehicle"}</strong>
+            <p>{responseCue?.detail ?? "Stage a target vehicle, account, or address to get a recommended recovery sequence."}</p>
+            <div className="dashboard-insight-card__actions">
+              <button className="btn btn--primary btn--compact" disabled={!commandRow} type="button" onClick={() => commandRow && props.onRouteToDetection(commandRow)}>
+                Route to Target
+              </button>
+              <button className="btn btn--ghost btn--compact" disabled={!commandRow} type="button" onClick={() => commandRow && props.onOpenDetail(commandRow)}>
+                Review Detections
+              </button>
             </div>
-            {commandRow ? <VerificationChecklist compact items={commandChecklist} /> : null}
-            <div className="ops-route-metrics" aria-label="Route metrics">
+          </div>
+        </DashboardWidgetFrame>
+      );
+    }
+
+    if (widgetId === "routePanel") {
+      return (
+        <DashboardWidgetFrame
+          title="Route Panel"
+          eyebrow="Target guidance"
+          size={size}
+          meta={<StatusPill label={scanStatusLabel} tone={props.idleScanEnabled || props.navigationActive ? "green" : "gray"} />}
+        >
+          <div className="dashboard-route-card">
+            <div className="dashboard-route-card__metrics">
+              <div>
+                <span>Target Vehicle</span>
+                <strong>{commandRow?.plate1 ?? "No target"}</strong>
+              </div>
               <div>
                 <span>Distance</span>
                 <strong>{props.navigationActive ? props.routeDistance : "--"}</strong>
@@ -6110,88 +6463,23 @@ function ConsoleScreen(props: {
                 <span>ETA</span>
                 <strong>{props.navigationActive ? props.routeEta : "--"}</strong>
               </div>
-              <div>
-                <span>Scan</span>
-                <strong>{scanStatusLabel}</strong>
-              </div>
             </div>
-            <div className="ops-status-icons" aria-label="System status actions">
-              <Tooltip text={`Open destination tools. ${props.withinRadius ? "Inside arrival ring." : "Outside arrival ring."}`}>
-                <button className={`ops-icon-button ${props.withinRadius ? "is-active" : ""}`} aria-label="Open destination tools" type="button" onClick={props.onOpenDestinationModal}>
-                  <span>MAP</span>
-                </button>
-              </Tooltip>
-              <Tooltip text={`${props.cameraFeedsList.filter((feed) => feed.status === "Online").length} of ${props.cameraFeedsList.length} cameras online. Switch to camera view.`}>
-                <button className="ops-icon-button" aria-label="Switch to camera view" type="button" onClick={() => props.onStageViewChange("camera")}>
-                  <span>CAM</span>
-                </button>
-              </Tooltip>
-              <Tooltip text={`${props.activeAlerts} active recovery match${props.activeAlerts === 1 ? "" : "es"}. Open account.`}>
-                <button className={`ops-icon-button ${props.activeAlerts > 0 ? "is-critical" : ""}`} aria-label="Open recovery account" disabled={!commandRow} type="button" onClick={() => commandRow && props.onOpenAccount(commandRow)}>
-                  <span>REC</span>
-                </button>
-              </Tooltip>
-              <Tooltip text="View evidence and read details for the selected vehicle.">
-                <button className="ops-icon-button" aria-label="View read evidence" disabled={!commandRow} type="button" onClick={() => commandRow && props.onOpenDetail(commandRow)}>
-                  <span>VIEW</span>
-                </button>
-              </Tooltip>
+            <div className={`dashboard-route-card__guidance dashboard-route-card__guidance--${props.navigationGuidance.mode}`}>
+              <strong>{props.activeDestination || "No recovery address staged"}</strong>
+              <span>{props.navigationGuidance.primary}</span>
+              <small>{props.navigationGuidance.secondary}</small>
             </div>
-            <div className="ops-status-card__actions">
-              <button className="btn btn--primary btn--compact" disabled={!commandRow} type="button" onClick={() => commandRow && props.onRouteToDetection(commandRow)}>
-                Route
+            <div className="dashboard-route-card__actions">
+              <button className="btn btn--primary btn--compact" type="button" onClick={driverAction}>
+                {driverActionLabel}
               </button>
-              <button className="btn btn--ghost btn--compact" disabled={!commandRow} type="button" onClick={() => commandRow && void props.onCopyPlate(commandRow.plate1)}>
-                Copy
+              <button className="btn btn--ghost btn--compact" disabled={!commandRow} type="button" onClick={() => commandRow && props.onOpenAccount(commandRow)}>
+                Open Target
               </button>
             </div>
-          </section>
-
-          <section className="ops-driver-panel" aria-label="Driver controls">
-            <div className="ops-target-card">
-              <span className="eyebrow">{props.navigationActive ? "Active Target" : "Next Target"}</span>
-              <strong>{props.activeDestination || "No destination set"}</strong>
-              <div className="ops-target-card__meta">
-                <span>{props.navigationActive ? props.routeEta : "ETA --"}</span>
-                <span>{props.navigationActive ? props.routeDistance : "Distance --"}</span>
-                <span>{scanStatusLabel}</span>
-              </div>
-              {props.activeDestination ? (
-                <div className={`ops-guidance-strip ops-guidance-strip--${props.navigationGuidance.mode}`}>
-                  <div>
-                    <span>{props.navigationActive ? "Next" : "Preview"}</span>
-                    <strong>{props.navigationGuidance.primary}</strong>
-                  </div>
-                  <div>
-                    <span>{props.navigationGuidance.distanceToNext}</span>
-                    <strong>{props.navigationGuidance.eta}</strong>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-
-            <div className="ops-driver-actions" aria-label="Large driver actions">
-              <button className={`ops-driver-action ${props.navigationActive ? "ops-driver-action--danger" : "ops-driver-action--primary"}`} type="button" onClick={driverAction}>
-                <strong>{driverActionLabel}</strong>
-                <span>{props.navigationActive ? "Stop guidance" : props.activeDestination ? "Begin route" : "Pick address"}</span>
-              </button>
-              <button className={`ops-driver-action ${props.stageView === "map" ? "is-active" : ""}`} type="button" onClick={() => props.onStageViewChange("map")}>
-                <strong>Drive Map</strong>
-                <span>{props.routeStatusLabel}</span>
-              </button>
-              <button className={`ops-driver-action ${props.activeAlerts > 0 ? "ops-driver-action--critical" : ""}`} type="button" disabled={props.activeAlerts === 0} onClick={() => commandRow && props.onOpenAccount(commandRow)}>
-                <strong>Hotlist</strong>
-                <span>{props.activeAlerts > 0 ? `${props.activeAlerts} active` : "Clear"}</span>
-              </button>
-              <button className={`ops-driver-action ${props.stageView === "camera" ? "is-active" : ""}`} type="button" onClick={() => props.onStageViewChange("camera")}>
-                <strong>Camera</strong>
-                <span>{`${props.cameraFeedsList.filter((feed) => feed.status === "Online").length}/${props.cameraFeedsList.length} live`}</span>
-              </button>
-            </div>
-
-            <form className="ops-lookup-strip" onSubmit={handleQuickSearchSubmit}>
-              <label className="form-label" htmlFor="console-quick-lookup">Plate lookup</label>
-              <div className="ops-input-row">
+            <form className="dashboard-route-card__lookup" onSubmit={handleQuickSearchSubmit}>
+              <label className="form-label" htmlFor="console-quick-lookup">Quick Find</label>
+              <div className="dashboard-route-card__lookup-row">
                 <input
                   id="console-quick-lookup"
                   className="text-input"
@@ -6199,101 +6487,221 @@ function ConsoleScreen(props: {
                   value={quickPlateVin}
                   onChange={(event) => setQuickPlateVin(event.target.value)}
                 />
-                <button className="icon-cta" type="submit">
+                <button className="btn btn--ghost btn--compact" type="submit">
                   Find
                 </button>
               </div>
               {quickSearchFeedback ? <p className="ops-input-feedback">{quickSearchFeedback}</p> : null}
             </form>
-
-            <div className="ops-target-rail" aria-label="Fast route targets">
-              {props.destinationTargets.slice(0, 3).map((target) => (
-                <button key={target.id} className={`ops-target-button ops-target-button--${target.accent ?? "muted"}`} type="button" onClick={() => useRouteTarget(target)}>
-                  <span>{target.label}</span>
-                  <strong>{target.address}</strong>
-                </button>
-              ))}
-            </div>
-          </section>
-        </aside>
-
-        <section className="ops-camera-grid" aria-label="Camera views">
-          <section className="ops-window ops-window--camera">
-            <div className="ops-window__header">
-              <strong>{props.currentCamera?.shortLabel ?? "Camera 1"}</strong>
-              <div className="ops-window__header-actions">
-                <Badge tone={cameraFeedTone(props.currentCamera?.status ?? "Unknown")}>
-                  {cameraFeedBadgeLabel(props.currentCamera?.status ?? "Unknown").toUpperCase()}
-                </Badge>
-                <div className="camera-tab-strip camera-tab-strip--compact" role="tablist" aria-label="Select primary camera">
-                  {props.cameraFeedsList.slice(0, 4).map((feed) => (
-                    <button
-                      key={feed.id}
-                      className={`camera-tab camera-tab--icon ${props.selectedCameraId === feed.id ? "is-active" : ""}`}
-                      title={`${feed.label} - ${feed.status}`}
-                      type="button"
-                      role="tab"
-                      aria-selected={props.selectedCameraId === feed.id ? "true" : "false"}
-                      aria-label={`Show ${feed.label} as primary`}
-                      onClick={() => props.onSelectCamera(feed.id)}
-                    >
-                      <span className={`camera-dot camera-dot--${cameraFeedDotTone(feed.status)}`} />
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <CameraViewport cameraId={props.selectedCameraId} row={props.cameraFocusRow} dataSource={props.dataSource} compact />
-          </section>
-          <section className="ops-window ops-window--camera">
-            <div className="ops-window__header">
-              <strong>{secondaryCamera?.shortLabel ?? "Camera 2"}</strong>
-              <Badge tone={cameraFeedTone(secondaryCamera?.status ?? "Unknown")}>
-                {cameraFeedBadgeLabel(secondaryCamera?.status ?? "Unknown").toUpperCase()}
-              </Badge>
-            </div>
-            <CameraViewport cameraId={secondaryCamera?.id ?? props.selectedCameraId} row={secondaryCameraRow} dataSource={props.dataSource} compact />
-          </section>
-        </section>
-
-        <section className="ops-window ops-window--map" aria-label="Map view">
-          <MapStagePanel {...mapPanelProps} />
-        </section>
-
-        <section className="table-card ops-read-panel">
-          <div className="table-card__header">
-            <div className="table-card__title-row">
-              <h3>Live Reads</h3>
-              <span className="table-card__count">{props.allRows.length}</span>
-            </div>
-            <div className="table-card__meta">
-              {props.activeAlerts > 0 ? <Badge tone="critical">{`${props.activeAlerts} recovery match${props.activeAlerts === 1 ? "" : "es"}`}</Badge> : null}
-            </div>
           </div>
-          <DetectionFeed
-            confidenceLabel={confidenceLabel}
-            confidenceTone={confidenceTone}
-            rows={props.allRows}
-            selectedDetectionId={props.selectedDetectionId}
-            onCopyPlate={(plate) => {
-              void props.onCopyPlate(plate);
-            }}
-            onOpenDetail={(rowId) => {
-              const row = props.allRows.find((item) => item.id === rowId);
-              if (row) {
-                props.onOpenDetail(row);
-              }
-            }}
-            onRouteToDetection={(rowId) => {
-              const row = props.allRows.find((item) => item.id === rowId);
-              if (row) {
-                props.onRouteToDetection(row);
-              }
-            }}
-            onSelectDetection={props.onSelectDetection}
-          />
-        </section>
+        </DashboardWidgetFrame>
+      );
+    }
+
+    if (widgetId === "lprCameras") {
+      return (
+        <LprCameraPanel
+          size={size}
+          tiles={[
+            {
+              id: props.selectedCameraId,
+              label: props.currentCamera?.shortLabel ?? "Front LPR Camera",
+              statusLabel: cameraFeedBadgeLabel(props.currentCamera?.status ?? "Unknown"),
+              statusTone: dashboardToneForCamera(props.currentCamera?.status ?? "Unknown"),
+              meta: props.cameraFocusRow?.plate1 ? `Tracking ${props.cameraFocusRow.plate1}` : props.currentCamera?.label,
+              feed: <CameraViewport cameraId={props.selectedCameraId} row={props.cameraFocusRow} dataSource={props.dataSource} compact />,
+            },
+            {
+              id: secondaryCamera?.id ?? "secondary",
+              label: secondaryCamera?.shortLabel ?? "Secondary LPR Camera",
+              statusLabel: cameraFeedBadgeLabel(secondaryCamera?.status ?? "Unknown"),
+              statusTone: dashboardToneForCamera(secondaryCamera?.status ?? "Unknown"),
+              meta: secondaryCameraRow?.plate1 ? `Recent ${secondaryCameraRow.plate1}` : secondaryCamera?.label,
+              feed: <CameraViewport cameraId={secondaryCamera?.id ?? props.selectedCameraId} row={secondaryCameraRow} dataSource={props.dataSource} compact />,
+            },
+          ]}
+        />
+      );
+    }
+
+    if (widgetId === "liveDetections") {
+      return (
+        <DashboardWidgetFrame
+          title="Live Detections"
+          eyebrow="Compact read queue"
+          size={size}
+          meta={<StatusPill label={`${Math.min(props.allRows.length, 4)} shown`} tone="cyan" />}
+        >
+          <div className="dashboard-detections-grid">
+            {props.allRows.slice(0, 4).map((row) => (
+              <CompactDetectionCard
+                key={row.id}
+                plate={row.plate1}
+                vehicle={row.vehicle}
+                color={undefined}
+                distance={row.gps || row.source}
+                confidence={confidenceLabel(row.conf)}
+                statusLabel={detectionSeverityLabel(row)}
+                statusTone={dashboardToneForDetection(row)}
+                active={row.id === props.selectedDetectionId}
+                snapshot={<CompactDetectionSnapshot dataSource={props.dataSource} detectionId={row.detectionId} plate={row.plate1} vehicle={row.vehicle} />}
+                onSelect={() => props.onSelectDetection(row.id)}
+                onRoute={() => props.onRouteToDetection(row)}
+                onInspect={() => props.onOpenDetail(row)}
+              />
+            ))}
+          </div>
+        </DashboardWidgetFrame>
+      );
+    }
+
+    if (widgetId === "recentHistory") {
+      return (
+        <RecentDetectionHistoryCard
+          size={size}
+          items={props.allRows.slice(0, 6).map((row) => ({
+            id: row.id,
+            plate: row.plate1,
+            vehicle: row.vehicle,
+            time: formatRelativeTime(row.timestampUtc),
+            location: row.gps || row.source,
+            statusLabel: detectionSeverityLabel(row),
+            statusTone: dashboardToneForDetection(row),
+            onSelect: () => props.onSelectDetection(row.id),
+          }))}
+        />
+      );
+    }
+
+    if (widgetId === "notes") {
+      return (
+        <DashboardWidgetFrame
+          title="Notes"
+          eyebrow="Recovery context"
+          size={size}
+          meta={<StatusPill label={activeFollowUp ? titleCase(activeFollowUp.status) : "Ready"} tone={dashboardToneForFollowUp(activeFollowUp?.status)} />}
+        >
+          <div className="dashboard-notes-card">
+            {notesSummary.length > 0 ? (
+              notesSummary.slice(0, 3).map((note, index) => (
+                <div key={`${note}-${index}`} className="dashboard-notes-card__note">
+                  <span>{index === 0 ? "Active Note" : "Follow-up"}</span>
+                  <p>{note}</p>
+                </div>
+              ))
+            ) : (
+              <div className="dashboard-notes-card__empty">No account or follow-up notes are attached to the active target.</div>
+            )}
+          </div>
+        </DashboardWidgetFrame>
+      );
+    }
+
+    return null;
+  }
+
+  function renderDashboardSlot(
+    widget: { id: DashboardWidgetId; size: DashboardWidgetSize } | null | undefined,
+    slotClassName: string,
+  ): ReactElement | null {
+    if (!widget) {
+      return null;
+    }
+    const rendered = renderWidget(widget.id, widget.size);
+    if (!rendered) {
+      return null;
+    }
+    return (
+      <div key={widget.id} className={`dashboard-grid__slot ${slotClassName} dashboard-grid__slot--${widget.id}`.trim()}>
+        {rendered}
       </div>
+    );
+  }
+
+  return (
+    <section className="screen dashboard-screen">
+      <DashboardShell
+        header={
+          <InstrumentStatusBar
+            brand="RepoScan Recovery"
+            subtitle="Recovery intelligence"
+            primaryTarget={{
+              label: "Active Target",
+              value: commandRow?.plate1 ?? "Standby",
+              detail: activeHotlistEntry?.label ?? (props.navigationActive ? "Route active" : "No active target"),
+            }}
+            vehicle={{
+              label: "Vehicle",
+              value: summarizeVehicleIdentity(commandRow, activeHotlistEntry),
+              detail: commandRow?.source ?? "Awaiting vehicle read",
+            }}
+            lastSeen={{
+              label: "Last Seen",
+              value: commandRow ? formatRelativeTime(commandRow.timestampUtc) : "--",
+              detail: commandRow?.gps || commandRow?.source || "No recent sighting",
+            }}
+            recovery={{
+              label: "Recovery Prob.",
+              value: recoveryProbability.label,
+              detail: responseCue?.label ?? "Ready",
+            }}
+            system={{
+              label: "System",
+              value: serviceHealthLabel(props.serviceHealthState),
+              detail: scanStatusLabel,
+              tone: dashboardToneForService(props.serviceHealthState),
+            }}
+            time={{ label: "Time", value: dashboardClock, detail: props.liveAddress.address?.city ?? "Local" }}
+            actions={[
+              { label: "Recoveries", onClick: props.onOpenRecoveries, icon: props.activeAlerts > 0 ? String(props.activeAlerts) : "!" },
+              { label: "Settings", onClick: props.onOpenSettings, icon: "S" },
+            ]}
+            customizeLabel="Customize Dashboard"
+            onCustomize={props.onOpenDashboardCustomize}
+          />
+        }
+        toolbar={null}
+        customizePanel={
+          props.dashboardCustomizeOpen ? (
+            <DashboardCustomizePanel
+              config={props.dashboardConfig}
+              widgetAvailability={widgetAvailability}
+              onClose={props.onCloseDashboardCustomize}
+              onReset={props.onResetDashboardConfig}
+              onModeChange={props.onUpdateDashboardLayoutMode}
+              onWidgetMove={props.onUpdateDashboardWidgetMove}
+              onWidgetVisibilityChange={props.onUpdateDashboardWidgetVisibility}
+              onWidgetSizeChange={props.onUpdateDashboardWidgetSize}
+            />
+          ) : null
+        }
+      >
+        <div className={`dashboard-grid dashboard-grid--${props.dashboardConfig.mode}`} data-stage-view={props.stageView}>
+          <div className="dashboard-grid__hero-column">
+            {renderDashboardSlot(heroWidget, "dashboard-grid__slot--hero")}
+            {lowerLeftWidget || lowerRightPrimaryWidget || lowerRightSecondaryWidget ? (
+              <div className="dashboard-grid__lower-band">
+                {renderDashboardSlot(lowerLeftWidget, "dashboard-grid__slot--lower-left")}
+                {lowerRightPrimaryWidget || lowerRightSecondaryWidget ? (
+                  <div className="dashboard-grid__lower-stack">
+                    {renderDashboardSlot(lowerRightPrimaryWidget, "dashboard-grid__slot--lower-right-primary")}
+                    {renderDashboardSlot(lowerRightSecondaryWidget, "dashboard-grid__slot--lower-right-secondary")}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+          {sidePrimaryWidget || sideSecondaryWidget || sideTertiaryWidget ? (
+            <div className="dashboard-grid__support-column">
+              {renderDashboardSlot(sidePrimaryWidget, "dashboard-grid__slot--support-primary")}
+              {renderDashboardSlot(sideSecondaryWidget, "dashboard-grid__slot--support-secondary")}
+              {renderDashboardSlot(sideTertiaryWidget, "dashboard-grid__slot--support-tertiary")}
+            </div>
+          ) : null}
+          {footerWidget ? <div className="dashboard-grid__footer-row">{renderDashboardSlot(footerWidget, "dashboard-grid__slot--footer")}</div> : null}
+        </div>
+
+      </DashboardShell>
     </section>
   );
 }
@@ -6417,7 +6825,8 @@ function SearchScreen(props: {
   return (
     <section className="screen search-screen">
       <ScreenHeader
-        title="Locate Vehicles"
+        title="Search & Locate"
+        subtitle="Review sightings, search vehicle activity, and move directly into route or evidence review from the operations shell."
         meta={
           <>
             <Badge tone={props.loading ? "warn" : "cyan"}>{props.loading ? "Searching" : "Ready"}</Badge>
@@ -6583,33 +6992,6 @@ function SearchScreen(props: {
         </form>
 
         <div className="search-screen__content">
-          <div className="search-summary-strip">
-            <div className="search-summary-card">
-              <span>Lead plate</span>
-              <strong>{focusedRow ? focusedRow.plate1 : "--"}</strong>
-            </div>
-            <div className="search-summary-card">
-              <span>Reads</span>
-              <strong>{props.resultsTotal}</strong>
-            </div>
-            <div className="search-summary-card">
-              <span>Recovery matches</span>
-              <strong>{hotlistMatches}</strong>
-            </div>
-            <div className="search-summary-card">
-              <span>Activity score</span>
-              <strong>{focusedActivityScore}</strong>
-            </div>
-            <div className="search-summary-card">
-              <span>Routine tag</span>
-              <strong>{focusedPattern ? focusedPattern.label : "--"}</strong>
-            </div>
-            <div className="search-summary-card">
-              <span>Last seen</span>
-              <strong>{latestResult ? formatDateTime(latestResult.timestampUtc) : "--"}</strong>
-            </div>
-          </div>
-
           {quickLeadRows.length > 0 ? (
             <section className="panel-card locate-quick-strip">
               <div className="locate-quick-strip__header">
@@ -6618,8 +7000,9 @@ function SearchScreen(props: {
                   <p>Fast-select the next lead without losing your current search context.</p>
                 </div>
                 <div className="search-result-card__badges">
-                  <Badge tone="cyan">{`${quickLeadRows.length} priority view`}</Badge>
-                  {advancedFilterCount > 0 ? <Badge tone="warn">{`${advancedFilterCount} filters`}</Badge> : null}
+                  <Badge tone="cyan">{`${props.resultsTotal} reads`}</Badge>
+                  {hotlistMatches > 0 ? <Badge tone="warn">{`${hotlistMatches} recovery`}</Badge> : null}
+                  {advancedFilterCount > 0 ? <Badge tone="muted">{`${advancedFilterCount} filters`}</Badge> : null}
                 </div>
               </div>
               <div className="locate-quick-strip__rail">
@@ -6806,88 +7189,170 @@ function AccountsScreen(props: {
   const armedAccounts = props.hotlists.filter((entry) => entry.active).length;
   const plateAlertingReady = Boolean(trimValue(props.draft.plateText));
   const profileReady = Boolean(trimValue(props.draft.vehicleMake) && trimValue(props.draft.vehicleModel));
+  const addressReady = Boolean(trimValue(props.draft.addressLine1) || trimValue(props.draft.addressLabel));
+  const [orderSearch, setOrderSearch] = useState("");
+  const [orderFilter, setOrderFilter] = useState<"all" | "active" | "paused" | "addressReady">("all");
+  const selectedEntry = props.selectedHotlistId ? props.hotlists.find((entry) => entry.entry_id === props.selectedHotlistId) ?? null : null;
+  const lprLinkedOrders = props.hotlists.filter((entry) => accountAlertingMode(entry) === "plate").length;
+  const addressReadyOrders = props.hotlists.filter((entry) => Boolean(trimValue(entry.address_line1 ?? "") || trimValue(entry.address_label ?? ""))).length;
+  const filteredHotlists = useMemo(() => {
+    const normalizedQuery = normalizePlate(orderSearch);
+    return props.hotlists.filter((entry) => {
+      if (orderFilter === "active" && !entry.active) {
+        return false;
+      }
+      if (orderFilter === "paused" && entry.active) {
+        return false;
+      }
+      if (orderFilter === "addressReady" && !trimValue(entry.address_line1 ?? "") && !trimValue(entry.address_label ?? "")) {
+        return false;
+      }
+      if (!normalizedQuery) {
+        return true;
+      }
+      const fields = [
+        entry.plate_text,
+        entry.vin,
+        entry.label,
+        entry.address_label,
+        entry.address_line1,
+        entry.address_city,
+        entry.vehicle_make,
+        entry.vehicle_model,
+      ].filter((value): value is string => Boolean(value));
+      return fields.some((value) => normalizePlate(value).includes(normalizedQuery) || value.toLowerCase().includes(orderSearch.trim().toLowerCase()));
+    });
+  }, [orderFilter, orderSearch, props.hotlists]);
+  const selectedOrderLabel = trimValue(props.draft.label) || selectedEntry?.label || "Unlabeled order";
+  const selectedOrderAddress = trimValue(props.draft.addressLine1) || trimValue(selectedEntry?.address_line1 ?? "") || props.activeDestination || "No address on file";
+  const recordStateLabel = props.draft.active ? "Active in operations" : "Admin only";
+  const selectedOrderUpdatedAt = selectedEntry ? formatDateTime(selectedEntry.updated_at_utc) : "Draft not saved yet";
+  const detectionSeedLabel = props.selectedDetectionPlate || "No detection selected";
+  const routeSeedLabel = props.activeDestination || "No route staged";
 
   return (
-    <section className="screen hotlists-screen">
+    <section className="screen hotlists-screen repo-admin-screen">
       <ScreenHeader
-        title="Recovery Accounts"
+        title="Repo Orders"
+        subtitle="Create, update, and organize the active repo orders that power matching, mapping, and field operations."
         meta={
           <>
-            <Badge tone="critical">{`${armedAccounts} armed`}</Badge>
+            <Badge tone="critical">{`${armedAccounts} active`}</Badge>
             <Badge tone={props.dataSource === "live" ? "success" : "muted"}>{props.dataSource.toUpperCase()}</Badge>
           </>
         }
       />
 
-      <div className="hotlists-summary-strip">
-        <div className="search-summary-card">
-          <span>Armed accounts</span>
+      <div className="repo-admin-summary-strip">
+        <div className="repo-admin-summary-tile">
+          <span>Active Orders</span>
           <strong>{armedAccounts}</strong>
+          <small>Visible in operations</small>
         </div>
-        <div className="search-summary-card">
-          <span>Total accounts</span>
-          <strong>{props.hotlists.length}</strong>
+        <div className="repo-admin-summary-tile">
+          <span>LPR Linked</span>
+          <strong>{lprLinkedOrders}</strong>
+          <small>Orders with live plate matching</small>
         </div>
-        <div className="search-summary-card">
-          <span>Selected plate</span>
-          <strong>{props.selectedDetectionPlate || "--"}</strong>
+        <div className="repo-admin-summary-tile">
+          <span>Address Ready</span>
+          <strong>{addressReadyOrders}</strong>
+          <small>Orders with a destination on file</small>
         </div>
-        <div className="search-summary-card">
-          <span>Current route</span>
-          <strong>{props.activeDestination || "--"}</strong>
-        </div>
-        <div className="search-summary-card">
-          <span>Access</span>
-          <strong>{props.canManageAccounts ? "Write" : "Read only"}</strong>
+        <div className="repo-admin-summary-tile">
+          <span>Route Staged</span>
+          <strong>{props.activeDestination ? "Yes" : "No"}</strong>
+          <small>{props.activeDestination || "No current route target"}</small>
         </div>
       </div>
 
       <div className="hotlists-grid">
         <section className="panel-card hotlists-list-card">
           <div className="panel-card__header">
-            <h3>Account List</h3>
-            <Tooltip text="Start a new recovery account entry">
+            <div>
+              <h3>Order Queue</h3>
+              <p>{`${armedAccounts} armed · ${props.hotlists.length} total · ${props.canManageAccounts ? "Write access" : "Read only"}`}</p>
+            </div>
+            <Tooltip text="Start a new repo order record">
               <button className="btn btn--ghost" disabled={!props.canManageAccounts} type="button" onClick={props.onClearDraft}>
-                New Account
+                New Order
               </button>
             </Tooltip>
+          </div>
+          <div className="repo-admin-toolbar">
+            <input
+              className="text-input"
+              placeholder="Search plate, VIN, label, or city"
+              type="text"
+              value={orderSearch}
+              onChange={(event) => setOrderSearch(event.target.value)}
+            />
+            <div className="segmented-control repo-admin-filter-tabs">
+              <button className={orderFilter === "all" ? "is-active" : ""} type="button" onClick={() => setOrderFilter("all")}>
+                All
+              </button>
+              <button className={orderFilter === "active" ? "is-active" : ""} type="button" onClick={() => setOrderFilter("active")}>
+                Active
+              </button>
+              <button className={orderFilter === "paused" ? "is-active" : ""} type="button" onClick={() => setOrderFilter("paused")}>
+                Paused
+              </button>
+              <button className={orderFilter === "addressReady" ? "is-active" : ""} type="button" onClick={() => setOrderFilter("addressReady")}>
+                Address Ready
+              </button>
+            </div>
           </div>
           <div className="hotlist-list">
             {props.hotlists.length === 0 ? (
               <StateView
-                title="No recovery accounts"
-                description="Add a plate, VIN, or vehicle profile to begin tracking a repossession target."
-                action={props.canManageAccounts ? { label: "New account", onClick: props.onClearDraft } : undefined}
+                title="No repo orders"
+                description="Add a plate, VIN, vehicle profile, and address context to stage your first active recovery order."
+                action={props.canManageAccounts ? { label: "New order", onClick: props.onClearDraft } : undefined}
+              />
+            ) : filteredHotlists.length === 0 ? (
+              <StateView
+                size="compact"
+                title="No matching orders"
+                description="Adjust the admin filters or clear the current search to see more repo orders."
+                action={{ label: "Clear search", onClick: () => setOrderSearch(""), tone: "ghost" }}
               />
             ) : (
-              props.hotlists.map((entry) => (
-                <button
-                  key={entry.entry_id}
-                  className={`hotlist-row severity-band severity-band--${entry.active ? "critical" : "observed"} ${props.selectedHotlistId === entry.entry_id ? "is-selected" : ""}`}
-                  type="button"
-                  onClick={() => props.onSelect(entry)}
-                >
-                  <div>
-                    <strong>{hotlistIdentifierSummary(entry)}</strong>
-                    <span>{entry.label ?? hotlistAddressSummary(entry)}</span>
-                  </div>
-                  <div className="hotlist-row__meta">
-                    <Badge tone={entry.active ? "critical" : "muted"}>{entry.active ? "Armed" : "Paused"}</Badge>
-                    <Badge tone={accountAlertingMode(entry) === "plate" ? "success" : "warn"}>
-                      {accountAlertingMode(entry) === "plate" ? "Plate alerting" : "Manual locate"}
-                    </Badge>
-                    <span>{formatDateTime(entry.updated_at_utc)}</span>
-                  </div>
-                </button>
-              ))
+              filteredHotlists.map((entry) => {
+                const rowLabel = trimValue(entry.label ?? "");
+                const rowAddress = hotlistAddressSummary(entry);
+                return (
+                  <button
+                    key={entry.entry_id}
+                    className={`hotlist-row severity-band severity-band--${entry.active ? "critical" : "observed"} ${props.selectedHotlistId === entry.entry_id ? "is-selected" : ""}`}
+                    type="button"
+                    onClick={() => props.onSelect(entry)}
+                  >
+                    <div className="repo-admin-row__primary">
+                      <strong>{rowLabel || hotlistIdentifierSummary(entry)}</strong>
+                      <span>{rowLabel ? hotlistIdentifierSummary(entry) : rowAddress}</span>
+                    </div>
+                    <div className="hotlist-row__meta">
+                      <Badge tone={entry.active ? "critical" : "muted"}>{entry.active ? "Active" : "Paused"}</Badge>
+                      <Badge tone={accountAlertingMode(entry) === "plate" ? "success" : "warn"}>
+                        {accountAlertingMode(entry) === "plate" ? "LPR linked" : "Profile only"}
+                      </Badge>
+                      {rowLabel ? <span>{rowAddress}</span> : null}
+                      <span>{formatDateTime(entry.updated_at_utc)}</span>
+                    </div>
+                  </button>
+                );
+              })
             )}
           </div>
         </section>
 
         <section className="panel-card hotlist-editor-card">
-          <div className="panel-card__header">
-            <h3>{props.selectedHotlistId ? "Edit Account" : "Create Account"}</h3>
-            <div className="button-row">
+          <div className="panel-card__header repo-admin-detail-header">
+            <div>
+              <h3>{props.selectedHotlistId ? "Edit Repo Order" : "Create Repo Order"}</h3>
+              <p>Structure vehicle, address, and activation details here before sending the order into active field operations.</p>
+            </div>
+            <div className="button-row repo-admin-header-actions">
               <button className="btn btn--ghost" disabled={!props.canManageAccounts} type="button" onClick={props.onSeedFromDetection}>
                 Use Current Plate
               </button>
@@ -6896,55 +7361,100 @@ function AccountsScreen(props: {
               </button>
             </div>
           </div>
-          <form className="hotlist-form" onSubmit={(event) => void props.onSubmit(event)}>
-            <div className="detail-note-callout">
-              <strong>Repo intake</strong>
-              <p>
-                Add this account by plate, VIN, or vehicle make and model. Automatic live alerts require a plate.
-                VIN and vehicle profile entries still support locate and account management.
-              </p>
+          <div className="repo-admin-overview-grid">
+            <div className="repo-admin-overview-card">
+              <span>Order Label</span>
+              <strong>{selectedOrderLabel}</strong>
+              <small>{props.selectedHotlistId ? "Saved order record" : "New draft order"}</small>
             </div>
-
-            <div className="search-filter-grid">
-              <label>
-                <span>Plate text</span>
-                <input
-                  className="text-input"
-                  placeholder="8ABC123"
-                  type="text"
-                  value={props.draft.plateText}
-                  onChange={(event) =>
-                    props.onDraftChange((current) => ({
-                      ...current,
-                      plateText: normalizePlate(event.target.value),
-                    }))
-                  }
-                />
-              </label>
-
-              <label>
-                <span>VIN</span>
-                <input
-                  className="text-input"
-                  placeholder="1HGCM82633A004352"
-                  type="text"
-                  value={props.draft.vin}
-                  onChange={(event) =>
-                    props.onDraftChange((current) => ({
-                      ...current,
-                      vin: normalizeUpperValue(event.target.value),
-                    }))
-                  }
-                />
-              </label>
+            <div className="repo-admin-overview-card">
+              <span>Match Readiness</span>
+              <strong>{plateAlertingReady ? "LPR linked" : "Profile only"}</strong>
+              <small>{plateAlertingReady ? "Plate will trigger live matches" : "Add a plate to enable live matching"}</small>
             </div>
+            <div className="repo-admin-overview-card">
+              <span>Address State</span>
+              <strong>{selectedOrderAddress}</strong>
+              <small>{selectedOrderAddress === "No address on file" ? "No destination linked yet" : "Available to the operations workspace"}</small>
+            </div>
+            <div className="repo-admin-overview-card">
+              <span>Record State</span>
+              <strong>{recordStateLabel}</strong>
+              <small>{selectedOrderUpdatedAt}</small>
+            </div>
+          </div>
+          <form className="hotlist-form repo-admin-form" onSubmit={(event) => void props.onSubmit(event)}>
+            <section className="repo-admin-section">
+              <div className="repo-admin-section__header">
+                <div>
+                  <h4>Vehicle identifiers</h4>
+                  <p>Primary keys that power order matching and live scan linking.</p>
+                </div>
+                <Badge tone={plateAlertingReady ? "success" : "warn"}>{plateAlertingReady ? "Match ready" : "Plate needed"}</Badge>
+              </div>
+              <div className="detail-note-callout">
+                <strong>Order intake</strong>
+                <p>
+                  Create this repo order by plate, VIN, or vehicle profile. Orders with a linked plate feed live matching first,
+                  while VIN and vehicle details keep the record searchable and useful for investigation.
+                </p>
+              </div>
 
-            <div className="search-sidebar-section">
-              <div className="search-sidebar-section__header">
-                <strong>Vehicle profile</strong>
+              <div className="repo-admin-inline-metrics">
+                <div className="repo-admin-metric">
+                  <span>Current detection seed</span>
+                  <strong>{detectionSeedLabel}</strong>
+                </div>
+                <div className="repo-admin-metric">
+                  <span>Current route seed</span>
+                  <strong>{routeSeedLabel}</strong>
+                </div>
+              </div>
+
+              <div className="search-filter-grid repo-admin-fields">
+                <label>
+                  <span>Plate text</span>
+                  <input
+                    className="text-input"
+                    placeholder="8ABC123"
+                    type="text"
+                    value={props.draft.plateText}
+                    onChange={(event) =>
+                      props.onDraftChange((current) => ({
+                        ...current,
+                        plateText: normalizePlate(event.target.value),
+                      }))
+                    }
+                  />
+                </label>
+
+                <label>
+                  <span>VIN</span>
+                  <input
+                    className="text-input"
+                    placeholder="1HGCM82633A004352"
+                    type="text"
+                    value={props.draft.vin}
+                    onChange={(event) =>
+                      props.onDraftChange((current) => ({
+                        ...current,
+                        vin: normalizeUpperValue(event.target.value),
+                      }))
+                    }
+                  />
+                </label>
+              </div>
+            </section>
+
+            <section className="repo-admin-section">
+              <div className="repo-admin-section__header">
+                <div>
+                  <h4>Vehicle profile</h4>
+                  <p>Secondary descriptors used for visual confirmation and future record expansion.</p>
+                </div>
                 <Badge tone={profileReady ? "success" : "muted"}>{profileReady ? "Ready" : "Optional"}</Badge>
               </div>
-              <div className="search-filter-grid">
+              <div className="search-filter-grid repo-admin-fields">
                 <label>
                   <span>Year</span>
                   <input
@@ -7006,16 +7516,19 @@ function AccountsScreen(props: {
                   />
                 </label>
               </div>
-            </div>
+            </section>
 
-            <div className="search-sidebar-section">
-              <div className="search-sidebar-section__header">
-                <strong>Target address</strong>
-                <Badge tone={trimValue(props.draft.addressLine1) || trimValue(props.draft.addressLabel) ? "success" : "muted"}>
-                  {trimValue(props.draft.addressLine1) || trimValue(props.draft.addressLabel) ? "Attached" : "Optional"}
+            <section className="repo-admin-section">
+              <div className="repo-admin-section__header">
+                <div>
+                  <h4>Address intelligence</h4>
+                  <p>Primary destination and access context passed through to the field workspace.</p>
+                </div>
+                <Badge tone={addressReady ? "success" : "muted"}>
+                  {addressReady ? "Address ready" : "Optional"}
                 </Badge>
               </div>
-              <div className="search-filter-grid">
+              <div className="search-filter-grid repo-admin-fields">
                 <label>
                   <span>Address label</span>
                   <input
@@ -7107,86 +7620,119 @@ function AccountsScreen(props: {
                   />
                 </label>
               </div>
-            </div>
-
-            <label>
-              <span>Account / repo label</span>
-              <input
-                className="text-input"
-                placeholder="Lender name, case ID, or repo priority"
-                type="text"
-                value={props.draft.label}
-                onChange={(event) =>
-                  props.onDraftChange((current) => ({
-                    ...current,
-                    label: event.target.value,
-                  }))
-                }
-              />
-            </label>
-
-            <label>
-              <span>Recovery instructions</span>
-              <textarea
-                className="text-area"
-                placeholder="Tow instructions, debtor notes, parking pattern, or escalation steps"
-                value={props.draft.notes}
-                onChange={(event) =>
-                  props.onDraftChange((current) => ({
-                    ...current,
-                    notes: event.target.value,
-                  }))
-                }
-              />
-            </label>
-
-            <div className="inline-setting">
-              <div>
-                <strong>Account armed</strong>
-                <span>{plateAlertingReady ? "Triggers an alert when this plate is scanned." : "Stored for locate workflow until a plate is added."}</span>
+              <div className="repo-admin-inline-metrics">
+                <div className="repo-admin-metric">
+                  <span>Operations map label</span>
+                  <strong>{selectedOrderAddress}</strong>
+                </div>
+                <div className="repo-admin-metric">
+                  <span>Route handoff</span>
+                  <strong>{props.activeDestination ? "Ready to seed" : "No staged route"}</strong>
+                </div>
               </div>
-              <Toggle
-                checked={props.draft.active}
-                label="Account armed"
-                onChange={(checked) =>
-                  props.onDraftChange((current) => ({
-                    ...current,
-                    active: checked,
-                  }))
-                }
-              />
-            </div>
+            </section>
 
-            {props.error ? <div className="feedback feedback--error">{props.error}</div> : null}
-            {props.message ? <div className="feedback feedback--good">{props.message}</div> : null}
-            {!plateAlertingReady ? (
-              <div className="feedback feedback--warn">
-                This account has no plate yet. Live plate alerts stay unavailable until a plate is added.
+            <section className="repo-admin-section">
+              <div className="repo-admin-section__header">
+                <div>
+                  <h4>Order administration</h4>
+                  <p>Operator-facing labels, notes, and activation state that determine how the order appears in the field workspace.</p>
+                </div>
+                <Badge tone={props.draft.active ? "success" : "muted"}>{recordStateLabel}</Badge>
               </div>
-            ) : null}
 
-            <div className="button-stack">
-              <Tooltip text={props.selectedHotlistId ? "Save changes to this account" : "Create a new recovery account"}>
-                <button className="btn btn--primary" disabled={!props.canManageAccounts || props.saving} type="submit">
-                  {props.saving ? "Saving..." : props.selectedHotlistId ? "Save Account" : "Create Account"}
-                </button>
-              </Tooltip>
-              <Tooltip text="Reset the form to start a new entry">
-                <button className="btn btn--ghost" disabled={!props.canManageAccounts} type="button" onClick={props.onClearDraft}>
-                  Clear Draft
-                </button>
-              </Tooltip>
-              <Tooltip text="Fill form with the currently selected detection">
-                <button className="btn btn--ghost" disabled={!props.canManageAccounts} type="button" onClick={props.onSeedFromDetection}>
-                  Seed {props.selectedDetectionPlate || "selection"}
-                </button>
-              </Tooltip>
-              <Tooltip text="Permanently remove this recovery account">
-                <button className="btn btn--danger" disabled={!props.canManageAccounts || !props.selectedHotlistId || props.deleting} type="button" onClick={props.onDelete}>
-                  {props.deleting ? "Deleting..." : "Delete Account"}
-                </button>
-              </Tooltip>
-            </div>
+              <div className="search-filter-grid repo-admin-fields">
+                <label className="repo-admin-field--wide">
+                  <span>Order label / client reference</span>
+                  <input
+                    className="text-input"
+                    placeholder="Client name, case ID, or internal order label"
+                    type="text"
+                    value={props.draft.label}
+                    onChange={(event) =>
+                      props.onDraftChange((current) => ({
+                        ...current,
+                        label: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+
+                <label className="repo-admin-field--wide">
+                  <span>Order notes</span>
+                  <textarea
+                    className="text-area"
+                    placeholder="Tow instructions, debtor notes, parking pattern, access concerns, or escalation steps"
+                    value={props.draft.notes}
+                    onChange={(event) =>
+                      props.onDraftChange((current) => ({
+                        ...current,
+                        notes: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+              </div>
+
+              <div className="repo-admin-inline-metrics">
+                <div className="repo-admin-metric">
+                  <span>Record status</span>
+                  <strong>{recordStateLabel}</strong>
+                </div>
+                <div className="repo-admin-metric">
+                  <span>Last saved</span>
+                  <strong>{selectedOrderUpdatedAt}</strong>
+                </div>
+              </div>
+
+              <div className="inline-setting">
+                <div>
+                  <strong>Active in operations</strong>
+                  <span>{plateAlertingReady ? "Shows in field operations and can trigger live LPR matches." : "Saved for order management until a plate is added."}</span>
+                </div>
+                <Toggle
+                  checked={props.draft.active}
+                  label="Order active"
+                  onChange={(checked) =>
+                    props.onDraftChange((current) => ({
+                      ...current,
+                      active: checked,
+                    }))
+                  }
+                />
+              </div>
+
+              {props.error ? <div className="feedback feedback--error">{props.error}</div> : null}
+              {props.message ? <div className="feedback feedback--good">{props.message}</div> : null}
+              {!plateAlertingReady ? (
+                <div className="feedback feedback--warn">
+                  This order has no plate yet. Live LPR matching stays limited until a plate is added.
+                </div>
+              ) : null}
+
+              <div className="repo-admin-actions">
+                <Tooltip text={props.selectedHotlistId ? "Save changes to this repo order" : "Create a new repo order"}>
+                  <button className="btn btn--primary" disabled={!props.canManageAccounts || props.saving} type="submit">
+                    {props.saving ? "Saving..." : props.selectedHotlistId ? "Save Order" : "Create Order"}
+                  </button>
+                </Tooltip>
+                <Tooltip text="Reset the form to start a new entry">
+                  <button className="btn btn--ghost" disabled={!props.canManageAccounts} type="button" onClick={props.onClearDraft}>
+                    Clear Draft
+                  </button>
+                </Tooltip>
+                <Tooltip text="Fill form with the currently selected detection">
+                  <button className="btn btn--ghost" disabled={!props.canManageAccounts} type="button" onClick={props.onSeedFromDetection}>
+                    Seed {props.selectedDetectionPlate || "selection"}
+                  </button>
+                </Tooltip>
+                <Tooltip text="Permanently remove this repo order">
+                  <button className="btn btn--danger" disabled={!props.canManageAccounts || !props.selectedHotlistId || props.deleting} type="button" onClick={props.onDelete}>
+                    {props.deleting ? "Deleting..." : "Delete Order"}
+                  </button>
+                </Tooltip>
+              </div>
+            </section>
           </form>
         </section>
       </div>
@@ -7275,7 +7821,8 @@ function HotlistsScreen(props: {
   return (
     <section className="screen hotlists-screen">
       <ScreenHeader
-        title="Recovery Queue"
+        title="LPR Hits"
+        subtitle="Review live LPR matches, verify confidence, and update recovery queue status from the operations shell."
         meta={
           <>
             <Badge tone={activeAlertCount > 0 ? "warn" : "muted"}>{`${activeAlertCount} active`}</Badge>
@@ -7284,27 +7831,12 @@ function HotlistsScreen(props: {
         }
       />
 
-      <div className="hotlists-summary-strip">
-        <div className="search-summary-card">
-          <span>Open recoveries</span>
-          <strong>{activeAlertCount}</strong>
-        </div>
-        <div className="search-summary-card">
-          <span>Acknowledged</span>
-          <strong>{acknowledgedAlertCount}</strong>
-        </div>
-        <div className="search-summary-card">
-          <span>Pending follow-up</span>
-          <strong>{props.openFollowUps}</strong>
-        </div>
-      </div>
-
       <div className="segmented-control hotlists-toolbar-tabs">
         <button className={props.activeTab === "alerts" ? "is-active" : ""} type="button" onClick={() => props.onTabChange("alerts")}>
-          {`Recovery Queue (${props.alerts.length})`}
+          {`LPR Hits (${props.alerts.length})`}
         </button>
         <button className={props.activeTab === "recognition" ? "is-active" : ""} type="button" onClick={() => props.onTabChange("recognition")}>
-          {`Sightings (${props.activity.length})`}
+          {`Recent Sightings (${props.activity.length})`}
         </button>
       </div>
 
@@ -7313,7 +7845,8 @@ function HotlistsScreen(props: {
           <section className="panel-card hotlists-workspace-card hotlists-queue-card">
             <div className="panel-card__header">
               <div>
-                <h3>Active Recoveries</h3>
+                <h3>Active Hit Queue</h3>
+                <p>{`${activeAlertCount} active · ${acknowledgedAlertCount} acknowledged · ${props.openFollowUps} follow-up`}</p>
               </div>
               <div className="record-row__stats">
                 <Badge tone="critical">{`${activeAlertCount} active`}</Badge>
@@ -7689,21 +8222,31 @@ function SettingsScreen(props: {
   updateSetting: <Key extends keyof UiSettings>(key: Key, value: UiSettings[Key]) => void;
 }): ReactElement {
   const sections: Array<{ id: SettingsSection; title: string; description: string }> = [
-    { id: "workspace", title: "Scan workflow", description: "Arrival scan, suppression, and confidence thresholds." },
-    { id: "alerts", title: "Recovery notifications", description: "Recovery match behavior, audio, and permissions." },
+    { id: "workspace", title: "Field workflow", description: "Arrival scan, suppression, and confidence thresholds." },
+    { id: "alerts", title: "Alert behavior", description: "Recovery match behavior, audio, and permissions." },
     { id: "cameras", title: "Cameras", description: "Resolution, night mode, and feed controls." },
     { id: "map", title: "Map and geofence", description: "Radius, route display, and navigation." },
-    { id: "system", title: "System and API", description: "Health, connection, sessions, and audit." },
+    { id: "system", title: "System, audit, and API", description: "Health, connection, sessions, and audit." },
   ];
   const activeSection = sections.find((section) => section.id === props.settingsSection) ?? sections[0];
   const canControlEdgeRuntime =
     props.dataSource === "live" && props.currentPrincipal?.capabilities.can_control_edge_runtime === true;
   const edgeCommandPending = props.edgeRuntimeAction !== null;
+  const operatorLabel = props.currentPrincipal?.display_name ?? props.currentPrincipal?.principal_id ?? "Local operator";
+  const auditStatusLabel = !props.canViewAudit
+    ? "Restricted"
+    : props.auditLoading
+      ? "Loading"
+      : props.auditError
+        ? "Unavailable"
+        : `${props.auditEvents.length} recent`;
+  const liveFeedLabel = `${props.onlineCameras}/${Math.max(props.totalCameras, 1)}`;
 
   return (
     <section className="screen settings-screen">
       <ScreenHeader
-        title="System Settings"
+        title="Admin Settings"
+        subtitle="Control field behavior, connectivity, audit visibility, and system defaults from the admin shell."
         meta={
           <>
             {props.hotlistWarning ? <Badge tone="warn">Review recovery settings</Badge> : <Badge tone="success">Operational</Badge>}
@@ -7715,33 +8258,41 @@ function SettingsScreen(props: {
         }
       />
 
-      <div className="settings-summary-strip">
+      <div className="settings-summary-strip admin-settings-summary-strip">
         <div className="settings-summary-tile">
-          <span>Cameras</span>
-          <strong>{`${props.onlineCameras}/${Math.max(props.totalCameras, 1)}`}</strong>
+          <span>Operator</span>
+          <strong>{operatorLabel}</strong>
+          <small>{props.canManageAccounts ? "Admin write available" : "Read-only account access"}</small>
         </div>
         <div className="settings-summary-tile">
-          <span>System</span>
+          <span>System Health</span>
           <strong>{serviceHealthLabel(props.serviceHealthState)}</strong>
+          <small>{props.degradedDependencyCount === 0 ? "All services nominal" : `${props.degradedDependencyCount} warnings to review`}</small>
         </div>
         <div className="settings-summary-tile">
-          <span>Edge</span>
+          <span>Edge Capture</span>
           <strong>{edgeCaptureLabel(props.edgeRuntime?.capture_state)}</strong>
+          <small>{props.edgeRuntime?.edge_node_id ?? "Awaiting edge runtime status"}</small>
         </div>
         <div className="settings-summary-tile">
-          <span>Alerts</span>
-          <strong>{props.settings.hotlistAlerts ? "Armed" : "Off"}</strong>
+          <span>Audit Access</span>
+          <strong>{auditStatusLabel}</strong>
+          <small>{props.canViewAudit ? "Recent operator events available" : "Audit visibility restricted"}</small>
         </div>
         <div className="settings-summary-tile">
-          <span>Operators</span>
-          <strong>{props.activeSessions}</strong>
+          <span>Live Feeds</span>
+          <strong>{liveFeedLabel}</strong>
+          <small>{props.dataSource === "live" ? "Camera status from backend" : "Demo mode camera state"}</small>
         </div>
       </div>
 
       <div className="settings-workspace">
         <aside className="panel-card settings-nav-card">
           <div className="panel-card__header">
-            <h3>Sections</h3>
+            <div>
+              <h3>Admin Console</h3>
+              <p>Choose which operational control surface to update.</p>
+            </div>
             <Badge tone="cyan">{activeSection.title}</Badge>
           </div>
           <div className="settings-nav-list">
@@ -7775,150 +8326,216 @@ function SettingsScreen(props: {
           </div>
 
           <div className="settings-detail-stack">
+            <section className="settings-section-banner">
+              <div className="settings-section-banner__copy">
+                <span>Now Editing</span>
+                <strong>{activeSection.title}</strong>
+                <p>{activeSection.description}</p>
+              </div>
+              <div className="settings-section-banner__stats">
+                <div className="settings-section-banner__stat">
+                  <span>Data source</span>
+                  <strong>{props.dataSource.toUpperCase()}</strong>
+                </div>
+                <div className="settings-section-banner__stat">
+                  <span>Sessions</span>
+                  <strong>{props.activeSessions}</strong>
+                </div>
+                <div className="settings-section-banner__stat">
+                  <span>Alerts</span>
+                  <strong>{props.canUpdateAlerts ? "Writable" : "Read only"}</strong>
+                </div>
+              </div>
+            </section>
+
             {props.settingsSection === "workspace" ? (
               <>
-                <SettingsRangeRow title="Duplicate suppression" detail={`${props.settings.duplicateSuppressionSeconds} sec`} min={15} max={300} step={15} value={props.settings.duplicateSuppressionSeconds} onChange={(value) => props.updateSetting("duplicateSuppressionSeconds", value)} />
-                <SettingsRangeRow title="Min OCR confidence" detail={`${props.settings.minConfidence}%`} min={60} max={99} step={1} value={props.settings.minConfidence} onChange={(value) => props.updateSetting("minConfidence", value)} />
-                <ReadOnlyRow title="Idle scan control" value="Console CTA" detail="Idle scanning is toggled from the console, not from the map." />
-                <ReadOnlyRow title="Arrival scan behavior" value={props.settings.autoArrivalScan ? "Auto at destination" : "Disabled"} detail="Configured in Map and geofence settings." />
+                <SettingsSectionBlock title="Scan thresholds" description="Tune how aggressively the workspace promotes LPR activity into actionable recovery work.">
+                  <SettingsRangeRow title="Duplicate suppression" detail={`${props.settings.duplicateSuppressionSeconds} sec`} min={15} max={300} step={15} value={props.settings.duplicateSuppressionSeconds} onChange={(value) => props.updateSetting("duplicateSuppressionSeconds", value)} />
+                  <SettingsRangeRow title="Min OCR confidence" detail={`${props.settings.minConfidence}%`} min={60} max={99} step={1} value={props.settings.minConfidence} onChange={(value) => props.updateSetting("minConfidence", value)} />
+                </SettingsSectionBlock>
+                <SettingsSectionBlock title="Workflow references" description="Read-only reminders about where the live field workflow is controlled.">
+                  <ReadOnlyRow title="Idle scan control" value="Console CTA" detail="Idle scanning is toggled from the console, not from the map." />
+                  <ReadOnlyRow title="Arrival scan behavior" value={props.settings.autoArrivalScan ? "Auto at destination" : "Disabled"} detail="Configured in Map and geofence settings." />
+                </SettingsSectionBlock>
               </>
             ) : null}
 
             {props.settingsSection === "alerts" ? (
               <>
-                <SettingsToggleRow title="Recovery notifications" detail="Show a full-screen recovery notice when an assigned plate is scanned." checked={props.settings.hotlistAlerts} onChange={(checked) => props.updateSetting("hotlistAlerts", checked)} />
-                <SettingsToggleRow title="Audible alerts" detail="Play tone on recovery match." checked={props.settings.soundEnabled} onChange={(checked) => props.updateSetting("soundEnabled", checked)} />
-                <SettingsToggleRow title="Vibration" detail="Haptic feedback for field devices." checked={props.settings.vibrationEnabled} onChange={(checked) => props.updateSetting("vibrationEnabled", checked)} />
-                <SettingsRangeRow title="Alert volume" detail={`${props.settings.alertVolume}%`} min={0} max={100} step={5} value={props.settings.alertVolume} onChange={(value) => props.updateSetting("alertVolume", value)} />
-                <SettingsSelectRow title="Banner persistence" detail="How long non-critical alerts stay visible." value={props.settings.alertPersistence} options={["until-dismissed", "15 sec", "60 sec"]} onChange={(value) => props.updateSetting("alertPersistence", value as AlertPersistence)} />
-                <ReadOnlyRow title="Account management" value={props.canManageAccounts ? "Write access" : "Read only"} detail="Controls recovery account CRUD." />
-                <ReadOnlyRow title="Alert management" value={props.canUpdateAlerts ? "Write access" : "Read only"} detail="Controls acknowledge / dismiss / reopen." />
+                <SettingsSectionBlock title="Recovery notices" description="Control how match alerts are presented in the field and how intrusive they should be.">
+                  <SettingsToggleRow title="Recovery notifications" detail="Show a full-screen recovery notice when an assigned plate is scanned." checked={props.settings.hotlistAlerts} onChange={(checked) => props.updateSetting("hotlistAlerts", checked)} />
+                  <SettingsToggleRow title="Audible alerts" detail="Play tone on recovery match." checked={props.settings.soundEnabled} onChange={(checked) => props.updateSetting("soundEnabled", checked)} />
+                  <SettingsToggleRow title="Vibration" detail="Haptic feedback for field devices." checked={props.settings.vibrationEnabled} onChange={(checked) => props.updateSetting("vibrationEnabled", checked)} />
+                  <SettingsRangeRow title="Alert volume" detail={`${props.settings.alertVolume}%`} min={0} max={100} step={5} value={props.settings.alertVolume} onChange={(value) => props.updateSetting("alertVolume", value)} />
+                  <SettingsSelectRow title="Banner persistence" detail="How long non-critical alerts stay visible." value={props.settings.alertPersistence} options={["until-dismissed", "15 sec", "60 sec"]} onChange={(value) => props.updateSetting("alertPersistence", value as AlertPersistence)} />
+                </SettingsSectionBlock>
+                <SettingsSectionBlock title="Permissions" description="Current operator rights for order management and alert response.">
+                  <ReadOnlyRow title="Account management" value={props.canManageAccounts ? "Write access" : "Read only"} detail="Controls recovery account CRUD." />
+                  <ReadOnlyRow title="Alert management" value={props.canUpdateAlerts ? "Write access" : "Read only"} detail="Controls acknowledge / dismiss / reopen." />
+                </SettingsSectionBlock>
               </>
             ) : null}
 
             {props.settingsSection === "cameras" ? (
               <>
-                <SettingsSelectRow title="Resolution" detail="Frame capture size for records." value={props.settings.resolution} options={["1920x1080", "1600x900", "1280x720"]} onChange={(value) => props.updateSetting("resolution", value)} />
-                <SettingsSelectRow title="Stream quality" detail="Balance between latency and image quality." value={props.settings.streamQuality} options={["High", "Balanced", "Low latency"]} onChange={(value) => props.updateSetting("streamQuality", value)} />
-                <SettingsToggleRow title="Night mode" detail="Optimize for low-light plate reads." checked={props.settings.nightMode} onChange={(checked) => props.updateSetting("nightMode", checked)} />
-                <SettingsToggleRow title="IR assist" detail="Enable infrared for stationary scans." checked={props.settings.irControl} onChange={(checked) => props.updateSetting("irControl", checked)} />
-                <SettingsToggleRow title="Exposure lock" detail="Hold exposure steady against headlights." checked={props.settings.exposureLock} onChange={(checked) => props.updateSetting("exposureLock", checked)} />
-                <ReadOnlyRow title="Active feeds" value={`${props.onlineCameras}/${Math.max(props.totalCameras, 1)}`} detail="Online camera count." />
+                <SettingsSectionBlock title="Capture profile" description="Set the field capture profile used by the current truck camera stack.">
+                  <SettingsSelectRow title="Resolution" detail="Frame capture size for records." value={props.settings.resolution} options={["1920x1080", "1600x900", "1280x720"]} onChange={(value) => props.updateSetting("resolution", value)} />
+                  <SettingsSelectRow title="Stream quality" detail="Balance between latency and image quality." value={props.settings.streamQuality} options={["High", "Balanced", "Low latency"]} onChange={(value) => props.updateSetting("streamQuality", value)} />
+                  <SettingsToggleRow title="Night mode" detail="Optimize for low-light plate reads." checked={props.settings.nightMode} onChange={(checked) => props.updateSetting("nightMode", checked)} />
+                  <SettingsToggleRow title="IR assist" detail="Enable infrared for stationary scans." checked={props.settings.irControl} onChange={(checked) => props.updateSetting("irControl", checked)} />
+                  <SettingsToggleRow title="Exposure lock" detail="Hold exposure steady against headlights." checked={props.settings.exposureLock} onChange={(checked) => props.updateSetting("exposureLock", checked)} />
+                </SettingsSectionBlock>
+                <SettingsSectionBlock title="Feed status" description="Current backend-reported camera availability for this workspace.">
+                  <ReadOnlyRow title="Active feeds" value={liveFeedLabel} detail="Online camera count." />
+                </SettingsSectionBlock>
               </>
             ) : null}
 
             {props.settingsSection === "map" ? (
               <>
-                <SettingsToggleRow title="Auto-scan on arrival" detail="Automatically begin scanning when the unit enters the destination radius." checked={props.settings.autoArrivalScan} onChange={(checked) => props.updateSetting("autoArrivalScan", checked)} />
-                <SettingsRangeRow title="Arrival auto-scan radius" detail={`${props.settings.arrivalRadiusFeet} ft`} min={25} max={500} step={25} value={props.settings.arrivalRadiusFeet} onChange={(value) => props.updateSetting("arrivalRadiusFeet", value)} />
-                <SettingsSelectRow title="Map style" detail="Route map visualization." value={props.settings.mapMode} options={["Dark route", "Street", "Satellite-style"]} onChange={(value) => props.updateSetting("mapMode", value)} />
-                <SettingsToggleRow title="Auto-center" detail="Keep map centered on the unit." checked={props.settings.autoCenterVehicle} onChange={(checked) => props.updateSetting("autoCenterVehicle", checked)} />
-                <SettingsToggleRow title="Geofence ring" detail="Show arrival radius on map." checked={props.settings.showRadiusRing} onChange={(checked) => props.updateSetting("showRadiusRing", checked)} />
-                <SettingsToggleRow title="Active alert pins" detail="Show active recovery alerts while navigating or browsing the map." checked={props.settings.showActiveAlertPins} onChange={(checked) => props.updateSetting("showActiveAlertPins", checked)} />
-                <SettingsToggleRow title="Prior alert pins" detail="Show previous acknowledged or dismissed alerts on the map." checked={props.settings.showHistoricalAlertPins} onChange={(checked) => props.updateSetting("showHistoricalAlertPins", checked)} />
-                <SettingsToggleRow title="Live read pins" detail="Show recent detections as map markers." checked={props.settings.showDetectionPins} onChange={(checked) => props.updateSetting("showDetectionPins", checked)} />
-                <SettingsToggleRow title="Traffic overlay" detail="Show route congestion data." checked={props.settings.showTraffic} onChange={(checked) => props.updateSetting("showTraffic", checked)} />
-                <SettingsSelectRow title="Navigation" detail="Route to target method." value={props.settings.navProvider} options={["Internal", "External"]} onChange={(value) => props.updateSetting("navProvider", value)} />
+                <SettingsSectionBlock title="Arrival behavior" description="Control what happens when the vehicle reaches a destination or target radius.">
+                  <SettingsToggleRow title="Auto-scan on arrival" detail="Automatically begin scanning when the unit enters the destination radius." checked={props.settings.autoArrivalScan} onChange={(checked) => props.updateSetting("autoArrivalScan", checked)} />
+                  <SettingsRangeRow title="Arrival auto-scan radius" detail={`${props.settings.arrivalRadiusFeet} ft`} min={25} max={500} step={25} value={props.settings.arrivalRadiusFeet} onChange={(value) => props.updateSetting("arrivalRadiusFeet", value)} />
+                  <SettingsSelectRow title="Navigation" detail="Route to target method." value={props.settings.navProvider} options={["Internal", "External"]} onChange={(value) => props.updateSetting("navProvider", value)} />
+                </SettingsSectionBlock>
+                <SettingsSectionBlock title="Map overlays" description="Tune the visual context shown during recovery routing and map review.">
+                  <SettingsSelectRow title="Map style" detail="Route map visualization." value={props.settings.mapMode} options={["Dark route", "Street", "Satellite-style"]} onChange={(value) => props.updateSetting("mapMode", value)} />
+                  <SettingsToggleRow title="Auto-center" detail="Keep map centered on the unit." checked={props.settings.autoCenterVehicle} onChange={(checked) => props.updateSetting("autoCenterVehicle", checked)} />
+                  <SettingsToggleRow title="Geofence ring" detail="Show arrival radius on map." checked={props.settings.showRadiusRing} onChange={(checked) => props.updateSetting("showRadiusRing", checked)} />
+                  <SettingsToggleRow title="Active alert pins" detail="Show active recovery alerts while navigating or browsing the map." checked={props.settings.showActiveAlertPins} onChange={(checked) => props.updateSetting("showActiveAlertPins", checked)} />
+                  <SettingsToggleRow title="Prior alert pins" detail="Show previous acknowledged or dismissed alerts on the map." checked={props.settings.showHistoricalAlertPins} onChange={(checked) => props.updateSetting("showHistoricalAlertPins", checked)} />
+                  <SettingsToggleRow title="Live read pins" detail="Show recent detections as map markers." checked={props.settings.showDetectionPins} onChange={(checked) => props.updateSetting("showDetectionPins", checked)} />
+                  <SettingsToggleRow title="Traffic overlay" detail="Show route congestion data." checked={props.settings.showTraffic} onChange={(checked) => props.updateSetting("showTraffic", checked)} />
+                </SettingsSectionBlock>
               </>
             ) : null}
 
             {props.settingsSection === "system" ? (
               <>
-                <ReadOnlyRow title="Health" value={serviceHealthLabel(props.serviceHealthState)} detail={props.degradedDependencyCount === 0 ? "All systems normal." : `${props.degradedDependencyCount} warning${props.degradedDependencyCount === 1 ? "" : "s"}.`} />
-                <ReadOnlyRow title="Data source" value={props.dataSource.toUpperCase()} detail={props.dataError ?? "Connected to live API."} />
-                <ReadOnlyRow title="Sync" value={props.dataSource === "live" ? "Online" : "Offline queue"} detail={`${props.activeSessions} active session${props.activeSessions === 1 ? "" : "s"}.`} />
-                <ReadOnlyRow
-                  title="Edge node"
-                  value={props.edgeRuntime?.edge_node_id ?? "Pending"}
-                  detail={props.edgeRuntime?.message ?? "Waiting for Jetson runtime status."}
-                />
-                <ReadOnlyRow
-                  title="Edge capture"
-                  value={edgeCaptureLabel(props.edgeRuntime?.capture_state)}
-                  detail={
-                    props.edgeRuntimeError ??
-                    `Desired ${edgeCaptureLabel(props.edgeRuntime?.desired_capture_state)} - heartbeat ${edgeHeartbeatLabel(props.edgeRuntime)}.`
-                  }
-                />
-                <ReadOnlyRow
-                  title="Edge cameras"
-                  value={`${props.edgeRuntime?.active_camera_count ?? 0}/${Math.max(props.edgeRuntime?.total_camera_count ?? 0, 1)}`}
-                  detail={`OCR ${props.edgeRuntime?.plate_ocr_provider ?? "pending"} - Attributes ${props.edgeRuntime?.vehicle_attribute_provider ?? "pending"}.`}
-                />
-                <ReadOnlyRow
-                  title="Edge runtime"
-                  value={props.edgeRuntime?.inference_runtime ?? "Pending hardware"}
-                  detail={
-                    props.edgeRuntime?.last_command
-                      ? `${titleCase(props.edgeRuntime.last_command)} by ${props.edgeRuntime.last_commanded_by ?? "operator"}`
-                      : "No command queued."
-                  }
-                />
-                <div className="button-row">
-                  <Tooltip text={canControlEdgeRuntime ? "Request truck camera capture start" : "Edge control requires operator API access"}>
-                    <button
-                      className="btn btn--success"
-                      disabled={!canControlEdgeRuntime || edgeCommandPending}
-                      type="button"
-                      onClick={() => props.onEdgeRuntimeCommand("start_capture")}
-                    >
-                      {props.edgeRuntimeAction === "start_capture" ? "Starting..." : "Start Capture"}
-                    </button>
-                  </Tooltip>
-                  <Tooltip text={canControlEdgeRuntime ? "Request truck camera capture stop" : "Edge control requires operator API access"}>
-                    <button
-                      className="btn btn--danger"
-                      disabled={!canControlEdgeRuntime || edgeCommandPending}
-                      type="button"
-                      onClick={() => props.onEdgeRuntimeCommand("stop_capture")}
-                    >
-                      {props.edgeRuntimeAction === "stop_capture" ? "Stopping..." : "Stop Capture"}
-                    </button>
-                  </Tooltip>
-                  <Tooltip text={canControlEdgeRuntime ? "Request capture service restart" : "Edge control requires operator API access"}>
-                    <button
-                      className="btn btn--ghost"
-                      disabled={!canControlEdgeRuntime || edgeCommandPending}
-                      type="button"
-                      onClick={() => props.onEdgeRuntimeCommand("restart_capture")}
-                    >
-                      {props.edgeRuntimeAction === "restart_capture" ? "Restarting..." : "Restart"}
-                    </button>
-                  </Tooltip>
-                </div>
-                <ReadOnlyRow
-                  title="Operator"
-                  value={props.currentPrincipal?.display_name ?? props.currentPrincipal?.principal_id ?? "Local operator"}
-                  detail={
-                    props.currentPrincipal
-                      ? `${props.currentPrincipal.authenticated ? "Auth" : "Unauth"} - ${props.currentPrincipal.roles.map((role) => titleCase(role)).join(", ")}`
-                      : "Local mode."
-                  }
-                />
-                <ReadOnlyRow title="Follow-ups" value={props.canManageFollowUps ? "Write" : "Read only"} detail="Follow-up case management." />
-                <ReadOnlyRow title="Export path" value="runtime/exports" detail="Record export directory." />
-                <SettingsToggleRow title="Auto-delete captures" detail="Clean up temp files after sync." checked={props.settings.autoDeleteTempCaptures} onChange={(checked) => props.updateSetting("autoDeleteTempCaptures", checked)} />
-                <label className="settings-input-row">
-                  <span>API key</span>
-                  <input className="text-input" type="password" value={props.apiKeyInput} onChange={(event) => props.onApiKeyChange(event.target.value)} />
-                </label>
-                <div className="button-row">
-                  <Tooltip text="Save and activate the API key">
-                    <button className="btn btn--primary" type="button" onClick={props.onApiKeyApply}>
-                      Apply Key
-                    </button>
-                  </Tooltip>
-                  <Tooltip text="Re-fetch all data from the backend">
-                    <button className="btn btn--ghost" type="button" onClick={props.onRefresh}>
-                      Refresh Live Data
-                    </button>
-                  </Tooltip>
-                </div>
+                <SettingsSectionBlock
+                  title="Runtime health"
+                  description="Current truck node, capture pipeline, and service-level health reported by the backend."
+                  badge={<Badge tone={serviceHealthTone(props.serviceHealthState)}>{serviceHealthLabel(props.serviceHealthState)}</Badge>}
+                >
+                  <ReadOnlyRow title="Health" value={serviceHealthLabel(props.serviceHealthState)} detail={props.degradedDependencyCount === 0 ? "All systems normal." : `${props.degradedDependencyCount} warning${props.degradedDependencyCount === 1 ? "" : "s"}.`} />
+                  <ReadOnlyRow title="Data source" value={props.dataSource.toUpperCase()} detail={props.dataError ?? "Connected to live API."} />
+                  <ReadOnlyRow title="Sync" value={props.dataSource === "live" ? "Online" : "Offline queue"} detail={`${props.activeSessions} active session${props.activeSessions === 1 ? "" : "s"}.`} />
+                  <ReadOnlyRow
+                    title="Edge node"
+                    value={props.edgeRuntime?.edge_node_id ?? "Pending"}
+                    detail={props.edgeRuntime?.message ?? "Waiting for Jetson runtime status."}
+                  />
+                  <ReadOnlyRow
+                    title="Edge capture"
+                    value={edgeCaptureLabel(props.edgeRuntime?.capture_state)}
+                    detail={
+                      props.edgeRuntimeError ??
+                      `Desired ${edgeCaptureLabel(props.edgeRuntime?.desired_capture_state)} - heartbeat ${edgeHeartbeatLabel(props.edgeRuntime)}.`
+                    }
+                  />
+                  <ReadOnlyRow
+                    title="Edge cameras"
+                    value={`${props.edgeRuntime?.active_camera_count ?? 0}/${Math.max(props.edgeRuntime?.total_camera_count ?? 0, 1)}`}
+                    detail={`OCR ${props.edgeRuntime?.plate_ocr_provider ?? "pending"} - Attributes ${props.edgeRuntime?.vehicle_attribute_provider ?? "pending"}.`}
+                  />
+                  <ReadOnlyRow
+                    title="Edge runtime"
+                    value={props.edgeRuntime?.inference_runtime ?? "Pending hardware"}
+                    detail={
+                      props.edgeRuntime?.last_command
+                        ? `${titleCase(props.edgeRuntime.last_command)} by ${props.edgeRuntime.last_commanded_by ?? "operator"}`
+                        : "No command queued."
+                    }
+                  />
+                </SettingsSectionBlock>
+
+                <SettingsSectionBlock
+                  title="Edge controls"
+                  description="Start, stop, or restart the truck capture pipeline when hardware control is permitted."
+                  badge={<Badge tone={canControlEdgeRuntime ? "success" : "muted"}>{canControlEdgeRuntime ? "Control enabled" : "Restricted"}</Badge>}
+                >
+                  <div className="button-row">
+                    <Tooltip text={canControlEdgeRuntime ? "Request truck camera capture start" : "Edge control requires operator API access"}>
+                      <button
+                        className="btn btn--success"
+                        disabled={!canControlEdgeRuntime || edgeCommandPending}
+                        type="button"
+                        onClick={() => props.onEdgeRuntimeCommand("start_capture")}
+                      >
+                        {props.edgeRuntimeAction === "start_capture" ? "Starting..." : "Start Capture"}
+                      </button>
+                    </Tooltip>
+                    <Tooltip text={canControlEdgeRuntime ? "Request truck camera capture stop" : "Edge control requires operator API access"}>
+                      <button
+                        className="btn btn--danger"
+                        disabled={!canControlEdgeRuntime || edgeCommandPending}
+                        type="button"
+                        onClick={() => props.onEdgeRuntimeCommand("stop_capture")}
+                      >
+                        {props.edgeRuntimeAction === "stop_capture" ? "Stopping..." : "Stop Capture"}
+                      </button>
+                    </Tooltip>
+                    <Tooltip text={canControlEdgeRuntime ? "Request capture service restart" : "Edge control requires operator API access"}>
+                      <button
+                        className="btn btn--ghost"
+                        disabled={!canControlEdgeRuntime || edgeCommandPending}
+                        type="button"
+                        onClick={() => props.onEdgeRuntimeCommand("restart_capture")}
+                      >
+                        {props.edgeRuntimeAction === "restart_capture" ? "Restarting..." : "Restart"}
+                      </button>
+                    </Tooltip>
+                  </div>
+                  <SettingsToggleRow title="Auto-delete captures" detail="Clean up temp files after sync." checked={props.settings.autoDeleteTempCaptures} onChange={(checked) => props.updateSetting("autoDeleteTempCaptures", checked)} />
+                </SettingsSectionBlock>
+
+                <SettingsSectionBlock
+                  title="Operator access"
+                  description="Current operator identity plus the control surfaces that are writable from this workspace."
+                  badge={<Badge tone={props.currentPrincipal?.authenticated ? "success" : "muted"}>{props.currentPrincipal?.authenticated ? "Authenticated" : "Local mode"}</Badge>}
+                >
+                  <ReadOnlyRow
+                    title="Operator"
+                    value={operatorLabel}
+                    detail={
+                      props.currentPrincipal
+                        ? `${props.currentPrincipal.authenticated ? "Auth" : "Unauth"} - ${props.currentPrincipal.roles.map((role) => titleCase(role)).join(", ")}`
+                        : "Local mode."
+                    }
+                  />
+                  <ReadOnlyRow title="Recovery records" value={props.canManageAccounts ? "Write" : "Read only"} detail="Repo order and account management." />
+                  <ReadOnlyRow title="Follow-ups" value={props.canManageFollowUps ? "Write" : "Read only"} detail="Follow-up case management." />
+                  <ReadOnlyRow title="Audit access" value={props.canViewAudit ? "Visible" : "Restricted"} detail="Operator and system audit history access." />
+                </SettingsSectionBlock>
+
+                <SettingsSectionBlock title="Connection and export" description="API credentials, live refresh, and export path controls for the current workspace.">
+                  <ReadOnlyRow title="Export path" value="runtime/exports" detail="Record export directory." />
+                  <label className="settings-input-row">
+                    <span>API key</span>
+                    <input className="text-input" type="password" value={props.apiKeyInput} onChange={(event) => props.onApiKeyChange(event.target.value)} />
+                  </label>
+                  <div className="button-row">
+                    <Tooltip text="Save and activate the API key">
+                      <button className="btn btn--primary" type="button" onClick={props.onApiKeyApply}>
+                        Apply Key
+                      </button>
+                    </Tooltip>
+                    <Tooltip text="Re-fetch all data from the backend">
+                      <button className="btn btn--ghost" type="button" onClick={props.onRefresh}>
+                        Refresh Live Data
+                      </button>
+                    </Tooltip>
+                  </div>
+                </SettingsSectionBlock>
+
                 <section className="settings-subsection">
-                  <div className="panel-card__header">
-                    <div>
-                      <h3>Active sessions</h3>
+                  <div className="settings-subsection__header">
+                    <div className="settings-subsection__copy">
+                      <h4>Active sessions</h4>
+                      <p>Operators and consoles currently connected to the workspace.</p>
                     </div>
+                    <Badge tone={props.activeSessions > 0 ? "success" : "muted"}>{`${props.activeSessions} live`}</Badge>
                   </div>
                   <div className="settings-session-list">
                     {props.activeSessionRecords.length === 0 ? (
@@ -7944,9 +8561,10 @@ function SettingsScreen(props: {
                   </div>
                 </section>
                 <section className="settings-subsection">
-                  <div className="panel-card__header">
-                    <div>
-                      <h3>Audit log</h3>
+                  <div className="settings-subsection__header">
+                    <div className="settings-subsection__copy">
+                      <h4>Audit log</h4>
+                      <p>Recent operator and system mutations captured by the backend.</p>
                     </div>
                     <Badge tone={props.canViewAudit ? "success" : "muted"}>{props.canViewAudit ? "Visible" : "Restricted"}</Badge>
                   </div>
