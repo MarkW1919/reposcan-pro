@@ -1,28 +1,8 @@
-:root {
-  --bg: #050608;
-  --bg-elevated: #0a0d12;
-  --bg-card: rgba(16, 19, 24, 0.92);
-  --bg-card-strong: rgba(20, 24, 30, 0.96);
-  --bg-panel: rgba(12, 15, 20, 0.9);
-  --bg-input: #10151c;
-  --line: rgba(133, 146, 166, 0.16);
-  --line-strong: rgba(141, 214, 255, 0.34);
-  --cyan: #8bd6ff;
-  --cyan-soft: rgba(139, 214, 255, 0.12);
-  --cyan-glow: rgba(139, 214, 255, 0.18);
-  --critical: #ff6a6a;
-  --critical-soft: rgba(255, 106, 106, 0.14);
-  --success: #7be0a8;
-  --success-soft: rgba(123, 224, 168, 0.12);
-  --warn: #efb861;
-  --warn-soft: rgba(239, 184, 97, 0.14);
-  --text: #f7f9fc;
-  --muted: #94a1b3;
-  --faint: rgba(247, 249, 252, 0.56);
-  --shadow: 0 28px 60px rgba(0, 0, 0, 0.38);
-  --shadow-strong: 0 38px 72px rgba(0, 0, 0, 0.5);
-}
-
+/*
+ * Dashboard tokens were consolidated into styles.css :root. This file now
+ * only contains dashboard-specific rules and overrides the shared body
+ * gradient to match the dashboard's cooler palette.
+ */
 body {
   background:
     radial-gradient(circle at top left, rgba(139, 214, 255, 0.08), transparent 28%),
@@ -235,27 +215,18 @@ body {
 }
 
 .instrument-status-bar__brand {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
   min-width: 180px;
 }
 
 .instrument-status-bar__brand strong {
   display: block;
-  margin-top: 4px;
   font-size: 1.1rem;
   letter-spacing: 0.05em;
-}
-
-.instrument-status-bar__mark {
-  display: grid;
-  place-items: center;
-  width: 54px;
-  height: 54px;
-  border-radius: 16px;
-  border: 1px solid rgba(141, 214, 255, 0.24);
-  background: linear-gradient(180deg, rgba(141, 214, 255, 0.18), rgba(20, 24, 30, 0.6));
-  color: var(--cyan);
-  font-weight: 800;
-  letter-spacing: 0.12em;
+  color: var(--text);
 }
 
 .instrument-status-bar__segments {
@@ -852,6 +823,7 @@ body {
   border: 1px solid rgba(133, 146, 166, 0.14);
   background: rgba(18, 21, 26, 0.96);
   cursor: grab;
+  -webkit-user-select: none;
   user-select: none;
   touch-action: none;
 }
@@ -899,6 +871,7 @@ body {
 .dashboard-widget .map-stage__guidance,
 .dashboard-widget .map-stage__layer-menu,
 .dashboard-widget .map-stage__footer {
+  -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
   background: rgba(8, 10, 14, 0.84);
   border-color: rgba(133, 146, 166, 0.18);

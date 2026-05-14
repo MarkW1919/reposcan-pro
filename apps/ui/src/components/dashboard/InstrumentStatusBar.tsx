@@ -36,11 +36,8 @@ export function InstrumentStatusBar(props: {
   return (
     <header className="instrument-status-bar">
       <div className="instrument-status-bar__brand">
-        <div className="instrument-status-bar__mark">RS</div>
-        <div>
-          <span className="instrument-status-bar__eyebrow">{props.subtitle}</span>
-          <strong>{props.brand}</strong>
-        </div>
+        <span className="instrument-status-bar__eyebrow">{props.subtitle}</span>
+        <strong>{props.brand}</strong>
       </div>
 
       <div className="instrument-status-bar__segments" aria-label="Active recovery status">

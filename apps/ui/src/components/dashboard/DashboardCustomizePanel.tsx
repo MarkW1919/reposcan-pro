@@ -81,6 +81,17 @@ export function DashboardCustomizePanel(props: {
   }
 
   useEffect(() => {
+    function handleEscape(event: KeyboardEvent): void {
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        props.onClose();
+      }
+    }
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [props.onClose]);
+
+  useEffect(() => {
     if (!draggingWidgetId) {
       return;
     }
@@ -201,7 +212,21 @@ export function DashboardCustomizePanel(props: {
                       onPointerDown={(event) => handlePointerDown(event, definition.id)}
                       onPointerCancel={clearPointerDrag}
                     >
-                      :::
+                      <svg
+                        aria-hidden="true"
+                        focusable="false"
+                        viewBox="0 0 12 16"
+                        width="12"
+                        height="16"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <circle cx="3" cy="3" r="1.4" fill="currentColor" />
+                        <circle cx="9" cy="3" r="1.4" fill="currentColor" />
+                        <circle cx="3" cy="8" r="1.4" fill="currentColor" />
+                        <circle cx="9" cy="8" r="1.4" fill="currentColor" />
+                        <circle cx="3" cy="13" r="1.4" fill="currentColor" />
+                        <circle cx="9" cy="13" r="1.4" fill="currentColor" />
+                      </svg>
                     </div>
                     <div className="dashboard-customize__widget-text">
                       <strong>{definition.label}</strong>
