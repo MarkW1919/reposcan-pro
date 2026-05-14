@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Read(//tmp/**)",
+      "Bash(powershell -NoProfile:*)"
     ]
   },
   "project": "RepoScan Pro",
