@@ -1,0 +1,39 @@
+profile_name: vehicle-color-canonical-v1
+task: vehicle_color_classification
+framework: torchvision
+output_root: runtime/training
+allow_pending_review: true
+dataset_adapter: imagefolder
+base_model: efficientnet_b0
+image_size: 260
+epochs: 15
+batch_size: 24
+workers: 4
+patience: 6
+seed: 42
+learning_rate: 0.0008
+weight_decay: 0.0005
+label_smoothing: 0.05
+dropout: 0.3
+freeze_backbone_epochs: 2
+validation_fraction: 0.15
+precision: fp32
+device: auto
+use_weighted_sampler: true
+augmentation:
+  horizontal_flip: true
+  motion_blur: true
+  defocus_blur: true
+  brightness_contrast: true
+  noise: true
+  compression_artifacts: true
+  perspective_distortion: true
+  random_erasing: false
+  mixup_alpha: 0.0
+  synthetic_support_ratio: 0.0
+  notes:
+    - 8-class vehicle color classifier trained on the Synset-Boulevard color_category reorganized supplemental. Color taxonomy matches Synset exactly (black, blue, gray, green, orange, red, white, yellow).
+    - Warm-start backbone from canonical-v1 best.pt via --initial-checkpoint-replace-head; head reinitialized for 8 color classes.
+    - Weighted sampler required because Synset color distribution is heavily imbalanced (yellow=10 train, orange=18, vs gray=377 train).
+    - Disabled random_erasing and mixup because both blend pixel-level color signal, which is exactly what the head needs to learn. Geometric augmentation only.
+    - All-synthetic training data; review_status stays pending until a real-image color holdout exists. Holdout accuracy reported here is on the synthetic validation carve-out and is not transferable to field deployment without confirmation on real imagery.

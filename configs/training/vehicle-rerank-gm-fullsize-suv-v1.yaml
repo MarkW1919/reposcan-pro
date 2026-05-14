@@ -1,0 +1,38 @@
+profile_name: vehicle-rerank-gm-fullsize-suv-v1
+task: vehicle_make_model_classification
+framework: torchvision
+output_root: runtime/training
+allow_pending_review: true
+dataset_adapter: imagefolder
+base_model: efficientnet_b0
+image_size: 260
+epochs: 18
+batch_size: 24
+workers: 4
+patience: 6
+seed: 42
+learning_rate: 0.0005
+weight_decay: 0.0005
+label_smoothing: 0.05
+dropout: 0.3
+freeze_backbone_epochs: 2
+validation_fraction: 0.15
+precision: fp32
+device: auto
+use_weighted_sampler: true
+augmentation:
+  horizontal_flip: true
+  motion_blur: true
+  defocus_blur: true
+  brightness_contrast: true
+  noise: true
+  compression_artifacts: true
+  perspective_distortion: true
+  random_erasing: true
+  mixup_alpha: 0.05
+  synthetic_support_ratio: 0.0
+  notes:
+    - 3-class hierarchical re-rank head for the canonical-v4 chevy_tahoe vs chevrolet_suburban vs gmc_yukon confusion cluster. v4 alone got 58% Suburban, 86% Tahoe, 62% Yukon; the goal here is to push each above 80% via dedicated head capacity that focuses on length and rear-quarter cues rather than competing with 27 other classes.
+    - Warm-start backbone from canonical-v1 best.pt via --initial-checkpoint-replace-head; head reinitialized for 3 classes.
+    - Weighted sampler required because class sizes are uneven (Tahoe 269 / Suburban 183 / Yukon 55 train).
+    - Same image_size (260) as canonical-v4 so inference pipeline can route the same crop into the re-rank head without re-cropping.
