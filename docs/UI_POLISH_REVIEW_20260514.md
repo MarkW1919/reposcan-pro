@@ -144,16 +144,12 @@ for `active`, gray for `dismissed`, red for `false_positive`.
 
 #### 8. Confirm Match / False Positive on hit alert
 
-**Observation**: The hotlist alert takeover already references
-`DetectionEvidenceHero`, but I did not find explicit "Confirm Match"
-(green) and "False Positive" (red) buttons. The competitive doc calls
-this out as the single most-expected hit interaction.
-
-**Fix**: Add the two buttons above the existing Acknowledge / Dismiss row
-in the alert takeover. Wire to the existing `createReview` API with
-`action: "confirm"` or `action: "false_positive"`. Keyboard
-shortcuts: `C` and `F` (the pro-grade doc roadmap calls out the keyboard
-shortcuts pattern explicitly).
+**STATUS: already implemented — review missed it.** The hotlist alert
+overlay in App.tsx:9099–9143 ships both buttons (`btn--success` "Confirm
+Match" and `btn--danger` "False Positive") and binds the `C` / `F`
+keyboard shortcuts at App.tsx:9000–9011. Shortcut hints are visible
+under the action row. No work needed here; this entry is preserved for
+audit. Found during phase C execution.
 
 #### 9. Visible auto-scroll PAUSED state in dashboard view
 

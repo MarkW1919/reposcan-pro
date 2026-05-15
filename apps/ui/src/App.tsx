@@ -5,6 +5,7 @@ import "leaflet/dist/leaflet.css";
 
 import { AddressIntelligenceCard } from "./components/dashboard/AddressIntelligenceCard";
 import { CompactDetectionCard } from "./components/dashboard/CompactDetectionCard";
+import { RecoveryStatePill } from "./components/dashboard/RecoveryStatePill";
 import { DashboardCustomizePanel } from "./components/dashboard/DashboardCustomizePanel";
 import { DashboardShell } from "./components/dashboard/DashboardShell";
 import { DashboardWidgetFrame } from "./components/dashboard/DashboardWidgetFrame";
@@ -7884,7 +7885,7 @@ function HotlistsScreen(props: {
                           <span>{entry?.label ?? alert.hotlist_label ?? row?.vehicle ?? "Recovery case"}</span>
                         </div>
                         <div className="queue-row__badges">
-                          <Badge tone={alertStatusTone(alert.status)}>{alertStatusLabel(alert.status)}</Badge>
+                          <RecoveryStatePill state={alert.status} />
                           <Badge tone={alert.match_type === "exact" ? "success" : "warn"}>{`${titleCase(alert.match_type)} match`}</Badge>
                           <Badge tone="cyan">{matchConfidence}</Badge>
                         </div>
