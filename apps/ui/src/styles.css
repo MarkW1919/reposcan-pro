@@ -30,6 +30,17 @@
   --shadow: 0 28px 60px rgba(0, 0, 0, 0.38);
   --shadow-strong: 0 38px 72px rgba(0, 0, 0, 0.5);
   --mono: "Cascadia Code", "SF Mono", Consolas, monospace;
+  /*
+   * Text scale multiplier for sub-13px label text (status pills, eyebrows,
+   * meta lines). The default is 1.0. A future shift-mode toggle on body
+   * raises it for in-cab readability. Pure CSS variable plumbing — no
+   * behavioral change yet without a toggle UI.
+   */
+  --text-scale: 1;
+}
+
+body.shift-mode {
+  --text-scale: 1.18;
 }
 
 *,

@@ -4160,6 +4160,39 @@ function App(): ReactElement {
     setDashboardConfig(resetDashboardConfig());
   }
 
+  // Global Ctrl+1..5 shortcuts for dashboard layout modes. The polish review
+  // calls this out so an operator who drives all day can switch layouts with
+  // one keypress instead of opening the customize panel.
+  useEffect(() => {
+    const modeShortcuts: Record<string, DashboardLayoutMode> = {
+      "1": "default",
+      "2": "driving",
+      "3": "scanning",
+      "4": "review",
+      "5": "minimal",
+    };
+    function handleLayoutShortcut(event: KeyboardEvent): void {
+      if (!event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) {
+        return;
+      }
+      const target = event.target;
+      if (target instanceof HTMLElement) {
+        const tag = target.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable) {
+          return;
+        }
+      }
+      const mode = modeShortcuts[event.key];
+      if (!mode) {
+        return;
+      }
+      event.preventDefault();
+      handleDashboardModeChange(mode);
+    }
+    window.addEventListener("keydown", handleLayoutShortcut);
+    return () => window.removeEventListener("keydown", handleLayoutShortcut);
+  }, []);
+
   function rememberDestination(address: string, coords: DestinationCoords | null, label?: string): void {
     const trimmed = address.trim();
     if (!trimmed) return;

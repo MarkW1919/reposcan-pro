@@ -173,7 +173,7 @@ body {
 .instrument-status-bar__eyebrow {
   display: block;
   color: var(--muted);
-  font-size: 0.68rem;
+  font-size: calc(var(--text-scale, 1) * 0.74rem);
   letter-spacing: 0.16em;
   text-transform: uppercase;
   font-weight: 700;
@@ -321,11 +321,11 @@ body {
 }
 
 .status-pill strong {
-  font-size: 0.68rem;
+  font-size: calc(var(--text-scale, 1) * 0.74rem);
 }
 
 .status-pill small {
-  font-size: 0.58rem;
+  font-size: calc(var(--text-scale, 1) * 0.66rem);
   opacity: 0.75;
 }
 
@@ -719,10 +719,16 @@ body {
   text-transform: uppercase;
 }
 
+/*
+ * Transparent scrim so the dashboard stays visible behind the customize
+ * panel and the operator can see widget order updates in real time as
+ * they drag. The scrim still captures the click-to-dismiss because it
+ * fills the viewport and sits below the panel on the z-stack.
+ */
 .dashboard-customize__scrim {
   position: fixed;
   inset: 0;
-  background: rgba(4, 6, 8, 0.72);
+  background: transparent;
   z-index: 50;
 }
 
