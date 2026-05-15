@@ -369,10 +369,22 @@ body {
 .dashboard-insight-card,
 .dashboard-route-card,
 .dashboard-notes-card,
-.recent-history-card,
 .dashboard-customize__widget-list {
   display: grid;
   gap: 12px;
+}
+
+/*
+ * Recent detection history renders as a responsive grid so the widget can
+ * surface more cards as the operator gives it more screen real estate.
+ * auto-fit means: one column when the widget is compact, two when standard,
+ * up to three when the widget is expanded across the dashboard.
+ */
+.recent-history-card {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  align-content: start;
 }
 
 .address-intelligence-card__hero strong {
@@ -566,11 +578,24 @@ body {
 }
 
 .recent-history-card__row {
-  padding: 0;
+  padding: 10px 12px 10px 16px;
   gap: 10px;
   align-items: flex-start;
   text-align: left;
-  background: transparent;
+  background: rgba(11, 14, 18, 0.82);
+  border: 1px solid rgba(133, 146, 166, 0.14);
+  border-radius: 14px;
+  transition: border-color 120ms ease, transform 120ms ease, background 120ms ease;
+}
+
+.recent-history-card__row:hover,
+.recent-history-card__row:focus-visible {
+  border-color: rgba(141, 214, 255, 0.32);
+  background: rgba(15, 19, 25, 0.92);
+}
+
+.recent-history-card__row:active {
+  transform: translateY(1px);
 }
 
 .recent-history-card__copy {
