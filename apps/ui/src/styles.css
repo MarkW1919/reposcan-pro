@@ -3122,28 +3122,31 @@ select:focus-visible {
   box-shadow: 0 0 20px rgba(116, 136, 148, 0.28);
 }
 
+/* Severity-band band colors align with the --critical / --warn / --cyan / --muted
+ * tokens. The rgba() values cannot dereference a hex var directly, so they are
+ * inlined here and must stay in sync with styles.css :root values. */
 .severity-band--critical::before,
 .queue-row--critical::before {
-  background: rgba(251, 113, 133, 0.94);
-  box-shadow: 0 0 22px rgba(251, 113, 133, 0.32);
+  background: rgba(255, 106, 106, 0.94);
+  box-shadow: 0 0 22px rgba(255, 106, 106, 0.32);
 }
 
 .severity-band--priority::before,
 .queue-row--priority::before {
-  background: rgba(255, 191, 72, 0.94);
-  box-shadow: 0 0 22px rgba(255, 191, 72, 0.28);
+  background: rgba(239, 184, 97, 0.94);
+  box-shadow: 0 0 22px rgba(239, 184, 97, 0.28);
 }
 
 .severity-band--watch::before,
 .queue-row--watch::before {
-  background: rgba(94, 234, 212, 0.94);
-  box-shadow: 0 0 22px rgba(94, 234, 212, 0.28);
+  background: rgba(139, 214, 255, 0.94);
+  box-shadow: 0 0 22px rgba(139, 214, 255, 0.28);
 }
 
 .severity-band--observed::before,
 .queue-row--observed::before {
-  background: rgba(123, 140, 151, 0.82);
-  box-shadow: 0 0 18px rgba(123, 140, 151, 0.22);
+  background: rgba(148, 161, 179, 0.82);
+  box-shadow: 0 0 18px rgba(148, 161, 179, 0.22);
 }
 
 .detection-feed-row {

@@ -1,5 +1,6 @@
 import type { ReactElement, ReactNode } from "react";
 
+import type { DetectionSeverity } from "../../presentation/detectionSeverity";
 import { StatusPill, type StatusPillTone } from "./StatusPill";
 
 export function CompactDetectionCard(props: {
@@ -10,14 +11,16 @@ export function CompactDetectionCard(props: {
   confidence: string;
   statusLabel: string;
   statusTone: StatusPillTone;
+  severity?: DetectionSeverity;
   active?: boolean;
   snapshot: ReactNode;
   onSelect: () => void;
   onRoute?: () => void;
   onInspect?: () => void;
 }): ReactElement {
+  const severityClass = props.severity ? `severity-band severity-band--${props.severity}` : "";
   return (
-    <article className={`compact-detection-card ${props.active ? "is-active" : ""}`.trim()}>
+    <article className={`compact-detection-card ${severityClass} ${props.active ? "is-active" : ""}`.trim()}>
       <button className="compact-detection-card__body" type="button" onClick={props.onSelect}>
         <div className="compact-detection-card__snapshot">{props.snapshot}</div>
         <div className="compact-detection-card__copy">
@@ -27,7 +30,7 @@ export function CompactDetectionCard(props: {
           </div>
           <span>{props.vehicle}</span>
           <small>
-            {[props.color, props.distance, props.confidence].filter(Boolean).join("  |  ")}
+            {[props.color, props.distance, props.confidence].filter(Boolean).join(" · ")}
           </small>
         </div>
       </button>

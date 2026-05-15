@@ -1,5 +1,6 @@
 import type { ReactElement } from "react";
 
+import type { DetectionSeverity } from "../../presentation/detectionSeverity";
 import { DashboardWidgetFrame } from "./DashboardWidgetFrame";
 import { StatusPill, type StatusPillTone } from "./StatusPill";
 
@@ -11,6 +12,7 @@ interface HistoryItem {
   location?: string;
   statusLabel: string;
   statusTone: StatusPillTone;
+  severity?: DetectionSeverity;
   onSelect?: () => void;
 }
 
@@ -26,16 +28,24 @@ export function RecentDetectionHistoryCard(props: {
         {props.items.length === 0 ? (
           <div className="recent-history-card__empty">No recent sightings in the active dashboard context.</div>
         ) : (
-          props.items.map((item) => (
-            <button key={item.id} className="recent-history-card__row" type="button" onClick={item.onSelect}>
-              <div className="recent-history-card__copy">
-                <strong>{item.plate}</strong>
-                <span>{item.vehicle}</span>
-                <small>{[item.time, item.location].filter(Boolean).join("  |  ")}</small>
-              </div>
-              <StatusPill label={item.statusLabel} tone={item.statusTone} />
-            </button>
-          ))
+          props.items.map((item) => {
+            const severityClass = item.severity ? `severity-band severity-band--${item.severity}` : "";
+            return (
+              <button
+                key={item.id}
+                className={`recent-history-card__row ${severityClass}`.trim()}
+                type="button"
+                onClick={item.onSelect}
+              >
+                <div className="recent-history-card__copy">
+                  <strong>{item.plate}</strong>
+                  <span>{item.vehicle}</span>
+                  <small>{[item.time, item.location].filter(Boolean).join(" · ")}</small>
+                </div>
+                <StatusPill label={item.statusLabel} tone={item.statusTone} />
+              </button>
+            );
+          })
         )}
       </div>
     </DashboardWidgetFrame>

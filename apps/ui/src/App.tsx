@@ -6527,10 +6527,10 @@ function ConsoleScreen(props: {
     if (widgetId === "liveDetections") {
       return (
         <DashboardWidgetFrame
-          title="Live Detections"
-          eyebrow="Compact read queue"
+          title="Recent Reads"
+          eyebrow="Latest 4 detections · snapshot"
           size={size}
-          meta={<StatusPill label={`${Math.min(props.allRows.length, 4)} shown`} tone="cyan" />}
+          meta={<StatusPill label={`${Math.min(props.allRows.length, 4)} of ${props.allRows.length}`} tone="cyan" />}
         >
           <div className="dashboard-detections-grid">
             {props.allRows.slice(0, 4).map((row) => (
@@ -6543,6 +6543,7 @@ function ConsoleScreen(props: {
                 confidence={confidenceLabel(row.conf)}
                 statusLabel={detectionSeverityLabel(row)}
                 statusTone={dashboardToneForDetection(row)}
+                severity={detectionSeverityForRow(row)}
                 active={row.id === props.selectedDetectionId}
                 snapshot={<CompactDetectionSnapshot dataSource={props.dataSource} detectionId={row.detectionId} plate={row.plate1} vehicle={row.vehicle} />}
                 onSelect={() => props.onSelectDetection(row.id)}
@@ -6567,6 +6568,7 @@ function ConsoleScreen(props: {
             location: row.gps || row.source,
             statusLabel: detectionSeverityLabel(row),
             statusTone: dashboardToneForDetection(row),
+            severity: detectionSeverityForRow(row),
             onSelect: () => props.onSelectDetection(row.id),
           }))}
         />
