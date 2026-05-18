@@ -6528,22 +6528,84 @@ function ConsoleScreen(props: {
     }
 
     if (widgetId === "aiInsight") {
+      // Pick the strongest recommendation available given the current
+      // operator state. Order matters: an existing target overrides the
+      // empty-state recommendations.
+      const activeOrders = props.hotlists.filter((entry) => entry.active);
+      const stageNextOrder = !commandRow && activeOrders.length > 0 ? activeOrders[0] : null;
+      const insightLabel = responseCue?.label
+        ?? (stageNextOrder ? "Choose recovery target" : "Awaiting target vehicle");
+      const insightDetail = responseCue?.detail
+        ?? (stageNextOrder
+          ? `${activeOrders.length} active order${activeOrders.length === 1 ? "" : "s"}. Highest in queue: ${
+              stageNextOrder.label ?? hotlistIdentifierSummary(stageNextOrder)
+            }.`
+          : "Stage a target vehicle, account, or address to get a recommended recovery sequence.");
+      const insightTone = responseCue?.tone === "critical"
+        ? "red"
+        : responseCue?.tone === "warn"
+          ? "amber"
+          : stageNextOrder
+            ? "cyan"
+            : "gray";
+      const insightStatusLabel = responseCue?.label
+        ?? (stageNextOrder ? "Triage queue" : "Standby");
+      const primaryActionDisabled = !commandRow && !stageNextOrder;
+      const primaryActionLabel = commandRow
+        ? "Route to Target"
+        : stageNextOrder
+          ? "Open Recovery Queue"
+          : "Route to Target";
+      const onPrimaryAction = (): void => {
+        if (commandRow) {
+          props.onRouteToDetection(commandRow);
+          return;
+        }
+        if (stageNextOrder) {
+          props.onOpenRecoveries();
+        }
+      };
+      const secondaryActionDisabled = !commandRow && !stageNextOrder;
+      const secondaryActionLabel = commandRow
+        ? "Review Detections"
+        : stageNextOrder
+          ? "Open Order"
+          : "Review Detections";
+      const onSecondaryAction = (): void => {
+        if (commandRow) {
+          props.onOpenDetail(commandRow);
+          return;
+        }
+        if (stageNextOrder) {
+          props.onOpenHotlist(stageNextOrder);
+        }
+      };
       return (
         <DashboardWidgetFrame
           title="AI Insight"
           eyebrow="Field recommendation"
           size={size}
-          meta={<StatusPill label={responseCue?.label ?? "Ready"} tone={responseCue?.tone === "critical" ? "red" : responseCue?.tone === "warn" ? "amber" : "cyan"} />}
+          meta={<StatusPill label={insightStatusLabel} tone={insightTone} />}
         >
           <div className="dashboard-insight-card">
-            <strong>{responseCue?.label ?? "Awaiting target vehicle"}</strong>
-            <p>{responseCue?.detail ?? "Stage a target vehicle, account, or address to get a recommended recovery sequence."}</p>
+            <strong>{insightLabel}</strong>
+            <p>{insightDetail}</p>
             <div className="dashboard-insight-card__actions">
-              <button className="btn btn--primary btn--compact" disabled={!commandRow} type="button" onClick={() => commandRow && props.onRouteToDetection(commandRow)}>
-                Route to Target
+              <button
+                className="btn btn--primary btn--compact"
+                disabled={primaryActionDisabled}
+                type="button"
+                onClick={onPrimaryAction}
+              >
+                {primaryActionLabel}
               </button>
-              <button className="btn btn--ghost btn--compact" disabled={!commandRow} type="button" onClick={() => commandRow && props.onOpenDetail(commandRow)}>
-                Review Detections
+              <button
+                className="btn btn--ghost btn--compact"
+                disabled={secondaryActionDisabled}
+                type="button"
+                onClick={onSecondaryAction}
+              >
+                {secondaryActionLabel}
               </button>
             </div>
           </div>
