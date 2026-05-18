@@ -1034,3 +1034,183 @@ body {
     grid-template-columns: 72px minmax(0, 1fr);
   }
 }
+
+/*
+ * Detection action sheet. Opens when an operator selects a detection card on
+ * the dashboard. The dashboard cards stay glance-only; this sheet holds the
+ * full action menu plus the verification context. Modal-style with scrim,
+ * keyboard escape, and focus trap via aria-modal.
+ */
+.detection-action-sheet__scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 6, 8, 0.62);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  z-index: 60;
+}
+
+.detection-action-sheet {
+  width: min(540px, 100%);
+  max-height: min(86vh, 720px);
+  padding: 20px 22px 22px;
+  border-radius: 24px;
+  border: 1px solid rgba(133, 146, 166, 0.2);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.028), transparent 22%),
+    linear-gradient(180deg, rgba(20, 24, 30, 0.98), rgba(11, 14, 18, 0.98));
+  box-shadow: var(--shadow-strong);
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 16px;
+  overflow: hidden;
+}
+
+.detection-action-sheet__header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.detection-action-sheet__title-group {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.detection-action-sheet__eyebrow {
+  color: var(--muted);
+  font-size: calc(var(--text-scale, 1) * 0.74rem);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.detection-action-sheet__title-group strong {
+  font-family: var(--mono);
+  font-size: 1.5rem;
+  letter-spacing: 0.06em;
+  color: var(--text);
+}
+
+.detection-action-sheet__vehicle {
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.detection-action-sheet__title-group small {
+  color: var(--faint);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.detection-action-sheet__title-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.detection-action-sheet__close {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  border-radius: 12px;
+  border: 1px solid rgba(133, 146, 166, 0.18);
+  background: rgba(13, 16, 21, 0.92);
+  color: var(--text);
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.detection-action-sheet__close:hover,
+.detection-action-sheet__close:focus-visible {
+  border-color: rgba(141, 214, 255, 0.32);
+  color: var(--cyan);
+}
+
+.detection-action-sheet__snapshot {
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid rgba(133, 146, 166, 0.18);
+  background: rgba(9, 11, 15, 0.7);
+  min-height: 110px;
+  max-height: 220px;
+  display: grid;
+}
+
+.detection-action-sheet__actions {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  overflow: auto;
+}
+
+.detection-action-sheet__action {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(133, 146, 166, 0.18);
+  background: rgba(13, 16, 21, 0.92);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
+}
+
+.detection-action-sheet__action:hover,
+.detection-action-sheet__action:focus-visible {
+  border-color: rgba(141, 214, 255, 0.34);
+  background: rgba(15, 19, 25, 0.96);
+}
+
+.detection-action-sheet__action:active {
+  transform: translateY(1px);
+}
+
+.detection-action-sheet__action[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.detection-action-sheet__action strong {
+  font-size: 0.98rem;
+  color: var(--text);
+}
+
+.detection-action-sheet__action span {
+  color: var(--faint);
+  font-size: 0.82rem;
+}
+
+.detection-action-sheet__action--primary {
+  border-color: rgba(141, 214, 255, 0.36);
+  background: linear-gradient(180deg, rgba(141, 214, 255, 0.16), rgba(19, 23, 30, 0.92));
+}
+
+.detection-action-sheet__action--primary strong {
+  color: var(--cyan);
+}
+
+.detection-action-sheet__action--success {
+  border-color: rgba(123, 224, 168, 0.36);
+  background: linear-gradient(180deg, rgba(123, 224, 168, 0.16), rgba(19, 23, 30, 0.92));
+}
+
+.detection-action-sheet__action--success strong {
+  color: var(--success);
+}
+
+.detection-action-sheet__action--danger {
+  border-color: rgba(255, 106, 106, 0.36);
+  background: linear-gradient(180deg, rgba(255, 106, 106, 0.16), rgba(19, 23, 30, 0.92));
+}
+
+.detection-action-sheet__action--danger strong {
+  color: var(--critical);
+}

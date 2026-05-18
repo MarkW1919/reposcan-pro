@@ -3,6 +3,13 @@ import type { ReactElement, ReactNode } from "react";
 import type { DetectionSeverity } from "../../presentation/detectionSeverity";
 import { StatusPill, type StatusPillTone } from "./StatusPill";
 
+/**
+ * Glance-only detection card. Clicking the card opens the focused
+ * DetectionActionSheet modal that holds the full action menu (Route,
+ * Inspect, Copy plate, etc.). Keeps the dashboard scannable by removing
+ * inline button clutter; the action surface only renders when the
+ * operator commits to a card by tapping it.
+ */
 export function CompactDetectionCard(props: {
   plate: string;
   vehicle: string;
@@ -15,13 +22,16 @@ export function CompactDetectionCard(props: {
   active?: boolean;
   snapshot: ReactNode;
   onSelect: () => void;
-  onRoute?: () => void;
-  onInspect?: () => void;
 }): ReactElement {
   const severityClass = props.severity ? `severity-band severity-band--${props.severity}` : "";
   return (
     <article className={`compact-detection-card ${severityClass} ${props.active ? "is-active" : ""}`.trim()}>
-      <button className="compact-detection-card__body" type="button" onClick={props.onSelect}>
+      <button
+        className="compact-detection-card__body"
+        type="button"
+        onClick={props.onSelect}
+        aria-label={`Open actions for ${props.plate}, ${props.vehicle}`}
+      >
         <div className="compact-detection-card__snapshot">{props.snapshot}</div>
         <div className="compact-detection-card__copy">
           <div className="compact-detection-card__headline">
@@ -34,18 +44,6 @@ export function CompactDetectionCard(props: {
           </small>
         </div>
       </button>
-      <div className="compact-detection-card__actions">
-        {props.onRoute ? (
-          <button className="compact-detection-card__action compact-detection-card__action--primary" type="button" onClick={props.onRoute}>
-            Route
-          </button>
-        ) : null}
-        {props.onInspect ? (
-          <button className="compact-detection-card__action" type="button" onClick={props.onInspect}>
-            Inspect
-          </button>
-        ) : null}
-      </div>
     </article>
   );
 }

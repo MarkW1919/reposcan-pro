@@ -5,6 +5,7 @@ import "leaflet/dist/leaflet.css";
 
 import { AddressIntelligenceCard } from "./components/dashboard/AddressIntelligenceCard";
 import { CompactDetectionCard } from "./components/dashboard/CompactDetectionCard";
+import { DetectionActionSheet, type DetectionActionSheetAction } from "./components/dashboard/DetectionActionSheet";
 import { RecoveryStatePill } from "./components/dashboard/RecoveryStatePill";
 import { DashboardCustomizePanel } from "./components/dashboard/DashboardCustomizePanel";
 import { DashboardShell } from "./components/dashboard/DashboardShell";
@@ -3361,6 +3362,7 @@ function App(): ReactElement {
   const [settings, setSettings] = useState<UiSettings>(() => loadStoredSettings());
   const [dashboardConfig, setDashboardConfig] = useState<DashboardConfig>(() => loadDashboardConfig());
   const [dashboardCustomizeOpen, setDashboardCustomizeOpen] = useState(false);
+  const [actionSheetRow, setActionSheetRow] = useState<ConsoleDetectionRow | null>(null);
   const [apiKey, setApiKey] = useState<string>(() => loadStoredString(apiKeyStorageKey));
   const [apiKeyInput, setApiKeyInput] = useState<string>(() => loadStoredString(apiKeyStorageKey));
   const [activeDestination, setActiveDestination] = useState<string>(() => loadStoredString(targetAddressStorageKey));
@@ -5262,6 +5264,10 @@ function App(): ReactElement {
               onOpenAccount={openAccountsForRow}
               onOpenDashboardCustomize={() => setDashboardCustomizeOpen(true)}
               onOpenDetail={openDetail}
+              onOpenDetectionActions={(row) => {
+                setSelectedDetectionId(row.id);
+                setActionSheetRow(row);
+              }}
               onOpenDestinationModal={openDestinationModal}
               onOpenHotlist={(entry) => {
                 loadHotlist(entry);
@@ -5553,6 +5559,70 @@ function App(): ReactElement {
           reviewSaving={reviewSaving}
         />
       ) : null}
+      <DetectionActionSheet
+        open={actionSheetRow !== null}
+        plate={actionSheetRow?.plate1 ?? ""}
+        vehicle={actionSheetRow?.vehicle ?? ""}
+        meta={
+          actionSheetRow
+            ? [
+                actionSheetRow.source,
+                actionSheetRow.gps,
+                formatDateTime(actionSheetRow.timestampUtc),
+                `Confidence ${confidenceLabel(actionSheetRow.conf)}`,
+              ]
+                .filter((part): part is string => Boolean(part))
+                .join(" · ")
+            : undefined
+        }
+        statusLabel={actionSheetRow ? detectionSeverityLabel(actionSheetRow) : ""}
+        statusTone={actionSheetRow ? dashboardToneForDetection(actionSheetRow) : "gray"}
+        severity={actionSheetRow ? detectionSeverityForRow(actionSheetRow) : undefined}
+        snapshot={
+          actionSheetRow ? (
+            <CompactDetectionSnapshot
+              dataSource={dataSource}
+              detectionId={actionSheetRow.detectionId}
+              plate={actionSheetRow.plate1}
+              vehicle={actionSheetRow.vehicle}
+            />
+          ) : null
+        }
+        actions={
+          actionSheetRow
+            ? ([
+                {
+                  id: "route",
+                  label: "Route to last seen",
+                  detail: actionSheetRow.gps || "Plot route from current position",
+                  tone: "primary",
+                  onClick: () => routeToRow(actionSheetRow),
+                },
+                {
+                  id: "inspect",
+                  label: "Inspect detection",
+                  detail: "Open the evidence and review surface",
+                  onClick: () => openDetail(actionSheetRow),
+                },
+                {
+                  id: "copy",
+                  label: "Copy plate",
+                  detail: actionSheetRow.plate1,
+                  onClick: () => {
+                    void handleCopyPlate(actionSheetRow.plate1);
+                  },
+                },
+                {
+                  id: "account",
+                  label: "Open account",
+                  detail: "Find or create the recovery record",
+                  onClick: () => openAccountsForRow(actionSheetRow),
+                },
+              ] satisfies DetectionActionSheetAction[])
+            : []
+        }
+        onClose={() => setActionSheetRow(null)}
+      />
     </>
   );
 }
@@ -6250,6 +6320,7 @@ function ConsoleScreen(props: {
   onOpenAccount: (row: ConsoleDetectionRow) => void;
   onOpenDashboardCustomize: () => void;
   onOpenDetail: (row: ConsoleDetectionRow) => void;
+  onOpenDetectionActions: (row: ConsoleDetectionRow) => void;
   onOpenDestinationModal: () => void;
   onOpenHotlist: (entry: DashboardHotlist) => void;
   onOpenRecoveries: () => void;
@@ -6580,9 +6651,7 @@ function ConsoleScreen(props: {
                 severity={detectionSeverityForRow(row)}
                 active={row.id === props.selectedDetectionId}
                 snapshot={<CompactDetectionSnapshot dataSource={props.dataSource} detectionId={row.detectionId} plate={row.plate1} vehicle={row.vehicle} />}
-                onSelect={() => props.onSelectDetection(row.id)}
-                onRoute={() => props.onRouteToDetection(row)}
-                onInspect={() => props.onOpenDetail(row)}
+                onSelect={() => props.onOpenDetectionActions(row)}
               />
             ))}
           </div>
@@ -6603,7 +6672,7 @@ function ConsoleScreen(props: {
             statusLabel: detectionSeverityLabel(row),
             statusTone: dashboardToneForDetection(row),
             severity: detectionSeverityForRow(row),
-            onSelect: () => props.onSelectDetection(row.id),
+            onSelect: () => props.onOpenDetectionActions(row),
           }))}
         />
       );
