@@ -610,9 +610,28 @@ body {
 }
 
 .recent-history-card__empty,
-.dashboard-notes-card__empty {
+.dashboard-notes-card__empty,
+.dashboard-empty-state {
+  display: grid;
+  gap: 6px;
+  padding: 18px 16px;
+  border-radius: 14px;
+  border: 1px dashed rgba(133, 146, 166, 0.24);
+  background: rgba(11, 14, 18, 0.5);
   color: var(--muted);
-  padding: 10px 0;
+}
+
+.recent-history-card__empty strong,
+.dashboard-empty-state strong {
+  color: var(--text);
+  font-size: 0.98rem;
+}
+
+.recent-history-card__empty span,
+.dashboard-empty-state span {
+  color: var(--faint);
+  font-size: 0.86rem;
+  line-height: 1.4;
 }
 
 .dashboard-fast-targets {

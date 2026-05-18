@@ -6697,13 +6697,25 @@ function ConsoleScreen(props: {
     }
 
     if (widgetId === "liveDetections") {
+      const liveDetectionsEmpty = props.allRows.length === 0;
       return (
         <DashboardWidgetFrame
           title="Recent Reads"
           eyebrow="Latest 4 detections · snapshot"
           size={size}
-          meta={<StatusPill label={`${Math.min(props.allRows.length, 4)} of ${props.allRows.length}`} tone="cyan" />}
+          meta={
+            <StatusPill
+              label={liveDetectionsEmpty ? "Standby" : `${Math.min(props.allRows.length, 4)} of ${props.allRows.length}`}
+              tone={liveDetectionsEmpty ? "gray" : "cyan"}
+            />
+          }
         >
+          {liveDetectionsEmpty ? (
+            <div className="dashboard-empty-state">
+              <strong>No plate reads yet</strong>
+              <span>The dashboard will populate as the LPR pipeline records detections. Start a route or arm the idle scan to begin capturing.</span>
+            </div>
+          ) : null}
           <div className="dashboard-detections-grid">
             {props.allRows.slice(0, 4).map((row) => (
               <CompactDetectionCard

@@ -26,7 +26,10 @@ export function RecentDetectionHistoryCard(props: {
     <DashboardWidgetFrame title={props.title ?? "Recent Detection History"} eyebrow={props.eyebrow ?? "Recent sightings"} size={props.size}>
       <div className="recent-history-card">
         {props.items.length === 0 ? (
-          <div className="recent-history-card__empty">No recent sightings in the active dashboard context.</div>
+          <div className="recent-history-card__empty">
+            <strong>No recent sightings</strong>
+            <span>Past detections will appear here once the LPR pipeline records reads for the active target or session.</span>
+          </div>
         ) : (
           props.items.map((item) => {
             const severityClass = item.severity ? `severity-band severity-band--${item.severity}` : "";
