@@ -7,6 +7,7 @@ import { AddressIntelligenceCard } from "./components/dashboard/AddressIntellige
 import { CompactDetectionCard } from "./components/dashboard/CompactDetectionCard";
 import { DetectionActionSheet, type DetectionActionSheetAction } from "./components/dashboard/DetectionActionSheet";
 import { RecoveryStatePill } from "./components/dashboard/RecoveryStatePill";
+import { ScanStateBanner } from "./components/dashboard/ScanStateBanner";
 import { DashboardCustomizePanel } from "./components/dashboard/DashboardCustomizePanel";
 import { DashboardShell } from "./components/dashboard/DashboardShell";
 import { DashboardWidgetFrame } from "./components/dashboard/DashboardWidgetFrame";
@@ -5241,6 +5242,8 @@ function App(): ReactElement {
               layerMenuOpen={mapLayerMenuOpen}
               navigationActive={navigationActive}
               navigationGuidance={navigationGuidance}
+              scanSessionState={scanSession.state}
+              activeRouteFeet={activeRouteFeet}
               serviceHealthState={serviceHealthState}
               selectedCameraId={primaryCameraId}
               selectedDetectionId={selectedDetectionId}
@@ -6297,6 +6300,8 @@ function ConsoleScreen(props: {
   layerMenuOpen: boolean;
   navigationActive: boolean;
   navigationGuidance: NavigationGuidance;
+  scanSessionState: ScanSessionState;
+  activeRouteFeet: number | null;
   serviceHealthState: ServiceHealthState;
   selectedCameraId: string;
   selectedDetectionId: string | null;
@@ -6781,6 +6786,11 @@ function ConsoleScreen(props: {
           ) : null
         }
       >
+        <ScanStateBanner
+          state={props.scanSessionState}
+          distanceFeet={props.activeRouteFeet}
+          primaryTarget={commandRow?.plate1}
+        />
         <div className={`dashboard-grid dashboard-grid--${props.dashboardConfig.mode}`} data-stage-view={props.stageView}>
           <div className="dashboard-grid__hero-column">
             {renderDashboardSlot(heroWidget, "dashboard-grid__slot--hero")}

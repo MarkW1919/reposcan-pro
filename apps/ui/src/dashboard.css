@@ -1214,3 +1214,171 @@ body {
 .detection-action-sheet__action--danger strong {
   color: var(--critical);
 }
+
+/*
+ * Scan state banner. Wide, low-decoration strip across the top of the
+ * dashboard content area that tells the operator the current scan
+ * posture at a glance. Hidden entirely when state is idle so the
+ * dashboard stays uncluttered outside active recovery sessions.
+ *
+ * The state modifiers swap accent color and dot animation. The dot
+ * pulses on active to provide motion that catches peripheral vision;
+ * the pulse is suppressed under prefers-reduced-motion.
+ */
+.scan-state-banner {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 18px;
+  margin-bottom: 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(133, 146, 166, 0.18);
+  background: rgba(11, 14, 18, 0.86);
+}
+
+.scan-state-banner__dot {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--muted);
+  box-shadow: 0 0 0 4px rgba(148, 161, 179, 0.16);
+}
+
+/* Halo pseudo-element used by the active-state pulse. Animating opacity
+ * stays on the compositor and avoids triggering paint on the dot itself. */
+.scan-state-banner__dot::after {
+  content: "";
+  position: absolute;
+  inset: -10px;
+  border-radius: 999px;
+  background: rgba(123, 224, 168, 0.36);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.scan-state-banner__copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.scan-state-banner__eyebrow {
+  color: var(--muted);
+  font-size: calc(var(--text-scale, 1) * 0.7rem);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.scan-state-banner__label {
+  font-size: 1.12rem;
+  letter-spacing: 0.04em;
+  color: var(--text);
+}
+
+.scan-state-banner__meta {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.scan-state-banner__detail {
+  color: var(--faint);
+  font-size: 0.86rem;
+}
+
+.scan-state-banner__target {
+  display: grid;
+  gap: 2px;
+  justify-items: end;
+  text-align: right;
+  font-family: var(--mono);
+}
+
+.scan-state-banner__target span {
+  color: var(--muted);
+  font-size: calc(var(--text-scale, 1) * 0.66rem);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.scan-state-banner__target strong {
+  font-size: 1rem;
+  letter-spacing: 0.05em;
+  color: var(--cyan);
+}
+
+.scan-state-banner--approaching {
+  border-color: rgba(239, 184, 97, 0.36);
+  background: linear-gradient(180deg, rgba(239, 184, 97, 0.1), rgba(11, 14, 18, 0.92));
+}
+
+.scan-state-banner--approaching .scan-state-banner__dot {
+  background: var(--warn);
+  box-shadow: 0 0 0 4px rgba(239, 184, 97, 0.22);
+}
+
+.scan-state-banner--approaching .scan-state-banner__eyebrow {
+  color: var(--warn);
+}
+
+.scan-state-banner--active {
+  border-color: rgba(123, 224, 168, 0.42);
+  background: linear-gradient(180deg, rgba(123, 224, 168, 0.14), rgba(11, 14, 18, 0.92));
+}
+
+.scan-state-banner--active .scan-state-banner__dot {
+  background: var(--success);
+  box-shadow: 0 0 0 4px rgba(123, 224, 168, 0.32);
+}
+
+.scan-state-banner--active .scan-state-banner__dot::after {
+  animation: scan-state-banner-pulse 2s ease-in-out infinite;
+}
+
+.scan-state-banner--active .scan-state-banner__eyebrow {
+  color: var(--success);
+}
+
+.scan-state-banner--post-scan {
+  border-color: rgba(141, 214, 255, 0.36);
+  background: linear-gradient(180deg, rgba(141, 214, 255, 0.12), rgba(11, 14, 18, 0.92));
+}
+
+.scan-state-banner--post-scan .scan-state-banner__dot {
+  background: var(--cyan);
+  box-shadow: 0 0 0 4px rgba(141, 214, 255, 0.26);
+}
+
+.scan-state-banner--post-scan .scan-state-banner__eyebrow {
+  color: var(--cyan);
+}
+
+.scan-state-banner--complete {
+  border-color: rgba(148, 161, 179, 0.36);
+  background: rgba(15, 19, 25, 0.86);
+}
+
+.scan-state-banner--complete .scan-state-banner__dot {
+  background: var(--muted);
+}
+
+@keyframes scan-state-banner-pulse {
+  0%, 100% {
+    opacity: 0;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scan-state-banner--active .scan-state-banner__dot::after {
+    animation: none;
+    opacity: 0;
+  }
+}
