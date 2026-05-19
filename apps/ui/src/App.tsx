@@ -146,6 +146,7 @@ interface UiSettings {
   alertVolume: number;
   alertPersistence: AlertPersistence;
   nightMode: boolean;
+  shiftModeLargeText: boolean;
   irControl: boolean;
   exposureLock: boolean;
   resolution: string;
@@ -450,6 +451,7 @@ const defaultUiSettings: UiSettings = {
   alertVolume: 82,
   alertPersistence: "until-dismissed",
   nightMode: true,
+  shiftModeLargeText: false,
   irControl: true,
   exposureLock: false,
   resolution: "1920x1080",
@@ -3361,6 +3363,15 @@ function App(): ReactElement {
   const [detailDetectionId, setDetailDetectionId] = useState<string | null>(null);
   const [detailImageUrl, setDetailImageUrl] = useState<string | null>(null);
   const [settings, setSettings] = useState<UiSettings>(() => loadStoredSettings());
+
+  // Toggle the body.shift-mode class so the --text-scale CSS variable
+  // bumps in-cab typography to 1.18x without re-rendering any components.
+  useEffect(() => {
+    document.body.classList.toggle("shift-mode", settings.shiftModeLargeText);
+    return () => {
+      document.body.classList.remove("shift-mode");
+    };
+  }, [settings.shiftModeLargeText]);
   const [dashboardConfig, setDashboardConfig] = useState<DashboardConfig>(() => loadDashboardConfig());
   const [dashboardCustomizeOpen, setDashboardCustomizeOpen] = useState(false);
   const [actionSheetRow, setActionSheetRow] = useState<ConsoleDetectionRow | null>(null);
@@ -8542,6 +8553,14 @@ function SettingsScreen(props: {
                 <SettingsSectionBlock title="Scan thresholds" description="Tune how aggressively the workspace promotes LPR activity into actionable recovery work.">
                   <SettingsRangeRow title="Duplicate suppression" detail={`${props.settings.duplicateSuppressionSeconds} sec`} min={15} max={300} step={15} value={props.settings.duplicateSuppressionSeconds} onChange={(value) => props.updateSetting("duplicateSuppressionSeconds", value)} />
                   <SettingsRangeRow title="Min OCR confidence" detail={`${props.settings.minConfidence}%`} min={60} max={99} step={1} value={props.settings.minConfidence} onChange={(value) => props.updateSetting("minConfidence", value)} />
+                </SettingsSectionBlock>
+                <SettingsSectionBlock title="In-cab display" description="Larger typography and high-contrast affordances tuned for driving and harsh-light readability.">
+                  <SettingsToggleRow
+                    title="Large in-cab text"
+                    detail="Scale status pills, eyebrows, and meta lines up by 18% for peripheral-vision readability while driving."
+                    checked={props.settings.shiftModeLargeText}
+                    onChange={(checked) => props.updateSetting("shiftModeLargeText", checked)}
+                  />
                 </SettingsSectionBlock>
                 <SettingsSectionBlock title="Workflow references" description="Read-only reminders about where the live field workflow is controlled.">
                   <ReadOnlyRow title="Idle scan control" value="Console CTA" detail="Idle scanning is toggled from the console, not from the map." />
