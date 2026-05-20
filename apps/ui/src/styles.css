@@ -3150,8 +3150,25 @@ select:focus-visible {
  * inlined here and must stay in sync with styles.css :root values. */
 .severity-band--critical::before,
 .queue-row--critical::before {
+  width: 5px;
   background: rgba(255, 106, 106, 0.94);
   box-shadow: 0 0 22px rgba(255, 106, 106, 0.32);
+}
+
+/*
+ * Critical hits get a tinted backdrop in addition to the side band.
+ * A 4px stripe is easy to miss in peripheral vision; the soft red
+ * gradient ensures a driver still registers the match while keeping
+ * non-critical rows visually quiet.
+ */
+.severity-band--critical {
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 106, 106, 0.16),
+    rgba(255, 106, 106, 0.05) 28%,
+    transparent 62%
+  );
+  border-color: rgba(255, 106, 106, 0.34);
 }
 
 .severity-band--priority::before,
