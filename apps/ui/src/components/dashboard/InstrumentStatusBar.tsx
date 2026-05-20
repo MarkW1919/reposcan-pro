@@ -41,13 +41,25 @@ export function InstrumentStatusBar(props: {
       </div>
 
       <div className="instrument-status-bar__segments" aria-label="Active recovery status">
-        {segments.map((item) => (
-          <div key={`${item.label}-${item.value}`} className={`instrument-status-bar__segment ${item.tone ? `instrument-status-bar__segment--${item.tone}` : ""}`.trim()}>
-            <span>{item.label}</span>
-            <strong>{item.value}</strong>
-            {item.detail ? <small>{item.detail}</small> : null}
-          </div>
-        ))}
+        {segments.map((item) => {
+          const isHero = item === props.primaryTarget;
+          const heroActive = isHero && item.value !== "Standby" && item.value !== "--";
+          const classes = [
+            "instrument-status-bar__segment",
+            isHero ? "instrument-status-bar__segment--hero" : "",
+            heroActive ? "instrument-status-bar__segment--hero-active" : "",
+            item.tone ? `instrument-status-bar__segment--${item.tone}` : "",
+          ]
+            .filter(Boolean)
+            .join(" ");
+          return (
+            <div key={`${item.label}-${item.value}`} className={classes}>
+              <span>{item.label}</span>
+              <strong>{item.value}</strong>
+              {item.detail ? <small>{item.detail}</small> : null}
+            </div>
+          );
+        })}
       </div>
 
       <div className="instrument-status-bar__actions">

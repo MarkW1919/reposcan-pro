@@ -172,6 +172,20 @@ function normalizeConfig(value: unknown): DashboardConfig {
     }
   }
 
+  // Fail-safe: if a persisted config ended up with zero visible widgets
+  // the dashboard would render blank with no obvious way for the user to
+  // recover. Force the map widget back on so the operator always has the
+  // primary surface available — they can re-hide it via Customize if they
+  // really want to.
+  const anyVisible = widgets.some((widget) => widget.visible);
+  if (!anyVisible) {
+    const mapWidget = widgets.find((widget) => widget.id === "map");
+    if (mapWidget) {
+      mapWidget.visible = true;
+      mapWidget.size = "expanded";
+    }
+  }
+
   return {
     mode,
     widgets: widgets.sort((a, b) => a.order - b.order),
