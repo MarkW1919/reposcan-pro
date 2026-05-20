@@ -2340,6 +2340,8 @@ const activeAlertIcon = makeDotIcon("#FB7185", 12);
 const acknowledgedAlertIcon = makeDotIcon("#FBBF24", 10);
 const historicalAlertIcon = makeDotIcon("#A9BBB4", 10);
 
+type TileStatus = "loading" | "ready" | "offline";
+
 function OpsMap(props: {
   autoCenter: boolean;
   unitPosition: { lat: number; lng: number };
@@ -2358,11 +2360,32 @@ function OpsMap(props: {
   showDetectionPins: boolean;
   selectedRowId: string | null;
   onSelect: (rowId: string) => void;
+  onTileStatusChange?: (status: TileStatus) => void;
 }): ReactElement {
   const initialCenter = props.destinationCoords ?? props.unitPosition;
+  const tileErrorRef = useRef<number | null>(null);
   return (
     <MapContainer center={[initialCenter.lat, initialCenter.lng]} zoom={14} scrollWheelZoom={true} className="map-stage__canvas">
-      <TileLayer attribution="OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+      <TileLayer
+        attribution="OpenStreetMap"
+        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        eventHandlers={{
+          load: () => {
+            if (tileErrorRef.current != null) {
+              window.clearTimeout(tileErrorRef.current);
+              tileErrorRef.current = null;
+            }
+            props.onTileStatusChange?.("ready");
+          },
+          tileerror: () => {
+            if (tileErrorRef.current != null) return;
+            tileErrorRef.current = window.setTimeout(() => {
+              props.onTileStatusChange?.("offline");
+              tileErrorRef.current = null;
+            }, 1500);
+          },
+        }}
+      />
       <MapResizeSync />
       <MapViewportSync
         autoCenter={props.autoCenter}
@@ -2486,6 +2509,7 @@ function MapStagePanel(props: {
   const hasDestination = props.activeDestination.trim().length > 0;
   const activeAlertCount = props.alertMarkers.filter((marker) => marker.status === "active").length;
   const historicalAlertCount = props.alertMarkers.filter((marker) => marker.status !== "active").length;
+  const [tileStatus, setTileStatus] = useState<TileStatus>("loading");
   const gpsCoords = gpsFixToCoords(props.gpsFix);
   const liveAddressLine = props.liveAddress.address
     ? [props.liveAddress.address.house_number, props.liveAddress.address.road].filter(Boolean).join(" ") || props.liveAddress.address.display_name
@@ -2535,7 +2559,19 @@ function MapStagePanel(props: {
         showDetectionPins={props.settings.showDetectionPins}
         selectedRowId={props.selectedRowId}
         onSelect={props.onSelect}
+        onTileStatusChange={setTileStatus}
       />
+
+      {tileStatus !== "ready" ? (
+        <div
+          className={`map-stage__tile-status map-stage__tile-status--${tileStatus}`}
+          role="status"
+          aria-live="polite"
+        >
+          <span className="map-stage__tile-status-dot" aria-hidden="true" />
+          {tileStatus === "offline" ? "Map tiles offline — markers only" : "Loading map tiles…"}
+        </div>
+      ) : null}
 
       <div
         className={`map-stage__badge ${
