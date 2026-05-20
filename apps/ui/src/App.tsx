@@ -6581,13 +6581,13 @@ function ConsoleScreen(props: {
       const activeOrders = props.hotlists.filter((entry) => entry.active);
       const stageNextOrder = !commandRow && activeOrders.length > 0 ? activeOrders[0] : null;
       const insightLabel = responseCue?.label
-        ?? (stageNextOrder ? "Choose recovery target" : "Awaiting target vehicle");
+        ?? (stageNextOrder ? "Choose recovery target" : "Ready to recover");
       const insightDetail = responseCue?.detail
         ?? (stageNextOrder
           ? `${activeOrders.length} active order${activeOrders.length === 1 ? "" : "s"}. Highest in queue: ${
               stageNextOrder.label ?? hotlistIdentifierSummary(stageNextOrder)
             }.`
-          : "Stage a target vehicle, account, or address to get a recommended recovery sequence.");
+          : "Stage a destination or open the recoveries queue to start a session.");
       const insightTone = responseCue?.tone === "critical"
         ? "red"
         : responseCue?.tone === "warn"
@@ -6597,12 +6597,16 @@ function ConsoleScreen(props: {
             : "gray";
       const insightStatusLabel = responseCue?.label
         ?? (stageNextOrder ? "Triage queue" : "Standby");
-      const primaryActionDisabled = !commandRow && !stageNextOrder;
+      // Empty state (no target staged, no active orders) should never
+      // leave the operator with two disabled buttons. Wire it to the
+      // most productive next actions: stage a destination, or open the
+      // recoveries queue so they can pick a target from there.
+      const primaryActionDisabled = false;
       const primaryActionLabel = commandRow
         ? "Route to Target"
         : stageNextOrder
           ? "Open Recovery Queue"
-          : "Route to Target";
+          : "Stage a Target";
       const onPrimaryAction = (): void => {
         if (commandRow) {
           props.onRouteToDetection(commandRow);
@@ -6610,14 +6614,16 @@ function ConsoleScreen(props: {
         }
         if (stageNextOrder) {
           props.onOpenRecoveries();
+          return;
         }
+        props.onOpenDestinationModal();
       };
-      const secondaryActionDisabled = !commandRow && !stageNextOrder;
+      const secondaryActionDisabled = false;
       const secondaryActionLabel = commandRow
         ? "Review Detections"
         : stageNextOrder
           ? "Open Order"
-          : "Review Detections";
+          : "Open Recoveries";
       const onSecondaryAction = (): void => {
         if (commandRow) {
           props.onOpenDetail(commandRow);
@@ -6625,7 +6631,9 @@ function ConsoleScreen(props: {
         }
         if (stageNextOrder) {
           props.onOpenHotlist(stageNextOrder);
+          return;
         }
+        props.onOpenRecoveries();
       };
       return (
         <DashboardWidgetFrame
