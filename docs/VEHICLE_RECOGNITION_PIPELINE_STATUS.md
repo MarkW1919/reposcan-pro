@@ -64,15 +64,45 @@ The other 25 classes inherit v4's accuracy directly (no re-rank applied).
 Estimated overall holdout with re-rank dispatch: **~91-92%**, up from
 v4's 88.76%.
 
-> **v5 re-rank compatibility caveat.** The Jeep and GM-SUV re-rank heads
-> were trained against v4's 30-class confusion structure. v5 shifts that
-> structure: jeep_grand_cherokee's dominant v5 confusion is now
-> **hyundai_santa_fe** (a new class the Jeep head never saw), and the new
-> chevrolet_malibu confuses with nissan_altima. The existing re-rank heads
-> still help the GM full-size SUV cluster (Suburban/Tahoe/Yukon/Escalade
-> all carried forward), but the dispatch table and the Jeep head must be
-> re-validated against the v5 taxonomy before claiming the ~91-92% figure
-> for v5. Treat that number as v4-era until re-measured.
+> **v5 re-rank compatibility caveat (v4-era estimate).** The ~91-92%
+> figure above is v4-era. v5 changed the confusion structure, so it does
+> NOT carry over — see the measured v5 numbers below.
+
+### Measured: v5 + re-rank dispatch (2026-05-21)
+
+Re-measured on the v5 holdout with the actual dispatch policy
+(`scripts/evaluate_make_model_dispatch_v5.py`, trainer-matching
+Resize((260,260)) preprocessing — v5-alone reproduces 86.33% exactly):
+
+| | Holdout |
+|---|---:|
+| v5 alone | 86.33% (827/958) |
+| **v5 + re-rank dispatch** | **86.74%** (831/958) |
+| net delta | **+0.42 pp** |
+
+| Trigger class | v5 | + re-rank | n | reranked |
+|---|---:|---:|---:|---:|
+| chevrolet_tahoe | 80.6% | **88.9%** | 36 | 5 |
+| chevrolet_suburban | 66.7% | **70.8%** | 24 | 5 |
+| gmc_yukon | 50.0% | 50.0% | 8 | 0 |
+| jeep_grand_cherokee | 37.5% | 37.5% | 8 | 0 |
+| jeep_wrangler | 100% | 100% | 8 | 0 |
+
+The net gain is small (+0.42pp) and concentrated in the GM full-size SUV
+cluster (Tahoe +8.3pp, Suburban +4.1pp). Two dispatch heads are now
+**dead weight on v5**:
+
+- **Jeep head never fires.** v5's jeep_grand_cherokee misclassifications
+  now land on **hyundai_santa_fe** (a v5-new class outside the head's
+  trigger set), so the Jeep specialist is never invoked (0 reranked).
+- **gmc_yukon never re-ranks.** v5 misclassifies Yukon as
+  **cadillac_escalade** (v5-new), again outside the trigger set.
+
+To recover dispatch value on v5, the table needs rework, not just reuse:
+add hyundai_santa_fe / cadillac_escalade as triggers (and ideally retrain
+a tall-SUV re-rank head whose class set includes the new siblings). This
+is the highest-leverage make/model accuracy step remaining and is now
+backed by hard numbers rather than estimate.
 
 ## Hardware mapping
 
