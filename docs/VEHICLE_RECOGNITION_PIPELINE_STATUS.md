@@ -1,7 +1,7 @@
 # VEHICLE_RECOGNITION_PIPELINE_STATUS.md
 
 End-to-end status of the LPR + YMM (year/make/model) + color recognition
-pipeline as of 2026-05-14. All training is complete and exported; remaining
+pipeline as of 2026-05-21. All training is complete and exported; remaining
 work is production wiring and the schema design conversation for multi-head
 classifier dispatch.
 
@@ -10,11 +10,37 @@ classifier dispatch.
 | Stage | Run | Holdout | ONNX path |
 |---|---|---:|---|
 | **Plate OCR** | `lpr_ocr_openalpr_support_continue_20260503_0002` | 97.37% exact-match | `runtime/training/.../inference_export/` (Paddle inference format) |
-| **Make/Model primary** | `vehicle-make-model-canonical-v4_20260510_run1` | **88.76%** (30 classes) | `runtime/training/.../exports/model.onnx` |
+| **Make/Model primary** | `vehicle-make-model-canonical-v5_20260519_run1` | **86.33%** (40 classes) | `runtime/training/.../exports/model.onnx` |
+| Make/Model (prev) | `vehicle-make-model-canonical-v4_20260510_run1` | 88.76% (30 classes) | superseded by v5 |
 | **Chevy SUV re-rank** | `vehicle-rerank-gm-fullsize-suv-v1_20260512_run1` | **83.82%** (3 classes) | exports/model.onnx |
 | **Jeep re-rank** | `vehicle-rerank-jeep-realonly-v1_20260514_run1` | **93.75%** (2 classes) | exports/model.onnx |
 | **Year-bucket** | `vehicle-year-bucket-canonical-v1_20260509_run1` | **67.73%** (5 buckets) | exports/model.onnx |
 | **Color (synth)** | `vehicle-color-canonical-v1_20260512_run1` | 98.79% val (synthetic only) | exports/model.onnx |
+
+### Canonical-v5 (current primary)
+
+v5 expands the make/model taxonomy from 30 → 40 classes, adding
+cadillac_escalade, lincoln_navigator, honda_pilot, ford_escape,
+hyundai_elantra, subaru_outback, kia_sportage, hyundai_santa_fe,
+chevrolet_malibu, and volkswagen_jetta. Best val 89.64% (epoch 15),
+holdout **86.33%**, early-stopped at epoch 25.
+
+The aggregate dip from v4's 88.76% is the expected cost of 10 additional
+(harder) classes, **not** a regression: no carried-forward class with a
+reliable holdout sample (n≥24) dropped more than ~8pp, and several
+improved (toyota_corolla 37.5%→75.0%, jeep_grand_cherokee 25.0%→37.5%,
+gmc_sierra 93.3%→97.8%). New-class mean accuracy is 75.5%; 7 of 10 land
+≥75% (ford_escape and hyundai_elantra at 100%), with 3 soft classes —
+see weak-classes section below.
+
+- Loadable through the real config path via
+  `configs/models/local-onnx-makemodel-v5.yaml` (classifier-integration
+  stack: real v5 classifier on fixture detector/plate/OCR). All four
+  stages report `ready=True` under `validate_model_stack`; the
+  logits→make/model mapping was confirmed correct for all 40 indices.
+- Per-class holdout report:
+  `runtime/training/vehicle-make-model-canonical-v5_20260519_run1/per_class_holdout_report.json`
+  (regenerate with `scripts/evaluate_make_model_per_class_holdout.py`).
 
 All ONNX outputs are EfficientNet-B0 at 260×260 input, dynamic batch,
 fp32, ImageNet normalization mean/std. They share preprocessing so a
@@ -37,6 +63,16 @@ re-rank head and take its prediction.
 The other 25 classes inherit v4's accuracy directly (no re-rank applied).
 Estimated overall holdout with re-rank dispatch: **~91-92%**, up from
 v4's 88.76%.
+
+> **v5 re-rank compatibility caveat.** The Jeep and GM-SUV re-rank heads
+> were trained against v4's 30-class confusion structure. v5 shifts that
+> structure: jeep_grand_cherokee's dominant v5 confusion is now
+> **hyundai_santa_fe** (a new class the Jeep head never saw), and the new
+> chevrolet_malibu confuses with nissan_altima. The existing re-rank heads
+> still help the GM full-size SUV cluster (Suburban/Tahoe/Yukon/Escalade
+> all carried forward), but the dispatch table and the Jeep head must be
+> re-validated against the v5 taxonomy before claiming the ~91-92% figure
+> for v5. Treat that number as v4-era until re-measured.
 
 ## Hardware mapping
 
@@ -96,20 +132,33 @@ Either path produces a real-data accuracy number; until then, color
 head is review_status: pending and should not be promoted as a final
 attribute.
 
-### 3. Remaining weak make/model classes
+### 3. Remaining weak make/model classes (v5)
 
-Three classes are below 70% on holdout and could use a future canonical-v5:
+v5 fixed two of v4's three weak classes (toyota_corolla 37.5%→75.0%,
+toyota_4runner 62.5%→75.0%). dodge_durango stays soft (20.0%, n=5 —
+noisy). The remaining sub-70% classes on the v5 holdout are below.
+**All sit in dense fine-grained-confusion neighborhoods, not data-volume
+holes** (e.g. chevrolet_malibu has 196 train images yet scores 42.9%,
+while hyundai_elantra scores 100% on only 64). Holdout sets for these
+are tiny (n=5–8), so per-class percentages are noisy.
 
-- **toyota_corolla** (37.5%, 3/8 holdout). Has 64 real train samples
-  total. Needs more real Corolla photos — Wikimedia coverage was thin.
-- **dodge_durango** (40.0%, 2/5 holdout). Only 5 holdout samples; the
-  number is noisy. Could re-rank against Ram-cluster but train data
-  is also thin (190 total, mostly synthetic).
-- **toyota_4runner** (62.5%, 5/8 holdout). Confused with Wrangler and
-  Expedition. A tall-boxy-SUV re-rank (4Runner / Wrangler / Expedition)
-  is the textbook fix.
+- **chevrolet_malibu** (42.9%, 3/7 holdout) — NEW in v5. Confuses with
+  nissan_altima. Midsize-sedan cluster.
+- **honda_pilot** (50.0%, 3/6 holdout) — NEW in v5. Confuses across
+  midsize SUVs.
+- **volkswagen_jetta** (50.0%, 4/8 holdout) — NEW in v5. Thin train data
+  (64) and midsize-sedan confusion.
+- **dodge_durango** (20.0%, 1/5 holdout) — carried forward, confuses with
+  ram_pickup. Noisy (n=5).
+- **gmc_yukon** (50.0%, 4/8 holdout) — carried forward, confuses with
+  cadillac_escalade (a new v5 class). Covered by the GM full-size SUV
+  re-rank head once the dispatch is re-validated for v5.
 
-These don't block deployment but are next-cycle improvement targets.
+The structurally-correct fix for the malibu/jetta sedan cluster is a
+**midsize-sedan re-rank head** (malibu / jetta / altima / camry / sonata
+/ corolla), mirroring the proven Jeep and GM-SUV re-rank pattern — not a
+full retrain (these are confusion problems, not volume problems). This
+does not block deployment but is the highest-leverage next accuracy step.
 
 ### 4. Field validation
 
