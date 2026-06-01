@@ -158,6 +158,25 @@ def test_service_recognize_deferred_empty_without_runner():
     assert service.recognize_deferred(frame=object(), vehicle_detections=[_det("car")]) == []
 
 
+def test_model_label_survives_year_color_merge():
+    # model_label uses the alias "model"; the _apply_* helpers round-trip
+    # through model_dump/model_validate, so guard that the field survives.
+    make_model = StubClassifier(
+        default=AttributePredictions.model_validate(
+            {"make": "honda_accord", "make_confidence": 0.8, "model": "accord sedan", "model_confidence": 0.8}
+        )
+    )
+    runner = DeferredRecognitionRunner(
+        make_model=make_model,
+        year=StubClassifier(default=AttributePredictions(year="bucket_2019_2022", year_confidence=0.7)),
+        color=StubClassifier(default=AttributePredictions(color="white", color_confidence=0.6)),
+    )
+    p = runner.recognize(frame=object(), vehicle_detections=[_det("car")])[0]
+    assert p.model_label == "accord sedan"
+    assert p.year == "bucket_2019_2022"
+    assert p.color == "white"
+
+
 def test_rerank_plus_year_color_full_merge():
     make_model = StubClassifier(default=_mm("chevrolet_tahoe", 0.55))
     suv_head = _RerankHead(

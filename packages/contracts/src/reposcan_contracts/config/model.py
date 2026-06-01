@@ -123,6 +123,15 @@ class DeferredRecognitionConfig(BaseModel):
 
     @model_validator(mode="after")
     def _validate_rerank_dispatch(self) -> "DeferredRecognitionConfig":
+        # Re-rank head names must be unique: validate_model_stack derives a
+        # stage id ("deferred.rerank.<name>") from them, and duplicate names
+        # would produce colliding stage reports and ambiguous diagnostics.
+        head_names: set[str] = set()
+        for head in self.rerank_heads:
+            if head.name in head_names:
+                raise ValueError(f"duplicate re-rank head name '{head.name}'; head names must be unique")
+            head_names.add(head.name)
+
         # A single primary class must not dispatch to two different re-rank
         # heads — the dispatch would be ambiguous. Lock that invariant here so
         # a malformed config fails loudly at load time rather than silently

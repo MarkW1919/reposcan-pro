@@ -315,6 +315,46 @@ class TestModelStackConfigSchema:
                 },
             })
 
+    def test_rerank_duplicate_head_name_rejected(self):
+        with pytest.raises(ValidationError):
+            ModelStackConfig.model_validate({
+                "stack_name": "dup-head-name",
+                "vehicle_detector": {
+                    "name": "vd", "artifact_path": "a.onnx", "input_width": 640, "input_height": 640,
+                },
+                "plate_detector": {
+                    "name": "pd", "artifact_path": "b.onnx", "input_width": 640, "input_height": 640,
+                },
+                "ocr": {
+                    "name": "ocr", "artifact_path": "c.onnx",
+                    "input_width": 94, "input_height": 24, "charset": "ABC",
+                },
+                "deferred_recognition": {
+                    "make_model": {
+                        "name": "mm", "artifact_path": "mm.onnx",
+                        "input_width": 260, "input_height": 260,
+                    },
+                    "rerank_heads": [
+                        {
+                            "name": "dup",
+                            "trigger_classes": ["jeep_grand_cherokee"],
+                            "classifier": {
+                                "name": "a", "artifact_path": "a2.onnx",
+                                "input_width": 260, "input_height": 260,
+                            },
+                        },
+                        {
+                            "name": "dup",  # same name, different triggers
+                            "trigger_classes": ["chevrolet_tahoe"],
+                            "classifier": {
+                                "name": "b", "artifact_path": "b2.onnx",
+                                "input_width": 260, "input_height": 260,
+                            },
+                        },
+                    ],
+                },
+            })
+
     def test_rerank_requires_nonempty_triggers(self):
         with pytest.raises(ValidationError):
             ModelStackConfig.model_validate({
