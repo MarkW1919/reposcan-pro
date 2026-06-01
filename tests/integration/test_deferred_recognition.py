@@ -118,6 +118,46 @@ def test_year_and_color_merge():
     assert p.color_confidence == 0.66
 
 
+def test_service_recognize_deferred_delegates_to_runner():
+    from reposcan_contracts.config.loader import load_model_config, load_pipeline_config
+    from reposcan_inference.adapters import ModelAdapterBundle
+    from reposcan_inference.service import InferenceService
+
+    model_stack = load_model_config("configs/models/local-demo-runtime.yaml")
+    pipeline = load_pipeline_config("configs/pipelines/default-edge.yaml")
+
+    runner = DeferredRecognitionRunner(make_model=StubClassifier(default=_mm("ford_f_series", 0.91)))
+    service = InferenceService(
+        model_stack=model_stack,
+        pipeline_config=pipeline,
+        adapters=ModelAdapterBundle.noop_from_config(model_stack),
+        deferred_runner=runner,
+    )
+
+    assert service.has_deferred_recognition() is True
+    preds = service.recognize_deferred(frame=object(), vehicle_detections=[_det("car")])
+    assert len(preds) == 1
+    assert preds[0].make == "ford_f_series"
+
+
+def test_service_recognize_deferred_empty_without_runner():
+    from reposcan_contracts.config.loader import load_model_config, load_pipeline_config
+    from reposcan_inference.adapters import ModelAdapterBundle
+    from reposcan_inference.service import InferenceService
+
+    model_stack = load_model_config("configs/models/local-demo-runtime.yaml")
+    pipeline = load_pipeline_config("configs/pipelines/default-edge.yaml")
+    service = InferenceService(
+        model_stack=model_stack,
+        pipeline_config=pipeline,
+        adapters=ModelAdapterBundle.noop_from_config(model_stack),
+        deferred_runner=None,
+    )
+
+    assert service.has_deferred_recognition() is False
+    assert service.recognize_deferred(frame=object(), vehicle_detections=[_det("car")]) == []
+
+
 def test_rerank_plus_year_color_full_merge():
     make_model = StubClassifier(default=_mm("chevrolet_tahoe", 0.55))
     suv_head = _RerankHead(

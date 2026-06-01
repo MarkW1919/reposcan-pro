@@ -177,10 +177,20 @@ reports each deferred stage (`deferred.make_model`,
 Dispatch/merge logic is unit-tested with stub adapters; the real runner
 was smoke-checked on holdout crops.
 
-Remaining for this item (future slice): decide where the deferred runner
-plugs into the post-scan service flow (the IMX678 stored-frame
-enrichment step) and re-validate the re-rank dispatch table against v5's
-shifted confusion structure (see the v5 caveat above).
+**Service entrypoint landed (2026-05-21).** `InferenceService` now
+builds the deferred runner from the stack in `from_config_paths` and
+exposes `recognize_deferred(frame, vehicle_detections)` plus
+`has_deferred_recognition()`. The real-time `run()` path is untouched
+(LPR-only stays single-head); `recognize_deferred` is the separate
+post-scan enrichment entrypoint the IMX678 stored-frame step calls. It
+returns `[]` when no deferred block is configured, so callers can invoke
+it unconditionally. Wiring is unit-tested with a stub runner.
+
+Remaining for this item (future slice): connect `recognize_deferred` to
+the actual post-scan trigger in the capture/scan-session flow (when the
+scan radius is exited, enrich the stored frames). The re-rank dispatch
+table itself was re-validated against v5 — see the measured table above;
+the heads need rework, not just wiring, to add value on v5.
 
 ### 2. Color head real-data validation
 

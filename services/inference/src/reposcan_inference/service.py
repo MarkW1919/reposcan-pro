@@ -7,11 +7,14 @@ from time import perf_counter
 from reposcan_contracts.config.loader import load_model_config, load_pipeline_config
 from reposcan_contracts.config.model import ClassifierModelConfig, DetectorModelConfig, ModelStackConfig, OcrModelConfig
 from reposcan_contracts.config.pipeline import PipelineConfig
+from typing import Sequence
+
 from reposcan_contracts.frame import FrameEnvelope, PreparedFrame
-from reposcan_contracts.inference import InferenceCandidate, ModelVersions
+from reposcan_contracts.inference import AttributePredictions, InferenceCandidate, ModelVersions, VehicleDetection
 
 from .adapters import ModelAdapterBundle
 from .adapter_factory import build_runtime_adapter_bundle
+from .deferred_recognition import DeferredRecognitionRunner, build_deferred_recognition_runner
 
 
 def _model_version(model_config: DetectorModelConfig | OcrModelConfig | ClassifierModelConfig) -> str:
@@ -24,10 +27,16 @@ class InferenceService:
         model_stack: ModelStackConfig,
         pipeline_config: PipelineConfig,
         adapters: ModelAdapterBundle,
+        deferred_runner: DeferredRecognitionRunner | None = None,
     ) -> None:
         self.model_stack = model_stack
         self.pipeline_config = pipeline_config
         self.adapters = adapters
+        # Optional post-scan recognition runner (make/model + re-rank + year +
+        # color). Lives alongside, not inside, the real-time run() path: in the
+        # dual-camera design the real-time camera does LPR only and this runs
+        # against stored frames after the scan radius is exited.
+        self.deferred_runner = deferred_runner
 
     @classmethod
     def from_config_paths(
@@ -36,16 +45,21 @@ class InferenceService:
         model_config_path: str = "configs/models/example-model-stack.yaml",
         pipeline_config_path: str = "configs/pipelines/default-edge.yaml",
         adapters: ModelAdapterBundle | None = None,
+        deferred_runner: DeferredRecognitionRunner | None = None,
     ) -> "InferenceService":
         model_stack = load_model_config(model_config_path)
         pipeline_config = load_pipeline_config(pipeline_config_path)
         configured_adapters = adapters
         if configured_adapters is None:
             configured_adapters = build_runtime_adapter_bundle(model_stack)
+        resolved_deferred = deferred_runner
+        if resolved_deferred is None:
+            resolved_deferred = build_deferred_recognition_runner(model_stack)
         return cls(
             model_stack=model_stack,
             pipeline_config=pipeline_config,
             adapters=configured_adapters or ModelAdapterBundle.noop_from_config(model_stack),
+            deferred_runner=resolved_deferred,
         )
 
     def model_versions(self) -> ModelVersions:
@@ -87,3 +101,23 @@ class InferenceService:
 
     def run_batch(self, frames: list[FrameEnvelope | PreparedFrame]) -> list[InferenceCandidate]:
         return [self.run(frame) for frame in frames]
+
+    def has_deferred_recognition(self) -> bool:
+        """True when a deferred recognition pipeline is wired and ready."""
+        return self.deferred_runner is not None
+
+    def recognize_deferred(
+        self,
+        frame: FrameEnvelope | PreparedFrame,
+        vehicle_detections: Sequence[VehicleDetection],
+    ) -> list[AttributePredictions]:
+        """Run the deferred (post-scan) recognition pipeline on stored crops.
+
+        Returns one merged AttributePredictions (make/model + re-rank +
+        year + color) per supplied vehicle detection. Returns an empty list
+        when no deferred_recognition pipeline is configured, so callers can
+        invoke this unconditionally during post-scan enrichment.
+        """
+        if self.deferred_runner is None:
+            return []
+        return self.deferred_runner.recognize(frame, vehicle_detections)
