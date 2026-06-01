@@ -235,6 +235,118 @@ class TestModelStackConfigSchema:
                 },
             })
 
+    def test_makemodel_v5_stack_file_parses(self):
+        stack = load_model_config(CONFIGS / "models" / "local-onnx-makemodel-v5.yaml")
+        assert stack.stack_name == "local-onnx-makemodel-v5"
+        assert stack.classifier is not None
+        assert stack.classifier.input_width == 260
+        assert stack.classifier.label_metadata_path is not None
+        assert stack.deferred_recognition is None
+
+    def test_deferred_recognition_file_parses(self):
+        stack = load_model_config(CONFIGS / "models" / "canonical-v5-deferred.yaml")
+        assert stack.stack_name == "canonical-v5-deferred"
+        # Real-time classifier slot intentionally empty; recognition is deferred.
+        assert stack.classifier is None
+        deferred = stack.deferred_recognition
+        assert deferred is not None
+        assert deferred.make_model.input_width == 260
+        assert {head.name for head in deferred.rerank_heads} == {"gm-fullsize-suv", "jeep"}
+        assert deferred.year is not None
+        assert deferred.color is not None
+        # Jeep head dispatches on both Jeep classes.
+        jeep = next(h for h in deferred.rerank_heads if h.name == "jeep")
+        assert "jeep_grand_cherokee" in jeep.trigger_classes
+
+    def test_deferred_recognition_optional(self):
+        stack = ModelStackConfig.model_validate({
+            "stack_name": "no-deferred",
+            "vehicle_detector": {
+                "name": "vd", "artifact_path": "a.onnx", "input_width": 640, "input_height": 640,
+            },
+            "plate_detector": {
+                "name": "pd", "artifact_path": "b.onnx", "input_width": 640, "input_height": 640,
+            },
+            "ocr": {
+                "name": "ocr", "artifact_path": "c.onnx",
+                "input_width": 94, "input_height": 24, "charset": "ABC",
+            },
+        })
+        assert stack.deferred_recognition is None
+
+    def test_rerank_ambiguous_dispatch_rejected(self):
+        # The same primary class claimed by two re-rank heads must fail to load.
+        with pytest.raises(ValidationError):
+            ModelStackConfig.model_validate({
+                "stack_name": "ambiguous-dispatch",
+                "vehicle_detector": {
+                    "name": "vd", "artifact_path": "a.onnx", "input_width": 640, "input_height": 640,
+                },
+                "plate_detector": {
+                    "name": "pd", "artifact_path": "b.onnx", "input_width": 640, "input_height": 640,
+                },
+                "ocr": {
+                    "name": "ocr", "artifact_path": "c.onnx",
+                    "input_width": 94, "input_height": 24, "charset": "ABC",
+                },
+                "deferred_recognition": {
+                    "make_model": {
+                        "name": "mm", "artifact_path": "mm.onnx",
+                        "input_width": 260, "input_height": 260,
+                    },
+                    "rerank_heads": [
+                        {
+                            "name": "head_a",
+                            "trigger_classes": ["jeep_grand_cherokee"],
+                            "classifier": {
+                                "name": "a", "artifact_path": "a2.onnx",
+                                "input_width": 260, "input_height": 260,
+                            },
+                        },
+                        {
+                            "name": "head_b",
+                            "trigger_classes": ["jeep_grand_cherokee"],  # conflict
+                            "classifier": {
+                                "name": "b", "artifact_path": "b2.onnx",
+                                "input_width": 260, "input_height": 260,
+                            },
+                        },
+                    ],
+                },
+            })
+
+    def test_rerank_requires_nonempty_triggers(self):
+        with pytest.raises(ValidationError):
+            ModelStackConfig.model_validate({
+                "stack_name": "empty-triggers",
+                "vehicle_detector": {
+                    "name": "vd", "artifact_path": "a.onnx", "input_width": 640, "input_height": 640,
+                },
+                "plate_detector": {
+                    "name": "pd", "artifact_path": "b.onnx", "input_width": 640, "input_height": 640,
+                },
+                "ocr": {
+                    "name": "ocr", "artifact_path": "c.onnx",
+                    "input_width": 94, "input_height": 24, "charset": "ABC",
+                },
+                "deferred_recognition": {
+                    "make_model": {
+                        "name": "mm", "artifact_path": "mm.onnx",
+                        "input_width": 260, "input_height": 260,
+                    },
+                    "rerank_heads": [
+                        {
+                            "name": "head_a",
+                            "trigger_classes": [],  # invalid: must be non-empty
+                            "classifier": {
+                                "name": "a", "artifact_path": "a2.onnx",
+                                "input_width": 260, "input_height": 260,
+                            },
+                        },
+                    ],
+                },
+            })
+
 
 # ---------------------------------------------------------------------------
 # Pipeline config

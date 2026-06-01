@@ -9,7 +9,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional
 
-from pydantic import BaseModel, Field, PrivateAttr
+from pydantic import BaseModel, Field, PrivateAttr, model_validator
 
 
 class InferenceBackend(str, Enum):
@@ -74,6 +74,71 @@ class ClassifierModelConfig(BaseModel):
     enabled: bool = True
 
 
+class RerankHeadConfig(BaseModel):
+    """A hierarchical re-rank specialist for the deferred recognition pipeline.
+
+    When the primary make/model classifier predicts one of ``trigger_classes``,
+    the deferred pipeline re-runs this dedicated specialist classifier (which
+    has model capacity focused on a small confusable cluster) and takes its
+    prediction instead. This is the config home for the already-trained Jeep
+    and GM full-size SUV re-rank heads.
+    """
+
+    name: str = Field(..., description="Human-readable re-rank head name")
+    trigger_classes: list[str] = Field(
+        ...,
+        min_length=1,
+        description="Primary make/model class labels that dispatch to this head",
+    )
+    classifier: ClassifierModelConfig = Field(
+        ..., description="The specialist classifier run when a trigger class is predicted"
+    )
+
+
+class DeferredRecognitionConfig(BaseModel):
+    """Deferred (post-scan) recognition pipeline configuration.
+
+    Runs make/model + optional re-rank specialists + year + color against
+    stored frames AFTER the scan radius is exited. This is intentionally a
+    separate config root from the real-time LPR classifier slot
+    (``ModelStackConfig.classifier``): the real-time slot is latency-budgeted
+    and single-head, while deferred recognition trades latency for accuracy
+    and composes multiple heads. The split mirrors the dual-camera
+    scout/sniper architecture already wired in the deployment config.
+    """
+
+    make_model: ClassifierModelConfig = Field(
+        ..., description="Primary make/model classifier run first on every stored crop"
+    )
+    rerank_heads: list[RerankHeadConfig] = Field(
+        default_factory=list,
+        description="Hierarchical specialists dispatched when make_model predicts a trigger class",
+    )
+    year: Optional[ClassifierModelConfig] = Field(
+        None, description="Optional year-bucket classifier"
+    )
+    color: Optional[ClassifierModelConfig] = Field(
+        None, description="Optional color classifier"
+    )
+
+    @model_validator(mode="after")
+    def _validate_rerank_dispatch(self) -> "DeferredRecognitionConfig":
+        # A single primary class must not dispatch to two different re-rank
+        # heads — the dispatch would be ambiguous. Lock that invariant here so
+        # a malformed config fails loudly at load time rather than silently
+        # picking a head at runtime.
+        seen: dict[str, str] = {}
+        for head in self.rerank_heads:
+            for trigger in head.trigger_classes:
+                if trigger in seen:
+                    raise ValueError(
+                        f"trigger class '{trigger}' is claimed by both re-rank heads "
+                        f"'{seen[trigger]}' and '{head.name}'; dispatch must be unambiguous"
+                    )
+                seen[trigger] = head.name
+        return self
+
+
 class ModelStackConfig(BaseModel):
     """Complete model stack configuration loaded from configs/models/*.yaml."""
 
@@ -88,6 +153,13 @@ class ModelStackConfig(BaseModel):
     ocr: OcrModelConfig
     classifier: Optional[ClassifierModelConfig] = Field(
         None, description="Classifier is optional; disable for inference-only deployments"
+    )
+    deferred_recognition: Optional[DeferredRecognitionConfig] = Field(
+        None,
+        description=(
+            "Optional deferred (post-scan) recognition pipeline: make/model + re-rank "
+            "specialists + year + color. Runs outside the real-time latency budget."
+        ),
     )
     _config_dir: Path | None = PrivateAttr(default=None)
 

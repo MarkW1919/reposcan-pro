@@ -118,6 +118,27 @@ fields. To wire the trained stack as-is, we need to either:
 Recommend **Option B** because it mirrors the dual-camera architecture
 (real-time and deferred are already separate pipelines).
 
+**RESOLVED (2026-05-21): Option B chosen.** Contracts slice landed:
+`DeferredRecognitionConfig` + `RerankHeadConfig` added to
+[packages/contracts/src/reposcan_contracts/config/model.py](../packages/contracts/src/reposcan_contracts/config/model.py)
+as an optional `deferred_recognition` block on `ModelStackConfig`. It
+holds the make_model primary, a list of re-rank heads (each with
+`trigger_classes` → specialist classifier), and optional year/color
+heads. A model-validator rejects ambiguous dispatch (one primary class
+claimed by two heads) and empty trigger lists. The real-time
+`classifier` slot is untouched, so existing single-head configs still
+validate. Schema is locked by tests in
+[tests/contracts/test_config_loaders.py](../tests/contracts/test_config_loaders.py)
+and exercised by a real wiring config,
+`configs/models/canonical-v5-deferred.yaml`, that composes v5 +
+Jeep/GM-SUV re-rank + year + color.
+
+Remaining for this item (next slice): inference-service support — a
+deferred-recognition adapter/runner that executes make_model, applies
+the re-rank dispatch, and attaches year/color, plus
+`validate_model_stack` coverage for the deferred stages. The contracts
+foundation above unblocks that work.
+
 ### 2. Color head real-data validation
 
 The color classifier is trained 100% on Synset-Boulevard synthetic
