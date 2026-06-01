@@ -53,6 +53,10 @@ from .edge_bench import (
     run_edge_bench,
     write_edge_bench_artifacts,
 )
+from .deferred_recognition import (
+    DeferredRecognitionRunner,
+    build_deferred_recognition_runner,
+)
 from .onnx_adapters import (
     build_onnx_adapter_bundle,
     get_default_onnx_providers,
@@ -159,7 +163,9 @@ __all__ = [
     "StaticPlateDetectorAdapter",
     "StaticVehicleDetectorAdapter",
     "ValidationIssue",
+    "DeferredRecognitionRunner",
     "build_builtin_runtime_adapter_bundle",
+    "build_deferred_recognition_runner",
     "build_model_artifact_manifest",
     "build_onnx_adapter_bundle",
     "build_configured_adapter_bundle",

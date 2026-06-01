@@ -155,6 +155,16 @@ def validate_model_stack(model_stack: ModelStackConfig) -> ModelStackValidationR
     if model_stack.classifier is not None:
         stages.append(_stage_report(model_stack, "classifier", model_stack.classifier))
 
+    deferred = model_stack.deferred_recognition
+    if deferred is not None:
+        stages.append(_stage_report(model_stack, "deferred.make_model", deferred.make_model))
+        for head in deferred.rerank_heads:
+            stages.append(_stage_report(model_stack, f"deferred.rerank.{head.name}", head.classifier))
+        if deferred.year is not None:
+            stages.append(_stage_report(model_stack, "deferred.year", deferred.year))
+        if deferred.color is not None:
+            stages.append(_stage_report(model_stack, "deferred.color", deferred.color))
+
     return ModelStackValidationReport(
         stack_name=model_stack.stack_name,
         ready=all(stage.ready for stage in stages),

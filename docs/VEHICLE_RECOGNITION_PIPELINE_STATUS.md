@@ -133,11 +133,24 @@ and exercised by a real wiring config,
 `configs/models/canonical-v5-deferred.yaml`, that composes v5 +
 Jeep/GM-SUV re-rank + year + color.
 
-Remaining for this item (next slice): inference-service support — a
-deferred-recognition adapter/runner that executes make_model, applies
-the re-rank dispatch, and attaches year/color, plus
-`validate_model_stack` coverage for the deferred stages. The contracts
-foundation above unblocks that work.
+**Inference-service slice landed (2026-05-21).**
+`reposcan_inference.deferred_recognition.DeferredRecognitionRunner`
+executes the full dispatch: run make_model on every crop, re-run a
+re-rank specialist when the primary prediction matches its
+`trigger_classes` (taking the specialist's make/model), then attach
+year + color. `build_deferred_recognition_runner` wires real ONNX
+adapters from a stack's `deferred_recognition` block (all-or-nothing,
+mirroring `build_onnx_adapter_bundle`). `validate_model_stack` now
+reports each deferred stage (`deferred.make_model`,
+`deferred.rerank.<name>`, `deferred.year`, `deferred.color`); the
+`canonical-v5-deferred.yaml` stack validates all 8 stages ready=True.
+Dispatch/merge logic is unit-tested with stub adapters; the real runner
+was smoke-checked on holdout crops.
+
+Remaining for this item (future slice): decide where the deferred runner
+plugs into the post-scan service flow (the IMX678 stored-frame
+enrichment step) and re-validate the re-rank dispatch table against v5's
+shifted confusion structure (see the v5 caveat above).
 
 ### 2. Color head real-data validation
 

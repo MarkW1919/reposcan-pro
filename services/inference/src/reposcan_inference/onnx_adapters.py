@@ -509,7 +509,10 @@ def validate_onnx_artifact(
         "plate_detector": {"boxes_xywh", "scores", "label_indices"},
         "ocr": {"texts", "confidences"},
     }
-    if stage == "classifier":
+    # Discriminate by config type, not stage name: deferred-recognition
+    # classifier stages carry descriptive names (e.g. "deferred.make_model",
+    # "deferred.rerank.jeep") but are still ClassifierModelConfig.
+    if isinstance(model_config, ClassifierModelConfig):
         if _supports_structured_classifier_outputs(output_names):
             return issues
         if "logits" in output_names:
