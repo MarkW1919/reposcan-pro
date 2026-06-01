@@ -5344,6 +5344,7 @@ function App(): ReactElement {
               onToggleHistoricalAlertPins={() => updateSetting("showHistoricalAlertPins", !settings.showHistoricalAlertPins)}
               onToggleLayerMenu={() => setMapLayerMenuOpen((current) => !current)}
               onToggleRadiusRing={() => updateSetting("showRadiusRing", !settings.showRadiusRing)}
+              onToggleShiftMode={() => updateSetting("shiftModeLargeText", !settings.shiftModeLargeText)}
               onUpdateDashboardLayoutMode={handleDashboardModeChange}
               onUpdateDashboardWidgetMove={handleDashboardWidgetMove}
               onUpdateDashboardWidgetSize={handleDashboardWidgetSize}
@@ -6393,6 +6394,7 @@ function ConsoleScreen(props: {
   onToggleHistoricalAlertPins: () => void;
   onToggleLayerMenu: () => void;
   onToggleRadiusRing: () => void;
+  onToggleShiftMode: () => void;
   onUpdateDashboardLayoutMode: (mode: DashboardLayoutMode) => void;
   onUpdateDashboardWidgetMove: (sourceWidgetId: DashboardWidgetId, targetWidgetId: DashboardWidgetId) => void;
   onUpdateDashboardWidgetSize: (widgetId: DashboardWidgetId, size: DashboardWidgetSize) => void;
@@ -6892,6 +6894,12 @@ function ConsoleScreen(props: {
             }}
             time={{ label: "Time", value: dashboardClock, detail: props.liveAddress.address?.city ?? "Local" }}
             actions={[
+              {
+                label: props.settings.shiftModeLargeText ? "Cab mode on" : "Cab mode off",
+                onClick: props.onToggleShiftMode,
+                icon: "Aa",
+                active: props.settings.shiftModeLargeText,
+              },
               { label: "Recoveries", onClick: props.onOpenRecoveries, icon: props.activeAlerts > 0 ? String(props.activeAlerts) : "!" },
               { label: "Settings", onClick: props.onOpenSettings, icon: "S" },
             ]}

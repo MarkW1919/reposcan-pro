@@ -321,6 +321,15 @@ body {
   font-weight: 700;
 }
 
+.instrument-status-bar__icon-button.is-active {
+  border-color: rgba(139, 214, 255, 0.46);
+  background:
+    linear-gradient(180deg, rgba(139, 214, 255, 0.18), rgba(139, 214, 255, 0.04)),
+    rgba(13, 16, 21, 0.92);
+  color: var(--cyan);
+  box-shadow: 0 0 0 1px rgba(139, 214, 255, 0.18) inset;
+}
+
 .instrument-status-bar__customize {
   padding: 0 18px;
   color: var(--cyan);

@@ -13,6 +13,7 @@ interface InstrumentAction {
   label: string;
   onClick: () => void;
   icon?: ReactNode;
+  active?: boolean;
 }
 
 export function InstrumentStatusBar(props: {
@@ -64,7 +65,14 @@ export function InstrumentStatusBar(props: {
 
       <div className="instrument-status-bar__actions">
         {props.actions?.map((action) => (
-          <button key={action.label} className="instrument-status-bar__icon-button" type="button" onClick={action.onClick} aria-label={action.label}>
+          <button
+            key={action.label}
+            className={`instrument-status-bar__icon-button ${action.active ? "is-active" : ""}`.trim()}
+            type="button"
+            onClick={action.onClick}
+            aria-label={action.label}
+            aria-pressed={action.active}
+          >
             {action.icon ?? action.label.slice(0, 1)}
           </button>
         ))}
