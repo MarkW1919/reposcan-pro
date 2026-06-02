@@ -186,11 +186,26 @@ post-scan enrichment entrypoint the IMX678 stored-frame step calls. It
 returns `[]` when no deferred block is configured, so callers can invoke
 it unconditionally. Wiring is unit-tested with a stub runner.
 
-Remaining for this item (future slice): connect `recognize_deferred` to
-the actual post-scan trigger in the capture/scan-session flow (when the
-scan radius is exited, enrich the stored frames). The re-rank dispatch
-table itself was re-validated against v5 — see the measured table above;
-the heads need rework, not just wiring, to add value on v5.
+**Enrichment orchestration landed (2026-06-02).**
+`reposcan_inference.deferred_enrichment.DeferredEnrichmentService` is the
+write-back half: given stored detection records it reconstructs a frame
+from each record's `image_path` + a `VehicleDetection` from its
+`vehicle_bbox`, runs `recognize_deferred`, and writes make/model/color/
+year back onto the record via the storage repository. Only attributes the
+pipeline actually produced are written, so an absent head never clears an
+existing attribute. Both collaborators (recognizer + repository) are
+injected, so it is unit-tested with the real in-memory repository + stub
+recognizers (5 cases). This is the deterministic core that turns the
+deferred pipeline into persisted enrichment.
+
+Remaining for this item (future slice): the GPS-driven trigger — when the
+scan radius is exited, gather that scan window's detection ids and call
+`DeferredEnrichmentService.enrich_detections(...)`. That requires a
+backend scan-session state machine (radius tracking on the live GPS feed)
+which does not exist yet; the enrichment core it would call is now ready.
+Separately, the re-rank dispatch table was re-validated against v5 (see
+the measured table above) — the heads need rework, not just wiring, to
+add value on v5.
 
 ### 2. Color head real-data validation
 
