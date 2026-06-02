@@ -9321,11 +9321,11 @@ function HotlistAlertOverlay(props: {
   return (
     <>
       <div className="hotlist-alert__scrim" onClick={props.onDismiss} />
-      <div className="hotlist-alert">
+      <div className="hotlist-alert" role="alertdialog" aria-modal="true" aria-labelledby="hotlist-alert-title">
       <div className="hotlist-alert__header">
         <div>
           <p className="eyebrow">Recovery Alert</p>
-          <h2>Recovery Match Located</h2>
+          <h2 id="hotlist-alert-title">Recovery Match Located</h2>
         </div>
         <div className="hotlist-alert__header-right">
           <Badge tone="critical">{props.hotlistAudioMuted ? "Muted" : "Audio + visual"}</Badge>
