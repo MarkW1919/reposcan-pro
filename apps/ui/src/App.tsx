@@ -5551,7 +5551,7 @@ function App(): ReactElement {
               <strong>{shellCopy.title}</strong>
               <small>{shellCopy.detail}</small>
             </div>
-            <div className="dashboard-footer__shell-toggle" role="tablist" aria-label="Workspace area">
+            <div className="dashboard-footer__shell-toggle" role="group" aria-label="Workspace area">
               <button
                 className={currentShell === "operations" ? "is-active" : ""}
                 aria-pressed={currentShell === "operations"}
