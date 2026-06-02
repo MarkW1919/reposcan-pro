@@ -53,6 +53,10 @@ from .edge_bench import (
     run_edge_bench,
     write_edge_bench_artifacts,
 )
+from .deferred_enrichment import (
+    DeferredEnrichmentResult,
+    DeferredEnrichmentService,
+)
 from .deferred_recognition import (
     DeferredRecognitionRunner,
     build_deferred_recognition_runner,
@@ -163,6 +167,8 @@ __all__ = [
     "StaticPlateDetectorAdapter",
     "StaticVehicleDetectorAdapter",
     "ValidationIssue",
+    "DeferredEnrichmentResult",
+    "DeferredEnrichmentService",
     "DeferredRecognitionRunner",
     "build_builtin_runtime_adapter_bundle",
     "build_deferred_recognition_runner",
