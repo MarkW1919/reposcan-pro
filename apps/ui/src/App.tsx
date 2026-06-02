@@ -80,6 +80,7 @@ import {
 } from "./live-api";
 import { detectionSeverityForRow, detectionSeverityLabel } from "./presentation/detectionSeverity";
 import { playRecoveryAlertTone, speakPlate, stopSpeaking } from "./alert-audio";
+import { useScreenWakeLock } from "./use-wake-lock";
 
 type AppScreen = "console" | "search" | "accounts" | "hotlists" | "settings";
 type AppShell = "operations" | "admin";
@@ -3770,6 +3771,9 @@ function App(): ReactElement {
     withinRadius,
     activeRouteFeet,
   });
+  // Hold the screen awake whenever the driver is actively routing or a scan
+  // session is live, so the mounted display never sleeps mid-recovery.
+  useScreenWakeLock(navigationActive || scanSession.state !== "idle");
   const totalReads = overview?.counts.recent_detections ?? 142;
   const activeAlerts = overview?.counts.active_alerts ?? allRows.filter((row) => row.hotlist).length;
   const activeSessions = overview?.counts.active_sessions ?? 3;
