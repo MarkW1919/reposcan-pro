@@ -9267,6 +9267,14 @@ function HotlistAlertOverlay(props: {
     plateText: props.hotlistRow.plate1,
     vehicleLabel: props.hotlistRow.vehicle,
   });
+  const routeButtonRef = useRef<HTMLButtonElement>(null);
+
+  // Move focus into the alertdialog when it opens, landing on the primary
+  // "Route" action so keyboard / steering-remote users can act immediately
+  // without tabbing through the overlay.
+  useEffect(() => {
+    routeButtonRef.current?.focus();
+  }, []);
 
   useEffect(() => {
     function handleKey(event: KeyboardEvent): void {
@@ -9434,7 +9442,7 @@ function HotlistAlertOverlay(props: {
       <div className="hotlist-alert__actions">
         <div className="hotlist-alert__actions-primary">
           <Tooltip text="Route to this vehicle's last-seen point">
-            <button className="btn btn--primary" type="button" onClick={props.onNavigate}>
+            <button ref={routeButtonRef} className="btn btn--primary" type="button" onClick={props.onNavigate}>
               Route to Last Seen
             </button>
           </Tooltip>
