@@ -5738,6 +5738,55 @@ body.shift-mode .map-stage__control {
   }
 }
 
+/*
+ * Cab mode: a recovery match firing while the operator is driving is the
+ * highest-stakes glance moment in the app. The full alert is a desk-grade
+ * review surface (verification checklist, field directive, detail grid,
+ * confirm/false-positive strip, keyboard shortcuts) — too much to parse in
+ * motion. When the in-cab large-text toggle is on, collapse that chrome and
+ * dominate with the plate + oversized Route / Recover / Dismiss touch
+ * targets. The hit adjudication (confirm / false positive) belongs to
+ * stationary review, so it is hidden here; toggle cab mode off to access it.
+ * This is presentation-only — no actions are removed from the DOM, and
+ * feedback messages stay visible so a "recovered" confirmation still shows.
+ */
+body.shift-mode .hotlist-alert__note,
+body.shift-mode .hotlist-alert__verification,
+body.shift-mode .hotlist-alert__banner,
+body.shift-mode .hotlist-alert__workflow,
+body.shift-mode .hotlist-alert__grid,
+body.shift-mode .hotlist-alert__review-strip,
+body.shift-mode .hotlist-alert__shortcuts {
+  display: none;
+}
+
+body.shift-mode .hotlist-alert__identity strong {
+  font-size: clamp(2.4rem, 7vw, 4rem);
+  letter-spacing: 0.06em;
+  line-height: 1.02;
+}
+
+body.shift-mode .hotlist-alert__header h2 {
+  font-size: clamp(1.4rem, 4vw, 2rem);
+}
+
+/* Route is the one action that matters while moving — make every action a
+ * large, unambiguous touch target and the row easy to hit without aiming. */
+body.shift-mode .hotlist-alert__actions {
+  gap: 14px;
+}
+
+body.shift-mode .hotlist-alert__actions-primary .btn,
+body.shift-mode .hotlist-alert__actions-secondary .btn {
+  min-height: 64px;
+  font-size: clamp(1rem, 2.6vw, 1.35rem);
+  font-weight: 700;
+}
+
+body.shift-mode .hotlist-alert__actions-primary .btn--primary {
+  min-height: 78px;
+}
+
 .hotlist-alert__header-right {
   display: flex;
   align-items: center;
