@@ -79,6 +79,7 @@ import {
   type ScanSessionState,
 } from "./live-api";
 import { detectionSeverityForRow, detectionSeverityLabel } from "./presentation/detectionSeverity";
+import { playRecoveryAlertTone, speakPlate, stopSpeaking } from "./alert-audio";
 
 type AppScreen = "console" | "search" | "accounts" | "hotlists" | "settings";
 type AppShell = "operations" | "admin";
@@ -3486,6 +3487,7 @@ function App(): ReactElement {
   const [detailReviewsError, setDetailReviewsError] = useState<string | null>(null);
   const prevActiveAlertIdsRef = useRef<Set<string>>(new Set());
   const alertSurfaceInitializedRef = useRef(false);
+  const announcedOverlayIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     setApiClientConfig({ apiKey });
@@ -4166,6 +4168,31 @@ function App(): ReactElement {
       setHotlistAudioMuted(false);
     }
   }, [overview?.alerts, settings.hotlistAlerts, allRows]);
+
+  // Audible recovery cue. A driver's eyes are on the road, so when a new match
+  // overlay appears, play an urgent tone and speak the plate — gated on the
+  // "Audible alerts" setting and the per-alert mute. Announce each overlay
+  // once (announcedOverlayIdRef) so re-renders don't re-trigger, and stop any
+  // in-progress speech the moment the driver mutes or the overlay clears.
+  useEffect(() => {
+    if (hotlistOverlayId === null) {
+      announcedOverlayIdRef.current = null;
+      return;
+    }
+    if (!settings.soundEnabled || hotlistAudioMuted) {
+      stopSpeaking();
+      return;
+    }
+    if (announcedOverlayIdRef.current === hotlistOverlayId) {
+      return;
+    }
+    announcedOverlayIdRef.current = hotlistOverlayId;
+    const matchedPlate = allRows.find((row) => row.id === hotlistOverlayId)?.plate1;
+    playRecoveryAlertTone();
+    if (matchedPlate) {
+      speakPlate(matchedPlate);
+    }
+  }, [hotlistOverlayId, hotlistAudioMuted, settings.soundEnabled, allRows]);
 
   function switchScreen(nextScreen: AppScreen): void {
     if (nextScreen !== "console") {
@@ -8625,7 +8652,7 @@ function SettingsScreen(props: {
               <>
                 <SettingsSectionBlock title="Recovery notices" description="Control how match alerts are presented in the field and how intrusive they should be.">
                   <SettingsToggleRow title="Recovery notifications" detail="Show a full-screen recovery notice when an assigned plate is scanned." checked={props.settings.hotlistAlerts} onChange={(checked) => props.updateSetting("hotlistAlerts", checked)} />
-                  <SettingsToggleRow title="Audible alerts" detail="Play tone on recovery match." checked={props.settings.soundEnabled} onChange={(checked) => props.updateSetting("soundEnabled", checked)} />
+                  <SettingsToggleRow title="Audible alerts" detail="Play an alert tone and speak the plate aloud on a recovery match." checked={props.settings.soundEnabled} onChange={(checked) => props.updateSetting("soundEnabled", checked)} />
                   <SettingsToggleRow title="Vibration" detail="Haptic feedback for field devices." checked={props.settings.vibrationEnabled} onChange={(checked) => props.updateSetting("vibrationEnabled", checked)} />
                   <SettingsRangeRow title="Alert volume" detail={`${props.settings.alertVolume}%`} min={0} max={100} step={5} value={props.settings.alertVolume} onChange={(value) => props.updateSetting("alertVolume", value)} />
                   <SettingsSelectRow title="Banner persistence" detail="How long non-critical alerts stay visible." value={props.settings.alertPersistence} options={["until-dismissed", "15 sec", "60 sec"]} onChange={(value) => props.updateSetting("alertPersistence", value as AlertPersistence)} />
