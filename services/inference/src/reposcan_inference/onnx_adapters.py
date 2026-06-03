@@ -314,6 +314,26 @@ def _supports_structured_classifier_outputs(output_names: set[str]) -> bool:
     }.issubset(output_names)
 
 
+def _format_year_label(label: str | None) -> str | None:
+    """Turn a year-bucket class label into a human-readable range.
+
+    The year head emits class labels like ``bucket_2019_2022``; stored/displayed
+    verbatim that is operator-hostile. Map them to ``2019-2022`` / ``2023+`` /
+    ``pre-2010``. Non-bucket values (e.g. a literal ``2019``) pass through.
+    """
+    if not label or not label.startswith("bucket_"):
+        return label
+    body = label[len("bucket_"):]
+    if body.startswith("pre_"):
+        return f"pre-{body[len('pre_'):]}"
+    if body.endswith("_plus"):
+        return f"{body[: -len('_plus')]}+"
+    parts = body.split("_")
+    if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+        return f"{parts[0]}-{parts[1]}"
+    return body.replace("_", " ")
+
+
 def _attribute_prediction_from_logits(
     logits: object,
     *,
@@ -372,6 +392,7 @@ def _attribute_prediction_from_logits(
 
     if task == DatasetTask.vehicle_year_classification.value:
         year_label = (record.year if record is not None else None) or (record.label if record is not None else None)
+        year_label = _format_year_label(year_label)
         return AttributePredictions.model_validate(
             {
                 "year": year_label,

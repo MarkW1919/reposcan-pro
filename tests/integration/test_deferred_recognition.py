@@ -75,6 +75,29 @@ def test_logits_prediction_splits_underscore_slug_make_model():
     assert pred.model_label == "tahoe"
 
 
+def test_year_bucket_label_formatted_human_readable():
+    import numpy as np
+    from reposcan_contracts.classifier_export import build_classifier_export_metadata
+    from reposcan_contracts.config.model import ClassifierModelConfig
+    from reposcan_contracts.dataset import DatasetTask
+    from reposcan_inference.onnx_adapters import _attribute_prediction_from_logits, _format_year_label
+
+    assert _format_year_label("bucket_2019_2022") == "2019-2022"
+    assert _format_year_label("bucket_2023_plus") == "2023+"
+    assert _format_year_label("bucket_pre_2010") == "pre-2010"
+    assert _format_year_label("2019") == "2019"  # passthrough
+    assert _format_year_label(None) is None
+
+    classes = ["bucket_pre_2010", "bucket_2019_2022", "bucket_2023_plus"]
+    meta = build_classifier_export_metadata(
+        task=DatasetTask.vehicle_year_classification, classes=classes, image_size=260
+    )
+    cfg = ClassifierModelConfig(name="yr", artifact_path="y.onnx", input_width=260, input_height=260)
+    logits = np.array([0.1, 5.0, 0.2], dtype=np.float32)  # -> bucket_2019_2022
+    pred = _attribute_prediction_from_logits(logits, metadata=meta, model_config=cfg)
+    assert pred.year == "2019-2022"
+
+
 def test_no_detections_returns_empty():
     runner = DeferredRecognitionRunner(make_model=StubClassifier(default=_mm("toyota_camry")))
     assert runner.recognize(frame=object(), vehicle_detections=[]) == []
