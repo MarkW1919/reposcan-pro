@@ -6,7 +6,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from .types import PlateMatchType, UtcTimestamp
+from .types import HotlistMatchKind, PlateMatchType, UtcTimestamp
 
 
 class HotlistEntry(BaseModel):
@@ -94,12 +94,21 @@ class HotlistEntry(BaseModel):
 
 
 class HotlistMatchResult(BaseModel):
-    """Result of evaluating a plate text against the hotlist.
+    """Result of evaluating a detection against the hotlist.
 
-    Produced by the alerting service during detection processing.
+    Produced by the alerting service during detection processing. Covers both
+    plate matches (anywhere) and geofenced make/model leads (in-zone only).
     """
 
     matched: bool = Field(..., description="Whether any active hotlist entries were matched")
     entry_id: Optional[str] = Field(None, description="Matched entry identifier, or None if no match")
-    match_type: Optional[PlateMatchType] = Field(None, description="'exact' or 'normalized' when matched")
+    match_kind: Optional[HotlistMatchKind] = Field(
+        None, description="'plate' or 'in_zone_profile' when matched"
+    )
+    match_type: Optional[PlateMatchType] = Field(None, description="'exact' or 'normalized' for plate matches")
+    score: float = Field(0.0, ge=0.0, le=1.0, description="Composite match confidence score")
+    matched_dimensions: list[str] = Field(
+        default_factory=list,
+        description="Dimensions that matched, e.g. ['plate'] or ['make', 'model', 'color']",
+    )
     plate_text: str = Field(..., description="The plate text that was evaluated")

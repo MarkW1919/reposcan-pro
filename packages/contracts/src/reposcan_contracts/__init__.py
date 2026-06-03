@@ -95,7 +95,7 @@ from .vehicle_catalog import (
     VehicleRecognitionLabel,
 )
 from .logging import configure_logging, get_logger
-from .types import PlateMatchType, UtcTimestamp
+from .types import HotlistMatchKind, PlateMatchType, UtcTimestamp
 
 __version__ = "0.1.0"
 
@@ -192,6 +192,7 @@ __all__ = [
     "TrainingProfileConfig",
     "TrainingRunManifest",
     "UtcTimestamp",
+    "HotlistMatchKind",
     "PlateMatchType",
     "configure_logging",
     "get_logger",

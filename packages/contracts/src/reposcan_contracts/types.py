@@ -35,3 +35,17 @@ UtcTimestamp = Annotated[str, AfterValidator(_validate_utc_timestamp)]
 class PlateMatchType(str, Enum):
     exact = "exact"
     normalized = "normalized"
+
+
+class HotlistMatchKind(str, Enum):
+    """How a hotlist entry was matched.
+
+    ``plate`` — a license-plate match (exact/normalized), valid anywhere; the
+    high-confidence CONFIRMED tier.
+    ``in_zone_profile`` — the vehicle's make+model matched a target while the
+    unit was inside that target address's configured radius (the geofenced
+    IN-ZONE LEAD tier). Used for plate-unknown / plate-switched recoveries.
+    """
+
+    plate = "plate"
+    in_zone_profile = "in_zone_profile"
