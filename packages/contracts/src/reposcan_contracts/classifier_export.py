@@ -48,7 +48,30 @@ class ClassifierExportMetadata(BaseModel):
 
 
 def parse_vehicle_make_model_year(label: str) -> tuple[str | None, str | None, str | None]:
-    tokens = [token.strip() for token in label.strip().split() if token.strip()]
+    """Split a class label into (make, model, year).
+
+    Handles both label conventions used in this project:
+      * Canonical slugs joined by underscores, e.g. ``chevrolet_suburban``,
+        ``ford_f_series``, ``jeep_grand_cherokee`` -> make is the first
+        segment, model is the remainder ("suburban", "f series",
+        "grand cherokee").
+      * Space-separated labels (e.g. Stanford-Cars style
+        "Toyota Camry Sedan 2019") -> first token is make, trailing 4-digit
+        token is the year, the rest is the model.
+
+    Without the underscore handling, every canonical make/model class
+    (which never contains spaces) collapsed into a single token, leaving
+    ``model`` null and stuffing the full ``make_model`` slug into ``make``.
+    """
+    raw = label.strip()
+    if not raw:
+        return None, None, None
+
+    # Slug form: no spaces but underscore-joined -> split on underscores.
+    if " " not in raw and "_" in raw:
+        tokens = [token for token in raw.split("_") if token]
+    else:
+        tokens = [token.strip() for token in raw.split() if token.strip()]
     if not tokens:
         return None, None, None
 

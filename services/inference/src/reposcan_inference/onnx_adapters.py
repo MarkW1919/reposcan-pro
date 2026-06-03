@@ -344,14 +344,21 @@ def _attribute_prediction_from_logits(
         )
 
     if task == DatasetTask.vehicle_make_model_classification.value:
-        make_label = record.make if record is not None else None
-        model_label = record.model_label if record is not None else None
-        year_label = record.year if record is not None else None
-        if record is not None and (make_label is None or model_label is None):
-            parsed_make, parsed_model, parsed_year = parse_vehicle_make_model_year(record.label)
-            make_label = make_label or parsed_make
-            model_label = model_label or parsed_model
-            year_label = year_label or parsed_year
+        # Derive make/model/year from the canonical label as the source of
+        # truth. Earlier exports baked make/model with a whitespace-only
+        # parser, so a slug like "chevrolet_suburban" was stored as
+        # make="chevrolet_suburban", model=None. Re-deriving here (build uses
+        # the same parser) yields make="chevrolet", model="suburban" and is
+        # robust to those stale sidecars; we only fall back to the baked
+        # fields if the label itself yields nothing.
+        make_label = None
+        model_label = None
+        year_label = None
+        if record is not None:
+            make_label, model_label, year_label = parse_vehicle_make_model_year(record.label)
+            make_label = make_label or record.make
+            model_label = model_label or record.model_label
+            year_label = year_label or record.year
         return AttributePredictions.model_validate(
             {
                 "make": make_label,

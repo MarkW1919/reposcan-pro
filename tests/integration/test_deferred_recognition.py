@@ -52,6 +52,29 @@ def _mm(make: str, conf: float = 0.8) -> AttributePredictions:
     return AttributePredictions(make=make, make_confidence=conf)
 
 
+def test_logits_prediction_splits_underscore_slug_make_model():
+    # Regression: the real v5 / re-rank labels.json use underscore slugs with
+    # no spaces. The adapter must surface make AND model, not stuff the whole
+    # slug into make with a null model.
+    import numpy as np
+    from reposcan_contracts.classifier_export import build_classifier_export_metadata
+    from reposcan_contracts.config.model import ClassifierModelConfig
+    from reposcan_contracts.dataset import DatasetTask
+    from reposcan_inference.onnx_adapters import _attribute_prediction_from_logits
+
+    classes = ["chevrolet_suburban", "chevrolet_tahoe", "gmc_yukon"]
+    meta = build_classifier_export_metadata(
+        task=DatasetTask.vehicle_make_model_classification, classes=classes, image_size=260
+    )
+    cfg = ClassifierModelConfig(name="mm", artifact_path="m.onnx", input_width=260, input_height=260)
+
+    logits = np.array([0.1, 5.0, 0.2], dtype=np.float32)  # argmax -> chevrolet_tahoe
+    pred = _attribute_prediction_from_logits(logits, metadata=meta, model_config=cfg)
+
+    assert pred.make == "chevrolet"
+    assert pred.model_label == "tahoe"
+
+
 def test_no_detections_returns_empty():
     runner = DeferredRecognitionRunner(make_model=StubClassifier(default=_mm("toyota_camry")))
     assert runner.recognize(frame=object(), vehicle_detections=[]) == []
