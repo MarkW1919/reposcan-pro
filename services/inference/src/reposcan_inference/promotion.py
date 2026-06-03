@@ -21,7 +21,7 @@ from reposcan_contracts.config.model import (
 )
 from reposcan_contracts.model_artifact import ModelArtifactManifest
 
-from .validation import validate_model_stack
+from .validation import iter_model_stack_stages, validate_model_stack
 
 _StageConfig = DetectorModelConfig | OcrModelConfig | ClassifierModelConfig
 
@@ -126,17 +126,27 @@ def build_model_artifact_manifest(
 
 
 def _stage_entries(model_stack: ModelStackConfig) -> list[tuple[str, _StageConfig]]:
-    entries: list[tuple[str, _StageConfig]] = [
-        ("vehicle_detector", model_stack.vehicle_detector),
-        ("plate_detector", model_stack.plate_detector),
-        ("ocr", model_stack.ocr),
-    ]
-    if model_stack.classifier is not None:
-        entries.append(("classifier", model_stack.classifier))
-    return entries
+    # Shared enumeration so promotion packaging never diverges from runtime
+    # validation — includes deferred_recognition stages (the real trained
+    # recognition models in the canonical edge stack).
+    return iter_model_stack_stages(model_stack)
 
 
 def _require_packagable_onnx_stack(model_stack: ModelStackConfig) -> None:
+    # Reject unsupported configs before the expensive runtime-readiness check.
+    # Deferred-recognition stacks are validated (iter_model_stack_stages covers
+    # them) but not yet packagable: the copy/rewrite path assumes flat top-level
+    # stage keys and unique artifact filenames, whereas deferred stages are
+    # nested under deferred_recognition and every head exports the same
+    # model.onnx / labels.json basename (which would collide in one artifacts
+    # dir). Fail loudly rather than silently produce a bundle that omits or
+    # overwrites the real recognition models.
+    if model_stack.deferred_recognition is not None:
+        raise ValueError(
+            "Promoted ONNX packaging does not yet support deferred_recognition stacks "
+            "(nested stage keys + colliding artifact basenames). Package the real-time "
+            "stack, or extend packaging with collision-safe naming and nested rewrite first."
+        )
     runtime_report = validate_model_stack(model_stack)
     if not runtime_report.ready:
         raise ValueError("Source model stack is not runtime-ready and cannot be packaged as a promoted ONNX bundle.")
@@ -337,8 +347,10 @@ def validate_promoted_model_stack(model_stack: ModelStackConfig) -> PromotedBund
                     )
                 )
 
-        # Validate classifier label metadata sidecar when present.
-        if stage == "classifier" and isinstance(model_config, ClassifierModelConfig) and model_config.label_metadata_path:
+        # Validate classifier label metadata sidecar when present. Discriminate
+        # by config type, not the literal stage name, so deferred.* classifier
+        # stages (make_model / rerank / year / color) are covered too.
+        if isinstance(model_config, ClassifierModelConfig) and model_config.label_metadata_path:
             metadata_file = model_stack.resolve_artifact_path(model_config.label_metadata_path)
             if not metadata_file.exists():
                 issues.append(

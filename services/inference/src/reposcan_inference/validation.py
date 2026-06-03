@@ -23,6 +23,39 @@ from .runtime_adapters import (
 )
 
 
+_StageConfig = DetectorModelConfig | OcrModelConfig | ClassifierModelConfig
+
+
+def iter_model_stack_stages(model_stack: ModelStackConfig) -> list[tuple[str, _StageConfig]]:
+    """Single source of truth for every loadable stage in a model stack.
+
+    Used by runtime validation, promotion packaging, and deployment
+    compatibility checks so they cannot diverge. Includes the optional
+    real-time classifier AND every deferred_recognition stage (make/model,
+    each re-rank head, year, color) — the deferred heads are the only real
+    trained models in the canonical edge stack, so any consumer that skipped
+    them would validate/package a bundle missing its actual recognition
+    models.
+    """
+    stages: list[tuple[str, _StageConfig]] = [
+        ("vehicle_detector", model_stack.vehicle_detector),
+        ("plate_detector", model_stack.plate_detector),
+        ("ocr", model_stack.ocr),
+    ]
+    if model_stack.classifier is not None:
+        stages.append(("classifier", model_stack.classifier))
+    deferred = model_stack.deferred_recognition
+    if deferred is not None:
+        stages.append(("deferred.make_model", deferred.make_model))
+        for head in deferred.rerank_heads:
+            stages.append((f"deferred.rerank.{head.name}", head.classifier))
+        if deferred.year is not None:
+            stages.append(("deferred.year", deferred.year))
+        if deferred.color is not None:
+            stages.append(("deferred.color", deferred.color))
+    return stages
+
+
 class ValidationIssue(BaseModel):
     severity: str = Field(pattern="^(error|warning)$")
     stage: str
@@ -148,23 +181,9 @@ def _stage_report(
 
 def validate_model_stack(model_stack: ModelStackConfig) -> ModelStackValidationReport:
     stages = [
-        _stage_report(model_stack, "vehicle_detector", model_stack.vehicle_detector),
-        _stage_report(model_stack, "plate_detector", model_stack.plate_detector),
-        _stage_report(model_stack, "ocr", model_stack.ocr),
+        _stage_report(model_stack, stage_id, stage_config)
+        for stage_id, stage_config in iter_model_stack_stages(model_stack)
     ]
-    if model_stack.classifier is not None:
-        stages.append(_stage_report(model_stack, "classifier", model_stack.classifier))
-
-    deferred = model_stack.deferred_recognition
-    if deferred is not None:
-        stages.append(_stage_report(model_stack, "deferred.make_model", deferred.make_model))
-        for head in deferred.rerank_heads:
-            stages.append(_stage_report(model_stack, f"deferred.rerank.{head.name}", head.classifier))
-        if deferred.year is not None:
-            stages.append(_stage_report(model_stack, "deferred.year", deferred.year))
-        if deferred.color is not None:
-            stages.append(_stage_report(model_stack, "deferred.color", deferred.color))
-
     return ModelStackValidationReport(
         stack_name=model_stack.stack_name,
         ready=all(stage.ready for stage in stages),

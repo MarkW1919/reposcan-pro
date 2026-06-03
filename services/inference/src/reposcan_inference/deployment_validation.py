@@ -8,6 +8,7 @@ from reposcan_contracts.config.deployment import DeploymentConfig
 from reposcan_contracts.config.model import ClassifierModelConfig, DetectorModelConfig, ModelStackConfig, OcrModelConfig
 
 from .promotion import load_model_artifact_manifest, validate_promoted_model_stack
+from .validation import iter_model_stack_stages
 
 _StageConfig = DetectorModelConfig | OcrModelConfig | ClassifierModelConfig
 
@@ -36,14 +37,9 @@ class DeploymentCompatibilityReport(BaseModel):
 
 
 def _stage_entries(model_stack: ModelStackConfig) -> list[tuple[str, _StageConfig]]:
-    entries: list[tuple[str, _StageConfig]] = [
-        ("vehicle_detector", model_stack.vehicle_detector),
-        ("plate_detector", model_stack.plate_detector),
-        ("ocr", model_stack.ocr),
-    ]
-    if model_stack.classifier is not None:
-        entries.append(("classifier", model_stack.classifier))
-    return entries
+    # Shared enumeration so deployment compatibility checks never diverge from
+    # runtime validation — includes deferred_recognition stages.
+    return iter_model_stack_stages(model_stack)
 
 
 def validate_deployment_runtime_bundle(
