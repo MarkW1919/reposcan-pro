@@ -32,6 +32,19 @@ from torchvision import datasets, models, transforms
 
 # Each re-rank head: the trigger classes (v5 primary predictions that dispatch
 # to it). The head's own class set is read from its checkpoint.
+# Deployed dispatch config: the 3-class gm-fullsize-suv head + the jeep head.
+# This reflects what configs/models/canonical-v5-deferred.yaml actually uses.
+#
+# A 5-class "tall-SUV" successor head (adding cadillac_escalade +
+# lincoln_navigator) was trained and measured against this baseline on
+# 2026-06-02. It fixes gmc_yukon (50% -> 75%) but regresses chevrolet_tahoe
+# (80.6% -> 75%) because routing Tahoe through it reintroduces the
+# tahoe<->suburban confusion, and Tahoe (n=36) outweighs Yukon (n=8):
+#   3-class (deployed)            : +0.42pp
+#   5-class, all 5 triggers       : +0.10pp
+#   5-class, yukon/esc/nav only   : +0.21pp
+# The incumbent 3-class head wins overall, so the tall-SUV head was NOT
+# promoted. See docs/VEHICLE_RECOGNITION_PIPELINE_STATUS.md for the writeup.
 RERANK_HEADS = [
     {
         "name": "gm-fullsize-suv",

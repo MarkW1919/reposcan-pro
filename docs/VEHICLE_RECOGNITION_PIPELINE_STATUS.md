@@ -104,6 +104,32 @@ a tall-SUV re-rank head whose class set includes the new siblings). This
 is the highest-leverage make/model accuracy step remaining and is now
 backed by hard numbers rather than estimate.
 
+#### Tall-SUV re-rank head experiment (2026-06-02) — measured, NOT promoted
+
+A 5-class successor head was trained over the full-size body-on-frame SUV
+cluster — suburban, tahoe, yukon, **cadillac_escalade**, **lincoln_navigator**
+(`configs/training/vehicle-rerank-tall-suv-v2.yaml`, isolated holdout 77.4%).
+In isolation it fixes Yukon dramatically (50.0% → 87.5% on the 5-way
+problem). But measured through v5 dispatch on the full 958-image holdout it
+**did not beat the incumbent 3-class head**:
+
+| Dispatch config | Net vs v5-alone |
+|---|---:|
+| **3-class gm-fullsize-suv (deployed)** | **+0.42 pp** |
+| 5-class tall-SUV, all 5 triggers | +0.10 pp |
+| 5-class tall-SUV, yukon/escalade/navigator triggers only | +0.21 pp |
+
+The 5-class head fixes Yukon in dispatch (50% → 75%) but regresses Tahoe
+(80.6% → 75%): routing Tahoe through it reintroduces the tahoe↔suburban
+confusion, and Tahoe (n=36) outweighs Yukon (n=8). **Decision: keep the
+3-class head; the tall-SUV head is not promoted.** This is a clean negative
+result — the re-rank approach has hit diminishing returns on v5. The real
+remaining lever for make/model accuracy is more *real holdout + train data*
+for the thin classes (yukon/escalade/navigator/malibu/jetta/pilot all sit at
+n≈8 holdout, so every per-class number is noise-dominated), not more re-rank
+heads. The trained head, its dataset builder, and the measurement script are
+retained for reproducibility.
+
 ## Hardware mapping
 
 Per the dual-camera scan workflow already wired in
