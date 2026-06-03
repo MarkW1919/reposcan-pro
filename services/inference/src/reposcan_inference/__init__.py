@@ -61,6 +61,12 @@ from .deferred_recognition import (
     DeferredRecognitionRunner,
     build_deferred_recognition_runner,
 )
+from .scan_session import (
+    ScanSessionEnrichmentCoordinator,
+    ScanSessionEnrichmentOutcome,
+    ScanSessionTracker,
+    ScanSessionUpdate,
+)
 from .onnx_adapters import (
     build_onnx_adapter_bundle,
     get_default_onnx_providers,
@@ -170,6 +176,10 @@ __all__ = [
     "DeferredEnrichmentResult",
     "DeferredEnrichmentService",
     "DeferredRecognitionRunner",
+    "ScanSessionEnrichmentCoordinator",
+    "ScanSessionEnrichmentOutcome",
+    "ScanSessionTracker",
+    "ScanSessionUpdate",
     "build_builtin_runtime_adapter_bundle",
     "build_deferred_recognition_runner",
     "build_model_artifact_manifest",
