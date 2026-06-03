@@ -2328,10 +2328,21 @@ function makeUnitIcon(headingDegrees: number | null): L.DivIcon {
   });
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function makePlateIcon(plate: string, critical: boolean): L.DivIcon {
+  // plate text flows into a raw HTML string for the Leaflet divIcon; escape it
+  // so an OCR read containing markup characters can't inject into the DOM.
   return L.divIcon({
     className: "map-plate-icon",
-    html: `<span class="plate-marker ${critical ? "critical" : ""}">${plate}</span>`,
+    html: `<span class="plate-marker ${critical ? "critical" : ""}">${escapeHtml(plate)}</span>`,
     iconSize: [74, 24],
     iconAnchor: [37, 12],
   });
@@ -5608,6 +5619,7 @@ function App(): ReactElement {
 
       {hotlistOverlayRow ? (
         <HotlistAlertOverlay
+          key={hotlistOverlayRow.id}
           activeDestination={activeDestination}
           canSubmitReview={dataSource !== "live" || overview?.current_principal.capabilities.can_submit_reviews === true}
           dataSource={dataSource}
@@ -9268,16 +9280,45 @@ function HotlistAlertOverlay(props: {
     vehicleLabel: props.hotlistRow.vehicle,
   });
   const routeButtonRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   // Move focus into the alertdialog when it opens, landing on the primary
-  // "Route" action so keyboard / steering-remote users can act immediately
-  // without tabbing through the overlay.
+  // "Route" action so keyboard / steering-remote users can act immediately,
+  // and restore focus to whatever was focused before when it closes.
   useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null;
     routeButtonRef.current?.focus();
+    return () => {
+      previouslyFocused?.focus?.();
+    };
   }, []);
 
   useEffect(() => {
     function handleKey(event: KeyboardEvent): void {
+      // Trap Tab within the modal alertdialog so keyboard focus can't wander
+      // back to the (inert) page behind it.
+      if (event.key === "Tab" && dialogRef.current) {
+        const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        );
+        const visible = Array.from(focusable).filter((el) => !el.hasAttribute("disabled"));
+        if (visible.length > 0) {
+          const first = visible[0];
+          const last = visible[visible.length - 1];
+          const active = document.activeElement;
+          if (event.shiftKey && active === first) {
+            event.preventDefault();
+            last.focus();
+          } else if (!event.shiftKey && active === last) {
+            event.preventDefault();
+            first.focus();
+          } else if (active instanceof HTMLElement && !dialogRef.current.contains(active)) {
+            event.preventDefault();
+            first.focus();
+          }
+        }
+        return;
+      }
       if (isTypingTarget(event.target)) {
         return;
       }
@@ -9329,7 +9370,7 @@ function HotlistAlertOverlay(props: {
   return (
     <>
       <div className="hotlist-alert__scrim" onClick={props.onDismiss} />
-      <div className="hotlist-alert" role="alertdialog" aria-modal="true" aria-labelledby="hotlist-alert-title">
+      <div ref={dialogRef} className="hotlist-alert" role="alertdialog" aria-modal="true" aria-labelledby="hotlist-alert-title">
       <div className="hotlist-alert__header">
         <div>
           <p className="eyebrow">Recovery Alert</p>
