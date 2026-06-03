@@ -29,6 +29,20 @@ class AlertingService:
         plate_text: str,
         hotlist_entries: list[HotlistEntry],
     ) -> tuple[HotlistMatchResult, HotlistEntry | None]:
+        """Match a detected plate against active hotlist entries.
+
+        IMPORTANT — matching is plate-only by design. ``HotlistEntry`` also
+        allows VIN-only and vehicle-profile-only (make+model) entries, but:
+          * VINs are not observable from an LPR camera (it reads plates, not
+            the dash/door VIN), so VIN entries can never fire from detections;
+          * make/model-only matching against classifier attributes would be a
+            false-positive firehose (every white Camry would alert).
+        Such entries are therefore stored as operator reference/context and do
+        NOT trigger live alerts here. This is a deliberate product boundary, not
+        an oversight — surfacing make/model BOLO alerts (with confidence/dedup
+        handling) is a future feature decision, tracked in the pipeline status
+        doc. Entries without a plate_text are skipped below.
+        """
         exact_plate = plate_text.strip().upper()
         normalized_plate = normalize_plate_text(plate_text)
 

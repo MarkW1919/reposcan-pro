@@ -282,6 +282,25 @@ holdout numbers are runtime evidence, not field-acceptance proof. A
 field eval pass on real Oklahoma vehicles in long-range / low-light /
 glare / IR-assisted scenes is the final acceptance gate before promotion.
 
+### 5. Hotlist match dimensions (product decision)
+
+`HotlistEntry` accepts plate, VIN, or vehicle-profile (make+model) lookup
+keys, but `AlertingService.match_hotlist` matches **plate only**. So
+VIN-only and profile-only entries persist and show active yet never fire a
+live alert. This is now explicitly documented in the alerting service as a
+deliberate boundary rather than a silent no-op, because:
+
+- **VIN can't match from LPR** — the camera reads plates, not the dash/door
+  VIN (imaging physics). VIN entries are operator reference only.
+- **make/model-only matching is a false-positive firehose** — every vehicle
+  of that make/model would alert; not useful as an unguarded trigger.
+
+Decision needed: do we want vehicle-profile BOLO alerts (plate unknown /
+switched) as an opt-in, confidence-scored, dedup'd alert path driven by the
+deferred classifier attributes? If yes, it's a real feature (extends
+`HotlistMatchResult`/`AlertRecord` beyond plate-centric shapes). If no, keep
+plate-only and treat profile/VIN as context. Not changed unilaterally.
+
 ## Recommended next step
 
 Pick one of:
