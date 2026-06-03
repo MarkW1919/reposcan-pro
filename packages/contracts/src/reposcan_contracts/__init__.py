@@ -60,7 +60,7 @@ from .field_eval import (
 from .followup import FollowUpPriority, FollowUpRecord, FollowUpStatus
 from .frame import CameraProfile, FrameEnvelope, GpsSnapshot, PreparedFrame, PreprocessingMetadata, SourceType
 from .health import CameraHealthRecord, CameraHealthStatus, DependencyHealth, HealthResponse, HealthState
-from .hotlist import HotlistEntry, HotlistMatchResult
+from .hotlist import HotlistEntry, HotlistMatchResult, QuickScanTarget, ScanArmMode
 from .inference import AttributePredictions, InferenceCandidate, ModelVersions, PlateDetection, VehicleDetection
 from .model_artifact import ModelArtifactManifest
 from .operator import OperatorCapabilities, OperatorPrincipal, OperatorSessionRecord
@@ -150,6 +150,8 @@ __all__ = [
     "FollowUpStatus",
     "HotlistEntry",
     "HotlistMatchResult",
+    "QuickScanTarget",
+    "ScanArmMode",
     "ReviewRecord",
     "ReviewAction",
     "HealthResponse",

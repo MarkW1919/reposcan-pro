@@ -7,10 +7,12 @@ from uuid import uuid4
 from reposcan_contracts.alert import AlertRecord
 from reposcan_contracts.config.loader import load_pipeline_config
 from reposcan_contracts.config.pipeline import PipelineConfig
-from reposcan_contracts.hotlist import HotlistEntry, HotlistMatchResult
+from reposcan_contracts.hotlist import HotlistEntry, HotlistMatchResult, QuickScanTarget, ScanArmMode
 from reposcan_contracts.inference import AttributePredictions
 from reposcan_contracts.tracking import TrackedDetection
 from reposcan_contracts.types import HotlistMatchKind, PlateMatchType
+
+from .geo import entries_within_zone
 
 # Geofenced make/model lead scoring. make+model is the required floor (0.6);
 # color and year each refine the confidence shown to the driver.
@@ -160,6 +162,40 @@ class AlertingService:
             ),
             entry,
         )
+
+    def evaluate_quick_target(
+        self,
+        tracked_detection: TrackedDetection,
+        target: QuickScanTarget,
+        *,
+        unit_latitude: float | None = None,
+        unit_longitude: float | None = None,
+        zone_radius_feet: float = 300.0,
+    ) -> AlertRecord | None:
+        """Evaluate a detection against an ephemeral quick-scan target.
+
+        Reuses the full matching engine via a transient hotlist entry. Manual
+        targets scan everywhere (forced in-zone); in_zone targets fire only when
+        the detection's GPS is within ``zone_radius_feet`` of the target address.
+        Returns None for an all-blank target (plain navigation, nothing to scan).
+        """
+        entry = target.to_hotlist_entry(entry_id="quickscan", timestamp=tracked_detection.timestamp_utc)
+        if entry is None:
+            return None
+
+        if target.arm_mode == ScanArmMode.manual:
+            in_zone_entry_ids = {entry.entry_id}
+        elif (
+            unit_latitude is not None
+            and unit_longitude is not None
+            and entry.address_latitude is not None
+            and entry.address_longitude is not None
+        ):
+            in_zone_entry_ids = entries_within_zone(unit_latitude, unit_longitude, [entry], zone_radius_feet)
+        else:
+            in_zone_entry_ids = set()
+
+        return self.evaluate(tracked_detection, [entry], in_zone_entry_ids=in_zone_entry_ids)
 
     def evaluate(
         self,

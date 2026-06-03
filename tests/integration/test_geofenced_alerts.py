@@ -140,3 +140,54 @@ def test_evaluate_no_lead_without_zone_context():
                    address_latitude=TARGET_LAT, address_longitude=TARGET_LON)
     det = _tracked(plate="ZZZ999", attrs=AttributePredictions(make="chevrolet", model="suburban"))
     assert svc.evaluate(det, [entry]) is None
+
+
+# --- ephemeral quick-scan target ------------------------------------------
+
+
+def test_quick_target_blank_is_plain_navigation():
+    from reposcan_contracts.hotlist import QuickScanTarget
+
+    target = QuickScanTarget(address_label="123 Main St", arm_mode="in_zone")
+    assert target.has_scan_criteria() is False
+    assert target.to_hotlist_entry(entry_id="q", timestamp="2026-06-03T00:00:00Z") is None
+
+
+def test_quick_target_manual_scans_everywhere():
+    from reposcan_contracts.hotlist import QuickScanTarget
+
+    svc = _service()
+    # Manual arm, no address, unit position far from anything -> still fires.
+    target = QuickScanTarget(vehicle_make="Chevrolet", vehicle_model="Suburban", arm_mode="manual")
+    det = _tracked(plate=None, attrs=AttributePredictions(make="chevrolet", model="suburban"))
+    alert = svc.evaluate_quick_target(det, target, unit_latitude=FAR_LAT, unit_longitude=FAR_LON)
+    assert alert is not None
+    assert alert.match_kind == HotlistMatchKind.in_zone_profile
+
+
+def test_quick_target_in_zone_requires_proximity():
+    from reposcan_contracts.hotlist import QuickScanTarget
+
+    svc = _service()
+    target = QuickScanTarget(
+        vehicle_make="Chevrolet", vehicle_model="Suburban", arm_mode="in_zone",
+        address_latitude=TARGET_LAT, address_longitude=TARGET_LON,
+    )
+    det = _tracked(plate=None, attrs=AttributePredictions(make="chevrolet", model="suburban"))
+
+    # Far away -> no alert.
+    assert svc.evaluate_quick_target(det, target, unit_latitude=FAR_LAT, unit_longitude=FAR_LON, zone_radius_feet=300) is None
+    # Inside the zone -> in-zone lead.
+    near = svc.evaluate_quick_target(det, target, unit_latitude=NEAR_LAT, unit_longitude=NEAR_LON, zone_radius_feet=300)
+    assert near is not None and near.match_kind == HotlistMatchKind.in_zone_profile
+
+
+def test_quick_target_plate_match_confirmed_anywhere():
+    from reposcan_contracts.hotlist import QuickScanTarget
+
+    svc = _service()
+    target = QuickScanTarget(plate_text="abc123", plate_state="ok", arm_mode="manual")
+    assert target.plate_text == "ABC123" and target.plate_state == "OK"  # normalized
+    det = _tracked(plate="ABC123", attrs=None)
+    alert = svc.evaluate_quick_target(det, target, unit_latitude=FAR_LAT, unit_longitude=FAR_LON)
+    assert alert is not None and alert.match_kind == HotlistMatchKind.plate

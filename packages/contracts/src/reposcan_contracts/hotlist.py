@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from enum import Enum
 from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -20,6 +21,12 @@ class HotlistEntry(BaseModel):
 
     entry_id: str = Field(..., description="Stable unique identifier for this hotlist entry")
     plate_text: Optional[str] = Field(None, min_length=1, description="Plate text to watch for (normalized to uppercase)")
+    plate_state: Optional[str] = Field(
+        None,
+        min_length=2,
+        max_length=2,
+        description="2-letter plate jurisdiction (corroboration/disambiguation only; never gates a plate match)",
+    )
     vin: Optional[str] = Field(None, min_length=1, description="Vehicle identification number for repo intake")
     vehicle_year: Optional[str] = Field(None, min_length=1, description="Target vehicle year when plate is unknown")
     vehicle_make: Optional[str] = Field(None, min_length=1, description="Target vehicle make")
@@ -42,6 +49,14 @@ class HotlistEntry(BaseModel):
     @field_validator("plate_text")
     @classmethod
     def normalize_plate(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        normalized = value.strip().upper()
+        return normalized or None
+
+    @field_validator("plate_state")
+    @classmethod
+    def normalize_plate_state(cls, value: Optional[str]) -> Optional[str]:
         if value is None:
             return None
         normalized = value.strip().upper()
@@ -112,3 +127,91 @@ class HotlistMatchResult(BaseModel):
         description="Dimensions that matched, e.g. ['plate'] or ['make', 'model', 'color']",
     )
     plate_text: str = Field(..., description="The plate text that was evaluated")
+
+
+class ScanArmMode(str, Enum):
+    """How an ephemeral quick-scan target is armed.
+
+    ``in_zone`` — arms only inside the configured radius of the target address
+    (the driver entered a destination and is navigating there).
+    ``manual`` — the driver explicitly armed it; scans everywhere until cleared.
+    """
+
+    in_zone = "in_zone"
+    manual = "manual"
+
+
+class QuickScanTarget(BaseModel):
+    """An ephemeral, non-persisted 'look for this here, now' scan target.
+
+    Lets a driver enter a plate / state / year-make-model alongside a
+    destination (or arm it manually) without creating a saved hotlist account.
+    Any combination of criteria may be set; an all-blank target is just plain
+    navigation with nothing to scan for (``has_scan_criteria`` is False).
+
+    It reuses the entire hotlist matching engine via ``to_hotlist_entry`` — a
+    quick target is matched exactly like a transient HotlistEntry, so plate
+    (CONFIRMED) and geofenced make/model (IN-ZONE LEAD) behave identically.
+    """
+
+    plate_text: Optional[str] = Field(None, min_length=1)
+    plate_state: Optional[str] = Field(None, min_length=2, max_length=2)
+    vehicle_year: Optional[str] = Field(None, min_length=1)
+    vehicle_make: Optional[str] = Field(None, min_length=1)
+    vehicle_model: Optional[str] = Field(None, min_length=1)
+    vehicle_color: Optional[str] = Field(None, min_length=1)
+    arm_mode: ScanArmMode = ScanArmMode.in_zone
+    # Destination geozone (in_zone mode only). Manual mode ignores these.
+    address_label: Optional[str] = None
+    address_latitude: Optional[float] = Field(None, ge=-90.0, le=90.0)
+    address_longitude: Optional[float] = Field(None, ge=-180.0, le=180.0)
+
+    @field_validator("plate_text")
+    @classmethod
+    def _normalize_plate(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        return value.strip().upper() or None
+
+    @field_validator("plate_state")
+    @classmethod
+    def _normalize_state(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        return value.strip().upper() or None
+
+    @field_validator("vehicle_year", "vehicle_make", "vehicle_model", "vehicle_color", "address_label")
+    @classmethod
+    def _normalize_text(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        return value.strip() or None
+
+    def has_scan_criteria(self) -> bool:
+        """True when there's something to actually scan for."""
+        return bool(self.plate_text or (self.vehicle_make and self.vehicle_model))
+
+    def to_hotlist_entry(self, *, entry_id: str, timestamp: str) -> Optional["HotlistEntry"]:
+        """Adapt to a transient (non-persisted) HotlistEntry for matching.
+
+        Returns None when there is nothing to scan for, so callers can treat an
+        all-blank target as plain navigation.
+        """
+        if not self.has_scan_criteria():
+            return None
+        return HotlistEntry(
+            entry_id=entry_id,
+            plate_text=self.plate_text,
+            plate_state=self.plate_state,
+            vehicle_year=self.vehicle_year,
+            vehicle_make=self.vehicle_make,
+            vehicle_model=self.vehicle_model,
+            vehicle_color=self.vehicle_color,
+            address_label=self.address_label,
+            address_latitude=self.address_latitude,
+            address_longitude=self.address_longitude,
+            label=self.address_label or "Quick scan target",
+            active=True,
+            created_at_utc=timestamp,
+            updated_at_utc=timestamp,
+        )
