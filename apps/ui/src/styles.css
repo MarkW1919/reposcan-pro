@@ -5705,17 +5705,28 @@ body.shift-mode .map-stage__control {
 }
 
 /* Full-screen scrim blocks NavPanel and background clicks */
+/*
+ * App-root overlay layering scale (single source of truth — keep ordered):
+ *   detail drawer (.overlay-shell)        40
+ *   dashboard customize / action sheet    50 / 60
+ *   recovery match alert (.hotlist-alert) 190 / 200  <- must sit above all
+ *                                                       transient sheets/panels
+ * The recovery alert is the highest app-root layer: a hotlist match is the
+ * most critical event and must never be covered by a sheet or panel that was
+ * already open. (The map widget's internal controls live in their own isolated
+ * stacking context and do not compete with these.)
+ */
 .hotlist-alert__scrim {
   position: fixed;
   inset: 0;
-  z-index: 49;
+  z-index: 190;
   background: rgba(0, 0, 0, 0.6);
 }
 
 .hotlist-alert {
   position: fixed;
   inset: clamp(16px, 2.4vh, 28px);
-  z-index: 50;
+  z-index: 200;
   border-radius: 30px;
   border-color: rgba(251, 113, 133, 0.34);
   background:

@@ -56,7 +56,6 @@ export function DetectionActionSheet(props: {
   }
 
   const severityClass = props.severity ? `severity-band severity-band--${props.severity}` : "";
-  const visibleActions = props.actions.filter((action) => action.tone !== undefined || action);
 
   return (
     <div className="detection-action-sheet__scrim" role="presentation" onClick={props.onClose}>
@@ -90,7 +89,7 @@ export function DetectionActionSheet(props: {
         {props.snapshot ? <div className="detection-action-sheet__snapshot">{props.snapshot}</div> : null}
 
         <div className="detection-action-sheet__actions">
-          {visibleActions.map((action) => (
+          {props.actions.map((action) => (
             <button
               key={action.id}
               className={`detection-action-sheet__action detection-action-sheet__action--${action.tone ?? "default"}`}
