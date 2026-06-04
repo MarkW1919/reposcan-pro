@@ -11,6 +11,9 @@ Layering:
 The service is fully unit-testable with stub providers — no network required.
 """
 
+from .census import CensusGeocoderProvider
+from .http_client import JsonHttpClient, UrllibJsonClient
+from .overpass import OverpassDwellingProvider
 from .providers import (
     AreaProvider,
     DwellingProvider,
@@ -24,11 +27,15 @@ from .service import AddressIntelligenceService, InMemoryReportCache, normalize_
 __all__ = [
     "AddressIntelligenceService",
     "AreaProvider",
+    "CensusGeocoderProvider",
     "DwellingProvider",
     "DwellingResult",
     "GeocodeProvider",
     "GeocodeResult",
     "InMemoryReportCache",
+    "JsonHttpClient",
+    "OverpassDwellingProvider",
     "ReportCache",
+    "UrllibJsonClient",
     "normalize_address_key",
 ]
