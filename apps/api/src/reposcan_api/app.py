@@ -22,6 +22,7 @@ from fastapi.responses import JSONResponse
 from fastapi.responses import FileResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from reposcan_contracts.address_intel import AddressIntelligenceReport
 from reposcan_contracts.alert import AlertRecord, AlertStatus
 from reposcan_contracts.config.deployment import ApiRole, DeploymentConfig
 from reposcan_contracts.dispatch import DispatchAssignmentRecord, DispatchAssignmentStatus
@@ -74,6 +75,12 @@ from .models import (
     ReviewSubmission,
     SearchPageInfo,
     SearchPlateMatchMode,
+)
+from .address_intel import (
+    AddressIntelligenceService,
+    CensusGeocoderProvider,
+    InMemoryReportCache,
+    OverpassDwellingProvider,
 )
 from .audit import ApiAuditLogger
 from .security import ApiAccessController, ApiPrincipalContext, principal_details
@@ -949,6 +956,7 @@ def create_app(
     storage_service: StorageService | None = None,
     demo_run_manager: HeadlessDemoRunManager | None = None,
     deployment_config: DeploymentConfig | None = None,
+    address_intel_service: AddressIntelligenceService | None = None,
 ) -> FastAPI:
     service = storage_service or create_development_storage_service()
     deployment = deployment_config or service.deployment_config or load_deployment_config("configs/deployments/local-dev.yaml")
@@ -1088,6 +1096,18 @@ def create_app(
                 target_id=target_id,
                 details=details or {},
             )
+        )
+
+    # Address intelligence: zero-cost keyless public-data lookup for a staged
+    # destination. Providers are best-effort (degrade offline); the in-memory
+    # cache persists resolved reports for the app's lifetime so repeat/offline
+    # lookups are instant. Census ACS area context can be added later via a free
+    # key without changing this wiring.
+    if address_intel_service is None:
+        address_intel_service = AddressIntelligenceService(
+            CensusGeocoderProvider(),
+            dwelling=OverpassDwellingProvider(),
+            cache=InMemoryReportCache(),
         )
 
     api_router = APIRouter()
@@ -1451,6 +1471,30 @@ def create_app(
             details={"latitude": latitude, "longitude": longitude, "provider": result.provider},
         )
         return result
+
+    @api_router.get("/address-intelligence", response_model=AddressIntelligenceReport)
+    def address_intelligence(
+        request: Request,
+        address: str = Query(..., min_length=3),
+        principal: ApiPrincipalContext = Depends(access_controller.address_search_access),
+    ) -> AddressIntelligenceReport:
+        # lookup() is best-effort and never raises — an offline/failed lookup
+        # returns an unmatched report with caveats, not a 5xx.
+        report = address_intel_service.lookup(address)
+        record_audit(
+            request,
+            principal=principal,
+            action="address.intelligence",
+            outcome=AuditOutcome.success,
+            details={
+                "address": address,
+                "matched": report.matched,
+                "dwelling_type": report.dwelling_type.value,
+                "sources": report.data_sources,
+                "from_cache": report.from_cache,
+            },
+        )
+        return report
 
     @api_router.get("/demo/runtime", response_model=DemoRuntimeStatus)
     def get_demo_runtime_status(
