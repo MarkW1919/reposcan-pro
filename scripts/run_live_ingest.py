@@ -45,7 +45,7 @@ def main() -> int:
     repo_root = Path(__file__).resolve().parents[1]
     _configure_pythonpath(repo_root)
 
-    from reposcan_alerting import AlertingService
+    from reposcan_alerting import AlertingService, entries_within_zone
     from reposcan_capture import CameraRegistry, CaptureService, LiveFrameSource
     from reposcan_contracts.config.camera import SourceType
     from reposcan_contracts.config.loader import (
@@ -114,6 +114,13 @@ def main() -> int:
         metadata_root=_resolve(repo_root, args.metadata_root),
     )
     capture_service = CaptureService()
+    geofence_radius = tracking_service.pipeline_config.thresholds.geofence_radius_feet
+
+    def _evaluate(track, active_hotlists):
+        in_zone = None
+        if track.gps_latitude is not None and track.gps_longitude is not None:
+            in_zone = entries_within_zone(track.gps_latitude, track.gps_longitude, active_hotlists, geofence_radius)
+        return alerting_service.evaluate(track, active_hotlists, in_zone_entry_ids=in_zone)
 
     print(f"Starting live ingest for {len(cameras)} camera(s).")
     processed_frames = 0
@@ -135,7 +142,7 @@ def main() -> int:
             active_hotlists = storage_service.list_hotlists(active_only=True, limit=500)
             for track in finalized_tracks:
                 storage_service.store_tracked_detection(track)
-                alert = alerting_service.evaluate(track, active_hotlists)
+                alert = _evaluate(track, active_hotlists)
                 if alert is not None:
                     storage_service.store_alert(alert)
             processed_frames += 1
@@ -145,7 +152,7 @@ def main() -> int:
         active_hotlists = storage_service.list_hotlists(active_only=True, limit=500)
         for track in finalized_tracks:
             storage_service.store_tracked_detection(track)
-            alert = alerting_service.evaluate(track, active_hotlists)
+            alert = _evaluate(track, active_hotlists)
             if alert is not None:
                 storage_service.store_alert(alert)
 

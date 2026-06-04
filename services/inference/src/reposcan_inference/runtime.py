@@ -10,7 +10,7 @@ from threading import Lock, Thread
 from typing import Iterable
 from uuid import uuid4
 
-from reposcan_alerting import AlertingService
+from reposcan_alerting import AlertingService, entries_within_zone
 from reposcan_capture import CaptureService, FileSequenceFrameSource
 from reposcan_contracts.alert import AlertRecord
 from reposcan_contracts.config.camera import CameraConfig
@@ -279,8 +279,17 @@ class HeadlessFileSequenceRunner:
 
         created_alerts: list[AlertRecord] = []
         active_hotlists = self.storage_service.list_hotlists(active_only=True, limit=500)
+        geofence_radius = self.tracking_service.pipeline_config.thresholds.geofence_radius_feet
         for track in finalized_tracks:
-            alert = self.alerting_service.evaluate(track, active_hotlists)
+            # Geofence make/model leads to the unit's position at detection time:
+            # an entry is "in zone" when its target address is within the
+            # configured radius of where the detection was captured.
+            in_zone_entry_ids: set[str] | None = None
+            if track.gps_latitude is not None and track.gps_longitude is not None:
+                in_zone_entry_ids = entries_within_zone(
+                    track.gps_latitude, track.gps_longitude, active_hotlists, geofence_radius
+                )
+            alert = self.alerting_service.evaluate(track, active_hotlists, in_zone_entry_ids=in_zone_entry_ids)
             if alert is None:
                 continue
             created_alerts.append(self.storage_service.store_alert(alert))

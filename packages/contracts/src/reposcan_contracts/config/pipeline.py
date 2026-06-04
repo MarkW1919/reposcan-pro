@@ -67,6 +67,10 @@ class ThresholdConfig(BaseModel):
         0.7, ge=0.0, le=1.0,
         description="Minimum plate confidence before alerting service evaluates a detection"
     )
+    geofence_radius_feet: float = Field(
+        300.0, gt=0.0,
+        description="Radius around a hotlist target address within which make/model in-zone leads fire"
+    )
 
 
 class TrackingConfig(BaseModel):
