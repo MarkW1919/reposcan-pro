@@ -4,6 +4,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
 import { AddressIntelligenceCard } from "./components/dashboard/AddressIntelligenceCard";
+import { VehicleAccountCard } from "./components/dashboard/VehicleAccountCard";
 import { CompactDetectionCard } from "./components/dashboard/CompactDetectionCard";
 import { DetectionActionSheet, type DetectionActionSheetAction } from "./components/dashboard/DetectionActionSheet";
 import { RecoveryStatePill } from "./components/dashboard/RecoveryStatePill";
@@ -6590,7 +6591,32 @@ function ConsoleScreen(props: {
       );
     }
 
+    if (widgetId === "accountDetails") {
+      // Mission-critical: the repo account/vehicle the operator is running.
+      const hasAccount = Boolean(activeHotlistEntry);
+      return (
+        <VehicleAccountCard
+          size={size}
+          hasAccount={hasAccount}
+          plate={activeHotlistEntry?.plate_text || commandRow?.plate1 || "No plate on file"}
+          vehicle={summarizeVehicleIdentity(commandRow, activeHotlistEntry)}
+          statusLabel={activeFollowUp ? titleCase(activeFollowUp.status) : hasAccount ? "Active order" : "Standby"}
+          statusTone={activeFollowUp ? "amber" : hasAccount ? "cyan" : "gray"}
+          fields={[
+            { label: "Lender / Account", value: activeHotlistEntry?.label ?? "Not specified" },
+            { label: "VIN", value: activeHotlistEntry?.vin ?? "Not on file" },
+            { label: "Target Address", value: activeHotlistEntry ? hotlistAddressSummary(activeHotlistEntry) : "No address on file" },
+            { label: "Follow-Up", value: activeFollowUp ? titleCase(activeFollowUp.status) : "None" },
+          ]}
+          instructions={activeHotlistEntry?.notes ?? undefined}
+        />
+      );
+    }
+
     if (widgetId === "addressIntelligence") {
+      // Mission-critical: destination location context (NOT vehicle/account —
+      // that lives in the Vehicle Account widget). Location features + recovery
+      // guidance for the staged destination.
       return (
         <AddressIntelligenceCard
           size={size}
@@ -6599,17 +6625,13 @@ function ConsoleScreen(props: {
           recoveryProbability={recoveryProbability.label}
           recoveryTone={recoveryProbability.tone}
           recommendation={responseCue?.label ?? "Hold"}
-          recommendationDetail={responseCue?.detail ?? "Select a target vehicle or stage a destination to unlock recovery guidance."}
+          recommendationDetail={responseCue?.detail ?? "Stage a destination to unlock recovery location guidance."}
           recentSummary={
             commandRow
               ? `${formatRelativeTime(commandRow.timestampUtc)} at ${commandRow.source}. ${props.allRows.filter((row) => row.plate1 === commandRow.plate1).length} related sighting(s) in the current dashboard feed.`
               : "No recent sighting is selected."
           }
           fields={[
-            { label: "Address Label", value: activeHotlistEntry?.address_label ?? "Address on file" },
-            { label: "Vehicle Profile", value: summarizeVehicleIdentity(commandRow, activeHotlistEntry) },
-            { label: "Last Seen Source", value: commandRow?.source ?? "Not available" },
-            { label: "Follow-Up", value: activeFollowUp ? titleCase(activeFollowUp.status) : "None" },
             { label: "Garage", value: inferNoteField(activeHotlistEntry?.notes, ["garage", "carport"], "Flagged in notes") },
             { label: "Fence / Gate", value: inferNoteField(activeHotlistEntry?.notes, ["gate", "fence"], "Flagged in notes") },
             { label: "Camera Notes", value: inferNoteField(activeHotlistEntry?.notes, ["camera", "ring", "cctv"], "Flagged in notes") },

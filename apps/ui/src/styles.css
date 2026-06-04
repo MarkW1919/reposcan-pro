@@ -2280,7 +2280,16 @@ body.shift-mode .map-stage__control {
 .destination-modal__scrim {
   position: fixed;
   inset: 0;
-  z-index: 9990;
+  /*
+   * The destination modal is rendered inside the map widget's isolated
+   * stacking context (.map-stage { isolation: isolate }), so this z-index only
+   * competes WITHIN that context — it must sit above the map's own controls/
+   * layer menu (z 920-940), not the app-root overlays. 960 does that with
+   * margin; the old 9990 was a panic value that implied a global guarantee it
+   * never actually had. The recovery alert (app-root z200) still correctly
+   * renders above this whole context.
+   */
+  z-index: 960;
   background: rgba(2, 7, 11, 0.72);
   -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);

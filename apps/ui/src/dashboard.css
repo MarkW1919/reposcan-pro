@@ -484,6 +484,49 @@ body {
   line-height: 1.45;
 }
 
+/* Vehicle Account card — mirrors the Address Intelligence card styling. */
+.vehicle-account-card {
+  display: grid;
+  gap: 12px;
+}
+
+.vehicle-account-card__hero strong {
+  display: block;
+  font-size: 1.3rem;
+  font-family: var(--mono);
+  letter-spacing: 0.03em;
+}
+
+.vehicle-account-card__hero span,
+.vehicle-account-card__field span,
+.vehicle-account-card__instructions span {
+  color: var(--muted);
+}
+
+.vehicle-account-card__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.vehicle-account-card__field,
+.vehicle-account-card__instructions {
+  padding: 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(133, 146, 166, 0.14);
+  background: rgba(11, 14, 18, 0.82);
+}
+
+.vehicle-account-card__field strong {
+  color: var(--text);
+}
+
+.vehicle-account-card__instructions p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
 .dashboard-route-card__guidance {
   display: grid;
   gap: 5px;

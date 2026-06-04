@@ -1,5 +1,6 @@
 export type DashboardWidgetId =
   | "map"
+  | "accountDetails"
   | "addressIntelligence"
   | "liveDetections"
   | "lprCameras"
@@ -34,7 +35,8 @@ export interface DashboardWidgetDefinition {
 
 export const dashboardWidgetDefinitions: DashboardWidgetDefinition[] = [
   { id: "map", label: "Map", description: "Primary navigation and target map." },
-  { id: "addressIntelligence", label: "Address Intelligence", description: "Recovery location context and field snapshot." },
+  { id: "accountDetails", label: "Vehicle Account", description: "Active recovery target: plate, vehicle, lender, instructions." },
+  { id: "addressIntelligence", label: "Address Intelligence", description: "Destination location context and recovery guidance." },
   { id: "liveDetections", label: "Live Detections", description: "Compact recent LPR and vehicle reads." },
   { id: "lprCameras", label: "LPR Cameras", description: "Two camera feeds for active scanning." },
   { id: "recentHistory", label: "Recent History", description: "Recent sightings and match status." },
@@ -46,10 +48,11 @@ export const dashboardWidgetDefinitions: DashboardWidgetDefinition[] = [
 
 const widgetOrder: DashboardWidgetId[] = [
   "map",
+  "lprCameras",
+  "accountDetails",
   "addressIntelligence",
   "routePanel",
   "aiInsight",
-  "lprCameras",
   "liveDetections",
   "recentHistory",
   "notes",
@@ -57,57 +60,66 @@ const widgetOrder: DashboardWidgetId[] = [
 ];
 
 const presetWidgets: Record<DashboardLayoutMode, Record<DashboardWidgetId, { visible: boolean; size: DashboardWidgetSize }>> = {
+  // Default foregrounds the four mission-critical operations widgets only —
+  // map, cam feed, vehicle account, address intelligence — and leaves the rest
+  // off so the screen stays uncluttered. Everything else remains available via
+  // Customize. (Operators get exactly what drives a recovery, nothing more.)
   default: {
     map: { visible: true, size: "expanded" },
+    accountDetails: { visible: true, size: "standard" },
     addressIntelligence: { visible: true, size: "standard" },
-    routePanel: { visible: true, size: "compact" },
-    aiInsight: { visible: true, size: "compact" },
     lprCameras: { visible: true, size: "standard" },
-    liveDetections: { visible: true, size: "standard" },
-    recentHistory: { visible: true, size: "compact" },
+    routePanel: { visible: false, size: "compact" },
+    aiInsight: { visible: false, size: "compact" },
+    liveDetections: { visible: false, size: "standard" },
+    recentHistory: { visible: false, size: "compact" },
     notes: { visible: false, size: "compact" },
     reports: { visible: false, size: "compact" },
   },
   driving: {
     map: { visible: true, size: "expanded" },
+    accountDetails: { visible: true, size: "compact" },
     addressIntelligence: { visible: true, size: "compact" },
-    routePanel: { visible: true, size: "compact" },
-    aiInsight: { visible: true, size: "compact" },
     lprCameras: { visible: true, size: "compact" },
-    liveDetections: { visible: true, size: "compact" },
+    routePanel: { visible: false, size: "compact" },
+    aiInsight: { visible: false, size: "compact" },
+    liveDetections: { visible: false, size: "compact" },
     recentHistory: { visible: false, size: "compact" },
     notes: { visible: false, size: "compact" },
     reports: { visible: false, size: "compact" },
   },
   scanning: {
     map: { visible: true, size: "standard" },
-    addressIntelligence: { visible: true, size: "standard" },
-    routePanel: { visible: true, size: "compact" },
-    aiInsight: { visible: true, size: "compact" },
+    accountDetails: { visible: true, size: "compact" },
+    addressIntelligence: { visible: true, size: "compact" },
     lprCameras: { visible: true, size: "expanded" },
-    liveDetections: { visible: true, size: "expanded" },
-    recentHistory: { visible: true, size: "compact" },
+    liveDetections: { visible: true, size: "standard" },
+    routePanel: { visible: false, size: "compact" },
+    aiInsight: { visible: false, size: "compact" },
+    recentHistory: { visible: false, size: "compact" },
     notes: { visible: false, size: "compact" },
     reports: { visible: false, size: "compact" },
   },
   review: {
     map: { visible: true, size: "standard" },
+    accountDetails: { visible: true, size: "standard" },
     addressIntelligence: { visible: true, size: "standard" },
-    routePanel: { visible: true, size: "compact" },
-    aiInsight: { visible: true, size: "compact" },
     lprCameras: { visible: true, size: "compact" },
-    liveDetections: { visible: true, size: "standard" },
     recentHistory: { visible: true, size: "expanded" },
     notes: { visible: true, size: "standard" },
+    routePanel: { visible: false, size: "compact" },
+    aiInsight: { visible: false, size: "compact" },
+    liveDetections: { visible: false, size: "standard" },
     reports: { visible: false, size: "compact" },
   },
   minimal: {
     map: { visible: true, size: "expanded" },
+    accountDetails: { visible: true, size: "compact" },
     addressIntelligence: { visible: true, size: "compact" },
-    routePanel: { visible: true, size: "compact" },
+    lprCameras: { visible: true, size: "compact" },
+    routePanel: { visible: false, size: "compact" },
     aiInsight: { visible: false, size: "compact" },
-    lprCameras: { visible: false, size: "compact" },
-    liveDetections: { visible: true, size: "compact" },
+    liveDetections: { visible: false, size: "compact" },
     recentHistory: { visible: false, size: "compact" },
     notes: { visible: false, size: "compact" },
     reports: { visible: false, size: "compact" },
