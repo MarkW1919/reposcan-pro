@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import difflib
 import json
 import math
+import os
 from pathlib import Path
 import re
 from threading import RLock
@@ -78,6 +79,7 @@ from .models import (
 )
 from .address_intel import (
     AddressIntelligenceService,
+    CensusAcsAreaProvider,
     CensusGeocoderProvider,
     InMemoryReportCache,
     OverpassDwellingProvider,
@@ -1104,9 +1106,15 @@ def create_app(
     # lookups are instant. Census ACS area context can be added later via a free
     # key without changing this wiring.
     if address_intel_service is None:
+        # ACS area context is opt-in: set CENSUS_API_KEY (free, email-only key)
+        # to enable owner/renter/vacancy context. Absent -> the function still
+        # works fully on the keyless geocoder + OSM providers.
+        census_api_key = os.environ.get("CENSUS_API_KEY", "").strip()
+        area_provider = CensusAcsAreaProvider(census_api_key) if census_api_key else None
         address_intel_service = AddressIntelligenceService(
             CensusGeocoderProvider(),
             dwelling=OverpassDwellingProvider(),
+            area=area_provider,
             cache=InMemoryReportCache(),
         )
 

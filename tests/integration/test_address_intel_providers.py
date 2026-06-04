@@ -107,6 +107,31 @@ def test_overpass_untagged_is_unknown():
     assert provider.classify(1.0, 2.0).dwelling_type == DwellingType.unknown
 
 
+def test_acs_parses_area_context():
+    from reposcan_api.address_intel import CensusAcsAreaProvider
+
+    # ACS returns [[header],[values]]; 410 occupied (300 owner / 110 renter),
+    # 450 total units, 40 vacant.
+    payload = [
+        ["B25003_001E", "B25003_002E", "B25003_003E", "B25002_001E", "B25002_003E", "state", "county", "tract", "block group"],
+        ["410", "300", "110", "450", "40", "40", "109", "001100", "1"],
+    ]
+    provider = CensusAcsAreaProvider("FAKEKEY", StubHttp(get_payload=payload))
+    ctx = provider.area_context(state_fips="40", census_tract="001100", block_geoid="401090011001000")
+    assert ctx is not None
+    assert ctx.owner_occupied_pct == 73.2  # 300/410
+    assert ctx.vacancy_pct == 8.9  # 40/450
+    assert ctx.total_housing_units == 450
+    assert "owner-occupied" in (ctx.summary or "")
+
+
+def test_acs_requires_block_geoid():
+    from reposcan_api.address_intel import CensusAcsAreaProvider
+
+    provider = CensusAcsAreaProvider("FAKEKEY", StubHttp(get_payload=[["x"], ["1"]]))
+    assert provider.area_context(state_fips="40", census_tract="001100", block_geoid=None) is None
+
+
 def test_service_with_real_providers_and_stub_http_end_to_end():
     # Wire the real providers (Census + Overpass) onto a stub transport and
     # confirm the service composes a full report without any network.
