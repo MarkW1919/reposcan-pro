@@ -516,6 +516,45 @@ async function responseErrorMessage(response: Response, fallback: string): Promi
   return fallback;
 }
 
+export interface AddressAreaContext {
+  owner_occupied_pct: number | null;
+  renter_occupied_pct: number | null;
+  vacancy_pct: number | null;
+  total_housing_units: number | null;
+  summary: string | null;
+}
+
+export interface AddressIntelligenceReport {
+  query_address: string;
+  generated_at_utc: string;
+  matched: boolean;
+  match_quality: "exact" | "approximate" | "none";
+  standardized_address: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  state_fips: string | null;
+  county_name: string | null;
+  census_tract: string | null;
+  block_geoid: string | null;
+  dwelling_type: "single_family" | "multi_unit" | "commercial" | "vacant_land" | "unknown";
+  dwelling_evidence: string[];
+  area_context: AddressAreaContext | null;
+  data_sources: string[];
+  caveats: string[];
+  from_cache: boolean;
+}
+
+export async function fetchAddressIntelligence(address: string, signal?: AbortSignal): Promise<AddressIntelligenceReport> {
+  const response = await fetch(apiUrl(`/address-intelligence?address=${encodeURIComponent(address)}`), {
+    signal,
+    headers: authHeaders(),
+  });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, `Failed to load address intelligence (${response.status})`));
+  }
+  return (await response.json()) as AddressIntelligenceReport;
+}
+
 export async function fetchDashboardOverview(signal?: AbortSignal): Promise<DashboardOverviewResponse> {
   const response = await fetch(apiUrl("/dashboard/overview"), { signal, headers: authHeaders() });
   if (!response.ok) {

@@ -32,6 +32,7 @@ import {
 } from "./dashboard-config";
 import { cameraFeeds, defaultFieldSettings } from "./demo-data";
 import {
+  fetchAddressIntelligence,
   fetchAuditEvents,
   createFollowUp,
   createHotlist,
@@ -73,6 +74,7 @@ import {
   type OperatorPrincipal,
   type OperatorSessionRecord,
   type PlateCandidate,
+  type AddressIntelligenceReport,
   type ReverseAddressResult,
   type ReviewAction,
   type ReviewRecord,
@@ -119,6 +121,21 @@ function resolveScanSessionState(params: {
     return { state: "approaching_radius", mode: "standby", lprRealtime: false };
   }
   return { state: "idle", mode: "standby", lprRealtime: false };
+}
+
+function dwellingTypeLabel(dwellingType: string | undefined): string {
+  switch (dwellingType) {
+    case "single_family":
+      return "Single-family";
+    case "multi_unit":
+      return "Multi-unit";
+    case "commercial":
+      return "Commercial";
+    case "vacant_land":
+      return "Vacant land";
+    default:
+      return "Dwelling unknown";
+  }
 }
 
 function scanSessionLabel(state: ScanSessionState): string {
@@ -792,6 +809,53 @@ function useLiveReverseAddress(coords: DestinationCoords | null): LiveAddressSta
 
     return () => controller.abort();
   }, [coords?.lat, coords?.lng]);
+
+  return state;
+}
+
+interface AddressIntelState {
+  status: "idle" | "loading" | "resolved" | "error";
+  report: AddressIntelligenceReport | null;
+  error: string | null;
+}
+
+/**
+ * Fetch zero-cost public address intelligence for the staged destination.
+ * Debounced; aborts in-flight requests when the address changes; degrades
+ * quietly on error (the backend lookup itself never throws, so errors here are
+ * transport/offline). Idle when there's no usable address.
+ */
+function useAddressIntelligence(address: string): AddressIntelState {
+  const [state, setState] = useState<AddressIntelState>({ status: "idle", report: null, error: null });
+
+  useEffect(() => {
+    const trimmed = address.trim();
+    if (trimmed.length < 3) {
+      setState({ status: "idle", report: null, error: null });
+      return;
+    }
+    const controller = new AbortController();
+    setState((current) => ({ ...current, status: "loading", error: null }));
+    const handle = window.setTimeout(() => {
+      fetchAddressIntelligence(trimmed, controller.signal)
+        .then((report) => setState({ status: "resolved", report, error: null }))
+        .catch((error) => {
+          if ((error as DOMException)?.name === "AbortError") {
+            return;
+          }
+          setState({
+            status: "error",
+            report: null,
+            error: error instanceof Error ? error.message : "Address intelligence unavailable",
+          });
+        });
+    }, 500);
+
+    return () => {
+      window.clearTimeout(handle);
+      controller.abort();
+    };
+  }, [address]);
 
   return state;
 }
@@ -3773,6 +3837,7 @@ function App(): ReactElement {
   const cameraFocusRow = cameraRows[0] ?? selectedRow;
   const unitPosition = gpsFixToCoords(gpsFix) ?? routeStart;
   const liveAddress = useLiveReverseAddress(gpsFixToCoords(gpsFix));
+  const addressIntel = useAddressIntelligence(activeDestination);
   const activeRouteFeet = activeDestinationCoords ? haversineFeet(unitPosition, activeDestinationCoords) : null;
   const routePath = activeDestinationCoords ? buildRoutePath(unitPosition, activeDestinationCoords) : [];
   const withinRadius = navigationActive && activeRouteFeet != null && activeRouteFeet <= settings.arrivalRadiusFeet;
@@ -5341,6 +5406,7 @@ function App(): ReactElement {
               stageView={stageView}
               gpsFix={gpsFix}
               liveAddress={liveAddress}
+              addressIntel={addressIntel}
               unitPosition={unitPosition}
               routeDistance={routeDistance}
               routeEta={routeEta}
@@ -6401,6 +6467,7 @@ function ConsoleScreen(props: {
   stageView: StageView;
   gpsFix: GpsFixState;
   liveAddress: LiveAddressState;
+  addressIntel: AddressIntelState;
   unitPosition: { lat: number; lng: number };
   routeDistance: string;
   routeEta: string;
@@ -6637,6 +6704,15 @@ function ConsoleScreen(props: {
             { label: "Camera Notes", value: inferNoteField(activeHotlistEntry?.notes, ["camera", "ring", "cctv"], "Flagged in notes") },
             { label: "Parking Visibility", value: commandRow?.gps ? "Last-seen point logged" : "Not available" },
           ]}
+          publicData={{
+            status: props.addressIntel.status,
+            matched: props.addressIntel.report?.matched ?? false,
+            standardizedAddress: props.addressIntel.report?.standardized_address ?? null,
+            dwellingLabel: dwellingTypeLabel(props.addressIntel.report?.dwelling_type),
+            areaSummary: props.addressIntel.report?.area_context?.summary ?? null,
+            sources: props.addressIntel.report?.data_sources ?? [],
+            caveats: props.addressIntel.report?.caveats ?? [],
+          }}
         />
       );
     }

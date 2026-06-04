@@ -8,6 +8,16 @@ interface IntelligenceField {
   value: string;
 }
 
+interface PublicRecordData {
+  status: "idle" | "loading" | "resolved" | "error";
+  matched: boolean;
+  standardizedAddress: string | null;
+  dwellingLabel: string;
+  areaSummary: string | null;
+  sources: string[];
+  caveats: string[];
+}
+
 export function AddressIntelligenceCard(props: {
   size?: "compact" | "standard" | "expanded";
   address: string;
@@ -18,7 +28,9 @@ export function AddressIntelligenceCard(props: {
   recommendationDetail: string;
   fields: IntelligenceField[];
   recentSummary?: string;
+  publicData?: PublicRecordData | null;
 }): ReactElement {
+  const pub = props.publicData;
   return (
     <DashboardWidgetFrame
       title="Address Intelligence"
@@ -31,6 +43,33 @@ export function AddressIntelligenceCard(props: {
           <strong>{props.address}</strong>
           {props.subtitle ? <span>{props.subtitle}</span> : null}
         </div>
+
+        {pub && pub.status !== "idle" ? (
+          <div className="address-intelligence-card__public">
+            <span className="address-intelligence-card__public-label">Public records</span>
+            {pub.status === "loading" ? (
+              <p className="address-intelligence-card__public-status">Looking up public records…</p>
+            ) : pub.status === "error" ? (
+              <p className="address-intelligence-card__public-status">Public records lookup unavailable (offline).</p>
+            ) : pub.matched ? (
+              <>
+                {pub.standardizedAddress ? <strong>{pub.standardizedAddress}</strong> : null}
+                <div className="address-intelligence-card__public-tags">
+                  <StatusPill label={pub.dwellingLabel} tone="cyan" />
+                  {pub.areaSummary ? <span>{pub.areaSummary}</span> : null}
+                </div>
+                {pub.sources.length > 0 ? (
+                  <small className="address-intelligence-card__public-sources">Sources: {pub.sources.join(", ")}</small>
+                ) : null}
+              </>
+            ) : (
+              <p className="address-intelligence-card__public-status">Address not found in public records — verify it was entered correctly.</p>
+            )}
+            {pub.caveats.map((caveat) => (
+              <small key={caveat} className="address-intelligence-card__public-caveat">{caveat}</small>
+            ))}
+          </div>
+        ) : null}
 
         <div className="address-intelligence-card__grid">
           {props.fields.map((field) => (
