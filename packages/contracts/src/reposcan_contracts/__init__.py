@@ -4,6 +4,12 @@ Importable by any service or app in the monorepo. Only contains schema
 definitions and config loaders - no inference, IO, or business logic.
 """
 
+from .address_intel import (
+    AddressIntelligenceReport,
+    AddressMatchQuality,
+    AreaContext,
+    DwellingType,
+)
 from .alert import AlertRecord, AlertStatus
 from .classifier_export import (
     ClassifierExportLabelRecord,
@@ -114,6 +120,10 @@ __all__ = [
     "FieldEvalReport",
     "FieldEvalScenario",
     "FieldEvalSubsetSummary",
+    "AddressIntelligenceReport",
+    "AddressMatchQuality",
+    "AreaContext",
+    "DwellingType",
     "AlertRecord",
     "AlertStatus",
     "BenchmarkFrameExpectation",
