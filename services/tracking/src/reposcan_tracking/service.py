@@ -111,6 +111,8 @@ class _ActiveTrack:
     frame_number: int
     best_frame_path: str
     best_frame_score: float
+    best_frame_latitude: float | None = None
+    best_frame_longitude: float | None = None
     hits: int = 0
     missed: int = 0
     first_seen_utc: str = ""
@@ -322,6 +324,8 @@ class TrackingService:
             frame_number=frame.frame_number,
             best_frame_path=frame.frame_path,
             best_frame_score=plate_detection.confidence if plate_detection is not None else vehicle_detection.confidence,
+            best_frame_latitude=frame.gps_snapshot.latitude if frame.gps_snapshot is not None else None,
+            best_frame_longitude=frame.gps_snapshot.longitude if frame.gps_snapshot is not None else None,
             first_seen_utc=frame.timestamp_utc,
             last_seen_utc=frame.timestamp_utc,
         )
@@ -392,6 +396,9 @@ class TrackingService:
             track.best_plate_bbox = plate_detection.bbox if plate_detection is not None else None
             track.frame_number = frame.frame_number
             track.best_frame_path = frame.frame_path
+            if frame.gps_snapshot is not None:
+                track.best_frame_latitude = frame.gps_snapshot.latitude
+                track.best_frame_longitude = frame.gps_snapshot.longitude
 
         if attributes is not None:
             track.attribute_predictions.append(attributes)
@@ -464,6 +471,8 @@ class TrackingService:
             alternate_plate_candidates=alternates,
             vehicle_bbox=track.best_vehicle_bbox,
             plate_bbox=track.best_plate_bbox,
+            gps_latitude=track.best_frame_latitude,
+            gps_longitude=track.best_frame_longitude,
             vehicle_attributes=best_attribute_prediction,
             evidence_refs=EvidenceRefs(best_frame_path=track.best_frame_path),
             confidence_summary=ConfidenceSummary(

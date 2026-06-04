@@ -66,6 +66,80 @@ def _candidate(timestamp_utc: str, plate_text: str, plate_confidence: float) -> 
     )
 
 
+def _frame_with_gps(frame_number: int, timestamp_utc: str, lat: float, lon: float) -> FrameEnvelope:
+    return FrameEnvelope.model_validate(
+        {
+            "frame_id": f"frm_{frame_number:03d}",
+            "camera_id": "cam_north_gate_01",
+            "timestamp_utc": timestamp_utc,
+            "frame_path": f"media/frames/cam_north_gate_01/frame_{frame_number:06d}.jpg",
+            "frame_number": frame_number,
+            "source_type": "rtsp",
+            "gps_snapshot": {"latitude": lat, "longitude": lon},
+            "camera_profile": CameraProfile(
+                camera_id="cam_north_gate_01", source_type=SourceType.rtsp
+            ).model_dump(mode="json"),
+        }
+    )
+
+
+def test_detection_gps_propagates_and_drives_in_zone_lead(tmp_path):
+    # Frames carry the unit's GPS; it must flow frame -> track -> DetectionRecord
+    # (mission requirement) and then drive a geofenced make/model in-zone lead.
+    from reposcan_alerting.geo import entries_within_zone
+
+    target_lat, target_lon = 35.4676, -97.5164
+    near_lat, near_lon = 35.46801, -97.5164  # ~150 ft from target
+
+    tracking_service = TrackingService.from_config_path()
+    tracking_service.pipeline_config.tracking.min_hits_to_confirm = 2
+    tracking_service.pipeline_config.tracking.max_lost_frames = 0
+    tracking_service.pipeline_config.fusion.min_ocr_candidates_for_promotion = 2
+
+    frames = [
+        _frame_with_gps(1, "2026-06-03T12:00:00Z", near_lat, near_lon),
+        _frame_with_gps(2, "2026-06-03T12:00:01Z", near_lat, near_lon),
+    ]
+    candidates = [
+        _candidate("2026-06-03T12:00:00Z", "PLATE01", 0.93),
+        _candidate("2026-06-03T12:00:01Z", "PLATE01", 0.95),
+    ]
+    for frame, candidate in zip(frames, candidates):
+        tracking_service.ingest(frame, candidate)
+    tracked = tracking_service.flush()[0]
+
+    # GPS carried onto the tracked detection.
+    assert tracked.gps_latitude == near_lat
+    assert tracked.gps_longitude == near_lon
+
+    storage_service = StorageService(repository=InMemoryStorageRepository(), media_root=tmp_path / "media")
+    stored = storage_service.store_tracked_detection(tracked)
+    # GPS persisted on the record (mission: store detections with GPS).
+    assert stored.gps_latitude == near_lat
+    assert stored.gps_longitude == near_lon
+
+    # The candidate attributes are make=toyota model=camry; a make/model hotlist
+    # at the target address fires an IN-ZONE LEAD using the stored detection GPS.
+    entry = HotlistEntry.model_validate(
+        {
+            "entry_id": "hl_zone",
+            "vehicle_make": "toyota",
+            "vehicle_model": "camry",
+            "address_latitude": target_lat,
+            "address_longitude": target_lon,
+            "label": "Zone target",
+            "created_at_utc": "2026-06-03T11:00:00Z",
+            "updated_at_utc": "2026-06-03T11:00:00Z",
+        }
+    )
+    alerting_service = AlertingService.from_config_path()
+    in_zone = entries_within_zone(stored.gps_latitude, stored.gps_longitude, [entry], radius_feet=300)
+    alert = alerting_service.evaluate(tracked, [entry], in_zone_entry_ids=in_zone)
+    assert alert is not None
+    assert alert.match_kind.value == "in_zone_profile"
+    assert "make" in alert.matched_attributes and "model" in alert.matched_attributes
+
+
 def test_tracking_to_alerting_flow(tmp_path):
     tracking_service = TrackingService.from_config_path()
     tracking_service.pipeline_config.tracking.min_hits_to_confirm = 2

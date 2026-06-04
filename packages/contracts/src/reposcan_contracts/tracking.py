@@ -55,6 +55,12 @@ class TrackedDetection(BaseModel):
     vehicle_bbox: BoundingBox = Field(..., description="Vehicle bbox from the best frame")
     plate_bbox: Optional[BoundingBox] = Field(None, description="Plate bbox from the best frame")
 
+    # Unit GPS position at the best frame, carried from the frame's gps_snapshot.
+    # Required for GPS-stamped detection records (mission requirement) and for
+    # geofenced make/model alerts (was the unit near a target address?).
+    gps_latitude: Optional[float] = Field(None, ge=-90.0, le=90.0)
+    gps_longitude: Optional[float] = Field(None, ge=-180.0, le=180.0)
+
     vehicle_attributes: Optional[AttributePredictions] = Field(
         None, description="Best attribute predictions for this track"
     )

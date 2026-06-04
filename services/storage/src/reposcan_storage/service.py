@@ -321,6 +321,8 @@ class StorageService:
             plate_candidates=plate_candidates,
             vehicle_bbox=tracked_detection.vehicle_bbox,
             plate_bbox=tracked_detection.plate_bbox,
+            gps_latitude=tracked_detection.gps_latitude,
+            gps_longitude=tracked_detection.gps_longitude,
             vehicle_color=vehicle_attributes.color if vehicle_attributes is not None else None,
             vehicle_color_confidence=vehicle_attributes.color_confidence if vehicle_attributes is not None else None,
             vehicle_make=vehicle_attributes.make if vehicle_attributes is not None else None,
