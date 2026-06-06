@@ -25,7 +25,11 @@ export interface DashboardConfig {
   widgets: DashboardWidgetConfig[];
 }
 
-export const dashboardConfigStorageKey = "reprovision.dashboard.config.v1";
+// v2: mission-critical default (map hero + cam feed + vehicle account + address
+// intelligence) and the new accountDetails widget. Bumped from v1 so existing
+// browsers reset to the new default layout instead of restoring a stale one
+// (which could leave the map in a non-hero slot or hide the new widgets).
+export const dashboardConfigStorageKey = "reprovision.dashboard.config.v2";
 
 export interface DashboardWidgetDefinition {
   id: DashboardWidgetId;

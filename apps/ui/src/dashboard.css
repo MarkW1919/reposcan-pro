@@ -1033,7 +1033,14 @@ body {
 }
 
 .dashboard-widget .map-stage {
-  min-height: 100%;
+  /*
+   * Concrete height floor so the Leaflet map is visible in ANY slot, not only
+   * the hero. `min-height: 100%` alone collapses to 0 when the slot's parent
+   * has no definite height (e.g. a support/lower slot), which renders the card
+   * frame with a blank body. The hero slot overrides this with a taller clamp.
+   */
+  min-height: clamp(300px, 42vh, 560px);
+  height: 100%;
   border-top-left-radius: 0;
   border-top-right-radius: 0;
   background:
