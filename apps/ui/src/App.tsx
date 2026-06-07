@@ -32,7 +32,7 @@ import {
 } from "./dashboard-config";
 import { cameraFeeds, defaultFieldSettings } from "./demo-data";
 import {
-  fetchAddressIntelligence,
+  fetchOccupantIntelligence,
   fetchAuditEvents,
   createFollowUp,
   createHotlist,
@@ -74,7 +74,7 @@ import {
   type OperatorPrincipal,
   type OperatorSessionRecord,
   type PlateCandidate,
-  type AddressIntelligenceReport,
+  type OccupantIntelligenceReport,
   type ReverseAddressResult,
   type ReviewAction,
   type ReviewRecord,
@@ -813,20 +813,22 @@ function useLiveReverseAddress(coords: DestinationCoords | null): LiveAddressSta
   return state;
 }
 
-interface AddressIntelState {
+interface OccupantIntelState {
   status: "idle" | "loading" | "resolved" | "error";
-  report: AddressIntelligenceReport | null;
+  report: OccupantIntelligenceReport | null;
   error: string | null;
 }
 
 /**
- * Fetch zero-cost public address intelligence for the staged destination.
- * Debounced; aborts in-flight requests when the address changes; degrades
- * quietly on error (the backend lookup itself never throws, so errors here are
- * transport/offline). Idle when there's no usable address.
+ * Fetch occupant intelligence for the staged destination: who is associated
+ * with the address (WhitePages Pro, paid) plus the embedded free Census/OSM
+ * address verification as the always-present base/fallback layer. Debounced;
+ * aborts in-flight requests when the address changes; degrades quietly on error
+ * (the backend lookup itself never throws, so errors here are transport/offline).
+ * Idle when there's no usable address.
  */
-function useAddressIntelligence(address: string, coords: DestinationCoords | null): AddressIntelState {
-  const [state, setState] = useState<AddressIntelState>({ status: "idle", report: null, error: null });
+function useOccupantIntelligence(address: string, coords: DestinationCoords | null): OccupantIntelState {
+  const [state, setState] = useState<OccupantIntelState>({ status: "idle", report: null, error: null });
 
   useEffect(() => {
     const trimmed = address.trim();
@@ -837,7 +839,7 @@ function useAddressIntelligence(address: string, coords: DestinationCoords | nul
     const controller = new AbortController();
     setState((current) => ({ ...current, status: "loading", error: null }));
     const handle = window.setTimeout(() => {
-      fetchAddressIntelligence(trimmed, coords, controller.signal)
+      fetchOccupantIntelligence(trimmed, coords, controller.signal)
         .then((report) => setState({ status: "resolved", report, error: null }))
         .catch((error) => {
           if ((error as DOMException)?.name === "AbortError") {
@@ -846,7 +848,7 @@ function useAddressIntelligence(address: string, coords: DestinationCoords | nul
           setState({
             status: "error",
             report: null,
-            error: error instanceof Error ? error.message : "Address intelligence unavailable",
+            error: error instanceof Error ? error.message : "Occupant intelligence unavailable",
           });
         });
     }, 500);
@@ -3837,7 +3839,7 @@ function App(): ReactElement {
   const cameraFocusRow = cameraRows[0] ?? selectedRow;
   const unitPosition = gpsFixToCoords(gpsFix) ?? routeStart;
   const liveAddress = useLiveReverseAddress(gpsFixToCoords(gpsFix));
-  const addressIntel = useAddressIntelligence(activeDestination, activeDestinationCoords);
+  const addressIntel = useOccupantIntelligence(activeDestination, activeDestinationCoords);
   const activeRouteFeet = activeDestinationCoords ? haversineFeet(unitPosition, activeDestinationCoords) : null;
   const routePath = activeDestinationCoords ? buildRoutePath(unitPosition, activeDestinationCoords) : [];
   const withinRadius = navigationActive && activeRouteFeet != null && activeRouteFeet <= settings.arrivalRadiusFeet;
@@ -4462,6 +4464,32 @@ function App(): ReactElement {
     setDestinationModalOpen(false);
     setStageView("map");
     switchScreen("console");
+  }
+
+  // Skip-trace affordance: an occupant's previous address is a plain string.
+  // Clicking it geocodes the address and stages it as the destination, which
+  // re-centers the map and refreshes occupant/address intel for that address.
+  function investigateAddress(address: string): void {
+    const trimmed = address.trim();
+    if (!trimmed) return;
+    void searchAddresses(trimmed, { limit: 1 })
+      .then((result) => {
+        const first = result.results[0];
+        if (first) {
+          stageResolvedDestination(first.display_name, { lat: first.latitude, lng: first.longitude });
+        } else {
+          // No geocode hit (offline / unmatched): stage the text so the operator
+          // still sees it staged; coords-less lookups still degrade gracefully.
+          setActiveDestination(trimmed);
+          setActiveDestinationCoords(null);
+          setStageView("map");
+          switchScreen("console");
+        }
+      })
+      .catch(() => {
+        setActiveDestination(trimmed);
+        setActiveDestinationCoords(null);
+      });
   }
 
   function startRoute(): void {
@@ -5443,6 +5471,7 @@ function App(): ReactElement {
               onSelectDetection={setSelectedDetectionId}
               onRouteToDetection={routeToRow}
               onSelectGeocodedAddress={selectGeocodedAddress}
+              onInvestigateAddress={investigateAddress}
               onStageResolvedDestination={stageResolvedDestination}
               onStageDestination={stageDestination}
               onStartResolvedRoute={startResolvedRoute}
@@ -6467,7 +6496,7 @@ function ConsoleScreen(props: {
   stageView: StageView;
   gpsFix: GpsFixState;
   liveAddress: LiveAddressState;
-  addressIntel: AddressIntelState;
+  addressIntel: OccupantIntelState;
   unitPosition: { lat: number; lng: number };
   routeDistance: string;
   routeEta: string;
@@ -6495,6 +6524,7 @@ function ConsoleScreen(props: {
   onSelectDetection: (rowId: string) => void;
   onRouteToDetection: (row: ConsoleDetectionRow) => void;
   onSelectGeocodedAddress: (address: string, coords: DestinationCoords) => void;
+  onInvestigateAddress: (address: string) => void;
   onStageResolvedDestination: (address: string, coords: DestinationCoords) => void;
   onStageDestination: () => void;
   onStartResolvedRoute: (address: string, coords: DestinationCoords) => void;
@@ -6682,8 +6712,10 @@ function ConsoleScreen(props: {
 
     if (widgetId === "addressIntelligence") {
       // Mission-critical: destination location context (NOT vehicle/account —
-      // that lives in the Vehicle Account widget). Location features + recovery
-      // guidance for the staged destination.
+      // that lives in the Vehicle Account widget). Occupant intelligence (who is
+      // associated with the address) over the free address-verification layer.
+      const occ = props.addressIntel.report;
+      const addr = occ?.address ?? null;
       return (
         <AddressIntelligenceCard
           size={size}
@@ -6706,14 +6738,24 @@ function ConsoleScreen(props: {
           ]}
           publicData={{
             status: props.addressIntel.status,
-            matched: props.addressIntel.report?.matched ?? false,
-            standardizedAddress: props.addressIntel.report?.standardized_address ?? null,
-            county: props.addressIntel.report?.county_name ?? null,
-            dwellingLabel: dwellingTypeLabel(props.addressIntel.report?.dwelling_type),
-            areaSummary: props.addressIntel.report?.area_context?.summary ?? null,
-            sources: props.addressIntel.report?.data_sources ?? [],
-            caveats: props.addressIntel.report?.caveats ?? [],
+            matched: addr?.matched ?? false,
+            standardizedAddress: addr?.standardized_address ?? null,
+            county: addr?.county_name ?? null,
+            dwellingLabel: dwellingTypeLabel(addr?.dwelling_type),
+            areaSummary: addr?.area_context?.summary ?? null,
+            sources: addr?.data_sources ?? [],
+            caveats: occ?.caveats ?? [],
           }}
+          occupantData={{
+            status: occ?.status ?? "disabled",
+            source: occ?.source ?? null,
+            highConfidence: occ?.high_confidence ?? [],
+            otherPossible: occ?.other_possible ?? [],
+            previousAddresses: occ?.previous_addresses ?? [],
+            fromCache: occ?.from_cache ?? false,
+            cacheAgeDays: occ?.cache_age_days ?? null,
+          }}
+          onInvestigatePreviousAddress={props.onInvestigateAddress}
         />
       );
     }

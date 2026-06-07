@@ -538,6 +538,107 @@ body {
   line-height: 1.35;
 }
 
+/* Occupant intelligence section (WhitePages Pro) inside the card. */
+.occupant-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(139, 214, 255, 0.28);
+  background: rgba(11, 16, 22, 0.92);
+}
+
+.occupant-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.occupant-card__label {
+  color: var(--muted);
+  font-size: calc(var(--text-scale, 1) * 0.66rem);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.occupant-card__status {
+  margin: 0;
+  color: var(--muted);
+}
+
+.occupant-card__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.occupant-card__row {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.occupant-card__name {
+  font-size: calc(var(--text-scale, 1) * 0.98rem);
+  font-weight: 700;
+}
+
+.occupant-card__phones {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: calc(var(--text-scale, 1) * 0.82rem);
+}
+
+.occupant-card__associated {
+  color: var(--faint);
+  font-size: calc(var(--text-scale, 1) * 0.78rem);
+  padding-left: 10px;
+}
+
+.occupant-card__previous {
+  display: grid;
+  gap: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 8px;
+}
+
+.occupant-card__previous-label {
+  color: var(--muted);
+  font-size: calc(var(--text-scale, 1) * 0.66rem);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.occupant-card__previous-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.occupant-card__previous-link {
+  appearance: none;
+  border: none;
+  background: none;
+  padding: 0;
+  text-align: left;
+  color: var(--accent, #8bd6ff);
+  font-size: calc(var(--text-scale, 1) * 0.84rem);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.occupant-card__previous-link:hover {
+  color: #cdeeff;
+}
+
 /* Vehicle Account card — mirrors the Address Intelligence card styling. */
 .vehicle-account-card {
   display: grid;

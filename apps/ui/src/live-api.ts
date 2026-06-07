@@ -564,6 +564,54 @@ export async function fetchAddressIntelligence(
   return (await response.json()) as AddressIntelligenceReport;
 }
 
+export type OccupantLookupStatus =
+  | "ok"
+  | "no_match"
+  | "unavailable"
+  | "offline"
+  | "disabled"
+  | "unconfigured";
+
+export interface Occupant {
+  name: string;
+  phones: string[];
+  associated_people: string[];
+}
+
+export interface OccupantIntelligenceReport {
+  lookup_address: string;
+  generated_at_utc: string;
+  status: OccupantLookupStatus;
+  source: string | null;
+  high_confidence: Occupant[];
+  other_possible: Occupant[];
+  previous_addresses: string[];
+  from_cache: boolean;
+  cache_age_days: number | null;
+  address: AddressIntelligenceReport | null;
+  caveats: string[];
+}
+
+export async function fetchOccupantIntelligence(
+  address: string,
+  coords?: { lat: number; lng: number } | null,
+  signal?: AbortSignal,
+): Promise<OccupantIntelligenceReport> {
+  const params = new URLSearchParams({ address });
+  if (coords) {
+    params.set("latitude", String(coords.lat));
+    params.set("longitude", String(coords.lng));
+  }
+  const response = await fetch(apiUrl(`/occupant-intelligence?${params.toString()}`), {
+    signal,
+    headers: authHeaders(),
+  });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, `Failed to load occupant intelligence (${response.status})`));
+  }
+  return (await response.json()) as OccupantIntelligenceReport;
+}
+
 export async function fetchDashboardOverview(signal?: AbortSignal): Promise<DashboardOverviewResponse> {
   const response = await fetch(apiUrl("/dashboard/overview"), { signal, headers: authHeaders() });
   if (!response.ok) {
