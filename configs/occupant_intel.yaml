@@ -1,0 +1,18 @@
+# Occupant Intelligence configuration (committed, NON-SECRET).
+#
+# Selects which occupant/skip-trace provider backs the destination intel widget.
+# The API key is intentionally NOT here — it is read from the environment
+# (WHITEPAGES_API_KEY, loaded from your gitignored .env) so a secret is never
+# committed. See .env.example.
+#
+# provider:
+#   whitepages  -> WhitePages Pro (paid) occupants + free Census address layer,
+#                  with automatic fallback to Census if WhitePages is down.
+#   census/free -> free Census/OSM address verification only (no paid calls).
+#
+# Resolution order at startup: OCCUPANT_PROVIDER env var overrides this file;
+# this file overrides the built-in default ("whitepages").
+provider: whitepages
+
+# The key lives in .env, never here:
+#   WHITEPAGES_API_KEY=...   (gitignored)

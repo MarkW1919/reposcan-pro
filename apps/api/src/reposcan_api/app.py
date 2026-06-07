@@ -24,6 +24,7 @@ from fastapi.responses import FileResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from reposcan_contracts.address_intel import AddressIntelligenceReport
+from reposcan_contracts.occupant_intel import OccupantIntelligenceReport
 from reposcan_contracts.alert import AlertRecord, AlertStatus
 from reposcan_contracts.config.deployment import ApiRole, DeploymentConfig
 from reposcan_contracts.dispatch import DispatchAssignmentRecord, DispatchAssignmentStatus
@@ -83,6 +84,13 @@ from .address_intel import (
     CensusGeocoderProvider,
     InMemoryReportCache,
     OverpassDwellingProvider,
+)
+from .occupant_intel import (
+    AddressComponents,
+    OccupantLookupService,
+    SqliteOccupantCache,
+    WHITEPAGES_MODE,
+    WhitePagesProProvider,
 )
 from .audit import ApiAuditLogger
 from .security import ApiAccessController, ApiPrincipalContext, principal_details
@@ -236,6 +244,31 @@ class AddressSearchProviderError(RuntimeError):
 
 def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+_OCCUPANT_CONFIG_PATH = "configs/occupant_intel.yaml"
+
+
+def _resolve_occupant_provider_name() -> str:
+    """Occupant provider toggle: env override > committed config file > default.
+
+    The provider toggle is non-secret config; the API key is read separately from
+    the environment and never from this file.
+    """
+    env_value = os.environ.get("OCCUPANT_PROVIDER", "").strip().lower()
+    if env_value:
+        return env_value
+    try:
+        import yaml  # available via the deployment config loader
+
+        with open(_OCCUPANT_CONFIG_PATH, encoding="utf-8") as handle:
+            data = yaml.safe_load(handle) or {}
+        provider = str(data.get("provider", "")).strip().lower()
+        if provider:
+            return provider
+    except (OSError, ValueError):
+        pass
+    return WHITEPAGES_MODE
 
 
 def _best_detection_confidence(detection: DetectionRecord) -> float:
@@ -959,6 +992,7 @@ def create_app(
     demo_run_manager: HeadlessDemoRunManager | None = None,
     deployment_config: DeploymentConfig | None = None,
     address_intel_service: AddressIntelligenceService | None = None,
+    occupant_intel_service: OccupantLookupService | None = None,
 ) -> FastAPI:
     service = storage_service or create_development_storage_service()
     deployment = deployment_config or service.deployment_config or load_deployment_config("configs/deployments/local-dev.yaml")
@@ -1116,6 +1150,28 @@ def create_app(
             dwelling=OverpassDwellingProvider(),
             area=area_provider,
             cache=InMemoryReportCache(),
+        )
+
+    # Occupant intelligence: paid WhitePages Pro skip-trace with automatic
+    # fallback to the free address layer above. Config toggle via
+    # OCCUPANT_PROVIDER ("whitepages" | "census"/"free"); the WhitePages key is
+    # read only from the environment (WHITEPAGES_API_KEY, loaded from .env) so it
+    # never lives in a committed file. Occupant results persist in a SQLite cache
+    # (30-day) for repeat lookups + offline reuse.
+    if occupant_intel_service is None:
+        occupant_provider_name = _resolve_occupant_provider_name()
+        whitepages_api_key = os.environ.get("WHITEPAGES_API_KEY", "").strip()
+        whitepages_provider = (
+            WhitePagesProProvider(whitepages_api_key)
+            if occupant_provider_name == WHITEPAGES_MODE and whitepages_api_key
+            else None
+        )
+        occupant_cache_path = os.environ.get("OCCUPANT_CACHE_PATH", "var/occupant_cache.sqlite").strip()
+        occupant_intel_service = OccupantLookupService(
+            address_intel_service,
+            provider=whitepages_provider,
+            provider_name=occupant_provider_name,
+            cache=SqliteOccupantCache(occupant_cache_path),
         )
 
     api_router = APIRouter()
@@ -1503,6 +1559,73 @@ def create_app(
                 "dwelling_type": report.dwelling_type.value,
                 "sources": report.data_sources,
                 "from_cache": report.from_cache,
+            },
+        )
+        return report
+
+    @api_router.get("/occupant-intelligence", response_model=OccupantIntelligenceReport)
+    def occupant_intelligence(
+        request: Request,
+        address: str = Query(..., min_length=3),
+        latitude: float | None = Query(default=None, ge=-90.0, le=90.0),
+        longitude: float | None = Query(default=None, ge=-180.0, le=180.0),
+        address_line_1: str | None = Query(default=None),
+        city: str | None = Query(default=None),
+        state_code: str | None = Query(default=None),
+        postal_code: str | None = Query(default=None),
+        case_id: str | None = Query(default=None),
+        principal: ApiPrincipalContext = Depends(access_controller.address_search_access),
+    ) -> OccupantIntelligenceReport:
+        # Optional explicit components override the best-effort address parse.
+        components = None
+        if any(v for v in (address_line_1, city, state_code, postal_code)):
+            components = AddressComponents(
+                address_line_1=address_line_1,
+                city=city,
+                state_code=(state_code or "").upper() or None,
+                postal_code=postal_code,
+            )
+
+        # Each paid provider call is audited (key already masked by the provider).
+        def _audit_provider_call(event) -> None:
+            record_audit(
+                request,
+                principal=principal,
+                action="occupant.intelligence.provider_call",
+                outcome=AuditOutcome.success if event.success else AuditOutcome.error,
+                target_type="occupant_provider",
+                target_id=event.endpoint,
+                details={
+                    "params": event.params_masked,
+                    "http_status": event.http_status,
+                    "success": event.success,
+                    "rate_limited": event.rate_limited,
+                    "error": event.error,
+                    "case_id": case_id,
+                },
+            )
+
+        # lookup() is best-effort and never raises — provider failures degrade to
+        # the Census address layer (or stale cache) rather than a 5xx.
+        report = occupant_intel_service.lookup(
+            address,
+            latitude=latitude,
+            longitude=longitude,
+            components=components,
+            audit=_audit_provider_call,
+        )
+        record_audit(
+            request,
+            principal=principal,
+            action="occupant.intelligence",
+            outcome=AuditOutcome.success,
+            details={
+                "address": report.lookup_address,
+                "status": report.status.value,
+                "source": report.source,
+                "occupants": len(report.high_confidence) + len(report.other_possible),
+                "from_cache": report.from_cache,
+                "case_id": case_id,
             },
         )
         return report
