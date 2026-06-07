@@ -21,26 +21,43 @@ from reposcan_api.occupant_intel import (
 # --- Example identity_check response (from the integration spec) -----------
 
 EXAMPLE_RESPONSE = {
-    "current_addresses": [
+    "results": [
         {
-            "is_primary": True,
-            "address_line_1": "123 Main St",
-            "city": "Oklahoma City",
-            "state_code": "OK",
-            "postal_code": "73102",
-            "country_code": "US",
-            "residents": [
-                {
-                    "name": "John Q. Doe",
-                    "phones": [{"phone_number": "405-555-1234", "line_type": "Mobile"}],
-                    "associated_people": [{"name": "Jane Doe", "relation": "Spouse"}],
-                }
+            "id": "p1",
+            "name": "John Q. Doe",
+            "aliases": [],
+            "is_dead": False,
+            "owned_properties": [],
+            "phones": [{"number": "405-555-1234", "type": "mobile", "score": 4}],
+            "relatives": [{"id": "r1", "name": "Jane Doe"}],
+            "current_addresses": [
+                {"address_id": "a1", "full_address": "123 Main St, Oklahoma City, OK 73102", "line1": "123 Main St", "city": "Oklahoma City", "state": "OK", "zip": "73102"}
             ],
-        }
+            "historic_addresses": [
+                {"address_id": "a2", "full_address": "456 Oak Ave, Tulsa, OK 74103", "line1": "456 Oak Ave", "city": "Tulsa", "state": "OK", "zip": "74103"}
+            ],
+            "match_score": 100,
+            "matched_by": ["address"],
+            "emails": [],
+        },
+        {
+            "id": "p2",
+            "name": "Bob Roe",
+            "aliases": [],
+            "is_dead": False,
+            "owned_properties": [],
+            "phones": [{"number": "405-555-9999", "type": "Landline", "score": 2}],
+            "relatives": [],
+            "current_addresses": [
+                {"address_id": "a1", "full_address": "123 Main St, Oklahoma City, OK 73102", "line1": "123 Main St", "city": "Oklahoma City", "state": "OK", "zip": "73102"}
+            ],
+            "historic_addresses": [],
+            "match_score": 40,
+            "matched_by": ["address"],
+            "emails": [],
+        },
     ],
-    "previous_addresses": [
-        {"address_line_1": "456 Oak Ave", "city": "Tulsa", "state_code": "OK", "postal_code": "74103"}
-    ],
+    "metadata": {"result_count": 2, "page": 1, "page_size": 15},
 }
 
 
@@ -48,14 +65,16 @@ EXAMPLE_RESPONSE = {
 
 
 class QueueTransport:
-    """Returns queued HttpJsonResponses; records the params it was called with."""
+    """Returns queued HttpJsonResponses; records params + headers per call."""
 
     def __init__(self, *responses: HttpJsonResponse) -> None:
         self._responses = list(responses)
         self.calls: list[dict[str, str]] = []
+        self.headers: list[dict[str, str]] = []
 
-    def get(self, url: str, params: dict[str, str], *, timeout: float) -> HttpJsonResponse:
+    def get(self, url, params, *, headers=None, timeout):  # noqa: ANN001
         self.calls.append(dict(params))
+        self.headers.append(dict(headers or {}))
         return self._responses.pop(0) if self._responses else HttpJsonResponse(status=0, payload=None)
 
 
@@ -119,12 +138,20 @@ def test_provider_parses_residents_phones_and_previous():
 
     assert result.ok is True
     assert result.source == "WhitePages Pro"
+    # match_score split: John (100) is high confidence, Bob (40) is a maybe.
     assert len(result.high_confidence) == 1
     occupant = result.high_confidence[0]
     assert occupant.name == "John Q. Doe"
     assert occupant.phones == ["405-555-1234 (Mobile)"]
-    assert occupant.associated_people == ["Jane Doe (Spouse)"]
+    assert occupant.associated_people == ["Jane Doe"]
+    assert len(result.other_possible) == 1
+    assert result.other_possible[0].name == "Bob Roe"
+    # Previous addresses come from the strong matches' historic_addresses.
     assert result.previous_addresses == ["456 Oak Ave, Tulsa, OK 74103"]
+    # Request used the documented address params (not postal_code) + history flag.
+    assert transport.calls[0]["zipcode"] == "73102"
+    assert transport.calls[0]["include_historical_locations"] == "true"
+    assert "postal_code" not in transport.calls[0]
 
 
 def test_provider_masks_api_key_in_audit():
@@ -132,9 +159,10 @@ def test_provider_masks_api_key_in_audit():
     provider = WhitePagesProProvider("secret-key-1234", transport=transport)
     result = provider.lookup(_components())
     assert result.audit.params_masked["api_key"] == "***1234"
-    # The real key is sent on the wire but never retained in the audit record.
+    # The real key travels in the X-Api-Key header, never in query params or audit.
     assert "secret-key-1234" not in str(result.audit.params_masked)
-    assert transport.calls[0]["api_key"] == "secret-key-1234"
+    assert "api_key" not in transport.calls[0]
+    assert transport.headers[0]["X-Api-Key"] == "secret-key-1234"
 
 
 def test_provider_rate_limit_waits_then_degrades():
@@ -212,7 +240,7 @@ def test_whitepages_ok_returns_occupants_and_caches():
 
 
 def test_whitepages_no_match_status():
-    transport = QueueTransport(HttpJsonResponse(status=200, payload={"current_addresses": [], "previous_addresses": []}))
+    transport = QueueTransport(HttpJsonResponse(status=200, payload={"results": [], "metadata": {"result_count": 0}}))
     provider = WhitePagesProProvider("k", transport=transport)
     svc = OccupantLookupService(_address_service(), provider=provider, cache=SqliteOccupantCache(":memory:"))
     report = svc.lookup("123 Main St, Oklahoma City, OK 73102")

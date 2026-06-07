@@ -19,25 +19,24 @@ from reposcan_storage.memory import InMemoryStorageRepository
 from reposcan_storage.service import StorageService
 
 EXAMPLE_RESPONSE = {
-    "current_addresses": [
+    "results": [
         {
-            "is_primary": True,
-            "address_line_1": "123 Main St",
-            "city": "Oklahoma City",
-            "state_code": "OK",
-            "postal_code": "73102",
-            "residents": [
-                {
-                    "name": "John Q. Doe",
-                    "phones": [{"phone_number": "405-555-1234", "line_type": "Mobile"}],
-                    "associated_people": [{"name": "Jane Doe", "relation": "Spouse"}],
-                }
+            "id": "p1",
+            "name": "John Q. Doe",
+            "phones": [{"number": "405-555-1234", "type": "mobile", "score": 4}],
+            "relatives": [{"id": "r1", "name": "Jane Doe"}],
+            "current_addresses": [
+                {"address_id": "a1", "full_address": "123 Main St, Oklahoma City, OK 73102", "line1": "123 Main St", "city": "Oklahoma City", "state": "OK", "zip": "73102"}
             ],
+            "historic_addresses": [
+                {"address_id": "a2", "full_address": "456 Oak Ave, Tulsa, OK 74103", "line1": "456 Oak Ave", "city": "Tulsa", "state": "OK", "zip": "74103"}
+            ],
+            "match_score": 100,
+            "matched_by": ["address"],
+            "emails": [],
         }
     ],
-    "previous_addresses": [
-        {"address_line_1": "456 Oak Ave", "city": "Tulsa", "state_code": "OK", "postal_code": "74103"}
-    ],
+    "metadata": {"result_count": 1, "page": 1, "page_size": 15},
 }
 
 
@@ -59,7 +58,7 @@ class _QueueTransport:
     def __init__(self, *responses: HttpJsonResponse) -> None:
         self._responses = list(responses)
 
-    def get(self, url: str, params: dict, *, timeout: float) -> HttpJsonResponse:
+    def get(self, url, params, *, headers=None, timeout):  # noqa: ANN001
         return self._responses.pop(0) if self._responses else HttpJsonResponse(status=0, payload=None)
 
 
@@ -90,7 +89,7 @@ def test_occupant_endpoint_returns_occupants(tmp_path):
     assert body["source"] == "WhitePages Pro"
     assert body["high_confidence"][0]["name"] == "John Q. Doe"
     assert body["high_confidence"][0]["phones"] == ["405-555-1234 (Mobile)"]
-    assert body["high_confidence"][0]["associated_people"] == ["Jane Doe (Spouse)"]
+    assert body["high_confidence"][0]["associated_people"] == ["Jane Doe"]
     assert body["previous_addresses"] == ["456 Oak Ave, Tulsa, OK 74103"]
     # Census address layer is embedded as the base/fallback.
     assert body["address"]["matched"] is True

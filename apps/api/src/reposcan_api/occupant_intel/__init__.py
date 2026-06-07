@@ -20,7 +20,7 @@ from .base import (
 from .cache import DEFAULT_CACHE_TTL_DAYS, OccupantCacheEntry, SqliteOccupantCache
 from .lookup_service import FREE_MODES, WHITEPAGES_MODE, OccupantLookupService
 from .whitepages_pro import (
-    WHITEPAGES_IDENTITY_CHECK_URL,
+    WHITEPAGES_PERSON_URL,
     HttpJsonResponse,
     HttpTransport,
     UrllibTransport,
@@ -40,7 +40,7 @@ __all__ = [
     "SkipTraceResult",
     "SqliteOccupantCache",
     "UrllibTransport",
-    "WHITEPAGES_IDENTITY_CHECK_URL",
+    "WHITEPAGES_PERSON_URL",
     "WHITEPAGES_MODE",
     "WhitePagesProProvider",
 ]
