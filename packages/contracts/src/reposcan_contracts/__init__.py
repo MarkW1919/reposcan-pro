@@ -69,6 +69,12 @@ from .health import CameraHealthRecord, CameraHealthStatus, DependencyHealth, He
 from .hotlist import HotlistEntry, HotlistMatchResult, QuickScanTarget, ScanArmMode
 from .inference import AttributePredictions, InferenceCandidate, ModelVersions, PlateDetection, VehicleDetection
 from .model_artifact import ModelArtifactManifest
+from .occupant_intel import (
+    OCCUPANT_BOUNDARY_CAVEAT,
+    Occupant,
+    OccupantIntelligenceReport,
+    OccupantLookupStatus,
+)
 from .operator import OperatorCapabilities, OperatorPrincipal, OperatorSessionRecord
 from .popup import PopupActivityEvent, PopupEventType
 from .release import (
@@ -181,6 +187,10 @@ __all__ = [
     "AttributePredictions",
     "ModelVersions",
     "ModelArtifactManifest",
+    "OCCUPANT_BOUNDARY_CAVEAT",
+    "Occupant",
+    "OccupantIntelligenceReport",
+    "OccupantLookupStatus",
     "OperatorCapabilities",
     "OperatorPrincipal",
     "OperatorSessionRecord",
