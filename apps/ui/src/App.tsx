@@ -825,7 +825,7 @@ interface AddressIntelState {
  * quietly on error (the backend lookup itself never throws, so errors here are
  * transport/offline). Idle when there's no usable address.
  */
-function useAddressIntelligence(address: string): AddressIntelState {
+function useAddressIntelligence(address: string, coords: DestinationCoords | null): AddressIntelState {
   const [state, setState] = useState<AddressIntelState>({ status: "idle", report: null, error: null });
 
   useEffect(() => {
@@ -837,7 +837,7 @@ function useAddressIntelligence(address: string): AddressIntelState {
     const controller = new AbortController();
     setState((current) => ({ ...current, status: "loading", error: null }));
     const handle = window.setTimeout(() => {
-      fetchAddressIntelligence(trimmed, controller.signal)
+      fetchAddressIntelligence(trimmed, coords, controller.signal)
         .then((report) => setState({ status: "resolved", report, error: null }))
         .catch((error) => {
           if ((error as DOMException)?.name === "AbortError") {
@@ -855,7 +855,7 @@ function useAddressIntelligence(address: string): AddressIntelState {
       window.clearTimeout(handle);
       controller.abort();
     };
-  }, [address]);
+  }, [address, coords?.lat, coords?.lng]);
 
   return state;
 }
@@ -3837,7 +3837,7 @@ function App(): ReactElement {
   const cameraFocusRow = cameraRows[0] ?? selectedRow;
   const unitPosition = gpsFixToCoords(gpsFix) ?? routeStart;
   const liveAddress = useLiveReverseAddress(gpsFixToCoords(gpsFix));
-  const addressIntel = useAddressIntelligence(activeDestination);
+  const addressIntel = useAddressIntelligence(activeDestination, activeDestinationCoords);
   const activeRouteFeet = activeDestinationCoords ? haversineFeet(unitPosition, activeDestinationCoords) : null;
   const routePath = activeDestinationCoords ? buildRoutePath(unitPosition, activeDestinationCoords) : [];
   const withinRadius = navigationActive && activeRouteFeet != null && activeRouteFeet <= settings.arrivalRadiusFeet;
@@ -6708,6 +6708,7 @@ function ConsoleScreen(props: {
             status: props.addressIntel.status,
             matched: props.addressIntel.report?.matched ?? false,
             standardizedAddress: props.addressIntel.report?.standardized_address ?? null,
+            county: props.addressIntel.report?.county_name ?? null,
             dwellingLabel: dwellingTypeLabel(props.addressIntel.report?.dwelling_type),
             areaSummary: props.addressIntel.report?.area_context?.summary ?? null,
             sources: props.addressIntel.report?.data_sources ?? [],

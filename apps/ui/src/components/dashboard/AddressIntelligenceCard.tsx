@@ -12,6 +12,7 @@ interface PublicRecordData {
   status: "idle" | "loading" | "resolved" | "error";
   matched: boolean;
   standardizedAddress: string | null;
+  county: string | null;
   dwellingLabel: string;
   areaSummary: string | null;
   sources: string[];
@@ -53,21 +54,25 @@ export function AddressIntelligenceCard(props: {
               <p className="address-intelligence-card__public-status">Public records lookup unavailable (offline).</p>
             ) : pub.matched ? (
               <>
+                <div className="address-intelligence-card__public-verified">✓ Address verified in public records</div>
                 {pub.standardizedAddress ? <strong>{pub.standardizedAddress}</strong> : null}
                 <div className="address-intelligence-card__public-tags">
                   <StatusPill label={pub.dwellingLabel} tone="cyan" />
+                  {pub.county ? <span>{pub.county}</span> : null}
                   {pub.areaSummary ? <span>{pub.areaSummary}</span> : null}
                 </div>
                 {pub.sources.length > 0 ? (
                   <small className="address-intelligence-card__public-sources">Sources: {pub.sources.join(", ")}</small>
                 ) : null}
+                {pub.caveats.map((caveat) => (
+                  <small key={caveat} className="address-intelligence-card__public-caveat">Note: {caveat}</small>
+                ))}
               </>
             ) : (
-              <p className="address-intelligence-card__public-status">Address not found in public records — verify it was entered correctly.</p>
+              <p className="address-intelligence-card__public-status">
+                Couldn't match that address in public records — try a full street address (number, street, city, state).
+              </p>
             )}
-            {pub.caveats.map((caveat) => (
-              <small key={caveat} className="address-intelligence-card__public-caveat">{caveat}</small>
-            ))}
           </div>
         ) : null}
 

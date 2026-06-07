@@ -494,6 +494,12 @@ body {
   background: rgba(11, 16, 22, 0.86);
 }
 
+.address-intelligence-card__public-verified {
+  color: var(--success);
+  font-weight: 700;
+  font-size: calc(var(--text-scale, 1) * 0.82rem);
+}
+
 .address-intelligence-card__public-label {
   color: var(--muted);
   font-size: calc(var(--text-scale, 1) * 0.66rem);

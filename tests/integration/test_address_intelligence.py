@@ -131,6 +131,45 @@ def test_cache_hit_sets_from_cache_and_skips_providers():
     assert second.matched is True
 
 
+@dataclass
+class StubReverseGeocoder:
+    """Forward geocode always fails; reverse (by coords) succeeds."""
+
+    name: str = "census_geocoder"
+
+    def geocode(self, address: str):
+        return GeocodeResult(matched=False, match_quality=AddressMatchQuality.none)
+
+    def reverse_geocode(self, latitude: float, longitude: float):
+        return GeocodeResult(
+            matched=True,
+            match_quality=AddressMatchQuality.approximate,
+            standardized_address=None,
+            latitude=latitude,
+            longitude=longitude,
+            county_name="Oklahoma County",
+            block_geoid="401090011001000",
+        )
+
+
+def test_coords_reverse_path_resolves_when_forward_fails():
+    # A vague/partial address that forward-geocoding can't match still resolves
+    # when the UI supplies the staged destination's coordinates.
+    svc = AddressIntelligenceService(StubReverseGeocoder())
+    report = svc.lookup("vague place name", latitude=35.4676, longitude=-97.5164)
+    assert report.matched is True
+    assert report.match_quality == AddressMatchQuality.approximate
+    # standardized_address falls back to the supplied text when reverse has none
+    assert report.standardized_address == "vague place name"
+    assert report.county_name == "Oklahoma County"
+
+
+def test_no_coords_and_forward_fails_stays_unmatched():
+    svc = AddressIntelligenceService(StubReverseGeocoder())
+    report = svc.lookup("vague place name")  # no coords -> reverse not attempted
+    assert report.matched is False
+
+
 def test_unmatched_report_not_cached():
     cache = InMemoryReportCache()
     svc = AddressIntelligenceService(StubGeocoder(result=GeocodeResult(matched=False, match_quality=AddressMatchQuality.none)), cache=cache)

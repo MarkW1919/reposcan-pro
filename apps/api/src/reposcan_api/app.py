@@ -1484,11 +1484,14 @@ def create_app(
     def address_intelligence(
         request: Request,
         address: str = Query(..., min_length=3),
+        latitude: float | None = Query(default=None, ge=-90.0, le=90.0),
+        longitude: float | None = Query(default=None, ge=-180.0, le=180.0),
         principal: ApiPrincipalContext = Depends(access_controller.address_search_access),
     ) -> AddressIntelligenceReport:
         # lookup() is best-effort and never raises — an offline/failed lookup
-        # returns an unmatched report with caveats, not a 5xx.
-        report = address_intel_service.lookup(address)
+        # returns an unmatched report with caveats, not a 5xx. Coords (when the
+        # UI already resolved the destination) make resolution far more robust.
+        report = address_intel_service.lookup(address, latitude=latitude, longitude=longitude)
         record_audit(
             request,
             principal=principal,

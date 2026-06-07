@@ -61,14 +61,25 @@ class AddressIntelligenceService:
         self._cache = cache
         self._clock = clock
 
-    def lookup(self, address: str) -> AddressIntelligenceReport:
+    def lookup(
+        self,
+        address: str,
+        *,
+        latitude: float | None = None,
+        longitude: float | None = None,
+    ) -> AddressIntelligenceReport:
+        # Coords (when the UI has already resolved/staged a destination) make
+        # the key unique so a coord-backed result doesn't collide with a raw
+        # string lookup of the same text.
         key = normalize_address_key(address)
+        if latitude is not None and longitude is not None:
+            key = f"{key}@{latitude:.5f},{longitude:.5f}"
         if self._cache is not None:
             cached = self._cache.get(key)
             if isinstance(cached, AddressIntelligenceReport):
                 return cached.model_copy(update={"from_cache": True})
 
-        report = self._build(address)
+        report = self._build(address, latitude, longitude)
 
         # Only cache resolved reports — an offline/unmatched miss should be
         # retried later, not pinned in the cache.
@@ -76,13 +87,24 @@ class AddressIntelligenceService:
             self._cache.put(key, report)
         return report
 
-    def _build(self, address: str) -> AddressIntelligenceReport:
+    def _build(self, address: str, latitude: float | None, longitude: float | None) -> AddressIntelligenceReport:
         sources: list[str] = []
         caveats: list[str] = [RESIDENCY_BOUNDARY_CAVEAT]
 
         geo = _safe(lambda: self._geocoder.geocode(address))
-        if geo is not None:
+        if geo is not None and geo.matched:
             sources.append(self._geocoder.name)
+        elif latitude is not None and longitude is not None:
+            # Forward geocoding the typed text failed (vague/partial/format),
+            # but the UI already resolved coordinates for this destination —
+            # reverse-geocode from them so a staged destination always resolves.
+            reverse = getattr(self._geocoder, "reverse_geocode", None)
+            geo_rev = _safe(lambda: reverse(latitude, longitude)) if callable(reverse) else None
+            if geo_rev is not None and geo_rev.matched:
+                geo = geo_rev
+                if geo.standardized_address is None:
+                    geo.standardized_address = address
+                sources.append(self._geocoder.name)
 
         if geo is None or not geo.matched:
             caveats.append(

@@ -544,8 +544,17 @@ export interface AddressIntelligenceReport {
   from_cache: boolean;
 }
 
-export async function fetchAddressIntelligence(address: string, signal?: AbortSignal): Promise<AddressIntelligenceReport> {
-  const response = await fetch(apiUrl(`/address-intelligence?address=${encodeURIComponent(address)}`), {
+export async function fetchAddressIntelligence(
+  address: string,
+  coords?: { lat: number; lng: number } | null,
+  signal?: AbortSignal,
+): Promise<AddressIntelligenceReport> {
+  const params = new URLSearchParams({ address });
+  if (coords) {
+    params.set("latitude", String(coords.lat));
+    params.set("longitude", String(coords.lng));
+  }
+  const response = await fetch(apiUrl(`/address-intelligence?${params.toString()}`), {
     signal,
     headers: authHeaders(),
   });

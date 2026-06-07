@@ -18,6 +18,7 @@ from .http_client import DEFAULT_TIMEOUT_S, JsonHttpClient, UrllibJsonClient
 from .providers import GeocodeResult
 
 _GEOCODER_URL = "https://geocoding.geo.census.gov/geocoder/geographies/onelineaddress"
+_COORDS_URL = "https://geocoding.geo.census.gov/geocoder/geographies/coordinates"
 
 
 class CensusGeocoderProvider:
@@ -41,6 +42,45 @@ class CensusGeocoderProvider:
         if not isinstance(payload, dict):
             return None
         return _parse_geocode(payload)
+
+    def reverse_geocode(self, latitude: float, longitude: float) -> Optional[GeocodeResult]:
+        """Resolve census geography from coordinates (keyless).
+
+        The coordinates endpoint returns geographies (county/tract/block) but no
+        standardized address — used when forward geocoding the typed text fails
+        but the UI already has the destination's coordinates.
+        """
+        payload = self._client.get_json(
+            _COORDS_URL,
+            params={
+                "x": longitude,
+                "y": latitude,
+                "benchmark": "Public_AR_Current",
+                "vintage": "Current_Current",
+                "format": "json",
+            },
+            timeout=self._timeout,
+        )
+        if not isinstance(payload, dict):
+            return None
+        geographies = ((payload.get("result") or {}).get("geographies")) or {}
+        if not isinstance(geographies, dict):
+            return None
+        block = _first(geographies.get("Census Blocks") or geographies.get("2020 Census Blocks"))
+        county = _first(geographies.get("Counties"))
+        if block is None and county is None:
+            return None
+        return GeocodeResult(
+            matched=True,
+            match_quality=AddressMatchQuality.approximate,
+            standardized_address=None,
+            latitude=latitude,
+            longitude=longitude,
+            state_fips=(block or {}).get("STATE"),
+            county_name=(county or {}).get("NAME"),
+            census_tract=(block or {}).get("TRACT"),
+            block_geoid=(block or {}).get("GEOID"),
+        )
 
 
 def _parse_geocode(payload: dict) -> GeocodeResult:
