@@ -16,6 +16,7 @@ temp/
 .DS_Store
 Thumbs.db
 .env
+.env.local
 
 # Local runtime state
 artifacts/
@@ -42,6 +43,7 @@ SILVERADO_DATASET_BUILD_STATUS.md
 *.db
 postgres_data/
 redis_data/
+var/
 
 # Claude Code runtime state
 .claude/scheduled_tasks.lock

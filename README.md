@@ -119,9 +119,22 @@ reposcan-pro/
 2. Open [RepoScan Pro.code-workspace](RepoScan Pro.code-workspace) in VS Code or run [Open RepoScan Pro Dev.cmd](Open RepoScan Pro Dev.cmd)
 3. Review [CLAUDE.md](CLAUDE.md) and the documents under [docs](docs)
 4. Run `powershell -ExecutionPolicy Bypass -File .\scripts\check.ps1`
-5. Start the API with `npm run api:dev`
-6. Start the UI with `npm run ui:dev`
+5. Start the API with `npm run api:dev` (binds to `http://127.0.0.1:8000`)
+6. Start the UI with `npm run ui:dev` (Vite dev server on `http://localhost:4173`)
 7. Use the manual demo checklist in [tests/manual/demo_vertical_slice.md](tests/manual/demo_vertical_slice.md)
+
+### Environment keys (Address & Occupant Intelligence)
+
+Secrets live in a gitignored `.env` at the repo root (copy from [.env.example](.env.example)); the UI reads optional Vite vars from `apps/ui/.env.local` (copy from [apps/ui/.env.example](apps/ui/.env.example)).
+
+- `CENSUS_API_KEY` — optional, FREE ([key signup](https://api.census.gov/data/key_signup.html)). Adds owner/renter/vacancy context; address verification works without it.
+- `OCCUPANT_PROVIDER` — `whitepages` (paid WhitePages Pro occupant lookup + free Census fallback) or `census`/`free` (free address verification only).
+- `WHITEPAGES_API_KEY` — licensed/paid key for occupant intelligence; authorized, attorney-reviewed use only. Never commit it.
+- `OCCUPANT_CACHE_PATH` — 30-day SQLite cache location (default `var/occupant_cache.sqlite`).
+
+The operations dashboard offers four screen layouts (Console, Scan Grid, Camera-First, Drive) selectable from **Menu → Customize Dashboard → Screen Layout**.
+
+> If the UI ever points at a non-default API port (e.g. a local `apps/ui/.env.local` set `VITE_API_BASE_URL` to a bridge port), delete that file to return to the standard `:8000` and restart `npm run ui:dev`.
 
 ## Headless Ingest Demo
 
