@@ -409,6 +409,30 @@ body {
 }
 
 /*
+ * Address Intelligence can carry a lot (occupants + phones + associates +
+ * previous addresses + recommendation). The widget body is height-bounded and
+ * clipped, so let the card scroll inside its slot instead of hiding overflow —
+ * the operator can reach every person/previous address even in a small slot.
+ */
+.address-intelligence-card {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  align-content: start;
+  padding-right: 4px;
+}
+
+/* Keep a long occupant list from crowding out the address/recommendation:
+   it gets its own bounded scroll area when there are many people. */
+.occupant-card__list {
+  max-height: clamp(140px, 22vh, 260px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 2px;
+}
+
+/*
  * Recent detection history renders as a responsive grid so the widget can
  * surface more cards as the operator gives it more screen real estate.
  * auto-fit means: one column when the widget is compact, two when standard,
