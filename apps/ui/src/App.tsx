@@ -6613,10 +6613,6 @@ function ConsoleScreen(props: {
     .filter((widget) => widget.visible && widget.id !== "reports")
     .sort((a, b) => a.order - b.order);
   const widgetAvailability: Partial<Record<DashboardWidgetId, boolean>> = { reports: false };
-  const heroWidget = visibleWidgets[0] ?? null;
-  const supportWidgets = visibleWidgets.slice(1);
-  const [sidePrimaryWidget, sideSecondaryWidget, sideTertiaryWidget, lowerLeftWidget, lowerRightPrimaryWidget, lowerRightSecondaryWidget, footerWidget] =
-    supportWidgets;
 
   function handleQuickSearchSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
@@ -7109,28 +7105,10 @@ function ConsoleScreen(props: {
           primaryTarget={commandRow?.plate1}
         />
         <div className={`dashboard-grid dashboard-grid--${props.dashboardConfig.mode}`} data-stage-view={props.stageView}>
-          <div className="dashboard-grid__hero-column">
-            {renderDashboardSlot(heroWidget, "dashboard-grid__slot--hero")}
-            {lowerLeftWidget || lowerRightPrimaryWidget || lowerRightSecondaryWidget ? (
-              <div className="dashboard-grid__lower-band">
-                {renderDashboardSlot(lowerLeftWidget, "dashboard-grid__slot--lower-left")}
-                {lowerRightPrimaryWidget || lowerRightSecondaryWidget ? (
-                  <div className="dashboard-grid__lower-stack">
-                    {renderDashboardSlot(lowerRightPrimaryWidget, "dashboard-grid__slot--lower-right-primary")}
-                    {renderDashboardSlot(lowerRightSecondaryWidget, "dashboard-grid__slot--lower-right-secondary")}
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
-          {sidePrimaryWidget || sideSecondaryWidget || sideTertiaryWidget ? (
-            <div className="dashboard-grid__support-column">
-              {renderDashboardSlot(sidePrimaryWidget, "dashboard-grid__slot--support-primary")}
-              {renderDashboardSlot(sideSecondaryWidget, "dashboard-grid__slot--support-secondary")}
-              {renderDashboardSlot(sideTertiaryWidget, "dashboard-grid__slot--support-tertiary")}
-            </div>
-          ) : null}
-          {footerWidget ? <div className="dashboard-grid__footer-row">{renderDashboardSlot(footerWidget, "dashboard-grid__slot--footer")}</div> : null}
+          {/* Flowing grid: each widget spans by its size (compact/standard/
+              expanded), set per-widget in Customize, so the size buttons
+              actually resize the windows and the grid reflows to fit. */}
+          {visibleWidgets.map((widget) => renderDashboardSlot(widget, `dashboard-grid__slot--size-${widget.size}`))}
         </div>
 
       </DashboardShell>
