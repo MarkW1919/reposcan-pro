@@ -6716,35 +6716,31 @@ function ConsoleScreen(props: {
       // associated with the address) over the free address-verification layer.
       const occ = props.addressIntel.report;
       const addr = occ?.address ?? null;
+      // Approach recon inferred from the order notes — only surface the items
+      // that are actually flagged, so the cab UI isn't padded with "Not logged".
+      const recon: { label: string; value: string }[] = [
+        { label: "Garage", value: inferNoteField(activeHotlistEntry?.notes, ["garage", "carport"], "Flagged in notes", "") },
+        { label: "Fence / Gate", value: inferNoteField(activeHotlistEntry?.notes, ["gate", "fence"], "Flagged in notes", "") },
+        { label: "Camera", value: inferNoteField(activeHotlistEntry?.notes, ["camera", "ring", "cctv"], "Flagged in notes", "") },
+      ].filter((field) => field.value);
       return (
         <AddressIntelligenceCard
           size={size}
           address={props.activeDestination || activeHotlistEntry?.address_line1 || commandRow?.gps || "No address staged"}
-          subtitle={activeHotlistEntry ? hotlistAddressSummary(activeHotlistEntry) : commandRow?.source ?? "Route target pending"}
+          subtitle={activeHotlistEntry ? hotlistAddressSummary(activeHotlistEntry) : undefined}
           recoveryProbability={recoveryProbability.label}
           recoveryTone={recoveryProbability.tone}
           recommendation={responseCue?.label ?? "Hold"}
           recommendationDetail={responseCue?.detail ?? "Stage a destination to unlock recovery location guidance."}
-          recentSummary={
-            commandRow
-              ? `${formatRelativeTime(commandRow.timestampUtc)} at ${commandRow.source}. ${props.allRows.filter((row) => row.plate1 === commandRow.plate1).length} related sighting(s) in the current dashboard feed.`
-              : "No recent sighting is selected."
-          }
-          fields={[
-            { label: "Garage", value: inferNoteField(activeHotlistEntry?.notes, ["garage", "carport"], "Flagged in notes") },
-            { label: "Fence / Gate", value: inferNoteField(activeHotlistEntry?.notes, ["gate", "fence"], "Flagged in notes") },
-            { label: "Camera Notes", value: inferNoteField(activeHotlistEntry?.notes, ["camera", "ring", "cctv"], "Flagged in notes") },
-            { label: "Parking Visibility", value: commandRow?.gps ? "Last-seen point logged" : "Not available" },
-          ]}
+          fields={recon}
           publicData={{
             status: props.addressIntel.status,
             matched: addr?.matched ?? false,
             standardizedAddress: addr?.standardized_address ?? null,
-            county: addr?.county_name ?? null,
             dwellingLabel: dwellingTypeLabel(addr?.dwelling_type),
             areaSummary: addr?.area_context?.summary ?? null,
-            sources: addr?.data_sources ?? [],
-            caveats: occ?.caveats ?? [],
+            // One concise legal note (occupant boundary), not a stack of them.
+            caveat: occ?.caveats?.[0] ?? null,
           }}
           occupantData={{
             status: occ?.status ?? "disabled",

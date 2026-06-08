@@ -618,6 +618,22 @@ body {
   font-size: calc(var(--text-scale, 1) * 0.82rem);
 }
 
+.occupant-card__phone-link {
+  color: var(--accent, #8bd6ff);
+  text-decoration: none;
+}
+
+.occupant-card__phone-link:hover {
+  text-decoration: underline;
+}
+
+.occupant-card__sublabel {
+  color: var(--faint);
+  font-size: calc(var(--text-scale, 1) * 0.66rem);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
 .occupant-card__associated {
   color: var(--faint);
   font-size: calc(var(--text-scale, 1) * 0.78rem);

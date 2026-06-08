@@ -12,11 +12,9 @@ interface PublicRecordData {
   status: "idle" | "loading" | "resolved" | "error";
   matched: boolean;
   standardizedAddress: string | null;
-  county: string | null;
   dwellingLabel: string;
   areaSummary: string | null;
-  sources: string[];
-  caveats: string[];
+  caveat: string | null;
 }
 
 interface OccupantView {
@@ -35,18 +33,49 @@ interface OccupantData {
   cacheAgeDays: number | null;
 }
 
+function phoneHref(phone: string): string | undefined {
+  const digits = phone.replace(/[^\d]/g, "");
+  return digits.length >= 10 ? `tel:${digits}` : undefined;
+}
+
 function OccupantRow(props: { occupant: OccupantView }): ReactElement {
   const { occupant } = props;
   return (
     <li className="occupant-card__row">
       <strong className="occupant-card__name">{occupant.name}</strong>
       {occupant.phones.length > 0 ? (
-        <span className="occupant-card__phones">{occupant.phones.join(" · ")}</span>
+        <span className="occupant-card__phones">
+          {occupant.phones.map((phone, i) => {
+            const href = phoneHref(phone);
+            return (
+              <span key={`${phone}-${i}`}>
+                {i > 0 ? " · " : ""}
+                {href ? (
+                  <a className="occupant-card__phone-link" href={href}>
+                    {phone}
+                  </a>
+                ) : (
+                  phone
+                )}
+              </span>
+            );
+          })}
+        </span>
       ) : null}
       {occupant.associated_people.length > 0 ? (
         <span className="occupant-card__associated">{occupant.associated_people.join(", ")}</span>
       ) : null}
     </li>
+  );
+}
+
+function OccupantList(props: { people: OccupantView[] }): ReactElement {
+  return (
+    <ul className="occupant-card__list">
+      {props.people.map((occupant, index) => (
+        <OccupantRow key={`${occupant.name}-${index}`} occupant={occupant} />
+      ))}
+    </ul>
   );
 }
 
@@ -63,7 +92,7 @@ function OccupantSection(props: {
     return null;
   }
 
-  const people = [...data.highConfidence, ...data.otherPossible];
+  const hasPeople = data.highConfidence.length > 0 || data.otherPossible.length > 0;
 
   return (
     <div className="occupant-card">
@@ -73,12 +102,12 @@ function OccupantSection(props: {
           <StatusPill
             label={
               data.status === "offline"
-                ? `Offline · cached${data.cacheAgeDays != null ? ` ${data.cacheAgeDays}d ago` : ""}`
+                ? `Offline · cached${data.cacheAgeDays != null ? ` ${data.cacheAgeDays}d` : ""}`
                 : "Cached"
             }
             tone="amber"
           />
-        ) : data.source && people.length > 0 ? (
+        ) : data.source && hasPeople ? (
           <StatusPill label={data.source} tone="cyan" />
         ) : null}
       </div>
@@ -91,14 +120,18 @@ function OccupantSection(props: {
         <p className="occupant-card__status">Add a WhitePages Pro API key to surface people associated with this address.</p>
       ) : data.status === "unavailable" ? (
         <p className="occupant-card__status">Occupant provider is unavailable right now — showing address verification only.</p>
-      ) : people.length === 0 ? (
+      ) : !hasPeople ? (
         <p className="occupant-card__status">No occupant records found for this address.</p>
       ) : (
-        <ul className="occupant-card__list">
-          {people.map((occupant, index) => (
-            <OccupantRow key={`${occupant.name}-${index}`} occupant={occupant} />
-          ))}
-        </ul>
+        <>
+          {data.highConfidence.length > 0 ? <OccupantList people={data.highConfidence} /> : null}
+          {data.otherPossible.length > 0 ? (
+            <>
+              <span className="occupant-card__sublabel">Other possible matches</span>
+              <OccupantList people={data.otherPossible} />
+            </>
+          ) : null}
+        </>
       )}
 
       {data.previousAddresses.length > 0 ? (
@@ -133,7 +166,6 @@ export function AddressIntelligenceCard(props: {
   recommendation: string;
   recommendationDetail: string;
   fields: IntelligenceField[];
-  recentSummary?: string;
   publicData?: PublicRecordData | null;
   occupantData?: OccupantData | null;
   onInvestigatePreviousAddress?: (address: string) => void;
@@ -163,26 +195,22 @@ export function AddressIntelligenceCard(props: {
 
         {pub && pub.status !== "idle" ? (
           <div className="address-intelligence-card__public">
-            <span className="address-intelligence-card__public-label">Public records</span>
+            <span className="address-intelligence-card__public-label">Address check</span>
             {pub.status === "loading" ? (
-              <p className="address-intelligence-card__public-status">Looking up public records…</p>
+              <p className="address-intelligence-card__public-status">Verifying address…</p>
             ) : pub.status === "error" ? (
-              <p className="address-intelligence-card__public-status">Public records lookup unavailable (offline).</p>
+              <p className="address-intelligence-card__public-status">Address lookup unavailable (offline).</p>
             ) : pub.matched ? (
               <>
                 <div className="address-intelligence-card__public-verified">✓ Address verified in public records</div>
                 {pub.standardizedAddress ? <strong>{pub.standardizedAddress}</strong> : null}
                 <div className="address-intelligence-card__public-tags">
                   <StatusPill label={pub.dwellingLabel} tone="cyan" />
-                  {pub.county ? <span>{pub.county}</span> : null}
                   {pub.areaSummary ? <span>{pub.areaSummary}</span> : null}
                 </div>
-                {pub.sources.length > 0 ? (
-                  <small className="address-intelligence-card__public-sources">Sources: {pub.sources.join(", ")}</small>
+                {pub.caveat ? (
+                  <small className="address-intelligence-card__public-caveat">Note: {pub.caveat}</small>
                 ) : null}
-                {pub.caveats.map((caveat) => (
-                  <small key={caveat} className="address-intelligence-card__public-caveat">Note: {caveat}</small>
-                ))}
               </>
             ) : (
               <p className="address-intelligence-card__public-status">
@@ -192,14 +220,16 @@ export function AddressIntelligenceCard(props: {
           </div>
         ) : null}
 
-        <div className="address-intelligence-card__grid">
-          {props.fields.map((field) => (
-            <div key={field.label} className="address-intelligence-card__field">
-              <span>{field.label}</span>
-              <strong>{field.value}</strong>
-            </div>
-          ))}
-        </div>
+        {props.fields.length > 0 ? (
+          <div className="address-intelligence-card__grid">
+            {props.fields.map((field) => (
+              <div key={field.label} className="address-intelligence-card__field">
+                <span>{field.label}</span>
+                <strong>{field.value}</strong>
+              </div>
+            ))}
+          </div>
+        ) : null}
 
         <div className="address-intelligence-card__insight">
           <div>
@@ -208,13 +238,6 @@ export function AddressIntelligenceCard(props: {
           </div>
           <p>{props.recommendationDetail}</p>
         </div>
-
-        {props.recentSummary ? (
-          <div className="address-intelligence-card__history">
-            <span>Recent Sightings</span>
-            <p>{props.recentSummary}</p>
-          </div>
-        ) : null}
       </div>
     </DashboardWidgetFrame>
   );
