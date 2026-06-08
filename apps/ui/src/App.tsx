@@ -6613,6 +6613,10 @@ function ConsoleScreen(props: {
     .filter((widget) => widget.visible && widget.id !== "reports")
     .sort((a, b) => a.order - b.order);
   const widgetAvailability: Partial<Record<DashboardWidgetId, boolean>> = { reports: false };
+  // Map-hero + right-rail: the map (or the first visible widget if the map is
+  // hidden) anchors the left; everything else fills the even right rail.
+  const heroWidget = visibleWidgets.find((widget) => widget.id === "map") ?? visibleWidgets[0] ?? null;
+  const railWidgets = heroWidget ? visibleWidgets.filter((widget) => widget.id !== heroWidget.id) : visibleWidgets;
 
   function handleQuickSearchSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
@@ -7105,10 +7109,18 @@ function ConsoleScreen(props: {
           primaryTarget={commandRow?.plate1}
         />
         <div className={`dashboard-grid dashboard-grid--${props.dashboardConfig.mode}`} data-stage-view={props.stageView}>
-          {/* Flowing grid: each widget spans by its size (compact/standard/
-              expanded), set per-widget in Customize, so the size buttons
-              actually resize the windows and the grid reflows to fit. */}
-          {visibleWidgets.map((widget) => renderDashboardSlot(widget, `dashboard-grid__slot--size-${widget.size}`))}
+          {/* Map hero on the left; an even, equal-width rail of the remaining
+              widgets on the right. Per-widget size tunes rail-card height. */}
+          {heroWidget ? (
+            <div className="dashboard-grid__hero">{renderDashboardSlot(heroWidget, "dashboard-grid__slot--hero")}</div>
+          ) : null}
+          {railWidgets.length > 0 ? (
+            <div className="dashboard-grid__rail">
+              {railWidgets.map((widget) =>
+                renderDashboardSlot(widget, `dashboard-grid__rail-slot dashboard-grid__slot--size-${widget.size}`),
+              )}
+            </div>
+          ) : null}
         </div>
 
       </DashboardShell>

@@ -47,42 +47,45 @@ body {
 }
 
 /*
- * Flowing 12-column dashboard grid. Each widget's size (set per-widget in
- * Customize) maps to a column span + row span, so the size buttons genuinely
- * resize the windows and the grid reflows (dense packing fills gaps). Scrolls
- * vertically when the chosen sizes exceed the viewport.
+ * Map-hero + right-rail console layout. The map fills the left as a large hero;
+ * the remaining widgets stack in an even, equal-width right rail. Clean gutters
+ * and equal row heights read as a professional console rather than a wireframe.
+ * Per-widget size adjusts a rail card's HEIGHT (width stays even) so resizing
+ * never makes the layout ragged.
  */
 .dashboard-grid {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
-  grid-auto-rows: minmax(210px, auto);
-  grid-auto-flow: row dense;
-  align-content: start;
-  gap: 14px;
+  grid-template-columns: minmax(0, 1.7fr) minmax(360px, 1fr);
+  gap: 16px;
   height: 100%;
+  align-items: stretch;
+}
+
+.dashboard-grid__hero,
+.dashboard-grid__rail,
+.dashboard-grid__slot {
+  min-width: 0;
+  min-height: 0;
+}
+
+.dashboard-grid__hero {
+  display: grid;
+}
+
+.dashboard-grid__rail {
+  display: grid;
+  grid-auto-rows: minmax(180px, 1fr);
+  gap: 16px;
+  align-content: stretch;
   overflow-y: auto;
   padding-right: 4px;
 }
 
-.dashboard-grid__slot {
-  min-width: 0;
-  min-height: 0;
-  grid-column: span 6; /* default = standard */
-}
-
-/* Size -> footprint. compact = small, standard = half, expanded = full + tall. */
-.dashboard-grid__slot--size-compact {
-  grid-column: span 4;
-}
-
-.dashboard-grid__slot--size-standard {
-  grid-column: span 6;
-}
-
-.dashboard-grid__slot--size-expanded {
-  grid-column: span 12;
+/* Size adjusts rail-card height only — every rail card stays full-rail width so
+   the column reads as an even stack. */
+.dashboard-grid__rail .dashboard-grid__slot--size-expanded {
   grid-row: span 2;
 }
 
@@ -92,8 +95,7 @@ body {
   grid-template-rows: auto minmax(0, 1fr);
 }
 
-/* An expanded widget (e.g. the map) is two rows tall — give the map room. */
-.dashboard-grid__slot--size-expanded .map-stage {
+.dashboard-grid__slot--hero .map-stage {
   min-height: clamp(360px, 50vh, 620px);
 }
 
@@ -1222,17 +1224,9 @@ body {
     grid-column: span 2;
   }
 
+  /* Narrower desktop: give the rail a touch more room. */
   .dashboard-grid {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-  }
-
-  .dashboard-grid__slot--size-compact {
-    grid-column: span 3;
-  }
-
-  .dashboard-grid__slot--size-standard,
-  .dashboard-grid__slot--size-expanded {
-    grid-column: span 6;
+    grid-template-columns: minmax(0, 1.45fr) minmax(340px, 1fr);
   }
 
   .uconnect-toolbar {
@@ -1256,16 +1250,18 @@ body {
     grid-template-columns: 1fr;
   }
 
-  /* Single column: every widget is full width (reset spans so they don't
-     create stray implicit columns). */
+  /* Single column: map hero on top, rail stacks below at natural height. */
   .dashboard-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .dashboard-grid__slot--size-compact,
-  .dashboard-grid__slot--size-standard,
-  .dashboard-grid__slot--size-expanded {
-    grid-column: span 1;
+  .dashboard-grid__rail {
+    grid-auto-rows: minmax(220px, auto);
+    overflow-y: visible;
+  }
+
+  .dashboard-grid__rail .dashboard-grid__slot--size-expanded {
+    grid-row: span 1;
   }
 
   .instrument-status-bar__segments {
