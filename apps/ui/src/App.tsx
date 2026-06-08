@@ -7034,21 +7034,27 @@ function ConsoleScreen(props: {
   // Scrollable table of the most recent LPR/vehicle-recognition reads. Used by
   // the scan + camera-first layouts; tap a row to open detection actions.
   function renderLprTable(): ReactElement {
+    const total = props.allRows.length;
     const rows = props.allRows.slice(0, 20);
     return (
       <DashboardWidgetFrame
         title="LPR Scans"
-        eyebrow="Last 20 reads"
-        meta={<StatusPill label={rows.length ? `${rows.length}` : "Standby"} tone={rows.length ? "cyan" : "gray"} />}
+        eyebrow="Most recent reads"
+        meta={
+          <StatusPill
+            label={total ? `${rows.length} of ${total}` : "Standby"}
+            tone={total ? "cyan" : "gray"}
+          />
+        }
       >
         <div className="lpr-table">
-          <div className="lpr-table__head">
+          <div className="lpr-table__head" aria-hidden="true">
             <span>Time</span>
             <span>Plate</span>
             <span>Vehicle</span>
             <span>Cam</span>
           </div>
-          <div className="lpr-table__body">
+          <div className="lpr-table__body" role="list" aria-label="Recent LPR reads">
             {rows.length === 0 ? (
               <div className="dashboard-empty-state">
                 <strong>No plate reads yet</strong>
@@ -7059,6 +7065,8 @@ function ConsoleScreen(props: {
                 <button
                   key={row.id}
                   type="button"
+                  role="listitem"
+                  aria-label={`${row.plate1}, ${row.vehicle}, camera ${row.camera}, ${formatRelativeTime(row.timestampUtc)}${row.hotlist ? ", hotlist hit" : ""}`}
                   className={`lpr-table__row ${row.id === props.selectedDetectionId ? "is-active" : ""} ${row.hotlist ? "is-hit" : ""}`.trim()}
                   onClick={() => props.onOpenDetectionActions(row)}
                 >
@@ -7078,7 +7086,7 @@ function ConsoleScreen(props: {
   // Slim status strip for the Drive layout (target + next action + ETA).
   function renderDriveStrip(): ReactElement {
     return (
-      <div className="drive-strip">
+      <div className="drive-strip" aria-live="polite" aria-label="Navigation status">
         <div className="drive-strip__item">
           <span>Target</span>
           <strong>{commandRow?.plate1 ?? activeHotlistEntry?.plate_text ?? "Standby"}</strong>
@@ -7131,6 +7139,22 @@ function ConsoleScreen(props: {
         <div className="dashboard-layout dashboard-layout--drive">
           <div className="dashboard-layout__cell dashboard-layout__cell--map">{renderWidget("map", "expanded")}</div>
           {renderDriveStrip()}
+        </div>
+      );
+    }
+
+    // Recovery from an empty layout: if the operator hid every widget, give them
+    // a clear way back instead of a blank screen.
+    if (!heroWidget && railWidgets.length === 0) {
+      return (
+        <div className="dashboard-grid dashboard-grid--console">
+          <div className="dashboard-empty-state dashboard-empty-state--full">
+            <strong>No widgets are visible</strong>
+            <span>Open Customize Dashboard to turn widgets back on or reset the layout.</span>
+            <button type="button" className="dashboard-empty-state__action" onClick={props.onOpenDashboardCustomize}>
+              Customize Dashboard
+            </button>
+          </div>
         </div>
       );
     }

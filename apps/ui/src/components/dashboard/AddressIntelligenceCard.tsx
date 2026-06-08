@@ -51,7 +51,7 @@ function OccupantRow(props: { occupant: OccupantView }): ReactElement {
               <span key={`${phone}-${i}`}>
                 {i > 0 ? " · " : ""}
                 {href ? (
-                  <a className="occupant-card__phone-link" href={href}>
+                  <a className="occupant-card__phone-link" href={href} aria-label={`Call ${occupant.name} at ${phone}`}>
                     {phone}
                   </a>
                 ) : (
@@ -144,6 +144,7 @@ function OccupantSection(props: {
                   type="button"
                   className="occupant-card__previous-link"
                   title="Investigate on map"
+                  aria-label={`Investigate ${address} on the map`}
                   onClick={() => props.onInvestigatePreviousAddress?.(address)}
                 >
                   {address}
@@ -180,7 +181,7 @@ export function AddressIntelligenceCard(props: {
       meta={<StatusPill label={props.recoveryProbability} tone={props.recoveryTone} />}
     >
       <div className="address-intelligence-card">
-        <div className="address-intelligence-card__hero">
+        <div className={`address-intelligence-card__hero ${!pub || pub.status === "idle" ? "address-intelligence-card__hero--idle" : ""}`.trim()}>
           <strong>{props.address}</strong>
           {props.subtitle ? <span>{props.subtitle}</span> : null}
         </div>
