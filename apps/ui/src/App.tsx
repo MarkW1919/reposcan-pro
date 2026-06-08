@@ -19,14 +19,17 @@ import { StatusPill, type StatusPillTone } from "./components/dashboard/StatusPi
 import { UconnectStyleToolbar, type ToolbarItem } from "./components/dashboard/UconnectStyleToolbar";
 import { DetectionEvidenceHero } from "./components/detections/DetectionEvidenceHero";
 import {
+  dashboardLayoutTemplates,
   loadDashboardConfig,
   reorderDashboardWidget,
   resetDashboardConfig,
+  updateDashboardLayout,
   updateLayoutMode,
   updateWidgetSize,
   updateWidgetVisibility,
   type DashboardConfig,
   type DashboardLayoutMode,
+  type DashboardLayoutTemplate,
   type DashboardWidgetId,
   type DashboardWidgetSize,
 } from "./dashboard-config";
@@ -4304,6 +4307,10 @@ function App(): ReactElement {
     setDashboardConfig((current) => updateLayoutMode(current, mode));
   }
 
+  function handleDashboardLayout(layout: DashboardLayoutTemplate): void {
+    setDashboardConfig((current) => updateDashboardLayout(current, layout));
+  }
+
   function handleDashboardWidgetVisibility(widgetId: DashboardWidgetId, visible: boolean): void {
     setDashboardConfig((current) => updateWidgetVisibility(current, widgetId, visible));
   }
@@ -5484,6 +5491,7 @@ function App(): ReactElement {
               onToggleRadiusRing={() => updateSetting("showRadiusRing", !settings.showRadiusRing)}
               onToggleShiftMode={() => updateSetting("shiftModeLargeText", !settings.shiftModeLargeText)}
               onUpdateDashboardLayoutMode={handleDashboardModeChange}
+              onUpdateDashboardLayout={handleDashboardLayout}
               onUpdateDashboardWidgetMove={handleDashboardWidgetMove}
               onUpdateDashboardWidgetSize={handleDashboardWidgetSize}
               onUpdateDashboardWidgetVisibility={handleDashboardWidgetVisibility}
@@ -6537,6 +6545,7 @@ function ConsoleScreen(props: {
   onToggleRadiusRing: () => void;
   onToggleShiftMode: () => void;
   onUpdateDashboardLayoutMode: (mode: DashboardLayoutMode) => void;
+  onUpdateDashboardLayout: (layout: DashboardLayoutTemplate) => void;
   onUpdateDashboardWidgetMove: (sourceWidgetId: DashboardWidgetId, targetWidgetId: DashboardWidgetId) => void;
   onUpdateDashboardWidgetSize: (widgetId: DashboardWidgetId, size: DashboardWidgetSize) => void;
   onUpdateDashboardWidgetVisibility: (widgetId: DashboardWidgetId, visible: boolean) => void;
@@ -7039,6 +7048,127 @@ function ConsoleScreen(props: {
     );
   }
 
+  // Scrollable table of the most recent LPR/vehicle-recognition reads. Used by
+  // the scan + camera-first layouts; tap a row to open detection actions.
+  function renderLprTable(): ReactElement {
+    const rows = props.allRows.slice(0, 20);
+    return (
+      <DashboardWidgetFrame
+        title="LPR Scans"
+        eyebrow="Last 20 reads"
+        meta={<StatusPill label={rows.length ? `${rows.length}` : "Standby"} tone={rows.length ? "cyan" : "gray"} />}
+      >
+        <div className="lpr-table">
+          <div className="lpr-table__head">
+            <span>Time</span>
+            <span>Plate</span>
+            <span>Vehicle</span>
+            <span>Cam</span>
+          </div>
+          <div className="lpr-table__body">
+            {rows.length === 0 ? (
+              <div className="dashboard-empty-state">
+                <strong>No plate reads yet</strong>
+                <span>Arm a scan or start a route — reads will stream in here.</span>
+              </div>
+            ) : (
+              rows.map((row) => (
+                <button
+                  key={row.id}
+                  type="button"
+                  className={`lpr-table__row ${row.id === props.selectedDetectionId ? "is-active" : ""} ${row.hotlist ? "is-hit" : ""}`.trim()}
+                  onClick={() => props.onOpenDetectionActions(row)}
+                >
+                  <span className="lpr-table__time">{formatRelativeTime(row.timestampUtc)}</span>
+                  <span className="lpr-table__plate">{row.plate1}</span>
+                  <span className="lpr-table__vehicle">{row.vehicle}</span>
+                  <span className="lpr-table__cam">{row.camera}</span>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      </DashboardWidgetFrame>
+    );
+  }
+
+  // Slim status strip for the Drive layout (target + next action + ETA).
+  function renderDriveStrip(): ReactElement {
+    return (
+      <div className="drive-strip">
+        <div className="drive-strip__item">
+          <span>Target</span>
+          <strong>{commandRow?.plate1 ?? activeHotlistEntry?.plate_text ?? "Standby"}</strong>
+        </div>
+        <div className="drive-strip__item">
+          <span>Next</span>
+          <strong>{responseCue?.label ?? (props.navigationActive ? "En route" : "Hold")}</strong>
+        </div>
+        <div className="drive-strip__item">
+          <span>ETA</span>
+          <strong>{props.navigationActive ? props.routeEta : "--"}</strong>
+        </div>
+        <div className="drive-strip__item">
+          <span>Distance</span>
+          <strong>{props.routeDistance || "--"}</strong>
+        </div>
+      </div>
+    );
+  }
+
+  function renderDashboardLayout(): ReactElement {
+    const layout = props.dashboardConfig.layout;
+
+    if (layout === "scan") {
+      // Map top-left, cameras bottom-left; address intel + LPR table on the right.
+      return (
+        <div className="dashboard-layout dashboard-layout--scan">
+          <div className="dashboard-layout__cell dashboard-layout__cell--map">{renderWidget("map", "expanded")}</div>
+          <div className="dashboard-layout__cell dashboard-layout__cell--cams">{renderWidget("lprCameras", "standard")}</div>
+          <div className="dashboard-layout__cell dashboard-layout__cell--intel">{renderWidget("addressIntelligence", "standard")}</div>
+          <div className="dashboard-layout__cell dashboard-layout__cell--table">{renderLprTable()}</div>
+        </div>
+      );
+    }
+
+    if (layout === "camera") {
+      // Two big camera feeds on top; map + LPR table below (active scanning).
+      return (
+        <div className="dashboard-layout dashboard-layout--camera">
+          <div className="dashboard-layout__cell dashboard-layout__cell--cams">{renderWidget("lprCameras", "expanded")}</div>
+          <div className="dashboard-layout__cell dashboard-layout__cell--map">{renderWidget("map", "standard")}</div>
+          <div className="dashboard-layout__cell dashboard-layout__cell--table">{renderLprTable()}</div>
+        </div>
+      );
+    }
+
+    if (layout === "drive") {
+      // Full-bleed map + a slim target/next-action/ETA strip for navigating.
+      return (
+        <div className="dashboard-layout dashboard-layout--drive">
+          <div className="dashboard-layout__cell dashboard-layout__cell--map">{renderWidget("map", "expanded")}</div>
+          {renderDriveStrip()}
+        </div>
+      );
+    }
+
+    // console (default): map hero on the left + an even right rail.
+    return (
+      <div className="dashboard-grid dashboard-grid--console">
+        {heroWidget ? (
+          <div className="dashboard-grid__hero">{renderDashboardSlot(heroWidget, "dashboard-grid__slot--hero")}</div>
+        ) : null}
+        {railWidgets.length > 0 ? (
+          <div className="dashboard-grid__rail">
+            {railWidgets.map((widget) =>
+              renderDashboardSlot(widget, `dashboard-grid__rail-slot dashboard-grid__slot--size-${widget.size}`),
+            )}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <section className="screen dashboard-screen">
       <DashboardShell
@@ -7096,6 +7226,7 @@ function ConsoleScreen(props: {
               onClose={props.onCloseDashboardCustomize}
               onReset={props.onResetDashboardConfig}
               onModeChange={props.onUpdateDashboardLayoutMode}
+              onLayoutChange={props.onUpdateDashboardLayout}
               onWidgetMove={props.onUpdateDashboardWidgetMove}
               onWidgetVisibilityChange={props.onUpdateDashboardWidgetVisibility}
               onWidgetSizeChange={props.onUpdateDashboardWidgetSize}
@@ -7108,19 +7239,8 @@ function ConsoleScreen(props: {
           distanceFeet={props.activeRouteFeet}
           primaryTarget={commandRow?.plate1}
         />
-        <div className={`dashboard-grid dashboard-grid--${props.dashboardConfig.mode}`} data-stage-view={props.stageView}>
-          {/* Map hero on the left; an even, equal-width rail of the remaining
-              widgets on the right. Per-widget size tunes rail-card height. */}
-          {heroWidget ? (
-            <div className="dashboard-grid__hero">{renderDashboardSlot(heroWidget, "dashboard-grid__slot--hero")}</div>
-          ) : null}
-          {railWidgets.length > 0 ? (
-            <div className="dashboard-grid__rail">
-              {railWidgets.map((widget) =>
-                renderDashboardSlot(widget, `dashboard-grid__rail-slot dashboard-grid__slot--size-${widget.size}`),
-              )}
-            </div>
-          ) : null}
+        <div className="dashboard-stage" data-stage-view={props.stageView} data-layout={props.dashboardConfig.layout}>
+          {renderDashboardLayout()}
         </div>
 
       </DashboardShell>

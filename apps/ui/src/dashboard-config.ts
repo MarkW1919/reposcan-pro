@@ -13,6 +13,21 @@ export type DashboardWidgetId =
 export type DashboardWidgetSize = "compact" | "standard" | "expanded";
 export type DashboardLayoutMode = "default" | "driving" | "scanning" | "review" | "minimal";
 
+// Structural screen layouts the operator can switch between (independent of the
+// widget visibility/size presets above):
+//   console = map hero + even right rail (general recovery)
+//   scan    = map top-left, cameras bottom-left, address intel + LPR table right
+//   camera  = two big camera feeds on top, map + LPR table below (active scan)
+//   drive   = full-bleed map + a slim target/next-action/ETA strip (navigation)
+export type DashboardLayoutTemplate = "console" | "scan" | "camera" | "drive";
+
+export const dashboardLayoutTemplates: { id: DashboardLayoutTemplate; label: string; description: string }[] = [
+  { id: "console", label: "Console", description: "Map hero with an even right rail of account, address intel, and cameras." },
+  { id: "scan", label: "Scan Grid", description: "Map + cameras on the left; address intel and a live LPR scan table on the right." },
+  { id: "camera", label: "Camera-First", description: "Two large camera feeds on top, map and LPR scan table below — for active scanning." },
+  { id: "drive", label: "Drive", description: "Full-screen map with a slim target / next-action / ETA strip for navigating." },
+];
+
 export interface DashboardWidgetConfig {
   id: DashboardWidgetId;
   visible: boolean;
@@ -22,6 +37,7 @@ export interface DashboardWidgetConfig {
 
 export interface DashboardConfig {
   mode: DashboardLayoutMode;
+  layout: DashboardLayoutTemplate;
   widgets: DashboardWidgetConfig[];
 }
 
@@ -133,6 +149,7 @@ const presetWidgets: Record<DashboardLayoutMode, Record<DashboardWidgetId, { vis
 function buildPreset(mode: DashboardLayoutMode): DashboardConfig {
   return {
     mode,
+    layout: "console",
     widgets: widgetOrder.map((id, index) => ({
       id,
       visible: presetWidgets[mode][id].visible,
@@ -154,6 +171,10 @@ function isLayoutMode(value: unknown): value is DashboardLayoutMode {
   return value === "default" || value === "driving" || value === "scanning" || value === "review" || value === "minimal";
 }
 
+function isLayoutTemplate(value: unknown): value is DashboardLayoutTemplate {
+  return value === "console" || value === "scan" || value === "camera" || value === "drive";
+}
+
 function normalizeWidgetConfig(value: unknown, fallback: DashboardWidgetConfig): DashboardWidgetConfig {
   const candidate = value as Partial<DashboardWidgetConfig> | null | undefined;
   return {
@@ -168,6 +189,7 @@ function normalizeConfig(value: unknown): DashboardConfig {
   const fallback = getDefaultDashboardConfig();
   const candidate = value as Partial<DashboardConfig> | null | undefined;
   const mode = isLayoutMode(candidate?.mode) ? candidate.mode : fallback.mode;
+  const layout = isLayoutTemplate(candidate?.layout) ? candidate.layout : fallback.layout;
   const fallbackMap = new Map(fallback.widgets.map((widget) => [widget.id, widget]));
   const rawWidgets = Array.isArray(candidate?.widgets) ? candidate.widgets : [];
   const seen = new Set<DashboardWidgetId>();
@@ -204,6 +226,7 @@ function normalizeConfig(value: unknown): DashboardConfig {
 
   return {
     mode,
+    layout,
     widgets: widgets.sort((a, b) => a.order - b.order),
   };
 }
@@ -271,11 +294,16 @@ export function updateLayoutMode(config: DashboardConfig, mode: DashboardLayoutM
   const currentOrder = new Map(config.widgets.map((widget) => [widget.id, widget.order]));
   return saveDashboardConfig({
     mode,
+    layout: config.layout, // preserve the structural layout across mode presets
     widgets: preset.widgets.map((widget) => ({
       ...widget,
       order: currentOrder.get(widget.id) ?? widget.order,
     })),
   });
+}
+
+export function updateDashboardLayout(config: DashboardConfig, layout: DashboardLayoutTemplate): DashboardConfig {
+  return saveDashboardConfig({ ...config, layout });
 }
 
 export function reorderDashboardWidget(

@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactElement } from "react";
 
 import {
+  dashboardLayoutTemplates,
   dashboardWidgetDefinitions,
   type DashboardConfig,
   type DashboardLayoutMode,
+  type DashboardLayoutTemplate,
   type DashboardWidgetId,
   type DashboardWidgetSize,
 } from "../../dashboard-config";
@@ -22,6 +24,7 @@ export function DashboardCustomizePanel(props: {
   onClose: () => void;
   onReset: () => void;
   onModeChange: (mode: DashboardLayoutMode) => void;
+  onLayoutChange: (layout: DashboardLayoutTemplate) => void;
   onWidgetMove: (sourceWidgetId: DashboardWidgetId, targetWidgetId: DashboardWidgetId) => void;
   onWidgetVisibilityChange: (widgetId: DashboardWidgetId, visible: boolean) => void;
   onWidgetSizeChange: (widgetId: DashboardWidgetId, size: DashboardWidgetSize) => void;
@@ -162,7 +165,27 @@ export function DashboardCustomizePanel(props: {
 
         <section className="dashboard-customize__section">
           <div className="dashboard-customize__section-header">
-            <strong>Layout Mode</strong>
+            <strong>Screen Layout</strong>
+            <span>{dashboardLayoutTemplates.find((t) => t.id === props.config.layout)?.label ?? "Console"}</span>
+          </div>
+          <div className="dashboard-customize__layout-grid">
+            {dashboardLayoutTemplates.map((template) => (
+              <button
+                key={template.id}
+                className={`dashboard-customize__layout-button ${props.config.layout === template.id ? "is-active" : ""}`.trim()}
+                type="button"
+                onClick={() => props.onLayoutChange(template.id)}
+              >
+                <span className="dashboard-customize__layout-name">{template.label}</span>
+                <span className="dashboard-customize__layout-desc">{template.description}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section className="dashboard-customize__section">
+          <div className="dashboard-customize__section-header">
+            <strong>Widget Preset</strong>
             <span>{labelize(props.config.mode)}</span>
           </div>
           <div className="dashboard-customize__mode-grid">
