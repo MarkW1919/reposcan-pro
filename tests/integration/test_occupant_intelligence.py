@@ -128,6 +128,25 @@ def test_parse_partial_is_tolerant():
     assert comps.has_minimum() is False
 
 
+def test_parse_verbose_nominatim_label():
+    # The exact verbose label the map suggestions produce.
+    comps = AddressComponents.parse("411, Sherrard Street, Colbert, Bryan County, Oklahoma, 74733, United States")
+    assert comps.address_line_1 == "411 Sherrard Street"  # house # rejoined to street
+    assert comps.city == "Colbert"  # county token dropped, not used as city
+    assert comps.state_code == "OK"  # full state name resolved
+    assert comps.postal_code == "74733"
+    assert comps.has_minimum() is True
+
+
+def test_parse_city_named_like_a_state_keeps_explicit_state():
+    # "Washington" is a city here; the explicit "DC" must win as the state.
+    comps = AddressComponents.parse("1600 Pennsylvania Ave NW, Washington, DC 20500")
+    assert comps.address_line_1 == "1600 Pennsylvania Ave NW"
+    assert comps.city == "Washington"
+    assert comps.state_code == "DC"
+    assert comps.postal_code == "20500"
+
+
 # --- WhitePages provider parsing ------------------------------------------
 
 

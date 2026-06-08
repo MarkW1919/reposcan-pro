@@ -20,12 +20,27 @@ from typing import Optional
 from reposcan_contracts.occupant_intel import Occupant
 
 _STATE_ZIP_RE = re.compile(r"^\s*([A-Za-z]{2})\s+(\d{5}(?:-\d{4})?)\s*$")
-_TRAILING_ZIP_RE = re.compile(r"(\d{5}(?:-\d{4})?)\s*$")
+_FULL_ZIP_RE = re.compile(r"^\d{5}(?:-\d{4})?$")
 _STATE_CODES = {
     "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL",
     "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT",
     "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI",
     "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY", "DC",
+}
+_COUNTRY_TOKENS = {"usa", "us", "united states", "united states of america"}
+_STATE_NAMES = {
+    "alabama": "AL", "alaska": "AK", "arizona": "AZ", "arkansas": "AR", "california": "CA",
+    "colorado": "CO", "connecticut": "CT", "delaware": "DE", "florida": "FL", "georgia": "GA",
+    "hawaii": "HI", "idaho": "ID", "illinois": "IL", "indiana": "IN", "iowa": "IA",
+    "kansas": "KS", "kentucky": "KY", "louisiana": "LA", "maine": "ME", "maryland": "MD",
+    "massachusetts": "MA", "michigan": "MI", "minnesota": "MN", "mississippi": "MS",
+    "missouri": "MO", "montana": "MT", "nebraska": "NE", "nevada": "NV", "new hampshire": "NH",
+    "new jersey": "NJ", "new mexico": "NM", "new york": "NY", "north carolina": "NC",
+    "north dakota": "ND", "ohio": "OH", "oklahoma": "OK", "oregon": "OR", "pennsylvania": "PA",
+    "rhode island": "RI", "south carolina": "SC", "south dakota": "SD", "tennessee": "TN",
+    "texas": "TX", "utah": "UT", "vermont": "VT", "virginia": "VA", "washington": "WA",
+    "west virginia": "WV", "wisconsin": "WI", "wyoming": "WY",
+    "district of columbia": "DC", "washington dc": "DC",
 }
 
 
@@ -59,55 +74,64 @@ class AddressComponents:
     def parse(cls, address: str) -> "AddressComponents":
         """Best-effort split of a free-form US address string into components.
 
-        Tolerant by design — a partial parse still lets a provider try, and the
-        provider/coordinator degrades if the match is poor. Handles the common
-        "123 Main St, Oklahoma City, OK 73102" shape and trims a trailing
-        "USA"/"United States".
+        Order-tolerant: handles both the clean form
+        "123 Main St, Oklahoma City, OK 73102" and the verbose map/Nominatim form
+        "411, Sherrard Street, Colbert, Bryan County, Oklahoma, 74733, United
+        States" (house number split from the street, full state names, a "<X>
+        County" token, and a country suffix).
         """
         cleaned = address.strip()
         if not cleaned:
             return cls()
-        parts = [p.strip() for p in cleaned.split(",") if p.strip()]
-        # Drop a trailing country token so it doesn't get parsed as state/zip.
-        if parts and parts[-1].lower() in {"usa", "us", "united states", "united states of america"}:
-            parts = parts[:-1]
-        if not parts:
-            return cls()
+        tokens = [p.strip() for p in cleaned.split(",") if p.strip()]
 
-        address_line_1: Optional[str] = parts[0] or None
-        city: Optional[str] = None
         state_code: Optional[str] = None
         postal_code: Optional[str] = None
+        kept: list[str] = []
+        # Pass 1: unambiguous tokens (country, zip, "ST ZIP", 2-letter state,
+        # county). Full state NAMES are deferred — "Washington" is also a city,
+        # so an explicit code like "DC" must win first.
+        for token in tokens:
+            low = token.lower()
+            if low in _COUNTRY_TOKENS:
+                continue
+            state_zip = _STATE_ZIP_RE.match(token)  # "OK 73102"
+            if state_zip:
+                state_code = state_code or state_zip.group(1).upper()
+                postal_code = postal_code or state_zip.group(2)
+                continue
+            if _FULL_ZIP_RE.match(token):  # "73102"
+                postal_code = postal_code or token
+                continue
+            if low.endswith(" county"):  # drop county descriptor
+                continue
+            if state_code is None and token.upper() in _STATE_CODES:
+                state_code = token.upper()
+                continue
+            kept.append(token)
 
-        # Parse the last segment for "ST 12345" / "12345" / "State".
-        last = parts[-1] if len(parts) > 1 else ""
-        state_zip = _STATE_ZIP_RE.match(last)
-        if state_zip:
-            state_code = state_zip.group(1).upper()
-            postal_code = state_zip.group(2)
-            remaining = parts[1:-1]
-        else:
-            zip_match = _TRAILING_ZIP_RE.search(last)
-            if zip_match:
-                postal_code = zip_match.group(1)
-                token = last[: zip_match.start()].strip().rstrip(",").strip()
-                if token.upper() in _STATE_CODES:
-                    state_code = token.upper()
-                    remaining = parts[1:-1]
-                elif token:
-                    # last segment was "City 12345" (no state)
-                    city = token
-                    remaining = parts[1:-1]
-                else:
-                    remaining = parts[1:-1]
-            elif last.upper() in _STATE_CODES:
-                state_code = last.upper()
-                remaining = parts[1:-1]
+        # Pass 2: only if no explicit state was found, resolve a full state name
+        # (and never strip the sole token — keep something for the street/city).
+        if state_code is None:
+            for i, token in enumerate(kept):
+                if token.lower() in _STATE_NAMES and len(kept) > 1:
+                    state_code = _STATE_NAMES[token.lower()]
+                    kept.pop(i)
+                    break
+
+        address_line_1: Optional[str] = None
+        city: Optional[str] = None
+        if kept:
+            # Verbose form splits the house number into its own token ("411",
+            # "Sherrard Street"); rejoin it with the street. Clean form keeps the
+            # whole street line in one token ("123 Main St").
+            if kept[0].isdigit() and len(kept) >= 2:
+                address_line_1 = f"{kept[0]} {kept[1]}"
+                rest = kept[2:]
             else:
-                remaining = parts[1:]
-
-        if city is None and remaining:
-            city = remaining[-1] or None
+                address_line_1 = kept[0]
+                rest = kept[1:]
+            city = rest[-1] if rest else None
 
         return cls(
             address_line_1=address_line_1,
