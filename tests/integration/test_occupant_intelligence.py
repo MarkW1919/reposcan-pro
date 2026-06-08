@@ -321,3 +321,111 @@ def test_unconfigured_when_whitepages_selected_without_provider():
     report = svc.lookup("123 Main St, Oklahoma City, OK 73102")
     assert report.status == OccupantLookupStatus.unconfigured
     assert any("not configured" in c.lower() for c in report.caveats)
+
+
+# --- Hardening: parsing edge cases ----------------------------------------
+
+
+def test_parse_keeps_unit_suite_on_street_line():
+    comps = AddressComponents.parse("123 Main St, Suite 200, Dallas, TX 75201")
+    assert comps.address_line_1 == "123 Main St, Suite 200"  # not silently dropped
+    assert comps.city == "Dallas"
+    assert comps.state_code == "TX"
+    assert comps.postal_code == "75201"
+
+
+def test_parse_city_named_like_a_state_with_zip_stays_city():
+    # "New York" here is the city (no explicit state); the ZIP shouldn't let the
+    # parser steal the only locality token as a state.
+    comps = AddressComponents.parse("123 Main St, New York, 10001")
+    assert comps.address_line_1 == "123 Main St"
+    assert comps.city == "New York"
+    assert comps.postal_code == "10001"
+
+
+def test_parse_po_box():
+    comps = AddressComponents.parse("PO Box 1234, Tulsa, OK 74103")
+    assert comps.address_line_1 == "PO Box 1234"
+    assert comps.city == "Tulsa"
+    assert comps.state_code == "OK"
+
+
+# --- Hardening: provider robustness ---------------------------------------
+
+
+def test_provider_skips_call_without_minimum_address():
+    transport = QueueTransport(HttpJsonResponse(status=200, payload=EXAMPLE_RESPONSE))
+    provider = WhitePagesProProvider("k", transport=transport)
+    result = provider.lookup(AddressComponents(city="Tulsa"))  # no street -> insufficient
+    assert result.ok is False
+    assert result.audit.error == "insufficient_address"
+    assert transport.calls == []  # no paid call attempted
+
+
+def test_provider_non_dict_200_degrades():
+    transport = QueueTransport(HttpJsonResponse(status=200, payload="<html>maintenance</html>"))
+    provider = WhitePagesProProvider("k", transport=transport)
+    result = provider.lookup(_components())
+    assert result.ok is False
+
+
+def test_all_zero_scores_go_to_other_possible():
+    payload = {
+        "results": [
+            {"id": "p1", "name": "A B", "phones": [], "relatives": [], "current_addresses": [], "historic_addresses": [], "match_score": 0},
+            {"id": "p2", "name": "C D", "phones": [], "relatives": [], "current_addresses": [], "historic_addresses": [], "match_score": 0},
+        ],
+        "metadata": {"result_count": 2},
+    }
+    provider = WhitePagesProProvider("k", transport=QueueTransport(HttpJsonResponse(status=200, payload=payload)))
+    result = provider.lookup(_components())
+    assert result.ok is True
+    assert result.high_confidence == []  # nobody over-promoted when all scores are 0
+    assert len(result.other_possible) == 2
+
+
+# --- Hardening: cache behavior --------------------------------------------
+
+
+def test_no_match_is_not_cached():
+    empty = {"results": [], "metadata": {"result_count": 0}}
+    transport = QueueTransport(
+        HttpJsonResponse(status=200, payload=empty),
+        HttpJsonResponse(status=200, payload=empty),
+    )
+    provider = WhitePagesProProvider("k", transport=transport)
+    svc = OccupantLookupService(_address_service(), provider=provider, cache=SqliteOccupantCache(":memory:"))
+    r1 = svc.lookup("123 Main St, Oklahoma City, OK 73102")
+    r2 = svc.lookup("123 Main St, Oklahoma City, OK 73102")
+    assert r1.status == OccupantLookupStatus.no_match
+    assert r2.status == OccupantLookupStatus.no_match
+    assert len(transport.calls) == 2  # not served from cache -> re-queried
+
+
+def test_cache_purge_expired_drops_old_keeps_fresh():
+    cache = SqliteOccupantCache(":memory:")
+    now = datetime.now(timezone.utc)
+    cache.put("old", {"status": "ok"}, now=now - timedelta(days=40))
+    cache.put("fresh", {"status": "ok"}, now=now - timedelta(days=2))
+    removed = cache.purge_expired(ttl_days=30, now=now)
+    assert removed == 1
+    assert cache.get("old") is None
+    assert cache.get("fresh") is not None
+
+
+def test_cached_payload_tolerates_extra_fields():
+    cache = SqliteOccupantCache(":memory:")
+    cache.put(
+        AddressComponents.parse("123 Main St, Oklahoma City, OK 73102").cache_key(),
+        {
+            "status": "ok",
+            "source": "WhitePages Pro",
+            "high_confidence": [{"name": "John Q. Doe", "phones": [], "associated_people": [], "future_field": 1}],
+            "other_possible": [],
+            "previous_addresses": [],
+        },
+    )
+    svc = OccupantLookupService(_address_service(), provider=WhitePagesProProvider("k", transport=QueueTransport()), cache=cache)
+    report = svc.lookup("123 Main St, Oklahoma City, OK 73102")
+    assert report.from_cache is True
+    assert report.high_confidence[0].name == "John Q. Doe"  # extra field ignored, not dropped

@@ -126,7 +126,10 @@ class OccupantLookupService:
                 other_possible=result.other_possible,
                 previous_addresses=result.previous_addresses,
             )
-            if self._cache is not None:
+            # Cache positive matches only. "No record at this address" is not
+            # stable skip-trace data (subject may move in, records update), so a
+            # 30-day no_match cache would mask later hits — re-query next time.
+            if self._cache is not None and status == OccupantLookupStatus.ok:
                 self._cache.put(cache_key, payload)
             if status == OccupantLookupStatus.no_match:
                 caveats.append("No occupant records were returned for this address.")
@@ -250,7 +253,9 @@ def _occupants_from_payload(
             for item in items:
                 if isinstance(item, dict):
                     try:
-                        out.append(Occupant(**item))
+                        # model_validate tolerates extra/missing fields across
+                        # cache-schema evolution rather than dropping the entry.
+                        out.append(Occupant.model_validate(item))
                     except (TypeError, ValueError):
                         continue
         return out

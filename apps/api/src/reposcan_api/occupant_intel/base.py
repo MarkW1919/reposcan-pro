@@ -21,6 +21,7 @@ from reposcan_contracts.occupant_intel import Occupant
 
 _STATE_ZIP_RE = re.compile(r"^\s*([A-Za-z]{2})\s+(\d{5}(?:-\d{4})?)\s*$")
 _FULL_ZIP_RE = re.compile(r"^\d{5}(?:-\d{4})?$")
+_UNIT_RE = re.compile(r"^(apt|apartment|suite|ste|unit|bldg|building|fl|floor|rm|room|#)\b.*$", re.IGNORECASE)
 _STATE_CODES = {
     "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL",
     "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT",
@@ -110,15 +111,6 @@ class AddressComponents:
                 continue
             kept.append(token)
 
-        # Pass 2: only if no explicit state was found, resolve a full state name
-        # (and never strip the sole token — keep something for the street/city).
-        if state_code is None:
-            for i, token in enumerate(kept):
-                if token.lower() in _STATE_NAMES and len(kept) > 1:
-                    state_code = _STATE_NAMES[token.lower()]
-                    kept.pop(i)
-                    break
-
         address_line_1: Optional[str] = None
         city: Optional[str] = None
         if kept:
@@ -131,6 +123,17 @@ class AddressComponents:
             else:
                 address_line_1 = kept[0]
                 rest = kept[1:]
+            # A unit/suite token (its own comma segment) belongs on the street
+            # line for the provider, not silently dropped as if it were a city.
+            if rest and _UNIT_RE.match(rest[0]):
+                address_line_1 = f"{address_line_1}, {rest[0]}"
+                rest = rest[1:]
+            # A trailing full state NAME (no explicit 2-letter code seen) — e.g.
+            # "..., Colbert, Oklahoma" — resolves to the state, but only if a city
+            # still remains. "123 Main St, New York" keeps New York as the city.
+            if state_code is None and len(rest) >= 2 and rest[-1].lower() in _STATE_NAMES:
+                state_code = _STATE_NAMES[rest[-1].lower()]
+                rest = rest[:-1]
             city = rest[-1] if rest else None
 
         return cls(

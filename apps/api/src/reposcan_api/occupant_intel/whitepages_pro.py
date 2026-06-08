@@ -22,10 +22,13 @@ Compliance:
 from __future__ import annotations
 
 import json
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Callable, Optional, Protocol
 
 from reposcan_contracts.occupant_intel import Occupant
@@ -82,7 +85,13 @@ class UrllibTransport:
         try:
             with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 (trusted WhitePages host)
                 raw = response.read().decode("utf-8", errors="replace")
-            return HttpJsonResponse(status=200, payload=json.loads(raw) if raw else None)
+            # A 200 with a non-JSON body (maintenance page, proxy/CDN error) must
+            # degrade to a parseable miss, not raise.
+            try:
+                payload = json.loads(raw) if raw else None
+            except ValueError:
+                payload = None
+            return HttpJsonResponse(status=200, payload=payload)
         except urllib.error.HTTPError as exc:  # 4xx/5xx with a status code
             retry_after = _parse_retry_after(exc.headers.get("Retry-After") if exc.headers else None)
             try:
@@ -96,10 +105,18 @@ class UrllibTransport:
 
 
 def _parse_retry_after(value: Optional[str]) -> Optional[float]:
+    """Parse a Retry-After header — either delta-seconds or an HTTP-date."""
     if not value:
         return None
     try:
         return float(value)
+    except (TypeError, ValueError):
+        pass
+    try:
+        when = parsedate_to_datetime(value)
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=timezone.utc)
+        return max(0.0, (when - datetime.now(timezone.utc)).total_seconds())
     except (TypeError, ValueError):
         return None
 
@@ -120,13 +137,15 @@ class WhitePagesProProvider(SkipTraceProvider):
         api_key: str,
         *,
         transport: Optional[HttpTransport] = None,
-        sleeper: Callable[[float], None] = None,  # type: ignore[assignment]
+        sleeper: Optional[Callable[[float], None]] = None,
         timeout_s: float = _DEFAULT_TIMEOUT_S,
         endpoint: str = WHITEPAGES_PERSON_URL,
     ) -> None:
         self._api_key = api_key or ""
         self._transport = transport or UrllibTransport()
-        self._sleeper = sleeper if sleeper is not None else _noop_sleep
+        # Real wait by default so the 429 retry actually backs off; tests inject
+        # a no-op/collector.
+        self._sleeper = sleeper if sleeper is not None else time.sleep
         self._timeout_s = timeout_s
         self._endpoint = endpoint
 
@@ -140,10 +159,25 @@ class WhitePagesProProvider(SkipTraceProvider):
             # Populate each person's previous addresses for skip-tracing.
             "include_historical_locations": "true",
         }
+        masked_params = {**params, "api_key": _mask_key(self._api_key)}
+
+        # Don't spend a paid call on an address we couldn't parse into at least a
+        # street + locality — it would return broad/garbage matches.
+        if not components.has_minimum():
+            return SkipTraceResult(
+                source=self.name,
+                ok=False,
+                audit=SkipTraceAudit(
+                    endpoint=self._endpoint,
+                    params_masked=masked_params,
+                    success=False,
+                    error="insufficient_address",
+                ),
+            )
+        # Audit shows the query + a masked key fingerprint (the real key travels
+        # in the X-Api-Key header and is never recorded in the clear).
         headers = {"X-Api-Key": self._api_key}
-        # Audit shows the query + a masked key fingerprint (key travels in the
-        # header and is never recorded in the clear).
-        masked = {**params, "api_key": _mask_key(self._api_key)}
+        masked = masked_params
 
         response = self._transport.get(self._endpoint, params, headers=headers, timeout=self._timeout_s)
 
@@ -230,7 +264,11 @@ def _parse_person_results(payload: dict) -> tuple[list[Occupant], list[Occupant]
     # Rank by match strength, then split into strong matches vs weaker maybes.
     people.sort(key=lambda p: p.score, reverse=True)
     best = people[0].score
-    cutoff = best * _HIGH_CONFIDENCE_FRACTION if best > 0 else 0.0
+    if best <= 0:
+        # No usable scores (all zero/unscored) — don't over-promote anyone to
+        # "high confidence"; present them all as possible matches.
+        return [], [p.occupant for p in people[:_MAX_OTHER_POSSIBLE]], []
+    cutoff = best * _HIGH_CONFIDENCE_FRACTION
     high = [p for p in people if p.score >= cutoff][:_MAX_HIGH_CONFIDENCE]
     high_ids = {id(p) for p in high}
     other = [p for p in people if id(p) not in high_ids][:_MAX_OTHER_POSSIBLE]

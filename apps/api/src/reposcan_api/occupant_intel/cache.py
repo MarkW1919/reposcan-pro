@@ -60,11 +60,14 @@ class SqliteOccupantCache:
 
     def get(self, key: str, *, now: Optional[datetime] = None) -> Optional[OccupantCacheEntry]:
         now = now or datetime.now(timezone.utc)
-        with self._lock:
-            row = self._conn.execute(
-                "SELECT payload, fetched_at_utc FROM occupant_cache WHERE cache_key = ?",
-                (key,),
-            ).fetchone()
+        try:
+            with self._lock:
+                row = self._conn.execute(
+                    "SELECT payload, fetched_at_utc FROM occupant_cache WHERE cache_key = ?",
+                    (key,),
+                ).fetchone()
+        except sqlite3.Error:
+            return None  # corrupt/locked DB -> treat as a cache miss, never crash
         if row is None:
             return None
         payload_text, fetched_text = row
@@ -78,33 +81,42 @@ class SqliteOccupantCache:
 
     def put(self, key: str, payload: dict, *, now: Optional[datetime] = None) -> None:
         now = now or datetime.now(timezone.utc)
-        with self._lock:
-            self._conn.execute(
-                """
-                INSERT INTO occupant_cache (cache_key, payload, fetched_at_utc)
-                VALUES (?, ?, ?)
-                ON CONFLICT(cache_key) DO UPDATE SET
-                    payload = excluded.payload,
-                    fetched_at_utc = excluded.fetched_at_utc
-                """,
-                (key, json.dumps(payload), _to_utc_text(now)),
-            )
-            self._conn.commit()
+        try:
+            with self._lock:
+                self._conn.execute(
+                    """
+                    INSERT INTO occupant_cache (cache_key, payload, fetched_at_utc)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(cache_key) DO UPDATE SET
+                        payload = excluded.payload,
+                        fetched_at_utc = excluded.fetched_at_utc
+                    """,
+                    (key, json.dumps(payload), _to_utc_text(now)),
+                )
+                self._conn.commit()
+        except sqlite3.Error:
+            pass  # non-fatal: just a cache miss next time
 
     def purge_expired(self, *, ttl_days: int = DEFAULT_CACHE_TTL_DAYS, now: Optional[datetime] = None) -> int:
         now = now or datetime.now(timezone.utc)
         cutoff = _to_utc_text(now.replace(microsecond=0))
-        with self._lock:
-            cursor = self._conn.execute(
-                "DELETE FROM occupant_cache WHERE julianday(?) - julianday(fetched_at_utc) > ?",
-                (cutoff, ttl_days),
-            )
-            self._conn.commit()
-            return cursor.rowcount
+        try:
+            with self._lock:
+                cursor = self._conn.execute(
+                    "DELETE FROM occupant_cache WHERE julianday(?) - julianday(fetched_at_utc) > ?",
+                    (cutoff, ttl_days),
+                )
+                self._conn.commit()
+                return cursor.rowcount
+        except sqlite3.Error:
+            return 0
 
     def close(self) -> None:
-        with self._lock:
-            self._conn.close()
+        try:
+            with self._lock:
+                self._conn.close()
+        except sqlite3.Error:
+            pass
 
 
 def _to_utc_text(value: datetime) -> str:

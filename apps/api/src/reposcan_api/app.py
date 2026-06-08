@@ -1167,11 +1167,13 @@ def create_app(
             else None
         )
         occupant_cache_path = os.environ.get("OCCUPANT_CACHE_PATH", "var/occupant_cache.sqlite").strip()
+        occupant_cache = SqliteOccupantCache(occupant_cache_path)
+        occupant_cache.purge_expired()  # drop stale entries so the cache file can't grow unbounded
         occupant_intel_service = OccupantLookupService(
             address_intel_service,
             provider=whitepages_provider,
             provider_name=occupant_provider_name,
-            cache=SqliteOccupantCache(occupant_cache_path),
+            cache=occupant_cache,
         )
 
     api_router = APIRouter()
