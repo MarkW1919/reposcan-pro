@@ -27,8 +27,8 @@ export function InstrumentStatusBar(props: {
   weather?: InstrumentStatusItem;
   time?: InstrumentStatusItem;
   actions?: InstrumentAction[];
-  customizeLabel: string;
-  onCustomize: () => void;
+  customizeLabel?: string;
+  onCustomize?: () => void;
 }): ReactElement {
   const segments = [props.primaryTarget, props.vehicle, props.lastSeen, props.recovery, props.system, props.weather, props.time].filter(
     (item): item is InstrumentStatusItem => Boolean(item && item.value),
@@ -76,9 +76,11 @@ export function InstrumentStatusBar(props: {
             {action.icon ?? action.label.slice(0, 1)}
           </button>
         ))}
-        <button className="instrument-status-bar__customize" type="button" onClick={props.onCustomize}>
-          <span>{props.customizeLabel}</span>
-        </button>
+        {props.onCustomize ? (
+          <button className="instrument-status-bar__customize" type="button" onClick={props.onCustomize}>
+            <span>{props.customizeLabel ?? "Customize"}</span>
+          </button>
+        ) : null}
       </div>
     </header>
   );

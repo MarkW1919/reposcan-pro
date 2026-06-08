@@ -14,6 +14,7 @@ import { DashboardShell } from "./components/dashboard/DashboardShell";
 import { DashboardWidgetFrame } from "./components/dashboard/DashboardWidgetFrame";
 import { InstrumentStatusBar } from "./components/dashboard/InstrumentStatusBar";
 import { LprCameraPanel } from "./components/dashboard/LprCameraPanel";
+import { NavDrawer, type NavDrawerSection } from "./components/dashboard/NavDrawer";
 import { RecentDetectionHistoryCard } from "./components/dashboard/RecentDetectionHistoryCard";
 import { StatusPill, type StatusPillTone } from "./components/dashboard/StatusPill";
 import { UconnectStyleToolbar, type ToolbarItem } from "./components/dashboard/UconnectStyleToolbar";
@@ -3493,6 +3494,7 @@ function App(): ReactElement {
   }, [settings.shiftModeLargeText]);
   const [dashboardConfig, setDashboardConfig] = useState<DashboardConfig>(() => loadDashboardConfig());
   const [dashboardCustomizeOpen, setDashboardCustomizeOpen] = useState(false);
+  const [navDrawerOpen, setNavDrawerOpen] = useState(false);
   const [actionSheetRow, setActionSheetRow] = useState<ConsoleDetectionRow | null>(null);
   const [apiKey, setApiKey] = useState<string>(() => loadStoredString(apiKeyStorageKey));
   const [apiKeyInput, setApiKeyInput] = useState<string>(() => loadStoredString(apiKeyStorageKey));
@@ -4292,9 +4294,6 @@ function App(): ReactElement {
     startTransition(() => setScreen(nextScreen));
   }
 
-  function switchShell(nextShell: AppShell): void {
-    switchScreen(nextShell === "operations" ? lastOperationsScreen : lastAdminScreen);
-  }
 
   function updateSetting<Key extends keyof UiSettings>(key: Key, value: UiSettings[Key]): void {
     setSettings((current) => ({
@@ -5281,27 +5280,12 @@ function App(): ReactElement {
 
   const gpsIndicator = buildGpsIndicator(gpsFix);
   const currentShell = shellForScreen(screen);
-  const shellCopy =
-    currentShell === "operations"
-      ? {
-          title: "Operations Workspace",
-          detail: `${activeAlerts} live hit${activeAlerts === 1 ? "" : "s"} · ${activeHotlistCount} active order${activeHotlistCount === 1 ? "" : "s"} · ${onlineCameraCount}/${Math.max(availableCameraFeeds.length, 1)} camera${availableCameraFeeds.length === 1 ? "" : "s"} online`,
-        }
-      : {
-          title: "Admin Panel",
-          detail: `${hotlists.length} repo order${hotlists.length === 1 ? "" : "s"} · ${canManageHotlistAccounts ? "edit enabled" : "read only"} · ${degradedDependencyCount === 0 ? "system healthy" : `${degradedDependencyCount} system warning${degradedDependencyCount === 1 ? "" : "s"}`}`,
-        };
+  // Slim cab quick-bar: only the few one-tap operations actions. Full
+  // navigation (Workspace, LPR Hits, Search, Repo Orders, Settings) lives in the
+  // nav drawer, which removes the header/footer status redundancy.
   const toolbarItems: ToolbarItem[] =
     currentShell === "operations"
       ? [
-          {
-            id: "workspace",
-            label: "Workspace",
-            value: screen === "console" ? "ACTIVE" : "READY",
-            tone: screen === "console" ? "cyan" : "gray",
-            active: screen === "console",
-            onClick: () => switchScreen("console"),
-          },
           {
             id: "map",
             label: "Map",
@@ -5312,22 +5296,6 @@ function App(): ReactElement {
               setStageView("map");
               switchScreen("console");
             },
-          },
-          {
-            id: "lpr-hits",
-            label: "LPR Hits",
-            value: activeAlerts > 0 ? `${activeAlerts} ACTIVE` : "READY",
-            tone: activeAlerts > 0 ? "green" : "gray",
-            active: screen === "hotlists",
-            onClick: () => switchScreen("hotlists"),
-          },
-          {
-            id: "search",
-            label: "Search",
-            value: totalReads > 0 ? `${Math.min(totalReads, 8)} INDEXED` : "READY",
-            tone: totalReads > 0 ? "cyan" : "gray",
-            active: screen === "search",
-            onClick: () => switchScreen("search"),
           },
           {
             id: "cameras",
@@ -5404,9 +5372,39 @@ function App(): ReactElement {
           },
         ];
 
+  // Full navigation lives in the drawer, grouped by workspace.
+  const navSections: NavDrawerSection[] = [
+    {
+      title: "Operations",
+      items: [
+        { id: "console", label: "Console / Map", detail: "Live recovery dashboard", active: screen === "console", onClick: () => switchScreen("console") },
+        { id: "hotlists", label: "LPR Hits", detail: activeAlerts > 0 ? `${activeAlerts} active` : "Hotlist alerts", active: screen === "hotlists", onClick: () => switchScreen("hotlists") },
+        { id: "search", label: "Search", detail: "Find plates & detections", active: screen === "search", onClick: () => switchScreen("search") },
+      ],
+    },
+    {
+      title: "Admin",
+      items: [
+        { id: "accounts", label: "Repo Orders", detail: "Accounts & target list", active: screen === "accounts", onClick: () => switchScreen("accounts") },
+        { id: "settings", label: "Settings", detail: "System, alerts, audit", active: screen === "settings", onClick: () => switchScreen("settings") },
+      ],
+    },
+  ];
+
+  function openCustomizeFromMenu(): void {
+    switchScreen("console");
+    setDashboardCustomizeOpen(true);
+  }
+
   return (
     <>
       <div className="ops-app">
+        <NavDrawer
+          open={navDrawerOpen}
+          onClose={() => setNavDrawerOpen(false)}
+          sections={navSections}
+          onOpenCustomize={openCustomizeFromMenu}
+        />
         <main className="workspace">
           {screen === "console" ? (
             <ConsoleScreen
@@ -5660,31 +5658,16 @@ function App(): ReactElement {
         </main>
 
         <footer className="dashboard-footer">
-          <div className="dashboard-footer__shell">
-            <div className="dashboard-footer__shell-copy">
-              <span>Product Area</span>
-              <strong>{shellCopy.title}</strong>
-              <small>{shellCopy.detail}</small>
-            </div>
-            <div className="dashboard-footer__shell-toggle" role="group" aria-label="Workspace area">
-              <button
-                className={currentShell === "operations" ? "is-active" : ""}
-                aria-pressed={currentShell === "operations"}
-                type="button"
-                onClick={() => switchShell("operations")}
-              >
-                Operations
-              </button>
-              <button
-                className={currentShell === "admin" ? "is-active" : ""}
-                aria-pressed={currentShell === "admin"}
-                type="button"
-                onClick={() => switchShell("admin")}
-              >
-                Admin
-              </button>
-            </div>
-          </div>
+          <button
+            className="dashboard-footer__menu"
+            type="button"
+            aria-label="Open navigation menu"
+            aria-haspopup="dialog"
+            onClick={() => setNavDrawerOpen(true)}
+          >
+            <span aria-hidden="true">☰</span>
+            <span className="dashboard-footer__menu-label">Menu</span>
+          </button>
           <UconnectStyleToolbar items={toolbarItems} />
         </footer>
       </div>
@@ -7211,10 +7194,7 @@ function ConsoleScreen(props: {
                 active: props.settings.shiftModeLargeText,
               },
               { label: "Recoveries", onClick: props.onOpenRecoveries, icon: props.activeAlerts > 0 ? String(props.activeAlerts) : "!" },
-              { label: "Settings", onClick: props.onOpenSettings, icon: "S" },
             ]}
-            customizeLabel="Customize Dashboard"
-            onCustomize={props.onOpenDashboardCustomize}
           />
         }
         toolbar={null}
