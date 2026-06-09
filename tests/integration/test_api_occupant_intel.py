@@ -90,7 +90,7 @@ def test_occupant_endpoint_returns_occupants(tmp_path):
     assert body["high_confidence"][0]["name"] == "John Q. Doe"
     assert body["high_confidence"][0]["phones"] == ["405-555-1234 (Mobile)"]
     assert body["high_confidence"][0]["associated_people"] == ["Jane Doe"]
-    assert body["previous_addresses"] == ["456 Oak Ave, Tulsa, OK 74103"]
+    assert [p["address"] for p in body["previous_addresses"]] == ["456 Oak Ave, Tulsa, OK 74103"]
     # Census address layer is embedded as the base/fallback.
     assert body["address"]["matched"] is True
     assert body["address"]["county_name"] == "Oklahoma County"

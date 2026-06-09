@@ -17,7 +17,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Optional
 
-from reposcan_contracts.occupant_intel import Occupant
+from reposcan_contracts.occupant_intel import Occupant, PreviousAddress
 
 _STATE_ZIP_RE = re.compile(r"^\s*([A-Za-z]{2})\s+(\d{5}(?:-\d{4})?)\s*$")
 _FULL_ZIP_RE = re.compile(r"^\d{5}(?:-\d{4})?$")
@@ -164,7 +164,7 @@ class SkipTraceResult:
     audit: SkipTraceAudit
     high_confidence: list[Occupant] = field(default_factory=list)
     other_possible: list[Occupant] = field(default_factory=list)
-    previous_addresses: list[str] = field(default_factory=list)
+    previous_addresses: list[PreviousAddress] = field(default_factory=list)
     ok: bool = False  # the call completed and returned parseable data
 
     @property

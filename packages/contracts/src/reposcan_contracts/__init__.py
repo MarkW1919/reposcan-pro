@@ -74,6 +74,7 @@ from .occupant_intel import (
     Occupant,
     OccupantIntelligenceReport,
     OccupantLookupStatus,
+    PreviousAddress,
 )
 from .operator import OperatorCapabilities, OperatorPrincipal, OperatorSessionRecord
 from .popup import PopupActivityEvent, PopupEventType
@@ -191,6 +192,7 @@ __all__ = [
     "Occupant",
     "OccupantIntelligenceReport",
     "OccupantLookupStatus",
+    "PreviousAddress",
     "OperatorCapabilities",
     "OperatorPrincipal",
     "OperatorSessionRecord",

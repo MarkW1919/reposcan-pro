@@ -24,6 +24,7 @@ from reposcan_contracts.occupant_intel import (
     Occupant,
     OccupantIntelligenceReport,
     OccupantLookupStatus,
+    PreviousAddress,
 )
 
 from ..address_intel import AddressIntelligenceService
@@ -182,7 +183,7 @@ class OccupantLookupService:
         caveats: list[str],
         high_confidence: Optional[list[Occupant]] = None,
         other_possible: Optional[list[Occupant]] = None,
-        previous_addresses: Optional[list[str]] = None,
+        previous_addresses: Optional[list[PreviousAddress]] = None,
         from_cache: bool = False,
         cache_age_days: Optional[int] = None,
     ) -> OccupantIntelligenceReport:
@@ -233,20 +234,20 @@ def _occupants_to_payload(
     source: str,
     high_confidence: list[Occupant],
     other_possible: list[Occupant],
-    previous_addresses: list[str],
+    previous_addresses: list[PreviousAddress],
 ) -> dict:
     return {
         "status": status.value,
         "source": source,
         "high_confidence": [o.model_dump() for o in high_confidence],
         "other_possible": [o.model_dump() for o in other_possible],
-        "previous_addresses": list(previous_addresses),
+        "previous_addresses": [p.model_dump() for p in previous_addresses],
     }
 
 
 def _occupants_from_payload(
     payload: dict,
-) -> tuple[list[Occupant], list[Occupant], list[str], OccupantLookupStatus, Optional[str]]:
+) -> tuple[list[Occupant], list[Occupant], list[PreviousAddress], OccupantLookupStatus, Optional[str]]:
     def _people(items: object) -> list[Occupant]:
         out: list[Occupant] = []
         if isinstance(items, list):
@@ -264,11 +265,19 @@ def _occupants_from_payload(
         cached_status = OccupantLookupStatus(payload.get("status", OccupantLookupStatus.ok.value))
     except ValueError:
         cached_status = OccupantLookupStatus.ok
-    previous = payload.get("previous_addresses")
+    previous_raw = payload.get("previous_addresses")
+    previous: list[PreviousAddress] = []
+    if isinstance(previous_raw, list):
+        for item in previous_raw:
+            try:
+                # Tolerate legacy str entries and structured dicts alike.
+                previous.append(PreviousAddress(address=item) if isinstance(item, str) else PreviousAddress.model_validate(item))
+            except (TypeError, ValueError):
+                continue
     return (
         _people(payload.get("high_confidence")),
         _people(payload.get("other_possible")),
-        [str(a) for a in previous] if isinstance(previous, list) else [],
+        previous,
         cached_status,
         payload.get("source"),
     )

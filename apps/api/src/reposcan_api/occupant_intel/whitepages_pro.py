@@ -32,7 +32,7 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Callable, Optional, Protocol
 
-from reposcan_contracts.occupant_intel import Occupant
+from reposcan_contracts.occupant_intel import Occupant, PreviousAddress
 
 from .base import AddressComponents, SkipTraceAudit, SkipTraceProvider, SkipTraceResult
 
@@ -251,12 +251,12 @@ def _zip5(postal: Optional[str]) -> str:
 class _ScoredPerson:
     occupant: Occupant
     score: float
-    historic: list[str]
+    historic: list[PreviousAddress]
 
 
 def _parse_person_results(
     payload: dict, *, query_street: str = "", query_zip: str = ""
-) -> tuple[list[Occupant], list[Occupant], list[str]]:
+) -> tuple[list[Occupant], list[Occupant], list[PreviousAddress]]:
     """Map a /v2/person response to (high_confidence, other_possible, previous)."""
     query_number = _first_number(query_street)
     people: list[_ScoredPerson] = []
@@ -289,16 +289,16 @@ def _parse_person_results(
     return [p.occupant for p in high], [p.occupant for p in other], _aggregate_previous(high)
 
 
-def _aggregate_previous(people: list["_ScoredPerson"]) -> list[str]:
+def _aggregate_previous(people: list["_ScoredPerson"]) -> list[PreviousAddress]:
     """Deduped roll-up of the given people's prior addresses (report-level)."""
-    previous: list[str] = []
+    previous: list[PreviousAddress] = []
     seen: set[str] = set()
     for person in people:
-        for address in person.historic:
-            key = address.lower()
-            if address and key not in seen:
+        for prev in person.historic:
+            key = prev.address.lower()
+            if prev.address and key not in seen:
                 seen.add(key)
-                previous.append(address)
+                previous.append(prev)
             if len(previous) >= _MAX_PREVIOUS:
                 return previous
     return previous
@@ -325,7 +325,13 @@ def _parse_person(result: dict, *, query_number: str = "", query_zip: str = "") 
         if len(associated) >= _MAX_ASSOCIATED:
             break
 
-    historic = [a for a in (_format_address(addr) for addr in _as_list(result.get("historic_addresses"))) if a]
+    # WhitePages has no per-address dates, so date fields stay None (Enformion
+    # supplies them in merge mode).
+    historic = [
+        PreviousAddress(address=a)
+        for a in (_format_address(addr) for addr in _as_list(result.get("historic_addresses")))
+        if a
+    ]
 
     # Current resident = the searched address is among this person's CURRENT
     # addresses (matched by house number + ZIP), not just their history.

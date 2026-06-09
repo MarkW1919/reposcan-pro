@@ -572,12 +572,19 @@ export type OccupantLookupStatus =
   | "disabled"
   | "unconfigured";
 
+export interface PreviousAddress {
+  address: string;
+  date_first_seen: string | null;
+  date_last_seen: string | null;
+  date_range_label: string | null;
+}
+
 export interface Occupant {
   name: string;
   phones: string[];
   associated_people: string[];
   is_current: boolean;
-  previous_addresses: string[];
+  previous_addresses: PreviousAddress[];
 }
 
 export interface OccupantIntelligenceReport {
@@ -587,7 +594,7 @@ export interface OccupantIntelligenceReport {
   source: string | null;
   high_confidence: Occupant[];
   other_possible: Occupant[];
-  previous_addresses: string[];
+  previous_addresses: PreviousAddress[];
   from_cache: boolean;
   cache_age_days: number | null;
   address: AddressIntelligenceReport | null;

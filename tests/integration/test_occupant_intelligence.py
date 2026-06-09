@@ -166,11 +166,13 @@ def test_provider_parses_residents_phones_and_previous():
     # Searched address is in John's current_addresses -> current resident, and
     # his own prior addresses ride on the occupant (not a global pile).
     assert occupant.is_current is True
-    assert occupant.previous_addresses == ["456 Oak Ave, Tulsa, OK 74103"]
+    assert [p.address for p in occupant.previous_addresses] == ["456 Oak Ave, Tulsa, OK 74103"]
+    # WhitePages has no dates -> date fields are None (Enformion fills them).
+    assert occupant.previous_addresses[0].date_range_label is None
     assert len(result.other_possible) == 1
     assert result.other_possible[0].name == "Bob Roe"
     # Report-level previous still aggregates the strong matches' history.
-    assert result.previous_addresses == ["456 Oak Ave, Tulsa, OK 74103"]
+    assert [p.address for p in result.previous_addresses] == ["456 Oak Ave, Tulsa, OK 74103"]
     # Request used the documented address params (not postal_code) + history flag.
     assert transport.calls[0]["zipcode"] == "73102"
     assert transport.calls[0]["include_historical_locations"] == "true"
@@ -473,4 +475,4 @@ def test_current_vs_former_resident_classification_and_sort():
     assert by_name["Current Resident"].is_current is True
     assert by_name["Former Resident"].is_current is False
     # The former resident's own prior address is attached to them.
-    assert by_name["Former Resident"].previous_addresses == ["123 Main St, Oklahoma City, OK 73102"]
+    assert [p.address for p in by_name["Former Resident"].previous_addresses] == ["123 Main St, Oklahoma City, OK 73102"]

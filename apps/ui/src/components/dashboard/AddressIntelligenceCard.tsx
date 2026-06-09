@@ -22,7 +22,14 @@ interface OccupantView {
   phones: string[];
   associated_people: string[];
   is_current: boolean;
-  previous_addresses: string[];
+  previous_addresses: PreviousAddressView[];
+}
+
+interface PreviousAddressView {
+  address: string;
+  date_first_seen: string | null;
+  date_last_seen: string | null;
+  date_range_label: string | null;
 }
 
 interface OccupantData {
@@ -84,16 +91,23 @@ function OccupantRow(props: {
         <div className="occupant-card__person-previous">
           <span className="occupant-card__field-label">Prior addresses:</span>
           <ul className="occupant-card__previous-list">
-            {occupant.previous_addresses.map((address) => (
-              <li key={address}>
+            {occupant.previous_addresses.map((prev, i) => (
+              <li key={`${prev.address}-${i}`}>
                 <button
                   type="button"
                   className="occupant-card__previous-link"
                   title="Investigate on map"
-                  aria-label={`Investigate ${address} on the map`}
-                  onClick={() => props.onInvestigatePreviousAddress?.(address)}
+                  aria-label={
+                    prev.date_range_label
+                      ? `Investigate ${prev.address} (${prev.date_range_label}) on the map`
+                      : `Investigate ${prev.address} on the map`
+                  }
+                  onClick={() => props.onInvestigatePreviousAddress?.(prev.address)}
                 >
-                  {address}
+                  <span className="occupant-card__previous-addr">{prev.address}</span>
+                  {prev.date_range_label ? (
+                    <span className="occupant-card__date-range">{prev.date_range_label}</span>
+                  ) : null}
                 </button>
               </li>
             ))}

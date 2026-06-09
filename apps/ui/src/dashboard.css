@@ -845,6 +845,19 @@ body {
   margin-top: 2px;
 }
 
+.occupant-card__previous-link {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+}
+
+.occupant-card__date-range {
+  color: var(--muted);
+  font-size: calc(var(--text-scale, 1) * 0.72rem);
+  font-variant-numeric: tabular-nums;
+}
+
 .occupant-card__phones {
   color: var(--muted);
   font-family: var(--mono);
