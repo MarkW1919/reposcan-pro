@@ -38,6 +38,14 @@ class Occupant(BaseModel):
     name: str = Field(..., min_length=1)
     phones: list[str] = Field(default_factory=list, description='e.g. "405-555-1234 (Mobile)"')
     associated_people: list[str] = Field(default_factory=list, description='e.g. "Jane Doe (Spouse)"')
+    is_current: bool = Field(
+        default=False,
+        description="True when the searched address is in this person's current addresses (current resident) vs historic only.",
+    )
+    previous_addresses: list[str] = Field(
+        default_factory=list,
+        description="This person's own prior addresses (their historic_addresses).",
+    )
 
 
 class OccupantIntelligenceReport(BaseModel):

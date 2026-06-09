@@ -576,6 +576,8 @@ export interface Occupant {
   name: string;
   phones: string[];
   associated_people: string[];
+  is_current: boolean;
+  previous_addresses: string[];
 }
 
 export interface OccupantIntelligenceReport {

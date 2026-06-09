@@ -6739,7 +6739,6 @@ function ConsoleScreen(props: {
             source: occ?.source ?? null,
             highConfidence: occ?.high_confidence ?? [],
             otherPossible: occ?.other_possible ?? [],
-            previousAddresses: occ?.previous_addresses ?? [],
             fromCache: occ?.from_cache ?? false,
             cacheAgeDays: occ?.cache_age_days ?? null,
           }}

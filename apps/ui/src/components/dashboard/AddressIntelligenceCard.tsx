@@ -21,6 +21,8 @@ interface OccupantView {
   name: string;
   phones: string[];
   associated_people: string[];
+  is_current: boolean;
+  previous_addresses: string[];
 }
 
 interface OccupantData {
@@ -28,7 +30,6 @@ interface OccupantData {
   source: string | null;
   highConfidence: OccupantView[];
   otherPossible: OccupantView[];
-  previousAddresses: string[];
   fromCache: boolean;
   cacheAgeDays: number | null;
 }
@@ -38,11 +39,23 @@ function phoneHref(phone: string): string | undefined {
   return digits.length >= 10 ? `tel:${digits}` : undefined;
 }
 
-function OccupantRow(props: { occupant: OccupantView }): ReactElement {
+function OccupantRow(props: {
+  occupant: OccupantView;
+  onInvestigatePreviousAddress?: (address: string) => void;
+}): ReactElement {
   const { occupant } = props;
   return (
-    <li className="occupant-card__row">
-      <strong className="occupant-card__name">{occupant.name}</strong>
+    <li className={`occupant-card__row ${occupant.is_current ? "occupant-card__row--current" : ""}`.trim()}>
+      <div className="occupant-card__name-row">
+        <strong className="occupant-card__name">{occupant.name}</strong>
+        <span
+          className={`occupant-card__residency ${
+            occupant.is_current ? "occupant-card__residency--current" : "occupant-card__residency--former"
+          }`}
+        >
+          {occupant.is_current ? "Current resident" : "Former / associated"}
+        </span>
+      </div>
       {occupant.phones.length > 0 ? (
         <span className="occupant-card__phones">
           {occupant.phones.map((phone, i) => {
@@ -63,17 +76,46 @@ function OccupantRow(props: { occupant: OccupantView }): ReactElement {
         </span>
       ) : null}
       {occupant.associated_people.length > 0 ? (
-        <span className="occupant-card__associated">{occupant.associated_people.join(", ")}</span>
+        <span className="occupant-card__associated">
+          <span className="occupant-card__field-label">Relatives:</span> {occupant.associated_people.join(", ")}
+        </span>
+      ) : null}
+      {occupant.previous_addresses.length > 0 ? (
+        <div className="occupant-card__person-previous">
+          <span className="occupant-card__field-label">Prior addresses:</span>
+          <ul className="occupant-card__previous-list">
+            {occupant.previous_addresses.map((address) => (
+              <li key={address}>
+                <button
+                  type="button"
+                  className="occupant-card__previous-link"
+                  title="Investigate on map"
+                  aria-label={`Investigate ${address} on the map`}
+                  onClick={() => props.onInvestigatePreviousAddress?.(address)}
+                >
+                  {address}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : null}
     </li>
   );
 }
 
-function OccupantList(props: { people: OccupantView[] }): ReactElement {
+function OccupantList(props: {
+  people: OccupantView[];
+  onInvestigatePreviousAddress?: (address: string) => void;
+}): ReactElement {
   return (
     <ul className="occupant-card__list">
       {props.people.map((occupant, index) => (
-        <OccupantRow key={`${occupant.name}-${index}`} occupant={occupant} />
+        <OccupantRow
+          key={`${occupant.name}-${index}`}
+          occupant={occupant}
+          onInvestigatePreviousAddress={props.onInvestigatePreviousAddress}
+        />
       ))}
     </ul>
   );
@@ -92,6 +134,7 @@ function OccupantSection(props: {
     return null;
   }
 
+  const currentCount = data.highConfidence.filter((p) => p.is_current).length;
   const hasPeople = data.highConfidence.length > 0 || data.otherPossible.length > 0;
 
   return (
@@ -108,7 +151,7 @@ function OccupantSection(props: {
             tone="amber"
           />
         ) : data.source && hasPeople ? (
-          <StatusPill label={data.source} tone="cyan" />
+          <StatusPill label={currentCount > 0 ? `${currentCount} current` : data.source} tone={currentCount > 0 ? "green" : "cyan"} />
         ) : null}
       </div>
 
@@ -124,36 +167,17 @@ function OccupantSection(props: {
         <p className="occupant-card__status">No occupant records found for this address.</p>
       ) : (
         <>
-          {data.highConfidence.length > 0 ? <OccupantList people={data.highConfidence} /> : null}
+          {data.highConfidence.length > 0 ? (
+            <OccupantList people={data.highConfidence} onInvestigatePreviousAddress={props.onInvestigatePreviousAddress} />
+          ) : null}
           {data.otherPossible.length > 0 ? (
             <>
               <span className="occupant-card__sublabel">Other possible matches</span>
-              <OccupantList people={data.otherPossible} />
+              <OccupantList people={data.otherPossible} onInvestigatePreviousAddress={props.onInvestigatePreviousAddress} />
             </>
           ) : null}
         </>
       )}
-
-      {data.previousAddresses.length > 0 ? (
-        <div className="occupant-card__previous">
-          <span className="occupant-card__previous-label">Previous addresses</span>
-          <ul className="occupant-card__previous-list">
-            {data.previousAddresses.map((address) => (
-              <li key={address}>
-                <button
-                  type="button"
-                  className="occupant-card__previous-link"
-                  title="Investigate on map"
-                  aria-label={`Investigate ${address} on the map`}
-                  onClick={() => props.onInvestigatePreviousAddress?.(address)}
-                >
-                  {address}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
     </div>
   );
 }

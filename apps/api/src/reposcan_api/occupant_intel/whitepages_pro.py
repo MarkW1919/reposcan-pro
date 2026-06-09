@@ -22,6 +22,7 @@ Compliance:
 from __future__ import annotations
 
 import json
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -46,6 +47,7 @@ _MAX_OTHER_POSSIBLE = 6
 _MAX_PHONES = 4
 _MAX_ASSOCIATED = 6
 _MAX_PREVIOUS = 12
+_MAX_PREVIOUS_PER_PERSON = 6
 # A match is "high confidence" if its score is within this fraction of the best
 # match's score (robust to the absolute score scale, which varies by plan).
 _HIGH_CONFIDENCE_FRACTION = 0.7
@@ -213,7 +215,11 @@ class WhitePagesProProvider(SkipTraceProvider):
                 ),
             )
 
-        high_confidence, other_possible, previous = _parse_person_results(response.payload)
+        high_confidence, other_possible, previous = _parse_person_results(
+            response.payload,
+            query_street=components.address_line_1 or "",
+            query_zip=_zip5(components.postal_code),
+        )
         return SkipTraceResult(
             source=self.name,
             ok=True,
@@ -248,13 +254,16 @@ class _ScoredPerson:
     historic: list[str]
 
 
-def _parse_person_results(payload: dict) -> tuple[list[Occupant], list[Occupant], list[str]]:
+def _parse_person_results(
+    payload: dict, *, query_street: str = "", query_zip: str = ""
+) -> tuple[list[Occupant], list[Occupant], list[str]]:
     """Map a /v2/person response to (high_confidence, other_possible, previous)."""
+    query_number = _first_number(query_street)
     people: list[_ScoredPerson] = []
     for result in _as_list(payload.get("results")):
         if not isinstance(result, dict):
             continue
-        person = _parse_person(result)
+        person = _parse_person(result, query_number=query_number, query_zip=query_zip)
         if person is not None:
             people.append(person)
 
@@ -267,30 +276,35 @@ def _parse_person_results(payload: dict) -> tuple[list[Occupant], list[Occupant]
     if best <= 0:
         # No usable scores (all zero/unscored) — don't over-promote anyone to
         # "high confidence"; present them all as possible matches.
-        return [], [p.occupant for p in people[:_MAX_OTHER_POSSIBLE]], []
+        other = sorted(people, key=lambda p: p.occupant.is_current, reverse=True)
+        return [], [p.occupant for p in other[:_MAX_OTHER_POSSIBLE]], _aggregate_previous(people)
     cutoff = best * _HIGH_CONFIDENCE_FRACTION
     high = [p for p in people if p.score >= cutoff][:_MAX_HIGH_CONFIDENCE]
     high_ids = {id(p) for p in high}
     other = [p for p in people if id(p) not in high_ids][:_MAX_OTHER_POSSIBLE]
 
-    # Previous addresses: aggregate the strong matches' history (deduped).
+    # Current residents float to the top of the strong-match list.
+    high.sort(key=lambda p: (p.occupant.is_current, p.score), reverse=True)
+
+    return [p.occupant for p in high], [p.occupant for p in other], _aggregate_previous(high)
+
+
+def _aggregate_previous(people: list["_ScoredPerson"]) -> list[str]:
+    """Deduped roll-up of the given people's prior addresses (report-level)."""
     previous: list[str] = []
     seen: set[str] = set()
-    for person in high:
+    for person in people:
         for address in person.historic:
             key = address.lower()
             if address and key not in seen:
                 seen.add(key)
                 previous.append(address)
             if len(previous) >= _MAX_PREVIOUS:
-                break
-        if len(previous) >= _MAX_PREVIOUS:
-            break
-
-    return [p.occupant for p in high], [p.occupant for p in other], previous
+                return previous
+    return previous
 
 
-def _parse_person(result: dict) -> Optional[_ScoredPerson]:
+def _parse_person(result: dict, *, query_number: str = "", query_zip: str = "") -> Optional[_ScoredPerson]:
     name = str(result.get("name") or "").strip()
     if not name:
         return None
@@ -313,16 +327,48 @@ def _parse_person(result: dict) -> Optional[_ScoredPerson]:
 
     historic = [a for a in (_format_address(addr) for addr in _as_list(result.get("historic_addresses"))) if a]
 
+    # Current resident = the searched address is among this person's CURRENT
+    # addresses (matched by house number + ZIP), not just their history.
+    is_current = any(
+        _address_matches(addr, query_number, query_zip)
+        for addr in _as_list(result.get("current_addresses"))
+    )
+
     try:
         score = float(result.get("match_score") or 0)
     except (TypeError, ValueError):
         score = 0.0
 
     return _ScoredPerson(
-        occupant=Occupant(name=name, phones=phones, associated_people=associated),
+        occupant=Occupant(
+            name=name,
+            phones=phones,
+            associated_people=associated,
+            is_current=is_current,
+            previous_addresses=historic[:_MAX_PREVIOUS_PER_PERSON],
+        ),
         score=score,
         historic=historic,
     )
+
+
+def _first_number(value: str) -> str:
+    """Leading house number from an address/street string ('107 N 5th St' -> '107')."""
+    match = re.search(r"\d+", value or "")
+    return match.group(0) if match else ""
+
+
+def _address_matches(addr: object, query_number: str, query_zip: str) -> bool:
+    """Whether an address dict is the searched address (house number + ZIP)."""
+    if not isinstance(addr, dict) or not query_number:
+        return False
+    line1 = str(addr.get("line1") or addr.get("full_address") or "")
+    if _first_number(line1) != query_number:
+        return False
+    addr_zip = str(addr.get("zip") or "")[:5]
+    if query_zip and addr_zip:
+        return query_zip == addr_zip
+    return True
 
 
 def _format_phone(phone: object) -> str:

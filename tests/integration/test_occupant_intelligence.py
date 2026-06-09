@@ -163,9 +163,13 @@ def test_provider_parses_residents_phones_and_previous():
     assert occupant.name == "John Q. Doe"
     assert occupant.phones == ["405-555-1234 (Mobile)"]
     assert occupant.associated_people == ["Jane Doe"]
+    # Searched address is in John's current_addresses -> current resident, and
+    # his own prior addresses ride on the occupant (not a global pile).
+    assert occupant.is_current is True
+    assert occupant.previous_addresses == ["456 Oak Ave, Tulsa, OK 74103"]
     assert len(result.other_possible) == 1
     assert result.other_possible[0].name == "Bob Roe"
-    # Previous addresses come from the strong matches' historic_addresses.
+    # Report-level previous still aggregates the strong matches' history.
     assert result.previous_addresses == ["456 Oak Ave, Tulsa, OK 74103"]
     # Request used the documented address params (not postal_code) + history flag.
     assert transport.calls[0]["zipcode"] == "73102"
@@ -429,3 +433,44 @@ def test_cached_payload_tolerates_extra_fields():
     report = svc.lookup("123 Main St, Oklahoma City, OK 73102")
     assert report.from_cache is True
     assert report.high_confidence[0].name == "John Q. Doe"  # extra field ignored, not dropped
+
+
+# --- Current vs former resident classification ----------------------------
+
+
+def test_current_vs_former_resident_classification_and_sort():
+    # Two people: one currently at the searched address, one only historically.
+    payload = {
+        "results": [
+            {
+                "id": "p1",
+                "name": "Former Resident",
+                "phones": [],
+                "relatives": [],
+                "current_addresses": [{"line1": "999 Other Rd", "zip": "73102"}],
+                "historic_addresses": [{"full_address": "123 Main St, Oklahoma City, OK 73102", "line1": "123 Main St", "zip": "73102"}],
+                "match_score": 90,
+            },
+            {
+                "id": "p2",
+                "name": "Current Resident",
+                "phones": [],
+                "relatives": [],
+                "current_addresses": [{"line1": "123 Main St", "zip": "73102"}],
+                "historic_addresses": [],
+                "match_score": 88,
+            },
+        ],
+        "metadata": {"result_count": 2},
+    }
+    provider = WhitePagesProProvider("k", transport=QueueTransport(HttpJsonResponse(status=200, payload=payload)))
+    result = provider.lookup(_components())
+    assert result.ok is True
+    names = [o.name for o in result.high_confidence]
+    # Current resident floats to the top even though their score is lower.
+    assert names[0] == "Current Resident"
+    by_name = {o.name: o for o in result.high_confidence}
+    assert by_name["Current Resident"].is_current is True
+    assert by_name["Former Resident"].is_current is False
+    # The former resident's own prior address is attached to them.
+    assert by_name["Former Resident"].previous_addresses == ["123 Main St, Oklahoma City, OK 73102"]
