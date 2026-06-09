@@ -80,9 +80,11 @@ class OccupantLookupService:
 
         # Free-only mode (or paid provider not configured): no occupant call.
         if self._mode in FREE_MODES or self._provider is None:
+            # A paid mode (whitepages/enformion/merge) with no provider wired =
+            # unconfigured; an intentional free mode = disabled.
             status = (
                 OccupantLookupStatus.unconfigured
-                if self._mode == WHITEPAGES_MODE and self._provider is None
+                if self._mode not in FREE_MODES and self._provider is None
                 else OccupantLookupStatus.disabled
             )
             if status == OccupantLookupStatus.unconfigured:

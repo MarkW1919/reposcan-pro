@@ -87,6 +87,8 @@ from .address_intel import (
 )
 from .occupant_intel import (
     AddressComponents,
+    EnformionProvider,
+    MergeProvider,
     OccupantLookupService,
     SqliteOccupantCache,
     WHITEPAGES_MODE,
@@ -1160,18 +1162,35 @@ def create_app(
     # (30-day) for repeat lookups + offline reuse.
     if occupant_intel_service is None:
         occupant_provider_name = _resolve_occupant_provider_name()
-        whitepages_api_key = os.environ.get("WHITEPAGES_API_KEY", "").strip()
-        whitepages_provider = (
-            WhitePagesProProvider(whitepages_api_key)
-            if occupant_provider_name == WHITEPAGES_MODE and whitepages_api_key
-            else None
-        )
+        # Build the configured occupant provider. "merge" = WhitePages breadth +
+        # Enformion date ranges; it degrades gracefully to whichever single
+        # provider is actually configured (so a missing Enformion name just means
+        # WhitePages-only, not a broken app).
+        wp_key = os.environ.get("WHITEPAGES_API_KEY", "").strip()
+        en_name = os.environ.get("ENFORMION_AP_NAME", "").strip()
+        en_password = os.environ.get("ENFORMION_AP_PASSWORD", "").strip()
+        whitepages_provider = WhitePagesProProvider(wp_key) if wp_key else None
+        enformion_provider = EnformionProvider(en_name, en_password) if (en_name and en_password) else None
+
+        if occupant_provider_name == "enformion":
+            occupant_provider = enformion_provider
+        elif occupant_provider_name == "merge":
+            occupant_provider = (
+                MergeProvider(whitepages_provider, enformion_provider)
+                if (whitepages_provider and enformion_provider)
+                else (whitepages_provider or enformion_provider)
+            )
+        elif occupant_provider_name == WHITEPAGES_MODE:
+            occupant_provider = whitepages_provider
+        else:  # census / free
+            occupant_provider = None
+
         occupant_cache_path = os.environ.get("OCCUPANT_CACHE_PATH", "var/occupant_cache.sqlite").strip()
         occupant_cache = SqliteOccupantCache(occupant_cache_path)
         occupant_cache.purge_expired()  # drop stale entries so the cache file can't grow unbounded
         occupant_intel_service = OccupantLookupService(
             address_intel_service,
-            provider=whitepages_provider,
+            provider=occupant_provider,
             provider_name=occupant_provider_name,
             cache=occupant_cache,
         )
