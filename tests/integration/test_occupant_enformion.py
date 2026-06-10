@@ -15,26 +15,26 @@ from reposcan_api.occupant_intel import (
 ENFORMION_RESPONSE = {
     "persons": [
         {
-            "Name": {"FirstName": "John", "MiddleName": "Q", "LastName": "Doe", "Suffix": ""},
-            "Dob": "1/1983",
-            "Age": 42,
-            "PhoneNumbers": [{"PhoneNumber": "(405) 555-1234", "PhoneType": "Mobile"}],
-            "RelativesSummary": [{"FirstName": "Jane", "LastName": "Doe"}],
-            "Addresses": [
+            "fullName": "John Q Doe",
+            "name": {"firstName": "John", "middleName": "Q", "lastName": "Doe", "suffix": ""},
+            "age": 42,
+            "phoneNumbers": [{"phoneNumber": "(405) 555-1234", "phoneType": "Mobile"}],
+            "relativesSummary": [{"firstName": "Jane", "lastName": "Doe"}],
+            "addresses": [
                 {
-                    "HouseNumber": "123", "StreetName": "Main", "StreetType": "St",
-                    "City": "Oklahoma City", "State": "OK", "Zip": "73102",
-                    "FullAddress": "123 Main St; Oklahoma City, OK 73102",
-                    "FirstReportedDate": "5/5/2019", "LastReportedDate": "",
+                    "houseNumber": "123", "streetName": "Main", "streetType": "St",
+                    "city": "Oklahoma City", "state": "OK", "zip": "73102",
+                    "fullAddress": "123 Main St; Oklahoma City, OK 73102",
+                    "firstReportedDate": "5/5/2019", "lastReportedDate": "",
                 },
                 {
-                    "HouseNumber": "456", "StreetName": "Oak", "StreetType": "Ave",
-                    "City": "Tulsa", "State": "OK", "Zip": "74103",
-                    "FullAddress": "456 Oak Ave; Tulsa, OK 74103",
-                    "FirstReportedDate": "2/1/2012", "LastReportedDate": "4/1/2019",
+                    "houseNumber": "456", "streetName": "Oak", "streetType": "Ave",
+                    "city": "Tulsa", "state": "OK", "zip": "74103",
+                    "fullAddress": "456 Oak Ave; Tulsa, OK 74103",
+                    "firstReportedDate": "2/1/2012", "lastReportedDate": "4/1/2019",
                 },
             ],
-            "Score": 900,
+            "score": 900,
         }
     ],
     "pagination": {},

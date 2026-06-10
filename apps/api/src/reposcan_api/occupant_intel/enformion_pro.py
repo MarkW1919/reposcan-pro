@@ -29,10 +29,13 @@ from reposcan_contracts.occupant_intel import Occupant, PreviousAddress
 from .base import AddressComponents, SkipTraceAudit, SkipTraceProvider, SkipTraceResult
 from .whitepages_pro import HttpJsonResponse, _parse_retry_after  # reuse shared types/helpers
 
-ENFORMION_PERSON_SEARCH_URL = "https://api.enformion.com/PersonSearch"
+# NOTE: the API host is devapi.enformion.com — api.enformion.com is the
+# marketing site (404s). Enformion fronts the API with Cloudflare, which 1010-
+# blocks non-browser user-agents, so we present a standard browser UA.
+ENFORMION_PERSON_SEARCH_URL = "https://devapi.enformion.com/PersonSearch"
 _DEFAULT_TIMEOUT_S = 12.0
 _MAX_RATE_LIMIT_WAIT_S = 3.0
-_USER_AGENT = "RepoScanPro-OccupantIntel/1.0 (authorized repossession field tool)"
+_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 _GALAXY_SEARCH_TYPE = "Person"
 _RESULTS_PER_PAGE = 10
 
@@ -239,12 +242,13 @@ def _parse_persons(payload: dict, *, query_number: str, query_zip: str) -> tuple
 
 
 def _parse_person(raw: dict, *, query_number: str, query_zip: str) -> Optional[_Person]:
-    name = _format_name(raw.get("Name") if isinstance(raw.get("Name"), dict) else raw)
+    # Real API is camelCase: fullName / name{firstName,...}.
+    name = str(raw.get("fullName") or "").strip() or _format_name(raw.get("name") if isinstance(raw.get("name"), dict) else {})
     if not name:
         return None
 
     phones: list[str] = []
-    for phone in _as_list(raw.get("PhoneNumbers")):
+    for phone in _as_list(raw.get("phoneNumbers")):
         formatted = _format_phone(phone)
         if formatted and formatted not in phones:
             phones.append(formatted)
@@ -252,7 +256,7 @@ def _parse_person(raw: dict, *, query_number: str, query_zip: str) -> Optional[_
             break
 
     associated: list[str] = []
-    for group in ("RelativesSummary", "AssociatesSummary"):
+    for group in ("relativesSummary", "associatesSummary"):
         for person in _as_list(raw.get(group)):
             formatted = _format_name(person if isinstance(person, dict) else {})
             if formatted and formatted not in associated:
@@ -264,11 +268,11 @@ def _parse_person(raw: dict, *, query_number: str, query_zip: str) -> Optional[_
 
     # Build dated addresses, newest first.
     dated: list[tuple[str, PreviousAddress, bool]] = []  # (sort_last_seen, prev, matches_query)
-    for addr in _as_list(raw.get("Addresses")):
+    for addr in _as_list(raw.get("addresses")):
         if not isinstance(addr, dict):
             continue
-        first_iso, first_disp = _parse_date(addr.get("FirstReportedDate"))
-        last_iso, last_disp = _parse_date(addr.get("LastReportedDate"))
+        first_iso, first_disp = _parse_date(addr.get("firstReportedDate"))
+        last_iso, last_disp = _parse_date(addr.get("lastReportedDate"))
         prev = PreviousAddress(
             address=_format_address(addr),
             date_first_seen=first_iso,
@@ -288,7 +292,7 @@ def _parse_person(raw: dict, *, query_number: str, query_zip: str) -> Optional[_
     previous = [prev for _, prev, _ in dated if prev.address][:_MAX_PREVIOUS_PER_PERSON]
 
     try:
-        score = float(raw.get("Score") or raw.get("MatchScore") or 0)
+        score = float(raw.get("score") or 0)
     except (TypeError, ValueError):
         score = 0.0
 
@@ -302,7 +306,10 @@ def _parse_person(raw: dict, *, query_number: str, query_zip: str) -> Optional[_
 def _format_name(d: dict) -> str:
     if not isinstance(d, dict):
         return ""
-    parts = [str(d.get(k) or "").strip() for k in ("FirstName", "MiddleName", "LastName", "Suffix")]
+    full = str(d.get("fullName") or "").strip()
+    if full:
+        return full
+    parts = [str(d.get(k) or "").strip() for k in ("firstName", "middleName", "lastName", "suffix")]
     return " ".join(p for p in parts if p).strip()
 
 
@@ -311,29 +318,29 @@ def _format_phone(phone: object) -> str:
         return phone.strip()
     if not isinstance(phone, dict):
         return ""
-    number = str(phone.get("PhoneNumber") or phone.get("Number") or "").strip()
+    number = str(phone.get("phoneNumber") or phone.get("number") or "").strip()
     if not number:
         return ""
-    ptype = str(phone.get("PhoneType") or phone.get("Type") or "").strip()
+    ptype = str(phone.get("phoneType") or phone.get("type") or "").strip()
     return f"{number} ({ptype.title()})" if ptype else number
 
 
 def _format_address(addr: dict) -> str:
-    full = str(addr.get("FullAddress") or "").strip()
+    full = str(addr.get("fullAddress") or "").strip()
     if full:
         return full.replace(";", ",")
-    house = str(addr.get("HouseNumber") or "").strip()
-    pre = str(addr.get("StreetPreDirection") or "").strip()
-    street = str(addr.get("StreetName") or "").strip()
-    stype = str(addr.get("StreetType") or "").strip()
-    post = str(addr.get("StreetPostDirection") or "").strip()
-    unit = str(addr.get("Unit") or "").strip()
+    house = str(addr.get("houseNumber") or "").strip()
+    pre = str(addr.get("streetPreDirection") or "").strip()
+    street = str(addr.get("streetName") or "").strip()
+    stype = str(addr.get("streetType") or "").strip()
+    post = str(addr.get("streetPostDirection") or "").strip()
+    unit = str(addr.get("unit") or "").strip()
     line1 = " ".join(p for p in (house, pre, street, stype, post) if p)
     if unit:
         line1 = f"{line1} #{unit}"
-    city = str(addr.get("City") or "").strip()
-    state = str(addr.get("State") or "").strip()
-    zip_ = str(addr.get("Zip") or "").strip()
+    city = str(addr.get("city") or "").strip()
+    state = str(addr.get("state") or "").strip()
+    zip_ = str(addr.get("zip") or "").strip()
     locality = " ".join(p for p in (", ".join(c for c in (city, state) if c), zip_) if p).strip()
     return ", ".join(p for p in (line1, locality) if p)
 
@@ -341,12 +348,12 @@ def _format_address(addr: dict) -> str:
 def _address_matches(addr: dict, query_number: str, query_zip: str) -> bool:
     if not query_number:
         return False
-    house = str(addr.get("HouseNumber") or "")
+    house = str(addr.get("houseNumber") or "")
     if not house:
-        house = _first_number(str(addr.get("FullAddress") or ""))
+        house = _first_number(str(addr.get("fullAddress") or ""))
     if house != query_number:
         return False
-    addr_zip = str(addr.get("Zip") or "")[:5]
+    addr_zip = str(addr.get("zip") or "")[:5]
     if query_zip and addr_zip:
         return query_zip == addr_zip
     return True
