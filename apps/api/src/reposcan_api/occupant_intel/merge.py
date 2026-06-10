@@ -121,7 +121,13 @@ def _apply_dates(pa: PreviousAddress, index: dict[tuple[str, str], PreviousAddre
 
 
 def _norm_name(name: str) -> str:
-    return re.sub(r"[^a-z0-9 ]", "", (name or "").lower()).strip()
+    # Match across providers on first + last token only — middle name/initial
+    # often differs between sources. Both providers queried the same address, so
+    # a first+last collision is acceptable for phone/relative fill.
+    tokens = re.sub(r"[^a-z0-9 ]", "", (name or "").lower()).split()
+    if len(tokens) >= 2:
+        return f"{tokens[0]} {tokens[-1]}"
+    return " ".join(tokens)
 
 
 def _addr_key(address: str) -> tuple[str, str]:
