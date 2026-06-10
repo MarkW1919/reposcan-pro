@@ -166,3 +166,41 @@ def test_merge_degrades_to_primary_when_dates_provider_fails():
     assert merged.ok is True
     assert merged.high_confidence[0].name == "John Q. Doe"
     assert merged.source == "WhitePages Pro"  # unchanged; no enrichment
+
+
+def test_merge_enformion_primary_fills_phones_and_adds_wp_only_people():
+    # Enformion: John, current, dated addresses, but NO phones.
+    en = SkipTraceResult(
+        source="Enformion",
+        ok=True,
+        high_confidence=[
+            Occupant(
+                name="John Q Doe",
+                is_current=True,
+                phones=[],
+                previous_addresses=[
+                    PreviousAddress(address="123 Main St, Oklahoma City, OK 73102", date_last_seen="2026-01-01", date_range_label="Jan 2020 – Present"),
+                ],
+            )
+        ],
+        audit=_audit(True),
+    )
+    # WhitePages: John (with phones) + Bob (Enformion didn't return him).
+    wp = SkipTraceResult(
+        source="WhitePages Pro",
+        ok=True,
+        high_confidence=[
+            Occupant(name="John Q. Doe", is_current=True, phones=["(405) 555-1234 (Mobile)"]),
+            Occupant(name="Bob Roe", is_current=False, phones=["(405) 555-9999 (Landline)"]),
+        ],
+        audit=_audit(True),
+    )
+    merged = MergeProvider(_StubProvider("WhitePages Pro", wp), _StubProvider("Enformion", en)).lookup(_components())
+    names = [o.name for o in (*merged.high_confidence, *merged.other_possible)]
+    assert "John Q Doe" in names  # Enformion person is the base
+    assert "Bob Roe" in names      # WhitePages-only person folded in
+    john = next(o for o in merged.high_confidence if o.name == "John Q Doe")
+    assert john.phones == ["(405) 555-1234 (Mobile)"]  # phone filled from WhitePages
+    assert john.previous_addresses[0].date_range_label == "Jan 2020 – Present"  # date kept from Enformion
+    assert john.is_current is True
+    assert names[0] == "John Q Doe"  # current resident first
