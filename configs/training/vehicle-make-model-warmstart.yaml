@@ -1,0 +1,24 @@
+profile_name: vehicle-make-model-warmstart
+task: vehicle_make_model_classification
+framework: torchvision
+output_root: runtime/training
+allow_pending_review: true
+dataset_adapter: stanford_cars
+base_model: efficientnet_b0
+image_size: 224
+epochs: 30
+batch_size: 32
+workers: 4
+patience: 8
+precision: fp32
+device: auto
+augmentation:
+  motion_blur: false
+  defocus_blur: false
+  brightness_contrast: true
+  noise: false
+  compression_artifacts: true
+  perspective_distortion: false
+  synthetic_support_ratio: 0.0
+  notes:
+    - Use Stanford Cars as a make/model warm start only, not as a roadside end-state benchmark.

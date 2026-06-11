@@ -1,0 +1,31 @@
+split_name: example-capture-session-plan
+dataset_name: example-oklahoma-capture-intake
+dataset_version: 2026-03-23
+source_manifest_path: configs/datasets/example-capture-intake.yaml
+strategy: capture_session_grouping
+train_ratio: 0.7
+validation_ratio: 0.2
+holdout_ratio: 0.1
+field_eval_tags:
+  - long_range
+  - low_light
+assignments:
+  - asset_id: cap_0001
+    capture_session_id: session_20260322_ok_night
+    split: field_eval
+    relative_path: session_20260322_ok_night/frame_0001.jpg
+    tags:
+      - long_range
+      - low_light
+  - asset_id: cap_0002
+    capture_session_id: session_20260322_ok_night
+    split: field_eval
+    relative_path: session_20260322_ok_night/frame_0002.jpg
+    tags:
+      - low_light
+  - asset_id: cap_0003
+    capture_session_id: session_20260322_ok_day
+    split: train
+    relative_path: session_20260322_ok_day/frame_0100.jpg
+    tags:
+      - daytime

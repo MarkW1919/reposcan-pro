@@ -1,0 +1,37 @@
+# Field-eval holdout manifest — Night scenario, version 1
+# Validated by: reposcan_contracts.field_eval.FieldEvalHoldoutManifest
+#
+# Status: pending — no field data captured yet.
+# Populate assets as night-condition footage is collected and reviewed.
+# When asset count reaches target_asset_count and review is complete,
+# update status to "ready" and run generate_field_eval_report.py.
+#
+# Acceptance thresholds below are initial targets; revise after first eval run.
+
+holdout_name: night-v1
+scenario: night
+description: >
+  Night-condition regression holdout.  Covers dark scenes with ambient
+  streetlight, vehicle headlight glare, and complete darkness with IR
+  assistance.  Primary success criterion is OCR exact-match rate because
+  plate reads in low light are the hardest per-physics constraint.
+holdout_root: data/field-eval/night-v1/
+created_at_utc: "2026-03-30T00:00:00Z"
+status: pending
+target_asset_count: 50
+
+assets: []
+
+acceptance:
+  min_exact_match_rate: 0.70
+  min_character_accuracy: 0.85
+  max_average_latency_ms: 120.0
+  max_p95_latency_ms: 200.0
+  min_detection_rate: 0.85
+  min_plate_detection_rate: 0.75
+
+notes: >
+  Exact-match threshold intentionally lower than daylight (0.85) to account for
+  physics constraints: night blur, sensor noise, compression artefacts.
+  Character accuracy threshold preserved at 0.85 to ensure partial reads are
+  still useful for dispatcher workflows.

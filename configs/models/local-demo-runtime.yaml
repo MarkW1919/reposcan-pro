@@ -1,0 +1,67 @@
+# Local tracked demo runtime configuration.
+# Validated by: reposcan_contracts.config.model.ModelStackConfig
+#
+# This stack is self-contained inside git and is intended for no-hardware demos.
+# It uses builtin artifact manifests rather than exported ONNX/TensorRT weights.
+
+stack_name: local-demo-runtime
+description: "Tracked builtin runtime stack for no-hardware demo and integration validation"
+path_base: repo_root
+
+vehicle_detector:
+  name: builtin-vehicle-detector
+  backend: builtin
+  artifact_path: configs/models/demo-runtime/vehicle-detector.json
+  input_width: 640
+  input_height: 640
+  class_labels: [car]
+  confidence_threshold: 0.4
+  nms_iou_threshold: 0.5
+
+plate_detector:
+  name: builtin-plate-detector
+  backend: builtin
+  artifact_path: configs/models/demo-runtime/plate-detector.json
+  input_width: 320
+  input_height: 160
+  class_labels: [plate]
+  confidence_threshold: 0.5
+  nms_iou_threshold: 0.45
+
+ocr:
+  name: builtin-ocr
+  backend: builtin
+  artifact_path: configs/models/demo-runtime/ocr.json
+  input_width: 144
+  input_height: 48
+  charset: "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ "
+  beam_width: 1
+  confidence_threshold: 0.6
+
+classifier:
+  name: builtin-vehicle-attributes
+  backend: builtin
+  artifact_path: configs/models/demo-runtime/classifier.json
+  input_width: 224
+  input_height: 224
+  color_labels:
+    - white
+    - black
+    - silver
+    - gray
+    - blue
+    - red
+    - green
+    - yellow
+    - orange
+    - brown
+    - other
+  make_labels:
+    - toyota
+    - honda
+    - ford
+    - chevrolet
+    - bmw
+    - mercedes
+    - other
+  enabled: true

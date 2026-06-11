@@ -1,0 +1,70 @@
+# End-to-end ALPR stack: real pretrained plate DETECTION + real pretrained
+# plate OCR on the existing ONNX runtime.
+# Validated by: reposcan_contracts.config.model.ModelStackConfig
+#
+# WHY THIS STACK EXISTS
+# This is the first stack where BOTH plate stages are real models — plate
+# detection (yolo-v9-t end2end) feeds plate OCR (fast-plate-ocr CCT). It proves
+# a genuine detect->read pipeline runs through the config-driven runtime, fully
+# offline, and is the artifact set that TensorRT-accelerates on the Orin.
+#
+# MODEL PROVENANCE
+#   plate detector : yolo-v9-t-384-license-plate-end2end (open-image-models)
+#   plate OCR      : cct-xs-v2-global-model (fast-plate-ocr), Latin alphabet,
+#                    64x128 rgb, multi-head decode over 10 plate slots
+#   both           : redistributable pretrained, INTERIM until domain models are
+#                    trained on field long-range / low-light / IR data
+#
+# SCOPE / HONESTY
+# vehicle_detector is a FIXTURE: this stack runs plate detection on the FULL
+# frame (plate_detection_strategy: full_frame in the pipeline), so it does not
+# depend on vehicle detection. It is a real plate-read pipeline, NOT a full
+# field release — accuracy on long-range/low-light US plates is unproven until
+# field validation (docs/FIELD_EVAL_QUALIFICATION.md). The global OCR model is
+# not US/OK-tuned; our own 97% PaddleOCR model can supersede it once exported.
+#
+# ARTIFACT PATHS
+# Plate models live under runtime/ (gitignored, no_model_weight_commits) and are
+# cataloged in docs/MODEL_INVENTORY.md. The OCR onnx has a sibling
+# cct_xs_v2_global_plate_config.yaml that fast-plate-ocr requires.
+
+stack_name: local-alpr-end2end
+description: "Real end-to-end ALPR: yolo-v9-t plate detector + fast-plate-ocr reader on fixture vehicle-detector — real detect->read pipeline, NOT a field release"
+path_base: repo_root
+
+vehicle_detector:
+  name: fixture-vehicle-detector
+  backend: onnx
+  artifact_path: ml/inference/fixtures/onnx-runtime/vehicle-detector.onnx
+  input_width: 640
+  input_height: 640
+  normalization_mean: [0.0, 0.0, 0.0]
+  normalization_std: [1.0, 1.0, 1.0]
+  class_labels: [car]
+  confidence_threshold: 0.4
+  nms_iou_threshold: 0.5
+
+plate_detector:
+  name: yolo-v9-t-plate-end2end
+  backend: onnx
+  artifact_path: runtime/models/plate-detector/yolo-v9-t-384-license-plates-end2end.onnx
+  input_width: 384
+  input_height: 384
+  normalization_mean: [0.0, 0.0, 0.0]
+  normalization_std: [1.0, 1.0, 1.0]
+  class_labels: [plate]
+  confidence_threshold: 0.5
+  nms_iou_threshold: 0.45
+
+ocr:
+  name: cct-xs-v2-global
+  backend: fast_alpr
+  artifact_path: runtime/models/plate-ocr/cct_xs_v2_global.onnx
+  # input_width/height + charset are documentation only for the fast_alpr
+  # backend: fast-plate-ocr owns preprocessing + decode via its plate_config
+  # sibling (cct_xs_v2_global_plate_config.yaml).
+  input_width: 128
+  input_height: 64
+  charset: "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_"
+  beam_width: 1
+  confidence_threshold: 0.4

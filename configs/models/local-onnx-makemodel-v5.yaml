@@ -1,0 +1,125 @@
+# Classifier-integration stack: real canonical-v5 make/model classifier on
+# fixture detector / plate / OCR.
+# Validated by: reposcan_contracts.config.model.ModelStackConfig
+#
+# WHY THIS STACK EXISTS
+# The runtime previously only had `local-onnx-runtime.yaml`, where every stage
+# is a fixture proving wiring (not accuracy). This stack swaps the classifier
+# slot for the real, trained canonical-v5 make/model model so the make/model
+# component can be loaded and validated through the actual config-driven path
+# (ClassifierModelConfig -> logits + label_metadata -> AttributePredictions).
+#
+# SCOPE / HONESTY
+# The vehicle_detector, plate_detector, and ocr stages are STILL FIXTURES. This
+# stack is NOT a deployable end-to-end field stack and must not be registered as
+# a release: fixture detectors emit placeholder boxes, so end-to-end output is
+# meaningless. Its purpose is classifier-component integration + validation only.
+# When real detector/plate/OCR models are trained, the classifier slot here is
+# already wired and ready to compose into a full stack.
+#
+# MODEL PROVENANCE
+#   run            : vehicle-make-model-canonical-v5_20260519_run1
+#   taxonomy       : 40 classes (canonical-v5, +10 over v4)
+#   best_val_acc   : 0.8964
+#   holdout_acc    : 0.8633  (per-class report: runtime/.../per_class_holdout_report.json)
+#   backbone       : efficientnet_b0, 260px, ImageNet normalize
+#   export         : logits[40] + labels.json (class_records) sidecar
+#
+# ARTIFACT PATHS
+# The classifier artifact + label metadata live under runtime/ (gitignored model
+# weights, per repo policy: no_model_weight_commits). This config references them
+# in place, mirroring how training configs reference runtime outputs. The fixture
+# detector/plate/OCR artifacts are the tracked ones under ml/inference/fixtures.
+
+stack_name: local-onnx-makemodel-v5
+description: "Real canonical-v5 make/model classifier on fixture detector/plate/OCR — classifier-component integration & validation only, NOT a deployable release"
+path_base: repo_root
+
+vehicle_detector:
+  name: fixture-vehicle-detector
+  backend: onnx
+  artifact_path: ml/inference/fixtures/onnx-runtime/vehicle-detector.onnx
+  input_width: 640
+  input_height: 640
+  normalization_mean: [0.0, 0.0, 0.0]
+  normalization_std: [1.0, 1.0, 1.0]
+  class_labels: [car]
+  confidence_threshold: 0.4
+  nms_iou_threshold: 0.5
+
+plate_detector:
+  name: fixture-plate-detector
+  backend: onnx
+  artifact_path: ml/inference/fixtures/onnx-runtime/plate-detector.onnx
+  input_width: 320
+  input_height: 160
+  normalization_mean: [0.0, 0.0, 0.0]
+  normalization_std: [1.0, 1.0, 1.0]
+  class_labels: [plate]
+  confidence_threshold: 0.5
+  nms_iou_threshold: 0.45
+
+ocr:
+  name: fixture-ocr
+  backend: onnx
+  artifact_path: ml/inference/fixtures/onnx-runtime/ocr.onnx
+  input_width: 144
+  input_height: 48
+  charset: "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ "
+  beam_width: 1
+  confidence_threshold: 0.6
+
+classifier:
+  name: canonical-v5-make-model
+  backend: onnx
+  artifact_path: runtime/training/vehicle-make-model-canonical-v5_20260519_run1/exports/model.onnx
+  label_metadata_path: runtime/training/vehicle-make-model-canonical-v5_20260519_run1/exports/labels.json
+  input_width: 260
+  input_height: 260
+  normalization_mean: [0.485, 0.456, 0.406]
+  normalization_std: [0.229, 0.224, 0.225]
+  # make_labels is the fallback when no label metadata is present. This export is
+  # metadata-backed (label_metadata_path above), so the runtime resolves classes
+  # from class_records; the list below is kept in sync for documentation/diffing.
+  make_labels:
+    - cadillac_escalade
+    - chevrolet_equinox
+    - chevrolet_malibu
+    - chevrolet_silverado
+    - chevrolet_suburban
+    - chevrolet_tahoe
+    - dodge_charger
+    - dodge_durango
+    - ford_escape
+    - ford_expedition
+    - ford_explorer
+    - ford_f_series
+    - gmc_sierra
+    - gmc_yukon
+    - honda_accord
+    - honda_civic
+    - honda_cr_v
+    - honda_pilot
+    - hyundai_elantra
+    - hyundai_santa_fe
+    - hyundai_sonata
+    - hyundai_tucson
+    - jeep_grand_cherokee
+    - jeep_wrangler
+    - kia_sorento
+    - kia_sportage
+    - lincoln_navigator
+    - nissan_altima
+    - nissan_rogue
+    - nissan_sentra
+    - ram_pickup
+    - subaru_outback
+    - toyota_4runner
+    - toyota_camry
+    - toyota_corolla
+    - toyota_highlander
+    - toyota_rav4
+    - toyota_tacoma
+    - toyota_tundra
+    - volkswagen_jetta
+  enabled: true

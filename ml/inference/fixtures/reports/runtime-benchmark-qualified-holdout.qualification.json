@@ -1,0 +1,46 @@
+{
+  "dataset_name": "runtime-benchmark-qualified-holdout",
+  "dataset_version": "2026-03-24",
+  "generated_at_utc": "2026-03-24T18:00:00Z",
+  "qualified": true,
+  "total_assets": 10,
+  "benchmark_ready_assets": 10,
+  "missing_expected_plate_assets": 0,
+  "missing_file_assets": 0,
+  "total_capture_sessions": 6,
+  "policy": {
+    "min_total_assets": 10,
+    "min_benchmark_ready_assets": 10,
+    "min_long_range_assets": 4,
+    "min_low_light_assets": 4,
+    "min_long_range_sessions": 2,
+    "min_low_light_sessions": 2,
+    "require_expected_plate_text": true,
+    "require_approved_review": true,
+    "verify_files": false
+  },
+  "subsets": {
+    "long_range": {
+      "assets": 5,
+      "benchmark_ready_assets": 5,
+      "capture_sessions": [
+        "session_fixture_a",
+        "session_fixture_b",
+        "session_fixture_c",
+        "session_fixture_d"
+      ]
+    },
+    "low_light": {
+      "assets": 7,
+      "benchmark_ready_assets": 7,
+      "capture_sessions": [
+        "session_fixture_a",
+        "session_fixture_b",
+        "session_fixture_c",
+        "session_fixture_d",
+        "session_fixture_f"
+      ]
+    }
+  },
+  "issues": []
+}

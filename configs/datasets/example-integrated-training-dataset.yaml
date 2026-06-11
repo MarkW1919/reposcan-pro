@@ -1,0 +1,23 @@
+dataset_name: example-stanford-cars-warmstart
+dataset_version: 2026-03-23
+task: vehicle_make_model_classification
+format: imagefolder
+storage_root: C:/datasets/stanford_cars/stanford_cars
+review_status: pending
+provenance:
+  source_name: Stanford Cars
+  source_kind: public_benchmark
+  license_tier: unknown
+  license_name: review required
+  license_reference: local import pending provenance review
+  region: us
+splits:
+  - split: train
+    relative_path: cars_train
+    sample_count: 8144
+    tags:
+      - warm_start
+  - split: holdout
+    relative_path: cars_test
+    tags:
+      - warm_start

@@ -1,0 +1,27 @@
+profile_name: vehicle-make-model-warmstart-cpu
+task: vehicle_make_model_classification
+framework: torchvision
+output_root: runtime/training
+allow_pending_review: true
+dataset_adapter: stanford_cars
+base_model: resnet18
+image_size: 192
+epochs: 18
+batch_size: 16
+workers: 2
+patience: 5
+seed: 42
+validation_fraction: 0.1
+precision: fp32
+device: auto
+augmentation:
+  motion_blur: false
+  defocus_blur: false
+  brightness_contrast: true
+  noise: false
+  compression_artifacts: true
+  perspective_distortion: false
+  synthetic_support_ratio: 0.0
+  notes:
+    - Use this profile on CPU-bound development machines where efficientnet_b0 is too disruptive.
+    - This is a warm-start profile for catalog bootstrapping, not the final roadside field model.

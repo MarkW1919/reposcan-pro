@@ -1,0 +1,51 @@
+# Default edge pipeline configuration.
+# Validated by: reposcan_contracts.config.pipeline.PipelineConfig
+#
+# Tuned for real-time edge deployment with IR cameras in mixed lighting.
+
+pipeline_name: default-edge
+description: "Standard edge pipeline for real-time LPR — balanced for low-light and daytime"
+
+# Detect plates in vehicle crops rather than the full frame.
+# More accurate at long range; reduces false positives from signage.
+plate_detection_strategy: vehicle_crop
+
+preprocessing:
+  enabled: true
+  enhancement_backend: auto
+  denoise: true
+  denoise_strength: 0.5
+  exposure_compensation: true
+  target_mean_brightness: 92.0
+  contrast_enhancement: true
+  contrast_clip_limit: 2.0
+  clahe_tile_grid_size: 8
+  night_mode_threshold_lux: 10.0   # activate IR pipeline below this level
+  ir_night_mode: auto
+  rectify_plate_crops: true
+
+thresholds:
+  vehicle_detection_min_confidence: 0.4
+  plate_detection_min_confidence: 0.5
+  ocr_min_confidence: 0.6
+  classification_min_confidence: 0.5
+  # Only fire hotlist alerts for reads we're confident in
+  alert_min_plate_confidence: 0.7
+
+tracking:
+  enabled: true
+  algorithm: byte_tracker
+  max_lost_frames: 30
+  min_hits_to_confirm: 3
+  ocr_aggregation: majority_vote
+  min_match_iou: 0.05
+  camera_motion_tolerance_px: 72.0
+  duplicate_suppression_window_seconds: 12.0
+  duplicate_suppression_min_plate_confidence: 0.85
+  duplicate_suppression_min_iou: 0.2
+
+fusion:
+  # Promote as the canonical read only when very confident
+  promote_best_read_threshold: 0.8
+  min_ocr_candidates_for_promotion: 2
+  max_candidate_age_frames: 90

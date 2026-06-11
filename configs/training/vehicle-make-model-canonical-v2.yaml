@@ -1,0 +1,38 @@
+profile_name: vehicle-make-model-canonical-v2
+task: vehicle_make_model_classification
+framework: torchvision
+output_root: runtime/training
+allow_pending_review: true
+dataset_adapter: imagefolder
+base_model: efficientnet_b0
+image_size: 260
+epochs: 15
+batch_size: 24
+workers: 4
+patience: 6
+seed: 42
+learning_rate: 0.0001
+weight_decay: 0.0005
+label_smoothing: 0.05
+dropout: 0.3
+freeze_backbone_epochs: 0
+validation_fraction: 0.15
+precision: fp32
+device: auto
+augmentation:
+  horizontal_flip: true
+  motion_blur: true
+  defocus_blur: true
+  brightness_contrast: true
+  noise: true
+  compression_artifacts: true
+  perspective_distortion: true
+  random_erasing: true
+  mixup_alpha: 0.05
+  synthetic_support_ratio: 0.0
+  notes:
+    - Polish canonical-v1 with the augmented Suburban training set (87 -> 183 train samples) so the Tahoe-vs-Suburban confusion drops below the canonical-v1 58% holdout figure.
+    - Initial checkpoint is canonical-v1 best.pt; class space is identical so no --initial-checkpoint-replace-head; full network is fine-tuned.
+    - Lower LR (1e-4 vs v1's 8e-4) since we are polishing a converged backbone+head rather than training a new head.
+    - 15 epochs is sufficient at this LR for fine-tune convergence; patience=6 catches plateaus early.
+    - Lighter Mixup (0.05) than v1's 0.1 to preserve the established class boundaries while still regularizing.

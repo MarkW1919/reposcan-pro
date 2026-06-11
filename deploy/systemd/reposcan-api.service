@@ -1,0 +1,45 @@
+[Unit]
+Description=RepoScan Pro API Server
+Documentation=https://github.com/your-org/reposcan-pro
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=reposcan
+Group=reposcan
+WorkingDirectory=/opt/reposcan-pro
+
+# Load secrets from the environment file — never commit the real file.
+# Copy deploy/env.example to /etc/reposcan/env and fill in values.
+EnvironmentFile=/etc/reposcan/env
+Environment=PYTHONPATH=/opt/reposcan-pro/packages/contracts/src:/opt/reposcan-pro/apps/api/src:/opt/reposcan-pro/services/alerting/src:/opt/reposcan-pro/services/capture/src:/opt/reposcan-pro/services/inference/src:/opt/reposcan-pro/services/preprocessing/src:/opt/reposcan-pro/services/storage/src:/opt/reposcan-pro/services/sync/src:/opt/reposcan-pro/services/tracking/src
+
+ExecStart=/opt/reposcan-pro/.venv/bin/uvicorn reposcan_api.main:app \
+    --host ${REPOSCAN_API_HOST} \
+    --port ${REPOSCAN_API_PORT} \
+    --log-level warning \
+    --no-access-log
+
+# Graceful shutdown — give uvicorn time to drain in-flight requests
+TimeoutStopSec=15
+KillMode=mixed
+KillSignal=SIGTERM
+
+# Restart policy — handles power-loss recovery and OOM kill
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+# Resource limits appropriate for Jetson Orin (16 GB RAM)
+LimitNOFILE=65536
+OOMScoreAdjust=-100
+
+# Logging — journald captures stdout/stderr; use `journalctl -u reposcan-api`
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=reposcan-api
+
+[Install]
+WantedBy=multi-user.target

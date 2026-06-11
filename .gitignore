@@ -5,6 +5,7 @@ node_modules/
 .ruff_cache/
 __pycache__/
 *.py[cod]
+*.egg-info/
 .coverage
 coverage/
 dist/
@@ -15,6 +16,7 @@ temp/
 .DS_Store
 Thumbs.db
 .env
+.env.local
 
 # Local runtime state
 artifacts/
@@ -22,6 +24,7 @@ data/
 media/
 logs/
 runtime/
+SILVERADO_DATASET_BUILD_STATUS.md
 
 # Model artifacts and exports
 *.pt
@@ -31,10 +34,22 @@ runtime/
 *.engine
 *.trt
 *.weights
+!ml/inference/fixtures/
+!ml/inference/fixtures/**/*.onnx
+!ml/inference/fixtures/**/*.engine
 
 # Database and local service state
 *.sqlite
 *.db
 postgres_data/
 redis_data/
+var/
 
+# Claude Code runtime state
+.claude/scheduled_tasks.lock
+
+# Deployment secrets — never commit real env files
+deploy/.env
+deploy/env
+deploy/env.local
+!deploy/env.example

@@ -1,0 +1,39 @@
+profile_name: vehicle-make-model-canonical-v5
+task: vehicle_make_model_classification
+framework: torchvision
+output_root: runtime/training
+allow_pending_review: true
+dataset_adapter: imagefolder
+base_model: efficientnet_b0
+image_size: 260
+epochs: 28
+batch_size: 24
+workers: 4
+patience: 10
+seed: 42
+learning_rate: 0.0005
+weight_decay: 0.0005
+label_smoothing: 0.05
+dropout: 0.3
+freeze_backbone_epochs: 3
+validation_fraction: 0.15
+precision: fp32
+device: auto
+use_weighted_sampler: true
+augmentation:
+  horizontal_flip: true
+  motion_blur: true
+  defocus_blur: true
+  brightness_contrast: true
+  noise: true
+  compression_artifacts: true
+  perspective_distortion: true
+  random_erasing: true
+  mixup_alpha: 0.1
+  synthetic_support_ratio: 0.0
+  notes:
+    - Canonical-v5 expands the make/model taxonomy from 30 (canonical-v4) to 40 classes by adding cadillac_escalade, lincoln_navigator, honda_pilot, ford_escape, hyundai_elantra, subaru_outback, kia_sportage, hyundai_santa_fe, chevrolet_malibu, and volkswagen_jetta.
+    - Class sizes range from 55 train (gmc_yukon, smallest carried forward from v4) up to 534 train (chevrolet_equinox); use_weighted_sampler keeps under-represented classes from being drowned out.
+    - Warm-start backbone from canonical-v1 best.pt via --initial-checkpoint-replace-head; head reinitialized for 40 classes.
+    - Lower LR (5e-4) than the v3 expansion's first-try LR because half of the new classes only have ~64 train samples and need patient learning. freeze_backbone_epochs=3 lets the new head warm up before the full network unfreezes.
+    - patience=10 reflects the larger class space; the model needs more epochs to discover boundaries between new classes (e.g., kia_sportage vs hyundai_tucson) before the cosine schedule converges.

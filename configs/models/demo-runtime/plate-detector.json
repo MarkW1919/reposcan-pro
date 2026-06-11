@@ -1,0 +1,16 @@
+{
+  "artifact_type": "builtin_plate_detector",
+  "default_confidence": 0.88,
+  "bbox_relative_to_vehicle": {
+    "x": 0.34,
+    "y": 0.60,
+    "w": 0.28,
+    "h": 0.14
+  },
+  "bbox_relative_to_frame": {
+    "x": 0.42,
+    "y": 0.62,
+    "w": 0.16,
+    "h": 0.08
+  }
+}

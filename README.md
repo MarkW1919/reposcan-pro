@@ -5,13 +5,23 @@ RepoScan Pro is a fresh-build repository for a field-grade, edge-first vehicle i
 ## Current Repository Phase
 
 This repository currently contains:
-- the Claude operating contract and project memory
-- specialist agent briefs and reusable skills
-- the core design and requirements documents
-- a monorepo scaffold for future API, UI, service, and ML code
-- local bootstrap and validation scripts
+- shared contracts and config loaders
+- local-first storage, alert, review, sync, and profiling service foundations
+- FastAPI endpoints for health, detections, alerts, reviews, hotlists, dashboard overview, and popup activity
+- a cab-first React operator UI with live popup activity, evidence preview, hotlist management, persistent alert response workflow, local review workflow, and app-driven demo ingest control when the API is available, plus local demo fallback when it is not
+- a headless file-sequence ingest path that runs capture, low-light-oriented preprocessing, inference, tracking, alerting, and storage without camera hardware
+- a tracked builtin inference-runtime stack plus model-stack validation for no-hardware demos and config readiness checks
+- a tracked ONNX runtime fixture stack that proves real backend-loaded vehicle, plate, OCR, and attribute execution without requiring field hardware
+- repo-tracked promoted ONNX and TensorRT fixture bundles plus baseline runtime benchmark evidence for the remaining Section 4 inference-runtime gates
+- tracker-strategy benchmarking and duplicate-suppression evidence for crowded scenes, camera motion, and repeated passes
+- deployment-aware storage maintenance, evidence export packaging, and JSON recovery hardening
+- a deployment-selectable Postgres/PostGIS metadata backend while local-dev remains json-backed by default
+- HTTP remote sync replay and alert webhook delivery validated against a real local fixture endpoint
+- versioned API search, auth, audit, and rate-limit hardening for external integrations
+- bootstrap, build, and validation scripts for the current integrated slice
 
-This first pass intentionally defines architecture and working rules before implementation code is added.
+The design-first scaffold has already been turned into a working implementation foundation.
+The current focus is post-blueprint integration and demo readiness rather than returning to Phase 1 setup work.
 
 ## Mission Snapshot
 
@@ -30,49 +40,70 @@ The canonical mission and rules live in [CLAUDE.md](CLAUDE.md).
 
 - [Product](docs/PRODUCT.md)
 - [Architecture](docs/ARCHITECTURE.md)
+- [Implementation Blueprint](docs/IMPLEMENTATION_BLUEPRINT.md)
 - [Requirements](docs/REQUIREMENTS.md)
+- [Execution Plan](docs/EXECUTION_PLAN.md)
 - [Camera And Imaging](docs/CAMERA_AND_IMAGING.md)
+- [Camera Deployment Workflow](docs/CAMERA_DEPLOYMENT_WORKFLOW.md)
 - [Models](docs/MODELS.md)
 - [Datasets](docs/DATASETS.md)
+- [Annotation Standards](docs/ANNOTATION_STANDARDS.md)
+- [Dataset Intake Workflow](docs/DATASET_INTAKE_WORKFLOW.md)
+- [Detection Dataset Curation](docs/DETECTION_DATASET_CURATION.md)
+- [Oklahoma Dataset Readiness](docs/OKLAHOMA_DATASET_READINESS.md)
+- [Internet Vehicle Image Pipeline](docs/INTERNET_VEHICLE_IMAGE_PIPELINE.md)
+- [Field Eval Qualification](docs/FIELD_EVAL_QUALIFICATION.md)
 - [Training](docs/TRAINING.md)
+- [Training Workflows](docs/TRAINING_WORKFLOWS.md)
+- [Model Releases](docs/MODEL_RELEASES.md)
 - [Inference](docs/INFERENCE.md)
+- [Inference Runtime Evidence](docs/INFERENCE_RUNTIME_EVIDENCE.md)
+- [Tracking Fusion Evidence](docs/TRACKING_FUSION_EVIDENCE.md)
+- [Storage Media Workflows](docs/STORAGE_MEDIA_WORKFLOWS.md)
+- [Sync Remote Evidence](docs/SYNC_REMOTE_EVIDENCE.md)
+- [Model Promotion Workflow](docs/MODEL_PROMOTION_WORKFLOW.md)
+- [Promoted Model Benchmarks](docs/PROMOTED_MODEL_BENCHMARKS.md)
+- [Preprocessing Benchmark](docs/PREPROCESSING_BENCHMARK.md)
 - [Deployment](docs/DEPLOYMENT.md)
 - [API Contracts](docs/API_CONTRACTS.md)
+- [API Integration Guide](docs/API_INTEGRATION_GUIDE.md)
 - [UI Workflows](docs/UI_WORKFLOWS.md)
+- [Operations And Logging](docs/OPERATIONS_AND_LOGGING.md)
+- [Project Status Checklist](docs/PROJECT_STATUS_CHECKLIST.md)
 - [Decisions](docs/DECISIONS.md)
 
 ## Repository Layout
 
 ```text
 reposcan-pro/
-├─ CLAUDE.md
-├─ README.md
-├─ docs/
-├─ .claude/
-│  ├─ settings.json
-│  ├─ settings.local.json
-│  ├─ agents/
-│  └─ skills/
-├─ apps/
-│  ├─ api/
-│  └─ ui/
-├─ packages/
-│  └─ contracts/
-├─ services/
-│  ├─ capture/
-│  ├─ preprocessing/
-│  ├─ inference/
-│  ├─ tracking/
-│  ├─ storage/
-│  ├─ alerting/
-│  └─ sync/
-├─ ml/
-│  ├─ training/
-│  └─ inference/
-├─ configs/
-├─ infra/
-├─ scripts/
-└─ tests/
+|-- CLAUDE.md
+|-- README.md
+|-- docs/
+|-- .claude/
+|   |-- settings.json
+|   |-- settings.local.json
+|   |-- agents/
+|   `-- skills/
+|-- apps/
+|   |-- api/
+|   `-- ui/
+|-- packages/
+|   `-- contracts/
+|-- services/
+|   |-- capture/
+|   |-- preprocessing/
+|   |-- inference/
+|   |-- tracking/
+|   |-- storage/
+|   |-- alerting/
+|   `-- sync/
+|-- ml/
+|   |-- training/
+|   `-- inference/
+|-- configs/
+|-- infra/
+|-- scripts/
+`-- tests/
 ```
 
 ## Environment Baseline
@@ -85,21 +116,243 @@ reposcan-pro/
 ## Local Workflow
 
 1. Run `powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap.ps1`
-2. Review [CLAUDE.md](CLAUDE.md) and the documents under [docs](docs)
-3. Run `powershell -ExecutionPolicy Bypass -File .\scripts\check.ps1`
-4. Start implementation only after the design layer is accepted
+2. Open [RepoScan Pro.code-workspace](RepoScan Pro.code-workspace) in VS Code or run [Open RepoScan Pro Dev.cmd](Open RepoScan Pro Dev.cmd)
+3. Review [CLAUDE.md](CLAUDE.md) and the documents under [docs](docs)
+4. Run `powershell -ExecutionPolicy Bypass -File .\scripts\check.ps1`
+5. Start the API with `npm run api:dev` (binds to `http://127.0.0.1:8000`)
+6. Start the UI with `npm run ui:dev` (Vite dev server on `http://localhost:4173`)
+7. Use the manual demo checklist in [tests/manual/demo_vertical_slice.md](tests/manual/demo_vertical_slice.md)
 
-## Initial Claude Prompt
+### Environment keys (Address & Occupant Intelligence)
 
-Use this prompt inside the repository before writing implementation code:
+Secrets live in a gitignored `.env` at the repo root (copy from [.env.example](.env.example)); the UI reads optional Vite vars from `apps/ui/.env.local` (copy from [apps/ui/.env.example](apps/ui/.env.example)).
+
+- `CENSUS_API_KEY` — optional, FREE ([key signup](https://api.census.gov/data/key_signup.html)). Adds owner/renter/vacancy context; address verification works without it.
+- `OCCUPANT_PROVIDER` — `whitepages` (paid WhitePages Pro occupant lookup + free Census fallback) or `census`/`free` (free address verification only).
+- `WHITEPAGES_API_KEY` — licensed/paid key for occupant intelligence; authorized, attorney-reviewed use only. Never commit it.
+- `OCCUPANT_CACHE_PATH` — 30-day SQLite cache location (default `var/occupant_cache.sqlite`).
+
+The operations dashboard offers four screen layouts (Console, Scan Grid, Camera-First, Drive) selectable from **Menu → Customize Dashboard → Screen Layout**.
+
+> If the UI ever points at a non-default API port (e.g. a local `apps/ui/.env.local` set `VITE_API_BASE_URL` to a bridge port), delete that file to return to the standard `:8000` and restart `npm run ui:dev`.
+
+## Headless Ingest Demo
+
+Use the file-sequence runner to turn any folder of `.jpg` test frames into fresh detections and alerts that the live API and UI can serve immediately.
+When preprocessing is enabled, the runner also writes inference-ready frame artifacts under `runtime/preprocessed` by default.
+
+For a closer-to-deployable demo flow, start the API and UI, then launch the same ingest path from the `Quick Actions` panel inside `Recovery Alerts`.
+The UI talks to the live API demo runtime endpoints, so new detections and alerts appear without opening another terminal, and the same panel can persist alert acknowledge, stand-down, and reopen actions during the demo.
+The runner now defaults to [configs/models/local-onnx-runtime.yaml](configs/models/local-onnx-runtime.yaml), which is a tracked ONNX runtime fixture stack for demo use. If a frame has a sibling `*.inference.json` sidecar, that sidecar can drive per-frame detections, OCR, and vehicle attributes through the full ingest path. The older [configs/models/local-demo-runtime.yaml](configs/models/local-demo-runtime.yaml) builtin stack remains available as the no-hardware fallback.
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\run_file_sequence_demo.py --frames-dir C:\path\to\frame-folder
+```
+
+The runner uses [configs/cameras/local-file-demo.yaml](configs/cameras/local-file-demo.yaml) and [configs/models/local-onnx-runtime.yaml](configs/models/local-onnx-runtime.yaml) by default, writes development metadata under `runtime/storage`, and writes preprocessing artifacts under `runtime/preprocessed` unless you override those paths.
+
+Validate a model stack before a demo or runtime swap with:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\validate_model_stack.py --model-config .\configs\models\local-onnx-runtime.yaml
+```
+
+Package a self-contained promoted ONNX bundle outside git with:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\package_promoted_onnx_bundle.py --source-model-config .\configs\models\local-onnx-runtime.yaml --output-dir C:\artifacts\models\promoted\fixture-bundle
+```
+
+Assemble a promoted ONNX bundle directly from exported per-stage ONNX artifacts with:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\assemble_promoted_onnx_bundle.py --template-model-config .\configs\models\local-onnx-runtime.yaml --vehicle-detector-artifact C:\exports\vehicle-detector.onnx --plate-detector-artifact C:\exports\plate-detector.onnx --ocr-artifact C:\exports\ocr.onnx --classifier-artifact C:\exports\classifier.onnx --classifier-label-metadata C:\exports\labels.json --output-dir C:\artifacts\models\promoted\exported-bundle
+```
+
+For future edge bundles, use [configs/models/promoted-tensorrt-template.yaml](configs/models/promoted-tensorrt-template.yaml) as the contract shape for external TensorRT engine manifests.
+
+Validate a promoted bundle against a deployment target with:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\validate_edge_runtime_bundle.py --model-config C:\path\to\promoted-bundle\promoted-tensorrt.yaml --deployment-config .\configs\deployments\jetson-orin-edge.yaml
+```
+
+Prepare the local training-data workspace and import legacy training sources with:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\init_dataset_workspace.py --root .\data
+.\.venv\Scripts\python.exe .\scripts\import_legacy_training_sources.py --output-dir .\data\manifests\legacy
+```
+
+Prepare a training run from a profile and dataset manifest with:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\train_attribute_classifier.py --profile .\configs\training\vehicle-make-model-warmstart.yaml --dataset-manifest C:\path\to\dataset-manifest.yaml --run-name warmstart_01
+```
+
+For CPU-bound development machines, use the lighter profile:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\train_attribute_classifier.py --profile .\configs\training\vehicle-make-model-warmstart-cpu.yaml --dataset-manifest C:\path\to\dataset-manifest.yaml --run-name warmstart_cpu_01
+```
+
+The attribute-classifier workflow now exports `model.onnx` plus a `labels.json` metadata sidecar so single-task color or make/model classifiers can plug back into the runtime and promoted bundle flow.
+
+Internet-sourced vehicle crops can now be accelerated with pretrained VLM assistance before review. The workflow in [Internet Vehicle Image Pipeline](docs/INTERNET_VEHICLE_IMAGE_PIPELINE.md) supports OpenAI vision API labeling, Qwen2.5-VL labeling in a GPU/Colab runtime, and conservative consensus CSVs that remain pending unless explicitly reviewed.
+
+To keep real-time epoch progress and accuracy output in the same terminal, launch the prepared run manifest directly:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\launch_training_run.py --run-manifest .\runtime\training\warmstart_01\run_manifest.json
+```
+
+That launcher now streams training output to the current terminal and also writes the usual `stdout` and `stderr` log files under `runtime/training/logs/`.
+
+If the job must survive terminal closure, opt into the old detached behavior explicitly:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\launch_training_run.py --run-manifest .\runtime\training\warmstart_01\run_manifest.json --detached
+```
+
+Monitor `training_status.json` and `training_events.log` inside the run workspace for progress that does not depend on an open console window.
+
+Classifier runs now also write an `evaluation_summary.json` file in the run workspace. For Stanford Cars warm-start experiments, the per-epoch `val_acc` remains an internal split from `cars_train`, while the best checkpoint is evaluated against the manifest `holdout` split when labeled holdout annotations are available.
+
+On CPU-only development machines, prefer the lighter `vehicle-make-model-warmstart-cpu.yaml` profile for local iteration. Larger EfficientNet-B0 profiles with long unfreezing phases are intended for GPU-backed comparisons and can take hours per epoch after the backbone is unfrozen.
+
+If the training epochs finished but ONNX export failed, rerun export only from the saved checkpoint:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\train_attribute_classifier.py --profile .\configs\training\vehicle-make-model-warmstart-cpu.yaml --dataset-manifest .\data\manifests\legacy\legacy-stanford-cars-warmstart.yaml --run-name vehicle_make_model_warmstart_cpu_20260401_rerun1 --export-only
+```
+
+Build a canonical vehicle make/model/year catalog from a markdown seed list with:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\build_vehicle_recognition_catalog.py --seed .\configs\datasets\example-vehicle-recognition-seed.md --overrides .\configs\datasets\example-vehicle-recognition-overrides.yaml --placeholder-mode make-all-models --output .\runtime\vehicle_catalogs\us-vehicle-recognition-catalog.yaml --expanded-seed-csv .\runtime\vehicle_catalogs\us-vehicle-recognition-expanded-seed.csv --labels-csv .\runtime\vehicle_catalogs\us-vehicle-recognition-labels.csv
+```
+
+Supplement a primary OCR dataset with a capped synthetic support manifest through the same prepare workflow:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\train_ocr_recognizer.py --profile .\configs\training\plate-ocr-finetune.yaml --dataset-manifest C:\path\to\reviewed-field-ocr.yaml --support-dataset-manifest .\data\staged\synthetic_ok_ocr_claude_handoff_2026-03-24\manifest.yaml --run-name field_ocr_with_support --allow-pending
+```
+
+Export a detection label index and promote reviewed YOLO labels into curated manifests with:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\export_detection_label_index.py --dataset-manifest .\data\manifests\legacy\legacy-oklahoma-detection-reviewed.yaml --output .\data\manifests\legacy\legacy-oklahoma-detection-label-index.csv
+.\.venv\Scripts\python.exe .\scripts\promote_detection_dataset.py --dataset-manifest .\data\manifests\legacy\legacy-oklahoma-detection-reviewed.yaml --split-manifest .\data\manifests\legacy\legacy-oklahoma-detection-split.yaml --labels-root C:\datasets\oklahoma_detection_labels --output-root .\data\curated --output-manifest .\data\manifests\legacy\legacy-oklahoma-detection-curated.yaml --field-eval-manifest .\data\manifests\legacy\legacy-oklahoma-detection-field-eval.yaml --reviewer qa_annotator_01
+```
+
+Generate a benchmark report directly from an approved field-eval dataset manifest with:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\benchmark_promoted_bundle.py --model-config C:\artifacts\models\promoted\fixture-local-dev\promoted-onnx.yaml --dataset-manifest .\configs\datasets\example-field-eval-holdout.yaml --deployment-config .\configs\deployments\local-dev.yaml --derived-benchmark-output C:\artifacts\models\benchmarks\example-field-eval-benchmark.yaml --report-output C:\artifacts\models\reports\example-field-eval-report.json
+```
+
+Qualify a reviewed field-eval manifest before treating it as a real regression holdout with:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\qualify_field_eval_dataset.py --dataset-manifest C:\artifacts\data\manifests\oklahoma-field-eval.yaml --verify-files --report-output C:\artifacts\data\reports\oklahoma-field-eval-qualification.json
+```
+
+Audit a primary training dataset against the Oklahoma commercial-readiness gate before using it for a shippable vehicle-recognition, detection, or OCR model:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\audit_training_dataset_readiness.py --dataset-manifest C:\artifacts\data\manifests\oklahoma-training-dataset.yaml --level oklahoma-commercial --verify-files --report-output .\runtime\dataset_readiness\oklahoma-training-dataset.json
+```
+
+Pull public candidate vehicle images into FiftyOne, review labels, and export only accepted samples into a RepoScan manifest with:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install ".[dataset]"
+.\.venv\Scripts\python.exe .\scripts\fiftyone_vehicle_dataset_pipeline.py pull-open-images --dataset-name reposcan_open_images_ok_vehicle_candidates --split validation --classes Car Truck Bus Motorcycle Van Taxi --max-samples 5000
+.\.venv\Scripts\python.exe .\scripts\fiftyone_vehicle_dataset_pipeline.py launch-app --dataset-name reposcan_open_images_ok_vehicle_candidates --port 5151
+.\.venv\Scripts\python.exe .\scripts\fiftyone_vehicle_dataset_pipeline.py export-reviewed --dataset-name reposcan_open_images_ok_vehicle_candidates --output-root .\data\curated\fiftyone_open_images_ok_vehicle_reviewed --manifest-path .\data\manifests\public\fiftyone-open-images-ok-vehicle-reviewed.yaml --task vehicle_make_model_classification --copy-mode hardlink --reviewer reviewer_01 --review-status approved --overwrite
+```
+
+Warm-start the vehicle detector from Open Images bounding boxes and validate the YOLO-to-ONNX training path with:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install ".[training]"
+.\.venv\Scripts\python.exe .\scripts\fiftyone_vehicle_dataset_pipeline.py export-detections-yolo --dataset-name reposcan_open_images_ok_vehicle_candidates --output-root .\data\curated\fiftyone_open_images_vehicle_detection_warmstart --manifest-path .\data\manifests\public\fiftyone-open-images-vehicle-detection-warmstart.yaml --source-labels Car Truck Bus Motorcycle Van Taxi --target-class-name vehicle --copy-mode hardlink --review-status pending --overwrite
+.\.venv\Scripts\python.exe .\scripts\train_detection_model.py --profile .\configs\training\vehicle-detector-open-images-cpu-smoke.yaml --dataset-manifest .\data\manifests\public\fiftyone-open-images-vehicle-detection-warmstart.yaml --run-name vehicle_detector_open_images_cpu_smoke_20260415 --execute
+```
+
+When GPU training hardware is available, use `configs/training/vehicle-detector-open-images-gpu-warmstart.yaml` against the same manifest for a stronger public-data detector baseline before moving to approved Oklahoma field captures.
+
+The detailed review and CSV batch-labeling workflow lives in [Internet Vehicle Image Pipeline](docs/INTERNET_VEHICLE_IMAGE_PIPELINE.md).
+
+For vehicle year, make, model, and color, export detected vehicle crops to a crop-level review CSV before training attribute classifiers:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\fiftyone_vehicle_dataset_pipeline.py export-attribute-crop-review --dataset-name reposcan_open_images_ok_vehicle_candidates --output-root .\data\staged\attribute_crops\open_images_vehicle_attribute_review_20260415 --review-csv .\data\staged\review_templates\open_images_vehicle_attribute_crop_review_20260415.csv --source-labels Car Truck Bus Motorcycle Van Taxi --min-width-px 64 --min-height-px 64 --overwrite
+.\.venv\Scripts\python.exe .\scripts\fiftyone_vehicle_dataset_pipeline.py suggest-attribute-labels --review-csv .\data\staged\review_templates\open_images_vehicle_attribute_crop_review_20260415.csv --output-csv .\data\staged\review_templates\open_images_vehicle_attribute_crop_suggestions_20260415.csv --make-model-onnx .\runtime\training\vehicle-make-model-warmstart-v2_20260409_141756\exports\model.onnx --make-model-labels .\runtime\training\vehicle-make-model-warmstart-v2_20260409_141756\exports\labels.json --make-model-top-k 5 --overwrite
+```
+
+Refresh the repo-tracked Section 4 inference-runtime evidence fixtures with:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\generate_inference_runtime_evidence.py --output-root .\ml\inference\fixtures --overwrite
+```
+
+Refresh the repo-tracked Section 5 tracking-and-fusion evidence report with:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\generate_tracking_evidence.py --output-root .\services\tracking\fixtures --overwrite
+```
+
+Run storage maintenance and export a detection evidence package with:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\run_storage_maintenance.py --deployment-config .\configs\deployments\local-dev.yaml --json
+.\.venv\Scripts\python.exe .\scripts\export_detection_package.py --detection-id det_20260320_010001 --json
+.\.venv\Scripts\python.exe .\scripts\bootstrap_postgres_storage.py --deployment-config .\configs\deployments\jetson-orin-edge.yaml
+.\.venv\Scripts\python.exe .\scripts\generate_sync_remote_evidence.py --output-root .\services\sync\fixtures --overwrite
+```
+
+Register a validated promoted bundle into an external release registry with:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\register_model_release.py --model-config C:\artifacts\models\promoted\fixture-local-dev\promoted-onnx.yaml --deployment-config .\configs\deployments\local-dev.yaml --benchmark-manifest C:\artifacts\models\benchmarks\oklahoma-night-long-range.yaml --registry-root C:\artifacts\models\registry --channel local-dev-demo
+```
+
+## Desktop Launcher
+
+To create the desktop launcher and double-click shortcut for this repo, run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\create_desktop_launcher.ps1
+```
+
+That script creates:
+- `RepoScan Pro Dev Home` on your desktop
+- `RepoScan Pro Dev.lnk` on your desktop
+
+Both point back to the repo-owned workspace and launcher files so the setup stays synced with the Git repository.
+
+## Claude, Codex, And VS Code
+
+- Claude Code integration lives in [CLAUDE.md](CLAUDE.md) and the files under [.claude](.claude)
+- Codex is working directly against this Git-tracked repo
+- VS Code integration lives in [.vscode](.vscode), [RepoScan Pro.code-workspace](RepoScan Pro.code-workspace), and [Open RepoScan Pro Dev.cmd](Open RepoScan Pro Dev.cmd)
+- the older `Seen-It-First Dev Home` desktop launcher is a separate project and is not the entry point for this repo
+
+## Claude Build Prompt
+
+Use this prompt inside the repository to continue implementation from the current integrated state:
 
 ```text
-Read CLAUDE.md and docs. Design the full system architecture and propose the initial repo structure without writing implementation code yet.
+Read CLAUDE.md, docs/IMPLEMENTATION_BLUEPRINT.md, docs/API_CONTRACTS.md, and the current repo state.
+
+Continue the next implementation slice now.
+
+Do not rebuild completed foundations. Prefer live integration, seeded demo readiness, operator workflow completion, test coverage, and manual field-test documentation.
 ```
 
 ## Version Control And Artifact Policy
 
 - Commit milestone changes locally as you progress.
-- Do not commit datasets, model weights, local media, or generated runtime artifacts.
+- Do not commit datasets, model weights, local media, or generated runtime artifacts, except the small repo-owned inference fixtures under `ml/inference/fixtures/` and the small repo-owned tracking evidence report under `services/tracking/fixtures/`.
 - Treat the existing prototype in the parent workspace as separate history and do not modify it from this repo.
-

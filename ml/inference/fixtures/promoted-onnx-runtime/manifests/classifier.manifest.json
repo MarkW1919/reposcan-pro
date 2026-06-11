@@ -1,0 +1,26 @@
+{
+  "stage": "classifier",
+  "model_name": "fixture-vehicle-attributes",
+  "backend": "onnx",
+  "artifact_path": "artifacts/classifier.onnx",
+  "artifact_sha256": "8fef06e0c34807a009754294413522cdf32c1690cf06cd50fa76aeb10ba0e024",
+  "exported_at_utc": "2026-03-24T18:00:00Z",
+  "input_width": 224,
+  "input_height": 224,
+  "source_run_id": "fixture_onnx_export_001",
+  "source_checkpoint_ref": "fixture_onnx_runtime_checkpoint",
+  "dataset_manifests": [
+    "configs/datasets/runtime-benchmark-qualified-holdout.yaml"
+  ],
+  "export_tool": "reposcan.assemble_promoted_onnx_bundle",
+  "export_tool_version": "0.1.0",
+  "opset_version": 17,
+  "precision": "fp32",
+  "target_runtime": "onnxruntime",
+  "cuda_version": null,
+  "tensorrt_version": null,
+  "device_compute_capability": null,
+  "engine_profile": null,
+  "workspace_megabytes": null,
+  "notes": "Promoted ONNX fixture bundle for Section 4 runtime evidence."
+}

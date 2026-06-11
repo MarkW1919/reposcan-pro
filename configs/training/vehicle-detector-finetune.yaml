@@ -1,0 +1,26 @@
+profile_name: vehicle-detector-finetune
+task: vehicle_detection
+framework: ultralytics
+output_root: runtime/training
+allow_pending_review: false
+dataset_adapter: manifest_split
+base_model: yolo11n.pt
+image_size: 640
+epochs: 100
+batch_size: 16
+workers: 4
+patience: 20
+precision: fp16
+device: auto
+class_names:
+  - vehicle
+augmentation:
+  motion_blur: true
+  defocus_blur: true
+  brightness_contrast: true
+  noise: true
+  compression_artifacts: true
+  perspective_distortion: true
+  synthetic_support_ratio: 0.0
+  notes:
+    - Emphasize real roadside motion and distance conditions over synthetic shortcuts.

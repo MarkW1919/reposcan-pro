@@ -1,0 +1,23 @@
+# Example promoted-model benchmark manifest.
+# This describes the expected shape for local long-range / low-light benchmark runs.
+
+benchmark_name: example-promoted-onnx-benchmark
+description: "Example benchmark manifest for promoted ONNX bundle evaluation scaffolding"
+camera_id: cam_benchmark_01
+
+frames:
+  - frame_path: runtime/benchmarks/frame_0001.jpg
+    expected_plate_text: 6BZN220
+    expected_vehicle_color: white
+    expected_vehicle_make: toyota
+    expected_vehicle_model: camry
+    expected_vehicle_year: "2018-2021"
+    tags: [long_range]
+
+  - frame_path: runtime/benchmarks/frame_0002.jpg
+    expected_plate_text: 6BZN220
+    expected_vehicle_color: white
+    expected_vehicle_make: toyota
+    expected_vehicle_model: camry
+    expected_vehicle_year: "2018-2021"
+    tags: [low_light]

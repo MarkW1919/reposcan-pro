@@ -1,0 +1,29 @@
+[Unit]
+Description=RepoScan Pro Operator UI (static file server)
+Documentation=https://github.com/your-org/reposcan-pro
+After=network.target reposcan-api.service
+
+[Service]
+Type=simple
+User=reposcan
+Group=reposcan
+WorkingDirectory=/opt/reposcan-pro
+
+EnvironmentFile=/etc/reposcan/env
+
+# Serves the pre-built Vite dist/ bundle.  Run `npm run ui:build` before
+# deploying or after any UI update.
+ExecStart=/opt/reposcan-pro/.venv/bin/python -m http.server \
+    ${REPOSCAN_UI_PORT} \
+    --directory /opt/reposcan-pro/apps/ui/dist
+
+TimeoutStopSec=10
+Restart=on-failure
+RestartSec=5
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=reposcan-ui
+
+[Install]
+WantedBy=multi-user.target

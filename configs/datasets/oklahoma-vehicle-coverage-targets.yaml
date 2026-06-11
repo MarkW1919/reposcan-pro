@@ -1,0 +1,78 @@
+coverage_target_name: oklahoma-common-vehicle-v1
+region: us-ok
+generated_at_utc: 2026-04-15T00:00:00Z
+purpose: >
+  Production training coverage target for RepoScan Pro vehicle recognition and
+  plate detection datasets operating in Oklahoma repossession scenarios.
+source_notes:
+  - source: Alliance for Automotive Innovation Oklahoma Economic Data
+    reference: https://www.autosinnovate.org/resources/insights/ok
+    notes: >
+      Oklahoma registered vehicles as of 2024 are 37.2% UVs, 28.5% cars,
+      27.0% pickups, and 5.7% vans/minivans; new 2024 purchases skew heavily
+      toward UVs at 51.9%.
+body_style_targets:
+  - tag: vehicle_class:suv_crossover
+    minimum_share: 0.30
+    target_share: 0.38
+    commercial_minimum_assets: 12000
+  - tag: vehicle_class:pickup
+    minimum_share: 0.24
+    target_share: 0.30
+    commercial_minimum_assets: 10000
+  - tag: vehicle_class:passenger_car
+    minimum_share: 0.20
+    target_share: 0.26
+    commercial_minimum_assets: 8000
+  - tag: vehicle_class:van_minivan
+    minimum_share: 0.03
+    target_share: 0.06
+    commercial_minimum_assets: 1500
+priority_make_model_families:
+  - tag: make_model:ford_f_series
+    commercial_minimum_assets: 2500
+    examples: [F-150, F-250, F-350]
+  - tag: make_model:chevrolet_silverado
+    commercial_minimum_assets: 2000
+    examples: [Silverado 1500, Silverado 2500HD, Silverado 3500HD]
+  - tag: make_model:ram_pickup
+    commercial_minimum_assets: 1500
+    examples: [Ram 1500, Ram 2500, Ram 3500]
+  - tag: make_model:gmc_sierra
+    commercial_minimum_assets: 1000
+    examples: [Sierra 1500, Sierra 2500HD, Sierra 3500HD]
+  - tag: make_model:toyota_tacoma
+    commercial_minimum_assets: 750
+    examples: [Tacoma]
+  - tag: make_model:chevrolet_tahoe_suburban
+    commercial_minimum_assets: 750
+    examples: [Tahoe, Suburban]
+field_condition_targets:
+  low_light_minimum_assets: 10000
+  long_range_minimum_assets: 5000
+  minimum_capture_sessions: 100
+  required_conditions:
+    - daylight
+    - dusk
+    - night
+    - no_light
+    - ir_assisted
+    - glare
+    - rain
+    - dirty_plate
+    - partial_occlusion
+    - rural_road
+    - urban_parking_lot
+annotation_requirements:
+  detection:
+    - vehicle bounding box
+    - plate bounding box
+  ocr:
+    - plate text exact transcription
+    - uncertain-character review flag
+  vehicle_recognition:
+    - make
+    - model family
+    - model year or generation bucket
+    - body style
+    - color

@@ -1,0 +1,48 @@
+/*
+ * Design tokens. Single source of truth for color, shadow, and typography
+ * primitives used across the UI.
+ *
+ * Lives in its own file so a `git grep --` for a color value lands in one
+ * place and any token-system review can read this file end-to-end without
+ * scrolling through the rest of the stylesheet.
+ *
+ * IMPORTANT: must be imported BEFORE styles.css and dashboard.css so the
+ * cascade resolves to these values, not earlier inline ones.
+ */
+:root {
+  color-scheme: dark;
+  font-family: "Bahnschrift", "Aptos", "Segoe UI Variable", sans-serif;
+  --bg: #050608;
+  --bg-elevated: #0a0d12;
+  --bg-card: rgba(16, 19, 24, 0.92);
+  --bg-card-strong: rgba(20, 24, 30, 0.96);
+  --bg-panel: rgba(12, 15, 20, 0.9);
+  --bg-input: #10151c;
+  --line: rgba(133, 146, 166, 0.16);
+  --line-strong: rgba(141, 214, 255, 0.34);
+  --cyan: #8bd6ff;
+  --cyan-soft: rgba(139, 214, 255, 0.12);
+  --cyan-glow: rgba(139, 214, 255, 0.18);
+  --critical: #ff6a6a;
+  --critical-soft: rgba(255, 106, 106, 0.14);
+  --success: #7be0a8;
+  --success-soft: rgba(123, 224, 168, 0.12);
+  --warn: #efb861;
+  --warn-soft: rgba(239, 184, 97, 0.14);
+  --text: #f7f9fc;
+  --muted: #94a1b3;
+  --faint: rgba(247, 249, 252, 0.56);
+  --shadow: 0 28px 60px rgba(0, 0, 0, 0.38);
+  --shadow-strong: 0 38px 72px rgba(0, 0, 0, 0.5);
+  --mono: "Cascadia Code", "SF Mono", Consolas, monospace;
+  /*
+   * Text scale multiplier for sub-13px label text (status pills, eyebrows,
+   * meta lines). The default is 1.0. The shift-mode toggle on body raises
+   * it for in-cab readability.
+   */
+  --text-scale: 1;
+}
+
+body.shift-mode {
+  --text-scale: 1.18;
+}

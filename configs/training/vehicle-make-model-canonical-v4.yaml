@@ -1,0 +1,41 @@
+profile_name: vehicle-make-model-canonical-v4
+task: vehicle_make_model_classification
+framework: torchvision
+output_root: runtime/training
+allow_pending_review: true
+dataset_adapter: imagefolder
+base_model: efficientnet_b0
+image_size: 260
+epochs: 25
+batch_size: 24
+workers: 4
+patience: 8
+seed: 42
+learning_rate: 0.0004
+weight_decay: 0.0005
+label_smoothing: 0.05
+dropout: 0.3
+freeze_backbone_epochs: 2
+validation_fraction: 0.15
+precision: fp32
+device: auto
+use_weighted_sampler: true
+augmentation:
+  horizontal_flip: true
+  motion_blur: true
+  defocus_blur: true
+  brightness_contrast: true
+  noise: true
+  compression_artifacts: true
+  perspective_distortion: true
+  random_erasing: true
+  mixup_alpha: 0.1
+  synthetic_support_ratio: 0.0
+  notes:
+    - Canonical-v4 unions canonical-v3 sources with the Synset-Boulevard synthetic supplemental (1400 images, 9 classes, CC-BY-4.0). Train counts climbed from 40-64 to 190-264 for jeep_grand_cherokee, dodge_durango, hyundai_sonata, kia_sorento, honda_cr_v, ford_explorer, honda_accord, honda_civic, chevrolet_equinox.
+    - Validation and holdout splits stay 100% real images per ADR-029; only train carries synthetic data.
+    - Warm-start backbone from canonical-v1 best.pt (the strongest validated checkpoint) via --initial-checkpoint not --replace-head, since the class space is identical to canonical-v3.
+    - Wait — head must still be reinitialized because canonical-v1 was 20 classes; the v4 manifest is 30 classes. Use --initial-checkpoint-replace-head.
+    - Lower LR (4e-4) than v3's 5e-4 because synthetic data can be noisy; conservative learning protects real-data signal.
+    - freeze_backbone_epochs=2 (down from v3's 3) because the new head only needs brief warm-up — most of the new classes already had backbone exposure in v3.
+    - Weighted sampler still required because remaining classes (dodge_charger, jeep_wrangler, toyota_4runner, toyota_corolla, toyota_highlander, gmc_yukon) still have 55-64 train samples and need upweighting.

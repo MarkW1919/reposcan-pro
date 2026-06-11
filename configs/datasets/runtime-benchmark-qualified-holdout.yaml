@@ -1,0 +1,151 @@
+dataset_name: runtime-benchmark-qualified-holdout
+dataset_version: 2026-03-24
+task: plate_detection
+format: eval_holdout
+storage_root: ml/inference/fixtures/runtime-benchmark-holdout
+review_status: approved
+provenance:
+  source_name: reposcan-runtime-benchmark-fixtures
+  source_kind: internal_generated
+  license_tier: internal
+  license_name: internal fixture assets
+  license_reference: internal://reposcan/runtime-benchmark-fixtures
+  region: us-fixture
+annotation_review:
+  reviewer: qa_fixture_01
+  reviewed_at_utc: 2026-03-24T12:00:00Z
+  accepted_tasks:
+    - plate_detection
+notes: Approved internal fixture holdout for runtime benchmark plumbing. This is not a field-acceptance dataset.
+assets:
+  - asset_id: fixture_eval_0001
+    relative_path: images/field_eval/fixture_eval_0001.jpg
+    capture_session_id: session_fixture_a
+    timestamp_utc: 2026-03-24T00:00:01Z
+    lighting_conditions: [night, ir_assisted]
+    distance_band: long_range
+    annotations: [plate_detection]
+    expected_plate_text: 6BZN220
+    vehicle_color: white
+    vehicle_make: toyota
+    tags: [low_light, long_range]
+    field_eval_candidate: true
+  - asset_id: fixture_eval_0002
+    relative_path: images/field_eval/fixture_eval_0002.jpg
+    capture_session_id: session_fixture_a
+    timestamp_utc: 2026-03-24T00:00:02Z
+    lighting_conditions: [night]
+    annotations: [plate_detection]
+    expected_plate_text: 6BZN220
+    vehicle_color: white
+    vehicle_make: toyota
+    tags: [low_light]
+    field_eval_candidate: true
+  - asset_id: fixture_eval_0003
+    relative_path: images/field_eval/fixture_eval_0003.jpg
+    capture_session_id: session_fixture_b
+    timestamp_utc: 2026-03-24T00:00:03Z
+    lighting_conditions: [daylight]
+    distance_band: long_range
+    annotations: [plate_detection]
+    expected_plate_text: 6BZN220
+    vehicle_color: white
+    vehicle_make: toyota
+    tags: [long_range]
+    field_eval_candidate: true
+  - asset_id: fixture_eval_0004
+    relative_path: images/field_eval/fixture_eval_0004.jpg
+    capture_session_id: session_fixture_b
+    timestamp_utc: 2026-03-24T00:00:04Z
+    lighting_conditions: [night]
+    distance_band: long_range
+    annotations: [plate_detection]
+    expected_plate_text: 6BZN220
+    vehicle_color: white
+    vehicle_make: toyota
+    tags: [low_light, long_range]
+    field_eval_candidate: true
+  - asset_id: fixture_eval_0005
+    relative_path: images/field_eval/fixture_eval_0005.jpg
+    capture_session_id: session_fixture_c
+    timestamp_utc: 2026-03-24T00:00:05Z
+    lighting_conditions: [night]
+    annotations: [plate_detection]
+    expected_plate_text: 6BZN220
+    vehicle_color: white
+    vehicle_make: toyota
+    tags: [low_light]
+    field_eval_candidate: true
+  - asset_id: fixture_eval_0006
+    relative_path: images/field_eval/fixture_eval_0006.jpg
+    capture_session_id: session_fixture_c
+    timestamp_utc: 2026-03-24T00:00:06Z
+    lighting_conditions: [daylight]
+    distance_band: long_range
+    annotations: [plate_detection]
+    expected_plate_text: 6BZN220
+    vehicle_color: white
+    vehicle_make: toyota
+    tags: [long_range]
+    field_eval_candidate: true
+  - asset_id: fixture_eval_0007
+    relative_path: images/field_eval/fixture_eval_0007.jpg
+    capture_session_id: session_fixture_d
+    timestamp_utc: 2026-03-24T00:00:07Z
+    lighting_conditions: [no_light]
+    annotations: [plate_detection]
+    expected_plate_text: 6BZN220
+    vehicle_color: white
+    vehicle_make: toyota
+    tags: [low_light]
+    field_eval_candidate: true
+  - asset_id: fixture_eval_0008
+    relative_path: images/field_eval/fixture_eval_0008.jpg
+    capture_session_id: session_fixture_d
+    timestamp_utc: 2026-03-24T00:00:08Z
+    lighting_conditions: [dusk]
+    distance_band: long_range
+    annotations: [plate_detection]
+    expected_plate_text: 6BZN220
+    vehicle_color: white
+    vehicle_make: toyota
+    tags: [low_light, long_range]
+    field_eval_candidate: true
+  - asset_id: fixture_eval_0009
+    relative_path: images/field_eval/fixture_eval_0009.jpg
+    capture_session_id: session_fixture_e
+    timestamp_utc: 2026-03-24T00:00:09Z
+    lighting_conditions: [daylight]
+    distance_band: medium
+    annotations: [plate_detection]
+    expected_plate_text: 6BZN220
+    vehicle_color: white
+    vehicle_make: toyota
+    tags: [baseline]
+    field_eval_candidate: true
+  - asset_id: fixture_eval_0010
+    relative_path: images/field_eval/fixture_eval_0010.jpg
+    capture_session_id: session_fixture_f
+    timestamp_utc: 2026-03-24T00:00:10Z
+    lighting_conditions: [night]
+    annotations: [plate_detection]
+    expected_plate_text: 6BZN221
+    vehicle_color: white
+    vehicle_make: toyota
+    tags: [low_light]
+    field_eval_candidate: true
+splits:
+  - split: field_eval
+    relative_path: images/field_eval
+    label_path: labels/field_eval
+    sample_count: 10
+    capture_session_ids:
+      - session_fixture_a
+      - session_fixture_b
+      - session_fixture_c
+      - session_fixture_d
+      - session_fixture_e
+      - session_fixture_f
+    tags:
+      - low_light
+      - long_range

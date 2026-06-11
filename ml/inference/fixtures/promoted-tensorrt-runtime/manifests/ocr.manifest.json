@@ -1,0 +1,26 @@
+{
+  "stage": "ocr",
+  "model_name": "lprnet-v1-trt",
+  "backend": "tensorrt",
+  "artifact_path": "artifacts/lprnet-v1.engine",
+  "artifact_sha256": "41fcdb723fb893df7eab1c2096a4aedff954ab87bba1281ddf9edb5b75b8fe6c",
+  "exported_at_utc": "2026-03-24T18:00:00Z",
+  "input_width": 94,
+  "input_height": 24,
+  "source_run_id": "fixture_tensorrt_export_001",
+  "source_checkpoint_ref": "ocr_best.engine",
+  "dataset_manifests": [
+    "configs/datasets/runtime-benchmark-qualified-holdout.yaml"
+  ],
+  "export_tool": "trtexec",
+  "export_tool_version": "10.0",
+  "opset_version": null,
+  "precision": "fp16",
+  "target_runtime": "tensorrt",
+  "cuda_version": "12.2",
+  "tensorrt_version": "10.0.1",
+  "device_compute_capability": "8.7",
+  "engine_profile": "opt",
+  "workspace_megabytes": 1024,
+  "notes": "Contract-validation TensorRT fixture bundle for Section 4 evidence."
+}

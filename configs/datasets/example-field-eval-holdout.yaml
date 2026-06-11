@@ -1,0 +1,48 @@
+dataset_name: example-curated-oklahoma-plate-detection-field-eval
+dataset_version: 2026-03-23
+task: plate_detection
+format: eval_holdout
+storage_root: data/eval/example-curated-oklahoma-plate-detection-field-eval
+review_status: approved
+provenance:
+  source_name: reposcan-field-capture-batch-01
+  source_kind: field_capture
+  license_tier: internal
+  license_name: internal field collection
+  license_reference: internal://reposcan/field-capture-policy
+  region: us-ok
+annotation_review:
+  reviewer: qa_annotator_01
+  reviewed_at_utc: 2026-03-23T08:35:00Z
+  accepted_tasks:
+    - plate_detection
+  notes: Example eval holdout manifest shape only.
+assets:
+  - asset_id: cap_0001
+    relative_path: images/field_eval/cap_0001.jpg
+    capture_session_id: session_20260322_ok_night
+    timestamp_utc: 2026-03-22T02:05:00Z
+    lighting_conditions:
+      - night
+      - ir_assisted
+    distance_band: long_range
+    annotations:
+      - plate_detection
+    expected_plate_text: 6BZN220
+    vehicle_color: white
+    vehicle_make: toyota
+    tags:
+      - low_light
+      - long_range
+    field_eval_candidate: true
+splits:
+  - split: field_eval
+    relative_path: images/field_eval
+    label_path: labels/field_eval
+    sample_count: 1
+    capture_session_ids:
+      - session_20260322_ok_night
+    tags:
+      - low_light
+      - long_range
+notes: Example field-eval holdout manifest shape only.

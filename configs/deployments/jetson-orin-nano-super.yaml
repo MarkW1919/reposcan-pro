@@ -1,0 +1,105 @@
+# Jetson Orin Nano Super deployment profile.
+# Validated by: reposcan_contracts.config.deployment.DeploymentConfig
+#
+# This is the default truck-edge profile for a single Nano Super appliance.
+# Keep secrets and customer endpoints in private deployment overrides.
+
+deployment_name: jetson-orin-nano-super
+description: "Repossession field LPR profile for a Jetson Orin Nano Super edge node"
+
+target_hardware: jetson_orin_nano_super
+
+enabled_services:
+  capture: true
+  preprocessing: true
+  inference: true
+  tracking: true
+  storage: true
+  alerting: true
+  api: true
+  ui: true
+  sync: true
+
+infrastructure:
+  metadata_backend: postgres
+  postgres_url: "postgresql://reposcan:reposcan@localhost:5432/reposcan"
+  media_root: "./media"
+  api_host: "0.0.0.0"
+  api_port: 8000
+  ui_port: 3000
+  log_level: info
+
+media_retention:
+  frames_days: 3
+  crops_days: 14
+  snippets_days: 7
+  exports_days: 30
+
+storage_pressure:
+  warning_free_space_gb: 10.0
+  minimum_free_space_gb: 5.0
+
+remote_sync:
+  enabled: true
+  endpoint_url: "http://127.0.0.1:8081/sync/detections"
+  timeout_seconds: 4.0
+
+alert_delivery:
+  enabled: true
+  webhook_url: "http://127.0.0.1:8081/alerts/webhook"
+  timeout_seconds: 4.0
+
+performance:
+  physical_camera_count: 2
+  inference_batch_size: 1
+  max_worker_threads: 4
+  frame_queue_depth: 12
+  enable_profiling: true
+  target_fps_per_camera: 10.0
+  max_active_cameras: 1
+  primary_ai_camera_count: 1
+  defer_secondary_ai_until_post_scan: false
+  queue_secondary_ai_during_lpr: true
+  latency_budget_ms_p95: 250.0
+  memory_budget_mb: 6144
+  startup_budget_seconds: 60.0
+  recovery_budget_seconds: 30.0
+
+runtime:
+  required_backend: tensorrt
+  target_runtime: tensorrt
+  required_path_base: config_dir
+  required_cuda_version: "12.2"
+  required_tensorrt_version: "10.0.1"
+  required_compute_capability: "8.7"
+
+api:
+  security:
+    enabled: false
+    allow_unauthenticated_health: true
+    allow_unauthenticated_version: true
+  audit:
+    enabled: true
+    log_root: "./runtime/api-audit"
+    max_read_limit: 1000
+  rate_limit:
+    enabled: true
+    requests_per_minute: 480
+  hardening:
+    trusted_hosts:
+      - "127.0.0.1"
+      - "localhost"
+      - "testserver"
+    cors_origins:
+      - "http://127.0.0.1:3000"
+      - "http://localhost:3000"
+      - "http://127.0.0.1:4173"
+      - "http://localhost:4173"
+      - "http://127.0.0.1:5173"
+      - "http://localhost:5173"
+    add_security_headers: true
+    expose_docs: false
+  versioning:
+    current_version: "v1"
+    canonical_prefix: "/api/v1"
+    enable_legacy_routes: true

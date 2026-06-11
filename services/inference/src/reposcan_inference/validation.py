@@ -1,0 +1,229 @@
+"""Model-stack validation helpers for runtime readiness checks."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from pydantic import BaseModel, Field, ValidationError
+
+from reposcan_contracts.config.model import (
+    ClassifierModelConfig,
+    DetectorModelConfig,
+    InferenceBackend,
+    ModelStackConfig,
+    OcrModelConfig,
+)
+
+from .onnx_adapters import validate_onnx_artifact
+from .runtime_adapters import (
+    BuiltinClassifierArtifact,
+    BuiltinOcrArtifact,
+    BuiltinPlateDetectorArtifact,
+    BuiltinVehicleDetectorArtifact,
+)
+
+
+_StageConfig = DetectorModelConfig | OcrModelConfig | ClassifierModelConfig
+
+
+def iter_model_stack_stages(model_stack: ModelStackConfig) -> list[tuple[str, _StageConfig]]:
+    """Single source of truth for every loadable stage in a model stack.
+
+    Used by runtime validation, promotion packaging, and deployment
+    compatibility checks so they cannot diverge. Includes the optional
+    real-time classifier AND every deferred_recognition stage (make/model,
+    each re-rank head, year, color) — the deferred heads are the only real
+    trained models in the canonical edge stack, so any consumer that skipped
+    them would validate/package a bundle missing its actual recognition
+    models.
+    """
+    stages: list[tuple[str, _StageConfig]] = [
+        ("vehicle_detector", model_stack.vehicle_detector),
+        ("plate_detector", model_stack.plate_detector),
+        ("ocr", model_stack.ocr),
+    ]
+    if model_stack.classifier is not None:
+        stages.append(("classifier", model_stack.classifier))
+    deferred = model_stack.deferred_recognition
+    if deferred is not None:
+        stages.append(("deferred.make_model", deferred.make_model))
+        for head in deferred.rerank_heads:
+            stages.append((f"deferred.rerank.{head.name}", head.classifier))
+        if deferred.year is not None:
+            stages.append(("deferred.year", deferred.year))
+        if deferred.color is not None:
+            stages.append(("deferred.color", deferred.color))
+    return stages
+
+
+class ValidationIssue(BaseModel):
+    severity: str = Field(pattern="^(error|warning)$")
+    stage: str
+    message: str
+
+
+class StageValidationReport(BaseModel):
+    stage: str
+    backend: str
+    artifact_path: str
+    ready: bool
+    issues: list[ValidationIssue] = Field(default_factory=list)
+
+
+class ModelStackValidationReport(BaseModel):
+    stack_name: str
+    ready: bool
+    stages: list[StageValidationReport] = Field(default_factory=list)
+
+    @property
+    def error_count(self) -> int:
+        return sum(1 for stage in self.stages for issue in stage.issues if issue.severity == "error")
+
+    @property
+    def warning_count(self) -> int:
+        return sum(1 for stage in self.stages for issue in stage.issues if issue.severity == "warning")
+
+
+def _artifact_exists(path: str | Path) -> Path:
+    artifact_path = Path(path)
+    if not artifact_path.exists():
+        raise FileNotFoundError(f"Artifact '{artifact_path}' does not exist")
+    return artifact_path
+
+
+def _validate_builtin(stage: str, artifact_path: Path) -> list[ValidationIssue]:
+    validators = {
+        "vehicle_detector": BuiltinVehicleDetectorArtifact,
+        "plate_detector": BuiltinPlateDetectorArtifact,
+        "ocr": BuiltinOcrArtifact,
+        "classifier": BuiltinClassifierArtifact,
+    }
+    model = validators[stage]
+    try:
+        model.model_validate_json(artifact_path.read_text(encoding="utf-8"))
+    except (OSError, ValidationError, ValueError) as exc:
+        return [ValidationIssue(severity="error", stage=stage, message=str(exc))]
+    return []
+
+
+def _validate_exported_backend(stage: str, backend: InferenceBackend, artifact_path: Path) -> list[ValidationIssue]:
+    """Validate artifact extension for TensorRT and PyTorch backends.
+
+    Note: ONNX is handled by the caller via ``validate_onnx_artifact`` and is
+    never passed into this function.
+    """
+    issues: list[ValidationIssue] = []
+    suffix = artifact_path.suffix.lower()
+    if backend == InferenceBackend.tensorrt and suffix not in {".engine", ".trt"}:
+        issues.append(
+            ValidationIssue(
+                severity="warning",
+                stage=stage,
+                message=f"Expected a TensorRT engine artifact for {stage}, found '{artifact_path.name}'.",
+            )
+        )
+    elif backend == InferenceBackend.pytorch and suffix not in {".pt", ".pth", ".ckpt"}:
+        issues.append(
+            ValidationIssue(
+                severity="warning",
+                stage=stage,
+                message=f"Expected a PyTorch checkpoint for {stage}, found '{artifact_path.name}'.",
+            )
+        )
+    return issues
+
+
+def _validate_fast_alpr(stage: str, artifact_path: Path) -> list[ValidationIssue]:
+    """Validate a fast_alpr OCR stage: an .onnx model plus its plate_config sibling.
+
+    fast-plate-ocr decodes with a ``<stem>_plate_config.yaml`` (alphabet, image
+    size, color mode); without it the model cannot be loaded, so a missing config
+    is a hard 'not ready' — surfaced here rather than at first inference.
+    """
+    issues: list[ValidationIssue] = []
+    if artifact_path.suffix.lower() != ".onnx":
+        issues.append(
+            ValidationIssue(
+                severity="error",
+                stage=stage,
+                message=f"Expected an .onnx model for fast_alpr {stage}, found '{artifact_path.name}'.",
+            )
+        )
+        return issues
+    candidates = [
+        artifact_path.with_name(f"{artifact_path.stem}_plate_config.yaml"),
+        artifact_path.with_name(f"{artifact_path.stem}.yaml"),
+        artifact_path.with_name("plate_config.yaml"),
+    ]
+    if not any(candidate.exists() for candidate in candidates):
+        issues.append(
+            ValidationIssue(
+                severity="error",
+                stage=stage,
+                message=(
+                    f"fast_alpr {stage} is missing its plate_config; expected "
+                    f"'{candidates[0].name}' next to '{artifact_path.name}'."
+                ),
+            )
+        )
+    return issues
+
+
+def _stage_report(
+    model_stack: ModelStackConfig,
+    stage: str,
+    model_config: DetectorModelConfig | OcrModelConfig | ClassifierModelConfig,
+) -> StageValidationReport:
+    issues: list[ValidationIssue] = []
+    try:
+        artifact_path = _artifact_exists(model_stack.resolve_artifact_path(model_config.artifact_path))
+    except FileNotFoundError as exc:
+        issues.append(ValidationIssue(severity="error", stage=stage, message=str(exc)))
+        return StageValidationReport(
+            stage=stage,
+            backend=model_config.backend.value,
+            artifact_path=model_config.artifact_path,
+            ready=False,
+            issues=issues,
+        )
+
+    if model_config.backend == InferenceBackend.builtin:
+        issues.extend(_validate_builtin(stage, artifact_path))
+    elif model_config.backend == InferenceBackend.onnx:
+        metadata_path = None
+        if isinstance(model_config, ClassifierModelConfig) and model_config.label_metadata_path:
+            metadata_path = model_stack.resolve_artifact_path(model_config.label_metadata_path)
+        issues.extend(
+            ValidationIssue(severity="error", stage=stage, message=message)
+            for message in validate_onnx_artifact(
+                stage,
+                model_config,
+                artifact_path=artifact_path,
+                metadata_path=metadata_path,
+            )
+        )
+    elif model_config.backend == InferenceBackend.fast_alpr:
+        issues.extend(_validate_fast_alpr(stage, artifact_path))
+    else:
+        issues.extend(_validate_exported_backend(stage, model_config.backend, artifact_path))
+
+    ready = not any(issue.severity == "error" for issue in issues)
+    return StageValidationReport(
+        stage=stage,
+        backend=model_config.backend.value,
+        artifact_path=model_config.artifact_path,
+        ready=ready,
+        issues=issues,
+    )
+
+
+def validate_model_stack(model_stack: ModelStackConfig) -> ModelStackValidationReport:
+    stages = [
+        _stage_report(model_stack, stage_id, stage_config)
+        for stage_id, stage_config in iter_model_stack_stages(model_stack)
+    ]
+    return ModelStackValidationReport(
+        stack_name=model_stack.stack_name,
+        ready=all(stage.ready for stage in stages),
+        stages=stages,
+    )

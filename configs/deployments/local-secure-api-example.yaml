@@ -1,0 +1,103 @@
+# Example secure API deployment profile for integration and auth testing.
+# Validated by: reposcan_contracts.config.deployment.DeploymentConfig
+#
+# Do not use the committed example API keys in production. Replace them in a
+# private deployment copy before exposing the API outside a local workstation.
+
+deployment_name: local-secure-api-example
+description: "Local workstation profile with example API auth enabled"
+
+target_hardware: cpu
+
+enabled_services:
+  capture: true
+  preprocessing: true
+  inference: true
+  tracking: true
+  storage: true
+  alerting: true
+  api: true
+  ui: true
+  sync: false
+
+infrastructure:
+  metadata_backend: json
+  postgres_url: "postgresql://reposcan:reposcan@localhost:5432/reposcan"
+  media_root: "./media"
+  api_host: "127.0.0.1"
+  api_port: 8100
+  ui_port: 3000
+  log_level: info
+
+media_retention:
+  frames_days: 7
+  crops_days: 30
+  snippets_days: 14
+  exports_days: 90
+
+storage_pressure:
+  warning_free_space_gb: 5.0
+  minimum_free_space_gb: 2.0
+
+remote_sync:
+  enabled: false
+  timeout_seconds: 5.0
+
+alert_delivery:
+  enabled: false
+  timeout_seconds: 5.0
+
+performance:
+  inference_batch_size: 1
+  max_worker_threads: 4
+  frame_queue_depth: 30
+  enable_profiling: true
+
+runtime:
+  required_backend: onnx
+  target_runtime: onnxruntime
+
+api:
+  security:
+    enabled: true
+    api_key_header: "X-RepoScan-Api-Key"
+    allow_unauthenticated_health: true
+    allow_unauthenticated_version: true
+    principals:
+      - principal_id: "viewer_demo"
+        display_name: "Viewer Demo"
+        api_key: "viewer-demo-token"
+        roles: ["viewer"]
+      - principal_id: "operator_demo"
+        display_name: "Operator Demo"
+        api_key: "operator-demo-token"
+        roles: ["viewer", "operator"]
+      - principal_id: "admin_demo"
+        display_name: "Admin Demo"
+        api_key: "admin-demo-token"
+        roles: ["viewer", "operator", "admin", "integrator"]
+  audit:
+    enabled: true
+    log_root: "./runtime/api-audit"
+    max_read_limit: 500
+  rate_limit:
+    enabled: true
+    requests_per_minute: 120
+  hardening:
+    trusted_hosts:
+      - "127.0.0.1"
+      - "localhost"
+      - "testserver"
+    cors_origins:
+      - "http://127.0.0.1:3000"
+      - "http://localhost:3000"
+      - "http://127.0.0.1:4173"
+      - "http://localhost:4173"
+      - "http://127.0.0.1:5173"
+      - "http://localhost:5173"
+    add_security_headers: true
+    expose_docs: false
+  versioning:
+    current_version: "v1"
+    canonical_prefix: "/api/v1"
+    enable_legacy_routes: true

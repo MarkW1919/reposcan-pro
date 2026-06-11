@@ -1,0 +1,65 @@
+dataset_name: example-oklahoma-capture-intake
+dataset_version: 2026-03-23
+task: plate_detection
+format: generic_capture
+storage_root: data/staged/example-oklahoma-capture-intake
+review_status: approved
+provenance:
+  source_name: reposcan-field-capture-batch-01
+  source_kind: field_capture
+  license_tier: internal
+  license_name: internal field collection
+  license_reference: internal://reposcan/field-capture-policy
+  region: us-ok
+  collected_by: reposcan-field-team
+  collection_start_utc: 2026-03-22T02:00:00Z
+  collection_end_utc: 2026-03-22T03:30:00Z
+annotation_review:
+  reviewer: annotator_01
+  reviewed_at_utc: 2026-03-23T04:00:00Z
+  accepted_tasks:
+    - plate_detection
+    - plate_ocr
+assets:
+  - asset_id: cap_0001
+    relative_path: session_20260322_ok_night/frame_0001.jpg
+    capture_session_id: session_20260322_ok_night
+    timestamp_utc: 2026-03-22T02:05:00Z
+    lighting_conditions:
+      - night
+      - ir_assisted
+    distance_band: long_range
+    annotations:
+      - plate_detection
+      - plate_ocr
+    expected_plate_text: 8ABC123
+    tags:
+      - long_range
+      - low_light
+    field_eval_candidate: true
+  - asset_id: cap_0002
+    relative_path: session_20260322_ok_night/frame_0002.jpg
+    capture_session_id: session_20260322_ok_night
+    timestamp_utc: 2026-03-22T02:05:05Z
+    lighting_conditions:
+      - night
+    distance_band: medium
+    annotations:
+      - plate_detection
+      - plate_ocr
+    expected_plate_text: 8ABC123
+    tags:
+      - low_light
+  - asset_id: cap_0003
+    relative_path: session_20260322_ok_day/frame_0100.jpg
+    capture_session_id: session_20260322_ok_day
+    timestamp_utc: 2026-03-22T19:15:00Z
+    lighting_conditions:
+      - daylight
+    distance_band: medium
+    annotations:
+      - plate_detection
+      - plate_ocr
+    expected_plate_text: 7XYZ001
+    tags:
+      - daytime

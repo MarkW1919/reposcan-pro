@@ -1,0 +1,15 @@
+{
+  "generated_at_utc": "2026-03-25T00:15:00Z",
+  "sync_transport": {
+    "first_run_failed": 1,
+    "retry_run_synced": 1,
+    "idempotent_replay_synced": 1,
+    "remote_unique_detections": 1,
+    "remote_sync_posts": 3,
+    "final_sync_status": "synced"
+  },
+  "alert_delivery": {
+    "remote_unique_alerts": 1,
+    "remote_alert_posts": 2
+  }
+}

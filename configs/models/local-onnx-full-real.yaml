@@ -1,0 +1,126 @@
+# COMPLETE real recognition stack — every stage backed by a trained/pretrained
+# model, no fixtures. This is the fullest end-to-end pipeline the repo can run
+# today on ONNX Runtime, and the concrete artifact set that TensorRT-converts
+# for the Jetson Orin Nano.
+# Validated by: reposcan_contracts.config.model.ModelStackConfig
+#
+# PIPELINE
+#   vehicle detect (real YOLO)  -> plate detect (real yolo-v9-t end2end)
+#   -> plate OCR (real fast-plate-ocr)                                  [real-time]
+#   -> deferred make/model + Jeep/GM-SUV re-rank + year + color (real)  [post-scan]
+#
+# SCOPE / HONESTY (read docs/VEHICLE_RECOGNITION_PIPELINE_STATUS.md)
+# "Real" here means trained, not field-accepted. Specifically:
+#  - vehicle_detector is a 1-class ("vehicle") Open Images "cpu_smoke" YOLO —
+#    a real detector but quick/small, NOT production-grade recall at long range.
+#  - plate detector + OCR are redistributable global pretrained models, not
+#    US/OK-tuned; OCR letterboxing on very tight crops needs field tuning.
+#  - color head is trained on synthetic imagery only (no real-image validation).
+#  - year-bucket holdout is ~68%.
+# None of these are field-accepted until the long-range / low-light / IR field
+# eval gate passes (docs/FIELD_EVAL_QUALIFICATION.md). This config exists to run
+# and validate the whole chain end-to-end and to be the TensorRT conversion
+# source — it is NOT a promoted release.
+#
+# ARTIFACT PATHS
+# All weights live under runtime/ (gitignored, no_model_weight_commits) and are
+# cataloged with checksums in docs/MODEL_INVENTORY.md.
+
+stack_name: local-onnx-full-real
+description: "Complete real stack: real vehicle+plate detect + fast-plate-ocr + deferred make/model/rerank/year/color — full end-to-end validation & TensorRT source, NOT a field release"
+path_base: repo_root
+
+vehicle_detector:
+  name: open-images-vehicle-yolo-smoke
+  backend: onnx
+  artifact_path: runtime/training/vehicle_detector_open_images_cpu_smoke_3000_20260415/weights/best.onnx
+  input_width: 640
+  input_height: 640
+  normalization_mean: [0.0, 0.0, 0.0]
+  normalization_std: [1.0, 1.0, 1.0]
+  class_labels: [vehicle]
+  confidence_threshold: 0.4
+  nms_iou_threshold: 0.5
+
+plate_detector:
+  name: yolo-v9-t-plate-end2end
+  backend: onnx
+  artifact_path: runtime/models/plate-detector/yolo-v9-t-384-license-plates-end2end.onnx
+  input_width: 384
+  input_height: 384
+  normalization_mean: [0.0, 0.0, 0.0]
+  normalization_std: [1.0, 1.0, 1.0]
+  class_labels: [plate]
+  confidence_threshold: 0.5
+  nms_iou_threshold: 0.45
+
+ocr:
+  name: cct-xs-v2-global
+  backend: fast_alpr
+  artifact_path: runtime/models/plate-ocr/cct_xs_v2_global.onnx
+  input_width: 128
+  input_height: 64
+  charset: "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_"
+  beam_width: 1
+  confidence_threshold: 0.4
+
+# Real-time classifier slot intentionally omitted (LPR-only on the real-time
+# camera). All vehicle recognition lives in deferred_recognition, matching the
+# dual-camera design where make/model/color/year run post-scan, not in the
+# real-time latency budget.
+
+deferred_recognition:
+  make_model:
+    name: canonical-v5-make-model
+    backend: onnx
+    artifact_path: runtime/training/vehicle-make-model-canonical-v5_20260519_run1/exports/model.onnx
+    label_metadata_path: runtime/training/vehicle-make-model-canonical-v5_20260519_run1/exports/labels.json
+    input_width: 260
+    input_height: 260
+    normalization_mean: [0.485, 0.456, 0.406]
+    normalization_std: [0.229, 0.224, 0.225]
+
+  rerank_heads:
+    - name: gm-fullsize-suv
+      trigger_classes: [chevrolet_suburban, chevrolet_tahoe, gmc_yukon]
+      classifier:
+        name: rerank-gm-fullsize-suv-v1
+        backend: onnx
+        artifact_path: runtime/training/vehicle-rerank-gm-fullsize-suv-v1_20260512_run1/exports/model.onnx
+        label_metadata_path: runtime/training/vehicle-rerank-gm-fullsize-suv-v1_20260512_run1/exports/labels.json
+        input_width: 260
+        input_height: 260
+        normalization_mean: [0.485, 0.456, 0.406]
+        normalization_std: [0.229, 0.224, 0.225]
+
+    - name: jeep
+      trigger_classes: [jeep_grand_cherokee, jeep_wrangler]
+      classifier:
+        name: rerank-jeep-realonly-v1
+        backend: onnx
+        artifact_path: runtime/training/vehicle-rerank-jeep-realonly-v1_20260514_run1/exports/model.onnx
+        label_metadata_path: runtime/training/vehicle-rerank-jeep-realonly-v1_20260514_run1/exports/labels.json
+        input_width: 260
+        input_height: 260
+        normalization_mean: [0.485, 0.456, 0.406]
+        normalization_std: [0.229, 0.224, 0.225]
+
+  year:
+    name: year-bucket-canonical-v1
+    backend: onnx
+    artifact_path: runtime/training/vehicle-year-bucket-canonical-v1_20260509_run1/exports/model.onnx
+    label_metadata_path: runtime/training/vehicle-year-bucket-canonical-v1_20260509_run1/exports/labels.json
+    input_width: 260
+    input_height: 260
+    normalization_mean: [0.485, 0.456, 0.406]
+    normalization_std: [0.229, 0.224, 0.225]
+
+  color:
+    name: color-canonical-v1
+    backend: onnx
+    artifact_path: runtime/training/vehicle-color-canonical-v1_20260512_run1/exports/model.onnx
+    label_metadata_path: runtime/training/vehicle-color-canonical-v1_20260512_run1/exports/labels.json
+    input_width: 260
+    input_height: 260
+    normalization_mean: [0.485, 0.456, 0.406]
+    normalization_std: [0.229, 0.224, 0.225]

@@ -1,0 +1,73 @@
+dataset_name: example-curated-oklahoma-plate-detection
+dataset_version: 2026-03-23
+task: plate_detection
+format: yolo_detection
+storage_root: data/curated/example-curated-oklahoma-plate-detection
+review_status: approved
+provenance:
+  source_name: reposcan-field-capture-batch-01
+  source_kind: field_capture
+  license_tier: internal
+  license_name: internal field collection
+  license_reference: internal://reposcan/field-capture-policy
+  region: us-ok
+annotation_review:
+  reviewer: qa_annotator_01
+  reviewed_at_utc: 2026-03-23T08:30:00Z
+  accepted_tasks:
+    - plate_detection
+  notes: Example curated YOLO manifest shape only.
+assets:
+  - asset_id: cap_0002
+    relative_path: images/train/cap_0002.jpg
+    capture_session_id: session_20260322_ok_night
+    timestamp_utc: 2026-03-22T02:05:05Z
+    lighting_conditions:
+      - night
+    distance_band: medium
+    annotations:
+      - plate_detection
+    tags:
+      - low_light
+  - asset_id: cap_0003
+    relative_path: images/validation/cap_0003.jpg
+    capture_session_id: session_20260322_ok_day
+    timestamp_utc: 2026-03-22T19:15:00Z
+    lighting_conditions:
+      - daylight
+    distance_band: medium
+    annotations:
+      - plate_detection
+    tags:
+      - daytime
+  - asset_id: cap_0004
+    relative_path: images/holdout/cap_0004.jpg
+    capture_session_id: session_20260322_ok_dusk
+    timestamp_utc: 2026-03-22T19:45:00Z
+    lighting_conditions:
+      - dusk
+    distance_band: long_range
+    annotations:
+      - plate_detection
+    tags:
+      - long_range
+splits:
+  - split: train
+    relative_path: images/train
+    label_path: labels/train
+    sample_count: 1
+    capture_session_ids:
+      - session_20260322_ok_night
+  - split: validation
+    relative_path: images/validation
+    label_path: labels/validation
+    sample_count: 1
+    capture_session_ids:
+      - session_20260322_ok_day
+  - split: holdout
+    relative_path: images/holdout
+    label_path: labels/holdout
+    sample_count: 1
+    capture_session_ids:
+      - session_20260322_ok_dusk
+notes: Example curated detection manifest shape only.

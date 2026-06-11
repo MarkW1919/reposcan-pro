@@ -1,0 +1,15 @@
+entries:
+  - make: Audi
+    model: Q4 e-tron
+    aliases:
+      - Q4 etron
+    source_models:
+      - Q4 E-TRON
+    notes: Normalize hyphenation differences from source catalogs.
+  - make: Ford
+    model: F-150
+    aliases:
+      - F150
+    source_models:
+      - F-150
+    notes: Keep exact F-150 matching separate from Super Duty lines.

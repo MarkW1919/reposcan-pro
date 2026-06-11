@@ -1,0 +1,41 @@
+release_id: local-onnx-20260323-101500
+channel_name: local-dev-demo
+released_at_utc: 2026-03-23T10:15:00Z
+stack_name: fixture-local-dev
+bundle_root: C:/artifacts/models/promoted/fixture-local-dev
+model_config_path: C:/artifacts/models/promoted/fixture-local-dev/promoted-onnx.yaml
+deployment_config_path: configs/deployments/local-dev.yaml
+benchmark_manifest_path: data/manifests/benchmarks/oklahoma-night-long-range.yaml
+benchmark_report_path: C:/artifacts/models/registry/releases/local-onnx-20260323-101500/benchmark_report.json
+benchmark_name: oklahoma-night-long-range
+overall_benchmark:
+  frames: 42
+  exact_match_rate: 0.88
+  character_accuracy: 0.96
+  color_accuracy: 0.92
+  make_accuracy: 0.9
+subset_benchmarks:
+  long_range:
+    frames: 18
+    exact_match_rate: 0.83
+    character_accuracy: 0.94
+  low_light:
+    frames: 24
+    exact_match_rate: 0.92
+    character_accuracy: 0.97
+validation:
+  runtime_ready: true
+  promotion_ready: true
+  deployment_ready: true
+  error_count: 0
+  warning_count: 0
+  issues: []
+source_run_ids:
+  - plate_detector_run_20260323_01
+source_checkpoint_refs:
+  - yolov8s_plate_epoch48.pt
+dataset_manifest_refs:
+  - data/manifests/oklahoma_plate_detection_curated.yaml
+  - data/manifests/oklahoma_plate_detection_field_eval.yaml
+supersedes_release_id: local-onnx-20260320-114500
+notes: Example accepted release record shape only.

@@ -11,6 +11,8 @@ RepoScan Pro must be trained and validated with data that reflects real deployme
 
 ## Priority Data Domains
 
+- Oklahoma-common vehicle mix: pickups, UVs/SUVs/crossovers, passenger cars, and vans/minivans
+- Oklahoma-priority truck and SUV families such as Ford F-Series, Chevrolet Silverado, Ram pickups, GMC Sierra, Toyota Tacoma, Tahoe, and Suburban
 - long-range vehicle scenes
 - small and angled license plates
 - low-light and no-light scenes
@@ -23,11 +25,17 @@ RepoScan Pro must be trained and validated with data that reflects real deployme
 
 ```text
 data/
-├─ raw/
-├─ staged/
-├─ curated/
-├─ eval/
-└─ manifests/
+|-- raw/
+|-- staged/
+|-- curated/
+|-- eval/
+`-- manifests/
+```
+
+Create it locally with:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\init_dataset_workspace.py --root .\data
 ```
 
 ## Annotation Requirements
@@ -37,6 +45,18 @@ data/
 - OCR text labels with auditability for uncertain characters
 - vehicle attribute labels separated by task where practical
 - metadata for lighting condition, distance band, and scene quality when available
+
+## Vehicle Recognition Catalog
+
+Make/model/year recognition should not rely on ad hoc label strings copied from mixed sources.
+
+Use a canonical seed list plus a year-validation pass to build the training taxonomy:
+
+1. start with a markdown or CSV seed list of `Year | Make | Model`
+2. validate model-year availability against a reviewed source
+3. emit a canonical catalog plus expanded per-year labels
+
+The repo now includes `scripts/build_vehicle_recognition_catalog.py` for this step. It accepts the same markdown-table shape the operator team is already compiling, can expand placeholder rows such as `all models from database coverage`, and validates year availability against the official NHTSA vehicle catalog API while caching results locally for repeatable offline use.
 
 ## Split Strategy
 
@@ -48,9 +68,25 @@ data/
 
 No dataset enters a training plan until it passes provenance, annotation quality, and imaging realism review.
 
+Legacy Seen-It-First training assets on this machine should enter RepoScan Pro through typed manifests and review, not through direct code reuse.
+
+For plate detection, reviewed captures should be promoted into curated YOLO datasets and eval holdouts with the workflow in [Detection Dataset Curation](DETECTION_DATASET_CURATION.md).
+
+Approved `eval_holdout` manifests are also the preferred source for promoted-bundle benchmark runs. The benchmark CLI can derive a tagged frame manifest directly from an approved holdout manifest so evaluation stays tied to reviewed dataset records instead of ad hoc path lists.
+
+Before a holdout is treated as a real regression gate, run the qualification workflow in [Field Eval Qualification](FIELD_EVAL_QUALIFICATION.md). That step verifies minimum coverage for `long_range`, `low_light`, session spread, and benchmark-ready labeling.
+
+For Oklahoma deployment readiness, every primary training manifest should also pass the Oklahoma commercial audit in [Oklahoma Dataset Readiness](OKLAHOMA_DATASET_READINESS.md). That gate checks approved review status, license status, split coverage, session metadata, low-light / long-range coverage, synthetic-data limits, and Oklahoma vehicle-class tags.
+
+When internet-sourced public images are needed to expand make/model coverage, use the FiftyOne workflow in [Internet Vehicle Image Pipeline](INTERNET_VEHICLE_IMAGE_PIPELINE.md). It pulls public candidate images into a review app, supports CSV batch labeling, adds optional pretrained VLM-assisted suggestions, and exports only accepted/reviewed samples into typed RepoScan manifests. VLM consensus rows may be exported as `pending` warm-start data with `--allow-unreviewed`, but approved release gates still require reviewed labels.
+
 ## Related Documents
 
 - [Training](TRAINING.md)
+- [Annotation Standards](ANNOTATION_STANDARDS.md)
+- [Dataset Intake Workflow](DATASET_INTAKE_WORKFLOW.md)
+- [Detection Dataset Curation](DETECTION_DATASET_CURATION.md)
+- [Oklahoma Dataset Readiness](OKLAHOMA_DATASET_READINESS.md)
+- [Internet Vehicle Image Pipeline](INTERNET_VEHICLE_IMAGE_PIPELINE.md)
 - [Requirements](REQUIREMENTS.md)
 - [Dataset Intake Skill](../.claude/skills/dataset-intake/SKILL.md)
-

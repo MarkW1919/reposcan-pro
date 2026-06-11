@@ -1,0 +1,50 @@
+# Example USB camera configuration for laptop or in-cab direct capture.
+# Validated by: reposcan_contracts.config.camera.CameraConfig
+
+camera_id: cam_cab_usb_01
+display_name: "Cab USB Camera 1"
+source_type: usb
+stream_url: null
+device_index: 0
+
+sensor:
+  type: uvc_generic
+  resolution_w: 1920
+  resolution_h: 1080
+  fps: 30
+  bits_per_pixel: 8
+  color_mode: color
+
+optics:
+  focal_length_mm: 12.0
+  aperture_f: 2.0
+  ir_illuminator: false
+  ir_wavelength_nm: null
+
+exposure:
+  mode: auto
+  target_brightness: 120
+  shutter_speed_us: null
+  gain_db: null
+
+mounting:
+  height_m: 1.7
+  angle_deg: -5.0
+  orientation: fixed
+  gps_latitude: null
+  gps_longitude: null
+  gps_accuracy_m: null
+
+gps:
+  provider: nmea_serial
+  serial_port: COM5
+  baud_rate: 9600
+  timeout_s: 1.0
+  max_snapshot_age_s: 10.0
+
+capture:
+  target_fps: 30
+  reconnect_delay_s: 2.0
+  max_reconnect_attempts: 5
+
+enabled: true

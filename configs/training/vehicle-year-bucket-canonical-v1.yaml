@@ -1,0 +1,39 @@
+profile_name: vehicle-year-bucket-canonical-v1
+task: vehicle_year_classification
+framework: torchvision
+output_root: runtime/training
+allow_pending_review: true
+dataset_adapter: imagefolder
+base_model: efficientnet_b0
+image_size: 260
+epochs: 20
+batch_size: 24
+workers: 4
+patience: 6
+seed: 42
+learning_rate: 0.0008
+weight_decay: 0.0005
+label_smoothing: 0.05
+dropout: 0.3
+freeze_backbone_epochs: 3
+validation_fraction: 0.15
+precision: fp32
+device: auto
+use_weighted_sampler: true
+augmentation:
+  horizontal_flip: true
+  motion_blur: true
+  defocus_blur: true
+  brightness_contrast: true
+  noise: true
+  compression_artifacts: true
+  perspective_distortion: true
+  random_erasing: true
+  mixup_alpha: 0.05
+  synthetic_support_ratio: 0.0
+  notes:
+    - 5-bucket year classifier (pre_2010, 2011_2014, 2015_2018, 2019_2022, 2023_plus) trained on the canonical make/model imagery reorganized by year metadata.
+    - Warm-start the backbone from canonical-v1 best.pt via --initial-checkpoint-replace-head; the head must be reinitialized because the class space is 5 (year buckets) instead of 20 (make/model).
+    - Weighted sampler is essential because bucket sizes are unbalanced (pre_2010=1945 to 2023_plus=189 train samples). Without weighting the model would over-predict the older buckets.
+    - Lower mixup (0.05) than make/model training because year is a more visually subtle attribute than make/model and mixup blends can wash out the generation cues we want the model to learn.
+    - Image classification at 260px reuses the make/model preprocessing pipeline so a single ONNX runtime can route the same crop through both heads at inference.

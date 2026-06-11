@@ -1,0 +1,46 @@
+[Unit]
+Description=RepoScan Pro Ingest Runtime (capture → inference → storage)
+Documentation=https://github.com/your-org/reposcan-pro
+After=network.target reposcan-api.service
+Wants=reposcan-api.service
+
+[Service]
+Type=simple
+User=reposcan
+Group=reposcan
+WorkingDirectory=/opt/reposcan-pro
+
+EnvironmentFile=/etc/reposcan/env
+Environment=PYTHONPATH=/opt/reposcan-pro/packages/contracts/src:/opt/reposcan-pro/apps/api/src:/opt/reposcan-pro/services/alerting/src:/opt/reposcan-pro/services/capture/src:/opt/reposcan-pro/services/inference/src:/opt/reposcan-pro/services/preprocessing/src:/opt/reposcan-pro/services/storage/src:/opt/reposcan-pro/services/sync/src:/opt/reposcan-pro/services/tracking/src
+
+# The ingest entry point drives the full capture → preprocessing → inference
+# → tracking → storage → alerting pipeline for all configured cameras.
+ExecStart=/opt/reposcan-pro/.venv/bin/python /opt/reposcan-pro/scripts/run_live_ingest.py \
+    --camera-config-dir /opt/reposcan-pro/configs/cameras \
+    --model-config /opt/reposcan-pro/configs/models/local-onnx-runtime.yaml \
+    --pipeline-config /opt/reposcan-pro/configs/pipelines/default-edge.yaml \
+    --deployment-config /opt/reposcan-pro/configs/deployments/${REPOSCAN_DEPLOY_PROFILE}.yaml \
+    --metadata-root /opt/reposcan-pro/runtime/storage \
+    --preprocessed-root /opt/reposcan-pro/runtime/preprocessed \
+    --capture-output-root /opt/reposcan-pro/media/live-capture
+
+# Camera streams may drop at startup; give time for devices to settle.
+TimeoutStartSec=30
+TimeoutStopSec=20
+KillMode=mixed
+KillSignal=SIGTERM
+
+# Aggressive restart — camera feeds must resume after power-loss automatically.
+Restart=always
+RestartSec=8
+StartLimitIntervalSec=120
+StartLimitBurst=10
+
+LimitNOFILE=65536
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=reposcan-ingest
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,40 @@
+profile_name: vehicle-rerank-tall-suv-v2
+task: vehicle_make_model_classification
+framework: torchvision
+output_root: runtime/training
+allow_pending_review: true
+dataset_adapter: imagefolder
+base_model: efficientnet_b0
+image_size: 260
+epochs: 20
+batch_size: 24
+workers: 4
+patience: 7
+seed: 42
+learning_rate: 0.0005
+weight_decay: 0.0005
+label_smoothing: 0.05
+dropout: 0.3
+freeze_backbone_epochs: 2
+validation_fraction: 0.15
+precision: fp32
+device: auto
+use_weighted_sampler: true
+augmentation:
+  horizontal_flip: true
+  motion_blur: true
+  defocus_blur: true
+  brightness_contrast: true
+  noise: true
+  compression_artifacts: true
+  perspective_distortion: true
+  random_erasing: true
+  mixup_alpha: 0.05
+  synthetic_support_ratio: 0.0
+  notes:
+    - 5-class re-rank head for the v5 full-size body-on-frame SUV cluster - chevrolet_suburban, chevrolet_tahoe, gmc_yukon, cadillac_escalade, lincoln_navigator. Supersedes the 3-class gm-fullsize-suv-v1 head, which could not catch v5's new confusions where gmc_yukon misclassifies as cadillac_escalade (a v5-new sibling) - measured in scripts/evaluate_make_model_dispatch_v5.py, where the v4-era head contributed only +0.42pp because it never fired for Yukon (v5 predicts Escalade, outside the 3-class trigger set).
+    - Adding Escalade and Navigator to the head's class set lets the dispatch trigger on those v5 predictions and re-rank within the true tall-SUV cluster, recovering the Yukon/Escalade/Navigator confusions the 3-class head structurally could not.
+    - Warm-start backbone from canonical-v1 best.pt via --initial-checkpoint-replace-head; head reinitialized for 5 classes.
+    - Weighted sampler required - class sizes are uneven (Tahoe 269 / Suburban 183 / Escalade 64 / Navigator 64 / Yukon 55 train). The thin classes share platform silhouettes with the anchors, so the head learns rear-quarter and grille cues that wash out in the 40-way softmax.
+    - Same image_size (260) and ImageNet normalization as canonical-v5 so the deferred pipeline routes the same crop into this head without re-cropping.
+    - Holdout for the three thin classes is only n=8 each, so per-class holdout deltas are noisy; treat the head as a structural improvement validated primarily by the larger Tahoe (n=36) and Suburban (n=24) classes and by field behavior, not by a single small-sample number.

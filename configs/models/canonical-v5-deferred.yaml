@@ -1,0 +1,129 @@
+# Deferred recognition stack (Option B): canonical-v5 make/model primary +
+# Jeep / GM-SUV re-rank specialists + year-bucket + color, on fixture
+# detector / plate / OCR.
+# Validated by: reposcan_contracts.config.model.ModelStackConfig
+#
+# WHY THIS STACK EXISTS
+# The trained recognition heads (v5 make/model, two re-rank specialists,
+# year-bucket, color) previously had no config home — they were exported
+# artifacts with no way to compose into the dual-camera deferred pipeline.
+# This stack realizes Option B from VEHICLE_RECOGNITION_PIPELINE_STATUS.md:
+# a `deferred_recognition` block that runs AFTER the scan radius is exited,
+# kept separate from the latency-budgeted real-time LPR classifier slot.
+#
+# DISPATCH POLICY
+# Run make_model first on each stored crop. If it predicts one of a re-rank
+# head's trigger_classes, re-run that specialist and take its prediction.
+# Year and color run unconditionally as parallel attribute heads.
+#
+# SCOPE / HONESTY
+# vehicle_detector / plate_detector / ocr are STILL FIXTURES — this is not a
+# deployable end-to-end field stack. It exists to wire and validate the
+# deferred recognition composition. The classifier (real-time slot) is left
+# null on purpose: in the dual-camera design the real-time camera does LPR
+# only, and make/model/color/year are deferred.
+#
+# ARTIFACT PATHS
+# All recognition heads live under runtime/ (gitignored model weights, per
+# repo policy). Referenced in place, mirroring the training-config convention.
+
+stack_name: canonical-v5-deferred
+description: "Deferred recognition: v5 make/model + Jeep/GM-SUV re-rank + year + color on fixture detector/plate/OCR — composition validation, NOT a deployable release"
+path_base: repo_root
+
+vehicle_detector:
+  name: fixture-vehicle-detector
+  backend: onnx
+  artifact_path: ml/inference/fixtures/onnx-runtime/vehicle-detector.onnx
+  input_width: 640
+  input_height: 640
+  normalization_mean: [0.0, 0.0, 0.0]
+  normalization_std: [1.0, 1.0, 1.0]
+  class_labels: [car]
+  confidence_threshold: 0.4
+  nms_iou_threshold: 0.5
+
+plate_detector:
+  name: fixture-plate-detector
+  backend: onnx
+  artifact_path: ml/inference/fixtures/onnx-runtime/plate-detector.onnx
+  input_width: 320
+  input_height: 160
+  normalization_mean: [0.0, 0.0, 0.0]
+  normalization_std: [1.0, 1.0, 1.0]
+  class_labels: [plate]
+  confidence_threshold: 0.5
+  nms_iou_threshold: 0.45
+
+ocr:
+  name: fixture-ocr
+  backend: onnx
+  artifact_path: ml/inference/fixtures/onnx-runtime/ocr.onnx
+  input_width: 144
+  input_height: 48
+  charset: "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ "
+  beam_width: 1
+  confidence_threshold: 0.6
+
+# Real-time classifier slot intentionally omitted (LPR-only on the real-time
+# camera). All recognition lives in deferred_recognition below.
+
+deferred_recognition:
+  make_model:
+    name: canonical-v5-make-model
+    backend: onnx
+    artifact_path: runtime/training/vehicle-make-model-canonical-v5_20260519_run1/exports/model.onnx
+    label_metadata_path: runtime/training/vehicle-make-model-canonical-v5_20260519_run1/exports/labels.json
+    input_width: 260
+    input_height: 260
+    normalization_mean: [0.485, 0.456, 0.406]
+    normalization_std: [0.229, 0.224, 0.225]
+
+  rerank_heads:
+    - name: gm-fullsize-suv
+      # v5 still confuses the GM full-size SUV cluster (Suburban/Tahoe/Yukon).
+      # Escalade is a v5-new sibling and a known Yukon confusion target; it is
+      # NOT yet in this head's class set (head trained on v4's 3-class cluster)
+      # — see the v5 re-rank compatibility caveat in the status doc.
+      trigger_classes: [chevrolet_suburban, chevrolet_tahoe, gmc_yukon]
+      classifier:
+        name: rerank-gm-fullsize-suv-v1
+        backend: onnx
+        artifact_path: runtime/training/vehicle-rerank-gm-fullsize-suv-v1_20260512_run1/exports/model.onnx
+        label_metadata_path: runtime/training/vehicle-rerank-gm-fullsize-suv-v1_20260512_run1/exports/labels.json
+        input_width: 260
+        input_height: 260
+        normalization_mean: [0.485, 0.456, 0.406]
+        normalization_std: [0.229, 0.224, 0.225]
+
+    - name: jeep
+      trigger_classes: [jeep_grand_cherokee, jeep_wrangler]
+      classifier:
+        name: rerank-jeep-realonly-v1
+        backend: onnx
+        artifact_path: runtime/training/vehicle-rerank-jeep-realonly-v1_20260514_run1/exports/model.onnx
+        label_metadata_path: runtime/training/vehicle-rerank-jeep-realonly-v1_20260514_run1/exports/labels.json
+        input_width: 260
+        input_height: 260
+        normalization_mean: [0.485, 0.456, 0.406]
+        normalization_std: [0.229, 0.224, 0.225]
+
+  year:
+    name: year-bucket-canonical-v1
+    backend: onnx
+    artifact_path: runtime/training/vehicle-year-bucket-canonical-v1_20260509_run1/exports/model.onnx
+    label_metadata_path: runtime/training/vehicle-year-bucket-canonical-v1_20260509_run1/exports/labels.json
+    input_width: 260
+    input_height: 260
+    normalization_mean: [0.485, 0.456, 0.406]
+    normalization_std: [0.229, 0.224, 0.225]
+
+  color:
+    name: color-canonical-v1
+    backend: onnx
+    artifact_path: runtime/training/vehicle-color-canonical-v1_20260512_run1/exports/model.onnx
+    label_metadata_path: runtime/training/vehicle-color-canonical-v1_20260512_run1/exports/labels.json
+    input_width: 260
+    input_height: 260
+    normalization_mean: [0.485, 0.456, 0.406]
+    normalization_std: [0.229, 0.224, 0.225]

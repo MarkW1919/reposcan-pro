@@ -1,0 +1,37 @@
+profile_name: vehicle-rerank-jeep-v1
+task: vehicle_make_model_classification
+framework: torchvision
+output_root: runtime/training
+allow_pending_review: true
+dataset_adapter: imagefolder
+base_model: efficientnet_b0
+image_size: 260
+epochs: 18
+batch_size: 24
+workers: 4
+patience: 6
+seed: 42
+learning_rate: 0.0005
+weight_decay: 0.0005
+label_smoothing: 0.05
+dropout: 0.3
+freeze_backbone_epochs: 2
+validation_fraction: 0.15
+precision: fp32
+device: auto
+use_weighted_sampler: true
+augmentation:
+  horizontal_flip: true
+  motion_blur: true
+  defocus_blur: true
+  brightness_contrast: true
+  noise: true
+  compression_artifacts: true
+  perspective_distortion: true
+  random_erasing: true
+  mixup_alpha: 0.05
+  synthetic_support_ratio: 0.0
+  notes:
+    - 2-class hierarchical re-rank head for jeep_grand_cherokee vs jeep_wrangler. canonical-v4 got Grand Cherokee at 25% (mostly confused with Wrangler) and Wrangler at 100%; the goal here is to push Grand Cherokee above 80% by giving the head capacity dedicated to the JK/JL vs WK2/WL distinction rather than competing with 28 other classes.
+    - Warm-start backbone from canonical-v1 best.pt via --initial-checkpoint-replace-head; head reinitialized for 2 classes.
+    - Weighted sampler required because Wrangler train count (64) is much smaller than Grand Cherokee's (214) since Synset-Boulevard only had Grand Cherokee data.

@@ -5,21 +5,36 @@ $RepoRoot = Split-Path -Parent $PSScriptRoot
 $requiredFiles = @(
     "CLAUDE.md",
     "README.md",
+    ".vscode/settings.json",
+    ".vscode/extensions.json",
+    "RepoScan Pro.code-workspace",
+    "Open RepoScan Pro Dev.cmd",
     ".claude/settings.json",
     ".claude/settings.local.json",
     "package.json",
     "pyproject.toml",
     "docker-compose.yml",
+    "scripts/create_desktop_launcher.ps1",
     "docs/PRODUCT.md",
     "docs/ARCHITECTURE.md",
+    "docs/IMPLEMENTATION_BLUEPRINT.md",
     "docs/REQUIREMENTS.md",
+    "docs/EXECUTION_PLAN.md",
     "docs/CAMERA_AND_IMAGING.md",
     "docs/MODELS.md",
     "docs/DATASETS.md",
+    "docs/ANNOTATION_STANDARDS.md",
+    "docs/DATASET_INTAKE_WORKFLOW.md",
+    "docs/DETECTION_DATASET_CURATION.md",
     "docs/TRAINING.md",
+    "docs/TRAINING_WORKFLOWS.md",
+    "docs/MODEL_RELEASES.md",
     "docs/INFERENCE.md",
+    "docs/MODEL_PROMOTION_WORKFLOW.md",
+    "docs/PROMOTED_MODEL_BENCHMARKS.md",
     "docs/DEPLOYMENT.md",
     "docs/API_CONTRACTS.md",
+    "docs/API_INTEGRATION_GUIDE.md",
     "docs/UI_WORKFLOWS.md",
     "docs/DECISIONS.md"
 )
@@ -46,7 +61,23 @@ foreach ($jsonFile in $jsonFiles) {
     Get-Content -Raw $jsonFile | ConvertFrom-Json | Out-Null
 }
 
-$markdownFiles = Get-ChildItem -Path $RepoRoot -Recurse -File -Filter *.md
+$ignoredMarkdownRoots = @(
+    (Join-Path $RepoRoot "node_modules"),
+    (Join-Path $RepoRoot ".venv"),
+    (Join-Path $RepoRoot "apps/ui/dist"),
+    (Join-Path $RepoRoot "tmp")
+)
+
+$markdownFiles = Get-ChildItem -Path $RepoRoot -Recurse -File -Filter *.md | Where-Object {
+    $fullName = $_.FullName
+    foreach ($ignoredRoot in $ignoredMarkdownRoots) {
+        if ($fullName.StartsWith($ignoredRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $false
+        }
+    }
+
+    return $true
+}
 $linkPattern = '\[[^\]]+\]\(([^)]+)\)'
 $brokenLinks = @()
 
@@ -68,7 +99,14 @@ foreach ($file in $markdownFiles) {
             continue
         }
 
-        $resolvedPath = [System.IO.Path]::GetFullPath((Join-Path $file.DirectoryName $normalizedTarget))
+        try {
+            $resolvedPath = [System.IO.Path]::GetFullPath((Join-Path $file.DirectoryName $normalizedTarget))
+        }
+        catch {
+            $brokenLinks += "$($file.FullName) -> $target (invalid path format)"
+            continue
+        }
+
         if (-not (Test-Path $resolvedPath)) {
             $brokenLinks += "$($file.FullName) -> $target"
         }
@@ -85,4 +123,3 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "RepoScan Pro checks passed."
-

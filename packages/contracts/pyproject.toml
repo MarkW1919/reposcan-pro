@@ -1,0 +1,12 @@
+[project]
+name = "reposcan-contracts"
+version = "0.1.0"
+description = "Shared schemas and typed contracts for RepoScan Pro"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "pydantic>=2.0,<3.0",
+    "pyyaml>=6.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

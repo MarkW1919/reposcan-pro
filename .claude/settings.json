@@ -1,4 +1,12 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Read(//tmp/**)",
+      "Bash(powershell -NoProfile:*)"
+    ]
+  },
   "project": "RepoScan Pro",
   "focus": [
     "long-range detection",
@@ -12,4 +20,3 @@
     "no_model_weight_commits": true
   }
 }
-

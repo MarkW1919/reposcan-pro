@@ -1,0 +1,90 @@
+{
+  "benchmark_name": "runtime-benchmark-qualified-holdout",
+  "model_stack_name": "fixture-promoted-onnx-runtime",
+  "generated_at_utc": "2026-03-24T18:00:00Z",
+  "benchmark_manifest_path": null,
+  "source_dataset_name": "runtime-benchmark-qualified-holdout",
+  "source_dataset_version": "2026-03-24",
+  "source_dataset_manifest_path": "configs/datasets/runtime-benchmark-qualified-holdout.yaml",
+  "overall": {
+    "frames": 10,
+    "exact_match_rate": 0.9,
+    "character_accuracy": 0.986,
+    "color_accuracy": 1.0,
+    "make_accuracy": 1.0,
+    "average_latency_ms": 20.147,
+    "p95_latency_ms": 20.726,
+    "max_latency_ms": 21.354,
+    "average_vehicles_per_frame": 1.0,
+    "average_plates_per_frame": 1.0
+  },
+  "subsets": {
+    "baseline": {
+      "frames": 1,
+      "exact_match_rate": 1.0,
+      "character_accuracy": 1.0,
+      "color_accuracy": 1.0,
+      "make_accuracy": 1.0,
+      "average_latency_ms": 19.648,
+      "p95_latency_ms": 19.648,
+      "max_latency_ms": 19.648,
+      "average_vehicles_per_frame": 1.0,
+      "average_plates_per_frame": 1.0
+    },
+    "ir_assisted": {
+      "frames": 1,
+      "exact_match_rate": 1.0,
+      "character_accuracy": 1.0,
+      "color_accuracy": 1.0,
+      "make_accuracy": 1.0,
+      "average_latency_ms": 20.735,
+      "p95_latency_ms": 20.735,
+      "max_latency_ms": 20.735,
+      "average_vehicles_per_frame": 1.0,
+      "average_plates_per_frame": 1.0
+    },
+    "long_range": {
+      "frames": 5,
+      "exact_match_rate": 1.0,
+      "character_accuracy": 1.0,
+      "color_accuracy": 1.0,
+      "make_accuracy": 1.0,
+      "average_latency_ms": 20.379,
+      "p95_latency_ms": 21.285,
+      "max_latency_ms": 22.145,
+      "average_vehicles_per_frame": 1.0,
+      "average_plates_per_frame": 1.0
+    },
+    "low_light": {
+      "frames": 7,
+      "exact_match_rate": 0.857,
+      "character_accuracy": 0.98,
+      "color_accuracy": 1.0,
+      "make_accuracy": 1.0,
+      "average_latency_ms": 22.524,
+      "p95_latency_ms": 23.62,
+      "max_latency_ms": 23.811,
+      "average_vehicles_per_frame": 1.0,
+      "average_plates_per_frame": 1.0
+    },
+    "no_light": {
+      "frames": 1,
+      "exact_match_rate": 1.0,
+      "character_accuracy": 1.0,
+      "color_accuracy": 1.0,
+      "make_accuracy": 1.0,
+      "average_latency_ms": 25.379,
+      "p95_latency_ms": 25.379,
+      "max_latency_ms": 25.379,
+      "average_vehicles_per_frame": 1.0,
+      "average_plates_per_frame": 1.0
+    }
+  },
+  "validation": {
+    "runtime_ready": true,
+    "promotion_ready": true,
+    "deployment_ready": true,
+    "deployment_name": "local-dev",
+    "issues": []
+  }
+}

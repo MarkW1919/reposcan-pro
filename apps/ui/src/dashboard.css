@@ -1,0 +1,2150 @@
+/*
+ * Dashboard tokens were consolidated into styles.css :root. This file now
+ * only contains dashboard-specific rules and overrides the shared body
+ * gradient to match the dashboard's cooler palette.
+ */
+body {
+  background:
+    radial-gradient(circle at top left, rgba(139, 214, 255, 0.08), transparent 28%),
+    radial-gradient(circle at 82% 8%, rgba(255, 255, 255, 0.06), transparent 18%),
+    linear-gradient(180deg, #090b0f, #040506 72%);
+}
+
+.btn--primary {
+  background: linear-gradient(180deg, #a9e5ff, #71c9f9);
+  color: #031018;
+  box-shadow: 0 10px 28px rgba(113, 201, 249, 0.18);
+}
+
+.btn--ghost {
+  background: rgba(19, 23, 29, 0.94);
+  border-color: rgba(148, 161, 179, 0.18);
+}
+
+.btn--success {
+  background: linear-gradient(180deg, #95ecb8, #58c688);
+  color: #08130d;
+}
+
+.dashboard-screen {
+  gap: 0;
+}
+
+.dashboard-shell {
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 14px;
+}
+
+.dashboard-shell__content {
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+  padding-right: 4px;
+  padding-bottom: 12px;
+}
+
+/*
+ * Map-hero + right-rail console layout. The map fills the left as a large hero;
+ * the remaining widgets stack in an even, equal-width right rail. Clean gutters
+ * and equal row heights read as a professional console rather than a wireframe.
+ * Per-widget size adjusts a rail card's HEIGHT (width stays even) so resizing
+ * never makes the layout ragged.
+ */
+.dashboard-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(360px, 1fr);
+  gap: 16px;
+  height: 100%;
+  align-items: stretch;
+}
+
+.dashboard-grid__hero,
+.dashboard-grid__rail,
+.dashboard-grid__slot {
+  min-width: 0;
+  min-height: 0;
+}
+
+.dashboard-grid__hero {
+  display: grid;
+}
+
+.dashboard-grid__rail {
+  display: grid;
+  grid-auto-rows: minmax(180px, 1fr);
+  gap: 16px;
+  align-content: stretch;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+/* Size adjusts rail-card height only — every rail card stays full-rail width so
+   the column reads as an even stack. */
+.dashboard-grid__rail .dashboard-grid__slot--size-expanded {
+  grid-row: span 2;
+}
+
+.dashboard-grid__slot > .dashboard-widget {
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.dashboard-grid__slot--hero .map-stage {
+  min-height: clamp(360px, 50vh, 620px);
+}
+
+/* Stage host: a single fill cell that holds whichever screen layout is active. */
+.dashboard-stage {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.dashboard-stage > .dashboard-grid,
+.dashboard-stage > .dashboard-layout {
+  min-height: 0;
+  height: 100%;
+}
+
+/* Structural screen layouts (scan / camera / drive). console uses .dashboard-grid. */
+.dashboard-layout {
+  display: grid;
+  gap: 16px;
+  min-height: 0;
+}
+
+.dashboard-layout__cell {
+  min-width: 0;
+  min-height: 0;
+}
+
+.dashboard-layout--scan {
+  grid-template-columns: minmax(0, 1.55fr) minmax(360px, 1fr);
+  grid-template-rows: minmax(0, 1.3fr) minmax(0, 1fr);
+  grid-template-areas:
+    "map intel"
+    "cams table";
+}
+
+.dashboard-layout--scan .dashboard-layout__cell--map { grid-area: map; }
+.dashboard-layout--scan .dashboard-layout__cell--cams { grid-area: cams; }
+.dashboard-layout--scan .dashboard-layout__cell--intel { grid-area: intel; }
+.dashboard-layout--scan .dashboard-layout__cell--table { grid-area: table; }
+
+.dashboard-layout--camera {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1.2fr) minmax(0, 1fr);
+  grid-template-areas:
+    "cams cams"
+    "map table";
+}
+
+.dashboard-layout--camera .dashboard-layout__cell--cams { grid-area: cams; }
+.dashboard-layout--camera .dashboard-layout__cell--map { grid-area: map; }
+.dashboard-layout--camera .dashboard-layout__cell--table { grid-area: table; }
+
+.dashboard-layout--drive {
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+/* Drive strip: slim target / next-action / ETA bar under the full map. */
+.drive-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(133, 146, 166, 0.18);
+  background: linear-gradient(180deg, rgba(20, 24, 30, 0.98), rgba(11, 14, 18, 0.96));
+  box-shadow: var(--shadow);
+}
+
+.drive-strip__item {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.drive-strip__item span {
+  color: var(--muted);
+  font-size: calc(var(--text-scale, 1) * 0.66rem);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.drive-strip__item strong {
+  font-size: calc(var(--text-scale, 1) * 1.05rem);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Last-20 LPR scan table (scan + camera layouts). */
+.lpr-table {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  gap: 6px;
+}
+
+.lpr-table__head,
+.lpr-table__row {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 0.8fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.lpr-table__head {
+  color: var(--muted);
+  font-size: calc(var(--text-scale, 1) * 0.66rem);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 0 8px;
+}
+
+.lpr-table__body {
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding-right: 4px;
+}
+
+.lpr-table__row {
+  appearance: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 10px;
+  padding: 8px;
+  color: var(--text);
+  font-size: calc(var(--text-scale, 1) * 0.84rem);
+}
+
+.lpr-table__row:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.lpr-table__row.is-active {
+  outline: 1px solid var(--accent, #8bd6ff);
+}
+
+.lpr-table__row.is-hit {
+  border-left: 3px solid var(--danger, #ff6b6b);
+  padding-left: 5px;
+}
+
+.lpr-table__plate {
+  font-family: var(--mono);
+  font-weight: 700;
+}
+
+.lpr-table__time {
+  color: var(--muted);
+}
+
+.lpr-table__vehicle,
+.lpr-table__cam {
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Screen-layout picker in the Customize panel. */
+.dashboard-customize__layout-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.dashboard-customize__layout-button {
+  display: grid;
+  gap: 3px;
+  text-align: left;
+  cursor: pointer;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(133, 146, 166, 0.2);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+}
+
+.dashboard-customize__layout-button.is-active {
+  border-color: var(--accent, #8bd6ff);
+  background: rgba(139, 214, 255, 0.1);
+}
+
+.dashboard-customize__layout-name {
+  font-weight: 700;
+  font-size: calc(var(--text-scale, 1) * 0.9rem);
+}
+
+.dashboard-customize__layout-desc {
+  color: var(--muted);
+  font-size: calc(var(--text-scale, 1) * 0.72rem);
+  line-height: 1.3;
+}
+
+.dashboard-widget {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px;
+  border-radius: 22px;
+  border: 1px solid rgba(133, 146, 166, 0.18);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 22%),
+    linear-gradient(180deg, rgba(20, 24, 30, 0.98), rgba(11, 14, 18, 0.96));
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.dashboard-widget--compact {
+  min-height: 0;
+}
+
+.dashboard-widget--standard {
+  min-height: 0;
+}
+
+.dashboard-widget--expanded {
+  min-height: 0;
+}
+
+.dashboard-widget__header,
+.dashboard-widget__title-row,
+.dashboard-widget__actions,
+.instrument-status-bar,
+.instrument-status-bar__brand,
+.instrument-status-bar__actions,
+.dashboard-route-card__actions,
+.dashboard-route-card__lookup-row,
+.compact-detection-card__headline,
+.compact-detection-card__actions,
+.lpr-camera-panel__tile-header,
+.dashboard-customize__header,
+.dashboard-customize__section-header,
+.dashboard-customize__widget-controls,
+.recent-history-card__row,
+.dashboard-fast-targets,
+.dashboard-insight-card__actions,
+.uconnect-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dashboard-widget__header {
+  align-items: flex-start;
+}
+
+.dashboard-widget__title-group {
+  min-width: 0;
+}
+
+.dashboard-widget__eyebrow,
+.instrument-status-bar__eyebrow {
+  display: block;
+  color: var(--muted);
+  font-size: calc(var(--text-scale, 1) * 0.74rem);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.dashboard-widget__title-row h3,
+.dashboard-customize__header h3 {
+  margin: 4px 0 0;
+  font-size: 1.06rem;
+}
+
+.dashboard-widget__meta,
+.dashboard-widget__actions {
+  flex-wrap: wrap;
+}
+
+.dashboard-widget__body {
+  min-height: 0;
+}
+
+.dashboard-widget--map-frame {
+  padding-bottom: 0;
+}
+
+.dashboard-widget--map-frame .dashboard-widget__body {
+  margin-left: -14px;
+  margin-right: -14px;
+  margin-bottom: -14px;
+}
+
+.instrument-status-bar {
+  padding: 16px 18px;
+  border-radius: 24px;
+  border: 1px solid rgba(133, 146, 166, 0.18);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 24%),
+    linear-gradient(180deg, rgba(20, 24, 30, 0.98), rgba(11, 14, 18, 0.96));
+  box-shadow: var(--shadow);
+}
+
+.instrument-status-bar__brand {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  min-width: 180px;
+}
+
+.instrument-status-bar__brand strong {
+  display: block;
+  font-size: 1.1rem;
+  letter-spacing: 0.05em;
+  color: var(--text);
+}
+
+.instrument-status-bar__segments {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 1.6fr repeat(5, minmax(0, 1fr));
+  grid-auto-rows: auto;
+  gap: 10px;
+}
+
+.instrument-status-bar__segment {
+  min-width: 0;
+  padding: 11px 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(133, 146, 166, 0.12);
+  background: rgba(9, 11, 15, 0.72);
+  display: grid;
+  gap: 4px;
+}
+
+.instrument-status-bar__segment span {
+  color: var(--muted);
+  font-size: 0.64rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.instrument-status-bar__segment strong {
+  font-size: 1rem;
+  line-height: 1.1;
+}
+
+.instrument-status-bar__segment small {
+  color: var(--faint);
+  font-size: 0.72rem;
+}
+
+.instrument-status-bar__segment--green {
+  border-color: rgba(123, 224, 168, 0.24);
+}
+
+.instrument-status-bar__segment--amber {
+  border-color: rgba(239, 184, 97, 0.24);
+}
+
+.instrument-status-bar__segment--red {
+  border-color: rgba(255, 106, 106, 0.24);
+}
+
+.instrument-status-bar__segment--cyan {
+  border-color: rgba(139, 214, 255, 0.24);
+}
+
+/*
+ * Hero (active target) segment. When the operator has staged a target,
+ * its plate is the most important on-screen text — far more than the
+ * adjacent status pills. The hero variant promotes typography weight
+ * and clarity so the plate is glanceable in driving conditions, and
+ * draws a subtle cyan glow when the target is genuinely active.
+ */
+.instrument-status-bar__segment--hero strong {
+  font-family: var(--mono);
+  font-size: 1.55rem;
+  letter-spacing: 0.04em;
+}
+
+.instrument-status-bar__segment--hero-active {
+  border-color: rgba(139, 214, 255, 0.46);
+  background:
+    linear-gradient(180deg, rgba(139, 214, 255, 0.10), rgba(139, 214, 255, 0.02)),
+    rgba(9, 11, 15, 0.84);
+  box-shadow: 0 0 0 1px rgba(139, 214, 255, 0.16) inset;
+}
+
+.instrument-status-bar__segment--hero-active strong {
+  color: var(--cyan);
+}
+
+.instrument-status-bar__icon-button,
+.instrument-status-bar__customize {
+  min-height: 46px;
+  border-radius: 16px;
+  border: 1px solid rgba(133, 146, 166, 0.16);
+  background: rgba(13, 16, 21, 0.92);
+}
+
+.instrument-status-bar__icon-button {
+  min-width: 46px;
+  padding: 0 10px;
+  color: var(--text);
+  font-weight: 700;
+}
+
+.instrument-status-bar__icon-button.is-active {
+  border-color: rgba(139, 214, 255, 0.46);
+  background:
+    linear-gradient(180deg, rgba(139, 214, 255, 0.18), rgba(139, 214, 255, 0.04)),
+    rgba(13, 16, 21, 0.92);
+  color: var(--cyan);
+  box-shadow: 0 0 0 1px rgba(139, 214, 255, 0.18) inset;
+}
+
+.instrument-status-bar__customize {
+  padding: 0 18px;
+  color: var(--cyan);
+  font-weight: 700;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.status-pill strong,
+.status-pill small {
+  display: block;
+  line-height: 1.05;
+}
+
+.status-pill strong {
+  font-size: calc(var(--text-scale, 1) * 0.74rem);
+}
+
+.status-pill small {
+  font-size: calc(var(--text-scale, 1) * 0.66rem);
+  opacity: 0.75;
+}
+
+.status-pill--cyan {
+  background: rgba(139, 214, 255, 0.14);
+  color: var(--cyan);
+  border-color: rgba(139, 214, 255, 0.22);
+}
+
+.status-pill--green {
+  background: rgba(123, 224, 168, 0.14);
+  color: var(--success);
+  border-color: rgba(123, 224, 168, 0.2);
+}
+
+.status-pill--amber {
+  background: rgba(239, 184, 97, 0.14);
+  color: var(--warn);
+  border-color: rgba(239, 184, 97, 0.2);
+}
+
+.status-pill--red {
+  background: rgba(255, 106, 106, 0.14);
+  color: var(--critical);
+  border-color: rgba(255, 106, 106, 0.22);
+}
+
+.status-pill--purple {
+  background: rgba(146, 128, 255, 0.14);
+  color: #b7afff;
+  border-color: rgba(146, 128, 255, 0.22);
+}
+
+.status-pill--gray {
+  background: rgba(148, 161, 179, 0.1);
+  color: var(--muted);
+  border-color: rgba(148, 161, 179, 0.16);
+}
+
+.address-intelligence-card,
+.dashboard-insight-card,
+.dashboard-route-card,
+.dashboard-notes-card,
+.dashboard-customize__widget-list {
+  display: grid;
+  gap: 12px;
+}
+
+/*
+ * Address Intelligence can carry a lot (occupants + phones + associates +
+ * previous addresses + recommendation). The widget body is height-bounded and
+ * clipped, so let the card scroll inside its slot instead of hiding overflow —
+ * the operator can reach every person/previous address even in a small slot.
+ */
+.address-intelligence-card {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  align-content: start;
+  padding-right: 4px;
+}
+
+/* Keep a long occupant list from crowding out the address/recommendation:
+   it gets its own bounded scroll area when there are many people. */
+.occupant-card__list {
+  max-height: clamp(140px, 22vh, 260px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 2px;
+}
+
+/*
+ * Recent detection history renders as a responsive grid so the widget can
+ * surface more cards as the operator gives it more screen real estate.
+ * auto-fit means: one column when the widget is compact, two when standard,
+ * up to three when the widget is expanded across the dashboard.
+ */
+.recent-history-card {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  align-content: start;
+}
+
+.address-intelligence-card__hero strong {
+  display: block;
+  font-size: 1.2rem;
+}
+
+.address-intelligence-card__hero span,
+.address-intelligence-card__field span,
+.address-intelligence-card__history span,
+.dashboard-route-card__metrics span,
+.dashboard-route-card__guidance span,
+.dashboard-notes-card__note span,
+.recent-history-card__copy span {
+  color: var(--muted);
+}
+
+.address-intelligence-card__grid,
+.dashboard-route-card__metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.address-intelligence-card__field,
+.dashboard-route-card__metrics > div,
+.dashboard-route-card__guidance,
+.dashboard-notes-card__note,
+.address-intelligence-card__insight,
+.address-intelligence-card__history,
+.lpr-camera-panel__tile,
+.compact-detection-card,
+.dashboard-fast-target {
+  padding: 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(133, 146, 166, 0.14);
+  background: rgba(11, 14, 18, 0.82);
+}
+
+.address-intelligence-card__field strong,
+.dashboard-route-card__metrics strong,
+.dashboard-route-card__guidance strong,
+.dashboard-notes-card__note p,
+.recent-history-card__copy strong {
+  color: var(--text);
+}
+
+.address-intelligence-card__insight strong,
+.dashboard-insight-card strong {
+  display: block;
+  font-size: 1rem;
+}
+
+.address-intelligence-card__insight p,
+.address-intelligence-card__history p,
+.dashboard-insight-card p,
+.dashboard-notes-card__note p,
+.dashboard-hidden-helper p,
+.dashboard-customize__header p,
+.dashboard-customize__widget-copy p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+/* Public-records section inside the Address Intelligence card. */
+.address-intelligence-card__public {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(139, 214, 255, 0.22);
+  background: rgba(11, 16, 22, 0.86);
+}
+
+.address-intelligence-card__public-verified {
+  color: var(--success);
+  font-weight: 700;
+  font-size: calc(var(--text-scale, 1) * 0.82rem);
+}
+
+.address-intelligence-card__public-label {
+  color: var(--muted);
+  font-size: calc(var(--text-scale, 1) * 0.66rem);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.address-intelligence-card__public > strong {
+  font-family: var(--mono);
+  font-size: 0.95rem;
+}
+
+.address-intelligence-card__public-tags {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.address-intelligence-card__public-tags span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.address-intelligence-card__public-status {
+  margin: 0;
+  color: var(--muted);
+}
+
+.address-intelligence-card__public-sources {
+  color: var(--faint);
+}
+
+.address-intelligence-card__public-caveat {
+  color: var(--faint);
+  line-height: 1.35;
+}
+
+/* Occupant intelligence section (WhitePages Pro) inside the card. */
+.occupant-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(139, 214, 255, 0.28);
+  background: rgba(11, 16, 22, 0.92);
+}
+
+.occupant-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.occupant-card__label {
+  color: var(--muted);
+  font-size: calc(var(--text-scale, 1) * 0.66rem);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.occupant-card__status {
+  margin: 0;
+  color: var(--muted);
+}
+
+.occupant-card__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.occupant-card__row {
+  display: grid;
+  gap: 3px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.occupant-card__row--current {
+  border-left: 3px solid var(--success, #62d99b);
+  padding-left: 7px;
+  background: rgba(98, 217, 155, 0.06);
+}
+
+.occupant-card__name-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.occupant-card__name {
+  font-size: calc(var(--text-scale, 1) * 0.98rem);
+  font-weight: 700;
+}
+
+.occupant-card__residency {
+  font-size: calc(var(--text-scale, 1) * 0.62rem);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.occupant-card__residency--current {
+  color: #04121a;
+  background: var(--success, #62d99b);
+}
+
+.occupant-card__residency--former {
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.occupant-card__field-label {
+  color: var(--faint);
+  font-size: calc(var(--text-scale, 1) * 0.68rem);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.occupant-card__person-previous {
+  display: grid;
+  gap: 2px;
+  margin-top: 2px;
+}
+
+.occupant-card__previous-link {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+}
+
+.occupant-card__date-range {
+  color: var(--muted);
+  font-size: calc(var(--text-scale, 1) * 0.72rem);
+  font-variant-numeric: tabular-nums;
+}
+
+.occupant-card__phones {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: calc(var(--text-scale, 1) * 0.82rem);
+}
+
+.occupant-card__phone-link {
+  color: var(--accent, #8bd6ff);
+  text-decoration: none;
+}
+
+.occupant-card__phone-link:hover {
+  text-decoration: underline;
+}
+
+.occupant-card__sublabel {
+  color: var(--faint);
+  font-size: calc(var(--text-scale, 1) * 0.66rem);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.occupant-card__associated {
+  color: var(--faint);
+  font-size: calc(var(--text-scale, 1) * 0.78rem);
+  padding-left: 10px;
+}
+
+.occupant-card__previous {
+  display: grid;
+  gap: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 8px;
+}
+
+.occupant-card__previous-label {
+  color: var(--muted);
+  font-size: calc(var(--text-scale, 1) * 0.66rem);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.occupant-card__previous-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.occupant-card__previous-link {
+  appearance: none;
+  border: none;
+  background: none;
+  padding: 0;
+  text-align: left;
+  color: var(--accent, #8bd6ff);
+  font-size: calc(var(--text-scale, 1) * 0.84rem);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.occupant-card__previous-link:hover {
+  color: #cdeeff;
+}
+
+/* Vehicle Account card — mirrors the Address Intelligence card styling. */
+.vehicle-account-card {
+  display: grid;
+  gap: 12px;
+}
+
+.vehicle-account-card__hero strong {
+  display: block;
+  font-size: 1.3rem;
+  font-family: var(--mono);
+  letter-spacing: 0.03em;
+}
+
+.vehicle-account-card__hero span,
+.vehicle-account-card__field span,
+.vehicle-account-card__instructions span {
+  color: var(--muted);
+}
+
+.vehicle-account-card__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.vehicle-account-card__field,
+.vehicle-account-card__instructions {
+  padding: 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(133, 146, 166, 0.14);
+  background: rgba(11, 14, 18, 0.82);
+}
+
+.vehicle-account-card__field strong {
+  color: var(--text);
+}
+
+.vehicle-account-card__instructions p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.dashboard-route-card__guidance {
+  display: grid;
+  gap: 5px;
+  min-height: 92px;
+  align-content: start;
+}
+
+.dashboard-route-card__lookup {
+  display: grid;
+  gap: 8px;
+}
+
+.dashboard-route-card__lookup-row {
+  gap: 8px;
+}
+
+.dashboard-detections-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  align-content: start;
+}
+
+.compact-detection-card {
+  display: grid;
+  gap: 10px;
+}
+
+.compact-detection-card__body {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  text-align: left;
+}
+
+.compact-detection-card__copy {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.compact-detection-card__copy strong {
+  font-size: 1.02rem;
+  letter-spacing: 0.08em;
+}
+
+.compact-detection-card__copy span,
+.compact-detection-card__copy small {
+  color: var(--muted);
+}
+
+.compact-detection-card__actions {
+  justify-content: flex-start;
+}
+
+.compact-detection-card__action {
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(133, 146, 166, 0.14);
+  background: rgba(20, 24, 30, 0.94);
+}
+
+.compact-detection-card__action--primary {
+  color: var(--cyan);
+  border-color: rgba(139, 214, 255, 0.24);
+}
+
+.compact-detection-card.is-active {
+  border-color: rgba(139, 214, 255, 0.34);
+  box-shadow: inset 0 0 0 1px rgba(139, 214, 255, 0.12);
+}
+
+.compact-detection-snapshot {
+  min-height: 74px;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(133, 146, 166, 0.14);
+  background:
+    radial-gradient(circle at 50% 30%, rgba(139, 214, 255, 0.14), transparent 48%),
+    linear-gradient(180deg, rgba(25, 29, 36, 0.96), rgba(11, 14, 18, 0.96));
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-align: center;
+  padding: 6px;
+}
+
+.compact-detection-snapshot img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.lpr-camera-panel {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-content: start;
+}
+
+.lpr-camera-panel__tile {
+  display: grid;
+  gap: 10px;
+}
+
+.lpr-camera-panel__tile-header {
+  align-items: flex-start;
+}
+
+.lpr-camera-panel__tile-header strong {
+  display: block;
+}
+
+.lpr-camera-panel__tile-header span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.lpr-camera-panel__feed .camera-stage,
+.lpr-camera-panel__feed .camera-feed {
+  min-height: 210px;
+  border-radius: 18px;
+}
+
+.recent-history-card__row {
+  padding: 10px 12px 10px 16px;
+  gap: 10px;
+  align-items: flex-start;
+  text-align: left;
+  background: rgba(11, 14, 18, 0.82);
+  border: 1px solid rgba(133, 146, 166, 0.14);
+  border-radius: 14px;
+  transition: border-color 120ms ease, transform 120ms ease, background 120ms ease;
+}
+
+.recent-history-card__row:hover,
+.recent-history-card__row:focus-visible {
+  border-color: rgba(141, 214, 255, 0.32);
+  background: rgba(15, 19, 25, 0.92);
+}
+
+.recent-history-card__row:active {
+  transform: translateY(1px);
+}
+
+.recent-history-card__copy {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.recent-history-card__copy small {
+  color: var(--faint);
+}
+
+.recent-history-card__empty,
+.dashboard-notes-card__empty,
+.dashboard-empty-state {
+  display: grid;
+  gap: 6px;
+  padding: 18px 16px;
+  border-radius: 14px;
+  border: 1px dashed rgba(133, 146, 166, 0.24);
+  background: rgba(11, 14, 18, 0.5);
+  color: var(--muted);
+}
+
+.recent-history-card__empty strong,
+.dashboard-empty-state strong {
+  color: var(--text);
+  font-size: 0.98rem;
+}
+
+.recent-history-card__empty span,
+.dashboard-empty-state span {
+  color: var(--faint);
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+
+/* Full-stage empty state (no widgets visible) — centered with a recovery action. */
+.dashboard-empty-state--full {
+  place-content: center;
+  justify-items: start;
+  gap: 10px;
+  height: 100%;
+  padding: 32px;
+}
+
+.dashboard-empty-state__action {
+  margin-top: 6px;
+  appearance: none;
+  border: 1px solid var(--accent, #8bd6ff);
+  background: rgba(139, 214, 255, 0.12);
+  color: var(--text);
+  border-radius: 12px;
+  padding: 10px 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.dashboard-empty-state__action:hover {
+  background: rgba(139, 214, 255, 0.2);
+}
+
+/* Idle Address Intelligence hero (no destination staged yet) reads as a hint,
+   not a real address. */
+.address-intelligence-card__hero--idle strong {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+/* Consistent keyboard focus ring on the newer interactive elements. */
+.lpr-table__row:focus-visible,
+.occupant-card__previous-link:focus-visible,
+.occupant-card__phone-link:focus-visible,
+.nav-drawer__item:focus-visible,
+.nav-drawer__close:focus-visible,
+.dashboard-footer__menu:focus-visible,
+.dashboard-customize__layout-button:focus-visible {
+  outline: 2px solid var(--accent, #8bd6ff);
+  outline-offset: 2px;
+}
+
+.dashboard-fast-targets {
+  margin-top: 14px;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+
+.dashboard-fast-target {
+  min-width: 220px;
+  display: grid;
+  gap: 5px;
+  text-align: left;
+}
+
+.dashboard-fast-target span {
+  color: var(--muted);
+  font-size: 0.74rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.dashboard-fast-target strong {
+  color: var(--text);
+}
+
+.dashboard-fast-target--critical {
+  border-color: rgba(255, 106, 106, 0.24);
+}
+
+.dashboard-fast-target--warn {
+  border-color: rgba(239, 184, 97, 0.22);
+}
+
+.dashboard-fast-target--success {
+  border-color: rgba(123, 224, 168, 0.22);
+}
+
+.dashboard-fast-target--cyan {
+  border-color: rgba(139, 214, 255, 0.24);
+}
+
+.dashboard-footer {
+  border-top: 1px solid rgba(133, 146, 166, 0.14);
+  background: rgba(6, 8, 10, 0.98);
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.dashboard-footer__menu {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 10px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(133, 146, 166, 0.22);
+  background: rgba(20, 24, 30, 0.96);
+  color: var(--text);
+  font-weight: 700;
+  font-size: calc(var(--text-scale, 1) * 0.92rem);
+  cursor: pointer;
+}
+
+.dashboard-footer__menu:hover {
+  border-color: var(--accent, #8bd6ff);
+}
+
+.dashboard-footer__menu span[aria-hidden="true"] {
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.dashboard-footer > .uconnect-toolbar {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Slide-in navigation drawer. */
+.nav-drawer {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+}
+
+.nav-drawer__scrim {
+  position: absolute;
+  inset: 0;
+  border: none;
+  padding: 0;
+  background: rgba(4, 6, 8, 0.62);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  cursor: pointer;
+}
+
+.nav-drawer__panel {
+  position: relative;
+  width: min(340px, 86vw);
+  height: 100%;
+  margin-left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 16px calc(18px + env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, rgba(20, 24, 30, 0.99), rgba(9, 12, 16, 0.99));
+  border-right: 1px solid rgba(133, 146, 166, 0.18);
+  box-shadow: 24px 0 60px rgba(0, 0, 0, 0.5);
+  overflow-y: auto;
+  animation: nav-drawer-in 160ms ease-out;
+}
+
+@keyframes nav-drawer-in {
+  from {
+    transform: translateX(-16px);
+    opacity: 0.6;
+  }
+}
+
+.nav-drawer__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.nav-drawer__brand strong {
+  display: block;
+  font-size: 1.1rem;
+}
+
+.nav-drawer__brand small {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.nav-drawer__close {
+  appearance: none;
+  border: 1px solid rgba(133, 146, 166, 0.22);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.nav-drawer__section {
+  display: grid;
+  gap: 6px;
+}
+
+.nav-drawer__section-title {
+  color: var(--muted);
+  font-size: 0.66rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.nav-drawer__item {
+  display: grid;
+  gap: 2px;
+  text-align: left;
+  appearance: none;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  border-radius: 12px;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+.nav-drawer__item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.nav-drawer__item.is-active {
+  border-color: var(--accent, #8bd6ff);
+  background: rgba(139, 214, 255, 0.1);
+}
+
+.nav-drawer__item-label {
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.nav-drawer__item-detail {
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.dashboard-footer__shell,
+.dashboard-footer__shell-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dashboard-footer__shell-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.dashboard-footer__shell-copy span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.dashboard-footer__shell-copy strong {
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.dashboard-footer__shell-copy small {
+  color: var(--faint);
+  line-height: 1.4;
+}
+
+.dashboard-footer__shell-toggle {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.dashboard-footer__shell-toggle button {
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(133, 146, 166, 0.14);
+  background: rgba(14, 17, 22, 0.94);
+  color: var(--muted);
+}
+
+.dashboard-footer__shell-toggle button.is-active {
+  color: var(--cyan);
+  border-color: rgba(139, 214, 255, 0.24);
+  box-shadow: inset 0 0 0 1px rgba(139, 214, 255, 0.08);
+}
+
+.uconnect-toolbar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 10px;
+  align-items: stretch;
+}
+
+.uconnect-toolbar__button {
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(133, 146, 166, 0.12);
+  background: linear-gradient(180deg, rgba(18, 21, 26, 0.98), rgba(11, 13, 17, 0.96));
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
+
+.uconnect-toolbar__button.is-active {
+  border-color: rgba(139, 214, 255, 0.24);
+  box-shadow: inset 0 0 0 1px rgba(139, 214, 255, 0.08);
+}
+
+.uconnect-toolbar__label {
+  color: var(--text);
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/*
+ * Transparent scrim so the dashboard stays visible behind the customize
+ * panel and the operator can see widget order updates in real time as
+ * they drag. The scrim still captures the click-to-dismiss because it
+ * fills the viewport and sits below the panel on the z-stack.
+ */
+.dashboard-customize__scrim {
+  position: fixed;
+  inset: 0;
+  background: transparent;
+  z-index: 50;
+}
+
+.dashboard-customize {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  bottom: 18px;
+  width: min(460px, calc(100vw - 24px));
+  padding: 18px;
+  border-radius: 26px;
+  border: 1px solid rgba(133, 146, 166, 0.18);
+  background: linear-gradient(180deg, rgba(19, 22, 28, 0.98), rgba(10, 13, 17, 0.98));
+  box-shadow: var(--shadow-strong);
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 14px;
+}
+
+.dashboard-customize__close,
+.dashboard-customize__reset,
+.dashboard-customize__mode-button,
+.dashboard-customize__move-button,
+.dashboard-customize__size-button {
+  min-height: 38px;
+  padding: 0 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(133, 146, 166, 0.14);
+  background: rgba(15, 18, 23, 0.96);
+}
+
+.dashboard-customize__mode-grid,
+.dashboard-customize__size-group {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dashboard-customize__hint {
+  margin: 10px 0 12px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.dashboard-customize__mode-button.is-active,
+.dashboard-customize__move-button.is-active,
+.dashboard-customize__size-button.is-active {
+  border-color: rgba(139, 214, 255, 0.24);
+  color: var(--cyan);
+}
+
+.dashboard-customize__widget-list {
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.dashboard-customize__widget-row {
+  padding: 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(133, 146, 166, 0.12);
+  background: rgba(11, 14, 18, 0.84);
+  display: grid;
+  gap: 12px;
+  transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
+}
+
+.dashboard-customize__widget-row.is-disabled {
+  opacity: 0.7;
+}
+
+.dashboard-customize__widget-row.is-dragging {
+  opacity: 0.45;
+  transform: scale(0.98);
+}
+
+.dashboard-customize__widget-row.is-drop-target {
+  border-color: rgba(139, 214, 255, 0.34);
+  background: rgba(18, 25, 32, 0.92);
+}
+
+.dashboard-customize__widget-copy strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.dashboard-customize__drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  margin-right: 10px;
+  color: var(--muted);
+  letter-spacing: 0.12em;
+  border-radius: 12px;
+  border: 1px solid rgba(133, 146, 166, 0.14);
+  background: rgba(18, 21, 26, 0.96);
+  cursor: grab;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: none;
+}
+
+.dashboard-customize__drag-handle:active {
+  cursor: grabbing;
+}
+
+.dashboard-customize__drag-handle[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.dashboard-customize__widget-copy {
+  display: flex;
+  align-items: flex-start;
+}
+
+.dashboard-customize__widget-text {
+  flex: 1;
+}
+
+.dashboard-customize__widget-text p {
+  flex: 1;
+}
+
+.dashboard-customize__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.dashboard-widget .map-stage {
+  /*
+   * Concrete height floor so the Leaflet map is visible in ANY slot, not only
+   * the hero. `min-height: 100%` alone collapses to 0 when the slot's parent
+   * has no definite height (e.g. a support/lower slot), which renders the card
+   * frame with a blank body. The hero slot overrides this with a taller clamp.
+   */
+  min-height: clamp(300px, 42vh, 560px);
+  height: 100%;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  background:
+    linear-gradient(180deg, rgba(11, 14, 18, 0.46), rgba(5, 8, 10, 0.28)),
+    rgba(4, 6, 8, 0.92);
+}
+
+.dashboard-widget .map-stage__badge,
+.dashboard-widget .map-stage__location-chip,
+.dashboard-widget .map-stage__guidance,
+.dashboard-widget .map-stage__layer-menu,
+.dashboard-widget .map-stage__footer {
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  background: rgba(8, 10, 14, 0.84);
+  border-color: rgba(133, 146, 166, 0.18);
+}
+
+.dashboard-widget .map-stage__control {
+  background: rgba(10, 12, 16, 0.9);
+  border-color: rgba(133, 146, 166, 0.16);
+}
+
+.dashboard-widget .map-stage__control--primary {
+  background: linear-gradient(180deg, rgba(169, 229, 255, 0.96), rgba(113, 201, 249, 0.96));
+  color: #04121a;
+}
+
+.dashboard-widget .leaflet-control-zoom a {
+  background: rgba(10, 12, 16, 0.92);
+  color: var(--text);
+  border-color: rgba(133, 146, 166, 0.18);
+}
+
+@media (max-width: 1320px) {
+  .instrument-status-bar {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .instrument-status-bar__segments {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .instrument-status-bar__segment--hero {
+    grid-column: span 2;
+  }
+
+  /* Narrower desktop: give the rail a touch more room. */
+  .dashboard-grid {
+    grid-template-columns: minmax(0, 1.45fr) minmax(340px, 1fr);
+  }
+
+  .uconnect-toolbar {
+    display: flex;
+    overflow-x: auto;
+  }
+
+  .uconnect-toolbar__button {
+    flex: 0 0 132px;
+  }
+}
+
+@media (max-width: 960px) {
+  .dashboard-shell {
+    height: auto;
+  }
+
+  .dashboard-detections-grid,
+  .lpr-camera-panel,
+  .address-intelligence-card__grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Single column: map hero on top, rail stacks below at natural height. */
+  .dashboard-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dashboard-grid__rail {
+    grid-auto-rows: minmax(220px, auto);
+    overflow-y: visible;
+  }
+
+  .dashboard-grid__rail .dashboard-grid__slot--size-expanded {
+    grid-row: span 1;
+  }
+
+  /* Structural layouts collapse to a single scrolling column on narrow screens. */
+  .dashboard-stage {
+    grid-template-rows: none;
+    overflow-y: auto;
+  }
+
+  .dashboard-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+    grid-template-areas: none;
+    grid-auto-rows: minmax(240px, auto);
+    height: auto;
+  }
+
+  .dashboard-layout__cell {
+    grid-area: auto;
+  }
+
+  .drive-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .instrument-status-bar__segments {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .instrument-status-bar__segment--hero {
+    grid-column: span 2;
+  }
+
+  .dashboard-customize {
+    inset: 12px;
+    width: auto;
+  }
+
+  .dashboard-grid__slot--size-expanded .map-stage {
+    min-height: 420px;
+  }
+
+  .dashboard-footer__shell,
+  .dashboard-footer__shell-toggle {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+@media (max-width: 700px) {
+  .workspace {
+    padding: 10px;
+  }
+
+  .dashboard-shell {
+    gap: 10px;
+  }
+
+  .instrument-status-bar,
+  .dashboard-widget {
+    padding: 12px;
+    border-radius: 18px;
+  }
+
+  .instrument-status-bar__segments {
+    grid-template-columns: 1fr;
+  }
+
+  .uconnect-toolbar__button {
+    min-width: 112px;
+    padding: 9px 10px;
+  }
+
+  .dashboard-widget .map-stage {
+    min-height: 300px;
+  }
+
+  .dashboard-widget .map-stage__controls {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: calc(100% - 16px);
+    left: 8px;
+    right: 8px;
+  }
+
+  .dashboard-route-card__metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .compact-detection-card__body {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+}
+
+/*
+ * Detection action sheet. Opens when an operator selects a detection card on
+ * the dashboard. The dashboard cards stay glance-only; this sheet holds the
+ * full action menu plus the verification context. Modal-style with scrim,
+ * keyboard escape, and focus trap via aria-modal.
+ */
+.detection-action-sheet__scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 6, 8, 0.62);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  z-index: 60;
+}
+
+.detection-action-sheet {
+  width: min(540px, 100%);
+  max-height: min(86vh, 720px);
+  padding: 20px 22px 22px;
+  border-radius: 24px;
+  border: 1px solid rgba(133, 146, 166, 0.2);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.028), transparent 22%),
+    linear-gradient(180deg, rgba(20, 24, 30, 0.98), rgba(11, 14, 18, 0.98));
+  box-shadow: var(--shadow-strong);
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 16px;
+  overflow: hidden;
+}
+
+.detection-action-sheet__header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.detection-action-sheet__title-group {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.detection-action-sheet__eyebrow {
+  color: var(--muted);
+  font-size: calc(var(--text-scale, 1) * 0.74rem);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.detection-action-sheet__title-group strong {
+  font-family: var(--mono);
+  font-size: 1.5rem;
+  letter-spacing: 0.06em;
+  color: var(--text);
+}
+
+.detection-action-sheet__vehicle {
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.detection-action-sheet__title-group small {
+  color: var(--faint);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.detection-action-sheet__title-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.detection-action-sheet__close {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  border-radius: 12px;
+  border: 1px solid rgba(133, 146, 166, 0.18);
+  background: rgba(13, 16, 21, 0.92);
+  color: var(--text);
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.detection-action-sheet__close:hover,
+.detection-action-sheet__close:focus-visible {
+  border-color: rgba(141, 214, 255, 0.32);
+  color: var(--cyan);
+}
+
+.detection-action-sheet__snapshot {
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid rgba(133, 146, 166, 0.18);
+  background: rgba(9, 11, 15, 0.7);
+  min-height: 110px;
+  max-height: 220px;
+  display: grid;
+}
+
+.detection-action-sheet__actions {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  overflow: auto;
+}
+
+.detection-action-sheet__action {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(133, 146, 166, 0.18);
+  background: rgba(13, 16, 21, 0.92);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
+}
+
+.detection-action-sheet__action:hover,
+.detection-action-sheet__action:focus-visible {
+  border-color: rgba(141, 214, 255, 0.34);
+  background: rgba(15, 19, 25, 0.96);
+}
+
+.detection-action-sheet__action:active {
+  transform: translateY(1px);
+}
+
+.detection-action-sheet__action[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.detection-action-sheet__action strong {
+  font-size: 0.98rem;
+  color: var(--text);
+}
+
+.detection-action-sheet__action span {
+  color: var(--faint);
+  font-size: 0.82rem;
+}
+
+.detection-action-sheet__action--primary {
+  border-color: rgba(141, 214, 255, 0.36);
+  background: linear-gradient(180deg, rgba(141, 214, 255, 0.16), rgba(19, 23, 30, 0.92));
+}
+
+.detection-action-sheet__action--primary strong {
+  color: var(--cyan);
+}
+
+.detection-action-sheet__action--success {
+  border-color: rgba(123, 224, 168, 0.36);
+  background: linear-gradient(180deg, rgba(123, 224, 168, 0.16), rgba(19, 23, 30, 0.92));
+}
+
+.detection-action-sheet__action--success strong {
+  color: var(--success);
+}
+
+.detection-action-sheet__action--danger {
+  border-color: rgba(255, 106, 106, 0.36);
+  background: linear-gradient(180deg, rgba(255, 106, 106, 0.16), rgba(19, 23, 30, 0.92));
+}
+
+.detection-action-sheet__action--danger strong {
+  color: var(--critical);
+}
+
+/*
+ * Scan state banner. Wide, low-decoration strip across the top of the
+ * dashboard content area that tells the operator the current scan
+ * posture at a glance. Hidden entirely when state is idle so the
+ * dashboard stays uncluttered outside active recovery sessions.
+ *
+ * The state modifiers swap accent color and dot animation. The dot
+ * pulses on active to provide motion that catches peripheral vision;
+ * the pulse is suppressed under prefers-reduced-motion.
+ */
+.scan-state-banner {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 18px;
+  margin-bottom: 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(133, 146, 166, 0.18);
+  background: rgba(11, 14, 18, 0.86);
+}
+
+.scan-state-banner__dot {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--muted);
+  box-shadow: 0 0 0 4px rgba(148, 161, 179, 0.16);
+}
+
+/* Halo pseudo-element used by the active-state pulse. Animating opacity
+ * stays on the compositor and avoids triggering paint on the dot itself. */
+.scan-state-banner__dot::after {
+  content: "";
+  position: absolute;
+  inset: -10px;
+  border-radius: 999px;
+  background: rgba(123, 224, 168, 0.36);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.scan-state-banner__copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.scan-state-banner__eyebrow {
+  color: var(--muted);
+  font-size: calc(var(--text-scale, 1) * 0.7rem);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.scan-state-banner__label {
+  font-size: 1.12rem;
+  letter-spacing: 0.04em;
+  color: var(--text);
+}
+
+.scan-state-banner__meta {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.scan-state-banner__detail {
+  color: var(--faint);
+  font-size: 0.86rem;
+}
+
+.scan-state-banner__target {
+  display: grid;
+  gap: 2px;
+  justify-items: end;
+  text-align: right;
+  font-family: var(--mono);
+}
+
+.scan-state-banner__target span {
+  color: var(--muted);
+  font-size: calc(var(--text-scale, 1) * 0.66rem);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.scan-state-banner__target strong {
+  font-size: 1rem;
+  letter-spacing: 0.05em;
+  color: var(--cyan);
+}
+
+.scan-state-banner--approaching {
+  border-color: rgba(239, 184, 97, 0.36);
+  background: linear-gradient(180deg, rgba(239, 184, 97, 0.1), rgba(11, 14, 18, 0.92));
+}
+
+.scan-state-banner--approaching .scan-state-banner__dot {
+  background: var(--warn);
+  box-shadow: 0 0 0 4px rgba(239, 184, 97, 0.22);
+}
+
+.scan-state-banner--approaching .scan-state-banner__eyebrow {
+  color: var(--warn);
+}
+
+.scan-state-banner--active {
+  border-color: rgba(123, 224, 168, 0.42);
+  background: linear-gradient(180deg, rgba(123, 224, 168, 0.14), rgba(11, 14, 18, 0.92));
+}
+
+.scan-state-banner--active .scan-state-banner__dot {
+  background: var(--success);
+  box-shadow: 0 0 0 4px rgba(123, 224, 168, 0.32);
+}
+
+.scan-state-banner--active .scan-state-banner__dot::after {
+  animation: scan-state-banner-pulse 2s ease-in-out infinite;
+}
+
+.scan-state-banner--active .scan-state-banner__eyebrow {
+  color: var(--success);
+}
+
+.scan-state-banner--post-scan {
+  border-color: rgba(141, 214, 255, 0.36);
+  background: linear-gradient(180deg, rgba(141, 214, 255, 0.12), rgba(11, 14, 18, 0.92));
+}
+
+.scan-state-banner--post-scan .scan-state-banner__dot {
+  background: var(--cyan);
+  box-shadow: 0 0 0 4px rgba(141, 214, 255, 0.26);
+}
+
+.scan-state-banner--post-scan .scan-state-banner__eyebrow {
+  color: var(--cyan);
+}
+
+.scan-state-banner--complete {
+  border-color: rgba(148, 161, 179, 0.36);
+  background: rgba(15, 19, 25, 0.86);
+}
+
+.scan-state-banner--complete .scan-state-banner__dot {
+  background: var(--muted);
+}
+
+@keyframes scan-state-banner-pulse {
+  0%, 100% {
+    opacity: 0;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scan-state-banner--active .scan-state-banner__dot::after {
+    animation: none;
+    opacity: 0;
+  }
+}

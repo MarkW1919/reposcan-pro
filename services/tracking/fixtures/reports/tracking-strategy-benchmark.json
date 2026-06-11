@@ -1,0 +1,145 @@
+{
+  "benchmark_name": "tracking-strategy-field-relevant-workloads",
+  "generated_at_utc": "2026-03-24T23:30:00Z",
+  "recommended_algorithm": "byte_tracker",
+  "algorithms": {
+    "byte_tracker": {
+      "algorithm": "byte_tracker",
+      "scenarios": {
+        "crowded_crossing": {
+          "frames": 6,
+          "expected_objects": 2,
+          "finalized_detections": 2,
+          "expected_finalized_detections": 2,
+          "plate_exact_matches": 2,
+          "identity_switches": 0,
+          "suppressed_duplicates": 0,
+          "score": 24.0
+        },
+        "camera_motion_drift": {
+          "frames": 5,
+          "expected_objects": 1,
+          "finalized_detections": 1,
+          "expected_finalized_detections": 1,
+          "plate_exact_matches": 1,
+          "identity_switches": 0,
+          "suppressed_duplicates": 0,
+          "score": 12.0
+        },
+        "repeat_pass_duplicate_window": {
+          "frames": 8,
+          "expected_objects": 2,
+          "finalized_detections": 1,
+          "expected_finalized_detections": 1,
+          "plate_exact_matches": 1,
+          "identity_switches": 0,
+          "suppressed_duplicates": 1,
+          "score": 12.0
+        },
+        "repeat_pass_after_window": {
+          "frames": 18,
+          "expected_objects": 2,
+          "finalized_detections": 2,
+          "expected_finalized_detections": 2,
+          "plate_exact_matches": 2,
+          "identity_switches": 0,
+          "suppressed_duplicates": 0,
+          "score": 24.0
+        }
+      },
+      "total_score": 72.0
+    },
+    "sort": {
+      "algorithm": "sort",
+      "scenarios": {
+        "crowded_crossing": {
+          "frames": 6,
+          "expected_objects": 2,
+          "finalized_detections": 2,
+          "expected_finalized_detections": 2,
+          "plate_exact_matches": 1,
+          "identity_switches": 2,
+          "suppressed_duplicates": 0,
+          "score": 0.0
+        },
+        "camera_motion_drift": {
+          "frames": 5,
+          "expected_objects": 1,
+          "finalized_detections": 0,
+          "expected_finalized_detections": 1,
+          "plate_exact_matches": 0,
+          "identity_switches": 4,
+          "suppressed_duplicates": 0,
+          "score": -32.0
+        },
+        "repeat_pass_duplicate_window": {
+          "frames": 8,
+          "expected_objects": 2,
+          "finalized_detections": 1,
+          "expected_finalized_detections": 1,
+          "plate_exact_matches": 1,
+          "identity_switches": 0,
+          "suppressed_duplicates": 1,
+          "score": 12.0
+        },
+        "repeat_pass_after_window": {
+          "frames": 18,
+          "expected_objects": 2,
+          "finalized_detections": 2,
+          "expected_finalized_detections": 2,
+          "plate_exact_matches": 2,
+          "identity_switches": 0,
+          "suppressed_duplicates": 0,
+          "score": 24.0
+        }
+      },
+      "total_score": 4.0
+    },
+    "deep_sort": {
+      "algorithm": "deep_sort",
+      "scenarios": {
+        "crowded_crossing": {
+          "frames": 6,
+          "expected_objects": 2,
+          "finalized_detections": 2,
+          "expected_finalized_detections": 2,
+          "plate_exact_matches": 2,
+          "identity_switches": 0,
+          "suppressed_duplicates": 0,
+          "score": 24.0
+        },
+        "camera_motion_drift": {
+          "frames": 5,
+          "expected_objects": 1,
+          "finalized_detections": 1,
+          "expected_finalized_detections": 1,
+          "plate_exact_matches": 1,
+          "identity_switches": 0,
+          "suppressed_duplicates": 0,
+          "score": 12.0
+        },
+        "repeat_pass_duplicate_window": {
+          "frames": 8,
+          "expected_objects": 2,
+          "finalized_detections": 1,
+          "expected_finalized_detections": 1,
+          "plate_exact_matches": 1,
+          "identity_switches": 0,
+          "suppressed_duplicates": 1,
+          "score": 12.0
+        },
+        "repeat_pass_after_window": {
+          "frames": 18,
+          "expected_objects": 2,
+          "finalized_detections": 2,
+          "expected_finalized_detections": 2,
+          "plate_exact_matches": 2,
+          "identity_switches": 0,
+          "suppressed_duplicates": 0,
+          "score": 24.0
+        }
+      },
+      "total_score": 72.0
+    }
+  }
+}

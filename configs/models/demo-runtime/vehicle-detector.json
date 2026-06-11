@@ -1,0 +1,11 @@
+{
+  "artifact_type": "builtin_vehicle_detector",
+  "default_class_label": "car",
+  "default_confidence": 0.91,
+  "bbox_relative": {
+    "x": 0.22,
+    "y": 0.28,
+    "w": 0.48,
+    "h": 0.34
+  }
+}

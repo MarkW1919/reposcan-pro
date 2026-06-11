@@ -1,0 +1,26 @@
+{
+  "stage": "vehicle_detector",
+  "model_name": "fixture-vehicle-detector",
+  "backend": "onnx",
+  "artifact_path": "artifacts/vehicle-detector.onnx",
+  "artifact_sha256": "09cb2a7f4907948358a28535ff07bd26cc226cd5ef3325cb2d3f5eafb5d7cdf8",
+  "exported_at_utc": "2026-03-24T18:00:00Z",
+  "input_width": 640,
+  "input_height": 640,
+  "source_run_id": "fixture_onnx_export_001",
+  "source_checkpoint_ref": "fixture_onnx_runtime_checkpoint",
+  "dataset_manifests": [
+    "configs/datasets/runtime-benchmark-qualified-holdout.yaml"
+  ],
+  "export_tool": "reposcan.assemble_promoted_onnx_bundle",
+  "export_tool_version": "0.1.0",
+  "opset_version": 17,
+  "precision": "fp32",
+  "target_runtime": "onnxruntime",
+  "cuda_version": null,
+  "tensorrt_version": null,
+  "device_compute_capability": null,
+  "engine_profile": null,
+  "workspace_megabytes": null,
+  "notes": "Promoted ONNX fixture bundle for Section 4 runtime evidence."
+}
