@@ -20,6 +20,7 @@ from reposcan_inference.onnx_adapters import (
     OnnxPlateDetectorAdapter,
     _decode_end2end_detector_outputs,
     _looks_like_end2end_detector_output,
+    validate_onnx_artifact,
 )
 
 
@@ -118,3 +119,12 @@ def test_end2end_plate_adapter_full_frame_decode(tmp_path):
     assert detection.bbox.y == 192
     assert detection.bbox.w == 384
     assert detection.bbox.h == 96
+
+
+def test_validate_onnx_artifact_accepts_end2end_plate_detector(tmp_path):
+    # Regression: validate_model_stack must mark an end2end [N,7] plate detector
+    # READY (the runtime decoder handles it). Before the validator learned this
+    # format it wrongly reported "Missing required outputs: boxes_xywh, ...".
+    model_path = tmp_path / "plate-end2end.onnx"
+    _write_end2end_constant_model(model_path)
+    assert validate_onnx_artifact("plate_detector", _plate_config(model_path), artifact_path=model_path) == []

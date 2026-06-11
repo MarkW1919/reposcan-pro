@@ -147,3 +147,30 @@ def test_build_bundle_wires_real_plate_detector_and_fast_alpr_ocr():
     assert bundle is not None
     assert isinstance(bundle.ocr, FastPlateOcrAdapter)
     assert isinstance(bundle.plate_detector, OnnxPlateDetectorAdapter)
+
+
+FULL_REAL_CONFIG = REPO_ROOT / "configs" / "models" / "local-onnx-full-real.yaml"
+_FULL_REAL_WEIGHTS = [
+    "runtime/training/vehicle_detector_open_images_cpu_smoke_3000_20260415/weights/best.onnx",
+    "runtime/models/plate-detector/yolo-v9-t-384-license-plates-end2end.onnx",
+    "runtime/models/plate-ocr/cct_xs_v2_global.onnx",
+    "runtime/training/vehicle-make-model-canonical-v5_20260519_run1/exports/model.onnx",
+    "runtime/training/vehicle-year-bucket-canonical-v1_20260509_run1/exports/model.onnx",
+    "runtime/training/vehicle-color-canonical-v1_20260512_run1/exports/model.onnx",
+]
+
+
+@pytest.mark.skipif(
+    not all((REPO_ROOT / p).exists() for p in _FULL_REAL_WEIGHTS),
+    reason="full-real stack weights not all staged under runtime/",
+)
+def test_full_real_stack_validates_every_stage():
+    from reposcan_inference.validation import validate_model_stack
+
+    stack = ModelStackConfig.model_validate(yaml.safe_load(FULL_REAL_CONFIG.read_text(encoding="utf-8")))
+    report = validate_model_stack(stack)
+    not_ready = [(s.stage, [i.message for i in s.issues]) for s in report.stages if not s.ready]
+    assert not_ready == [], not_ready
+    stages = {s.stage for s in report.stages}
+    # real-time detect/read + all four deferred heads present and ready
+    assert {"vehicle_detector", "plate_detector", "ocr", "deferred.make_model", "deferred.year", "deferred.color"} <= stages

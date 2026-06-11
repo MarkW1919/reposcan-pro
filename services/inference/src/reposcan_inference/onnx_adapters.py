@@ -645,7 +645,10 @@ def validate_onnx_artifact(
         )
         return issues
 
-    if stage in {"vehicle_detector", "plate_detector"} and _looks_like_yolo_detector_output(output_map):
+    if stage in {"vehicle_detector", "plate_detector"} and (
+        _looks_like_yolo_detector_output(output_map)
+        or _looks_like_end2end_detector_output(output_map)
+    ):
         return issues
 
     missing = sorted(required_outputs[stage] - output_names)
