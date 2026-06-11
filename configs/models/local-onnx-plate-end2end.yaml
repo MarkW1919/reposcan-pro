@@ -1,0 +1,64 @@
+# Plate-detector integration stack: real pretrained end2end license-plate
+# detector on fixture vehicle-detector / OCR.
+# Validated by: reposcan_contracts.config.model.ModelStackConfig
+#
+# WHY THIS STACK EXISTS
+# The plate_detector slot had no real model — every prior stack used the
+# ml/inference/fixtures placeholder. This wires the first REAL plate detector
+# through the config-driven path so plate detection can be loaded and validated
+# end-to-end on ONNX Runtime (and later TensorRT-converted for the Orin).
+#
+# MODEL PROVENANCE
+#   model    : yolo-v9-t-384-license-plate-end2end (open-image-models / fast-alpr)
+#   format   : YOLOv9-t, NMS-in-graph ("end2end"), input 1x3x384x384 float (/255)
+#   output   : [num_detections, 7] = [batch, x1, y1, x2, y2, class, score], px space
+#   license  : redistributable pretrained (open-image-models); INTERIM detector
+#              until a domain plate detector is trained on field/long-range data
+#
+# SCOPE / HONESTY
+# vehicle_detector and ocr are STILL FIXTURES. This stack is NOT a deployable
+# end-to-end field release; it validates the real plate detector slot. The
+# end2end output is decoded by onnx_adapters._decode_end2end_detector_outputs.
+#
+# ARTIFACT PATHS
+# The plate model lives under runtime/ (gitignored model weights, per repo
+# policy: no_model_weight_commits) and is cataloged in docs/MODEL_INVENTORY.md.
+
+stack_name: local-onnx-plate-end2end
+description: "Real pretrained end2end plate detector on fixture vehicle-detector/OCR — plate-detector integration & validation only, NOT a deployable release"
+path_base: repo_root
+
+vehicle_detector:
+  name: fixture-vehicle-detector
+  backend: onnx
+  artifact_path: ml/inference/fixtures/onnx-runtime/vehicle-detector.onnx
+  input_width: 640
+  input_height: 640
+  normalization_mean: [0.0, 0.0, 0.0]
+  normalization_std: [1.0, 1.0, 1.0]
+  class_labels: [car]
+  confidence_threshold: 0.4
+  nms_iou_threshold: 0.5
+
+plate_detector:
+  name: yolo-v9-t-plate-end2end
+  backend: onnx
+  artifact_path: runtime/models/plate-detector/yolo-v9-t-384-license-plates-end2end.onnx
+  input_width: 384
+  input_height: 384
+  # end2end YOLOv9 expects /255 only (no mean/std subtraction).
+  normalization_mean: [0.0, 0.0, 0.0]
+  normalization_std: [1.0, 1.0, 1.0]
+  class_labels: [plate]
+  confidence_threshold: 0.5
+  nms_iou_threshold: 0.45
+
+ocr:
+  name: fixture-ocr
+  backend: onnx
+  artifact_path: ml/inference/fixtures/onnx-runtime/ocr.onnx
+  input_width: 144
+  input_height: 48
+  charset: "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ "
+  beam_width: 1
+  confidence_threshold: 0.6

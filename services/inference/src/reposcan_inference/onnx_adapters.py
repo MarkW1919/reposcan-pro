@@ -264,6 +264,80 @@ def _decode_yolo_detector_outputs(
     return boxes[keep], scores[keep], label_indices[keep]
 
 
+def _looks_like_end2end_detector_output(output_map: dict[str, object]) -> bool:
+    """Detect an "end2end" YOLO export: a single 2-D detection table.
+
+    These exports (e.g. ``yolo-v9-t-384-license-plate-end2end``) run NMS inside
+    the graph and emit one ``[num_detections, 6 or 7]`` tensor of already-filtered
+    boxes, rather than the raw ``[1, 4+nc, anchors]`` grid the standard YOLO
+    decoder consumes. Columns are pixel-space xyxy + score (+ optional leading
+    batch index and a class column).
+    """
+    if len(output_map) != 1:
+        return False
+    output = np.asarray(next(iter(output_map.values())))
+    if output.ndim != 2:
+        return False
+    return output.shape[1] in (6, 7)
+
+
+def _decode_end2end_detector_outputs(
+    output_map: dict[str, object],
+    model_config: DetectorModelConfig,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Decode an end2end detection table to relative top-left xywh + score + class.
+
+    Supported column layouts (NMS already applied upstream):
+      - 7 cols: ``[batch_idx, x1, y1, x2, y2, class_id, score]``
+      - 6 cols: ``[x1, y1, x2, y2, score, class_id]``
+
+    Coordinates are in input-resolution pixels, so we divide by the configured
+    input size to get the relative boxes the rest of the pipeline expects.
+    """
+    raw = np.asarray(next(iter(output_map.values())), dtype=np.float32).reshape(-1, _end2end_cols(output_map))
+    empty = (
+        np.empty((0, 4), dtype=np.float32),
+        np.empty((0,), dtype=np.float32),
+        np.empty((0,), dtype=np.int64),
+    )
+    if raw.size == 0:
+        return empty
+
+    if raw.shape[1] == 7:
+        xyxy = raw[:, 1:5]
+        class_indices = raw[:, 5].astype(np.int64)
+        scores = raw[:, 6].astype(np.float32)
+    else:  # 6 columns
+        xyxy = raw[:, 0:4]
+        scores = raw[:, 4].astype(np.float32)
+        class_indices = raw[:, 5].astype(np.int64)
+
+    width = float(max(model_config.input_width, 1))
+    height = float(max(model_config.input_height, 1))
+    # Pixel-space coords (max magnitude >1.5) are normalized; already-relative exports pass through.
+    if xyxy.size and float(np.nanmax(np.abs(xyxy))) > 1.5:
+        xyxy = xyxy / np.asarray([width, height, width, height], dtype=np.float32)
+
+    boxes = np.empty_like(xyxy)
+    boxes[:, 0] = np.clip(xyxy[:, 0], 0.0, 1.0)
+    boxes[:, 1] = np.clip(xyxy[:, 1], 0.0, 1.0)
+    boxes[:, 2] = np.clip(xyxy[:, 2] - xyxy[:, 0], 0.0, 1.0 - boxes[:, 0])
+    boxes[:, 3] = np.clip(xyxy[:, 3] - xyxy[:, 1], 0.0, 1.0 - boxes[:, 1])
+
+    valid = (scores >= model_config.confidence_threshold) & (boxes[:, 2] > 0.0) & (boxes[:, 3] > 0.0)
+    boxes = boxes[valid]
+    scores = scores[valid]
+    class_indices = class_indices[valid]
+    if scores.size == 0:
+        return empty
+    order = np.argsort(scores)[::-1]
+    return boxes[order], scores[order], class_indices[order]
+
+
+def _end2end_cols(output_map: dict[str, object]) -> int:
+    return int(np.asarray(next(iter(output_map.values()))).shape[1])
+
+
 def _decode_detector_outputs(
     output_map: dict[str, object],
     model_config: DetectorModelConfig,
@@ -274,6 +348,8 @@ def _decode_detector_outputs(
             _flatten(output_map["scores"]).astype(np.float32),
             _flatten(output_map["label_indices"]).astype(np.int64),
         )
+    if _looks_like_end2end_detector_output(output_map):
+        return _decode_end2end_detector_outputs(output_map, model_config)
     if _looks_like_yolo_detector_output(output_map):
         return _decode_yolo_detector_outputs(output_map, model_config)
     return (

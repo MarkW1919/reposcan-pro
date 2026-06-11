@@ -1,0 +1,974 @@
+{
+  "generated_utc": "2026-06-11T18:19:47Z",
+  "policy": "Weights are gitignored (no_model_weight_commits); this catalog is the tracked record. Restore weights from backup and verify with --verify against the recorded sha256.",
+  "scan_roots": [
+    "runtime/training",
+    "runtime/models"
+  ],
+  "summary": {
+    "artifact_count": 105,
+    "real_weight_count": 102,
+    "total_bytes": 2707070876
+  },
+  "run_metadata": {
+    "lpr_ocr_openalpr_support_continue_20260503_0002": {
+      "ocr_primary_dataset": "openalpr-us-benchmark",
+      "ocr_primary_train_rows": 594
+    },
+    "open_images_make_model_reviewed_seed_cpu_20260416": {
+      "best_validation_accuracy": 0.2,
+      "holdout_accuracy": 0.0,
+      "evaluated_at_utc": "2026-04-17T04:21:31Z"
+    },
+    "open_images_make_model_reviewed_seed_cpu_20260416_r2": {
+      "best_validation_accuracy": 0.2,
+      "holdout_accuracy": 0.0,
+      "evaluated_at_utc": "2026-04-17T04:25:55Z"
+    },
+    "open_images_make_model_reviewed_seed_cpu_20260417": {
+      "best_validation_accuracy": 0.25,
+      "holdout_accuracy": 0.1111111111111111,
+      "evaluated_at_utc": "2026-04-17T17:27:18Z"
+    },
+    "open_images_vehicle_color_reviewed_seed_20260417": {
+      "best_validation_accuracy": 0.1,
+      "holdout_accuracy": 0.0,
+      "evaluated_at_utc": "2026-04-17T17:30:58Z"
+    },
+    "vehicle-color-canonical-v1_20260512_run1": {
+      "best_validation_accuracy": 0.9878787878787879,
+      "evaluated_at_utc": "2026-05-14T12:49:00Z"
+    },
+    "vehicle-make-model-canonical-v1_20260506_run1": {
+      "best_validation_accuracy": 0.9640062597809077,
+      "holdout_accuracy": 0.9647239263803681,
+      "evaluated_at_utc": "2026-05-07T00:01:31Z"
+    },
+    "vehicle-make-model-canonical-v2_20260507_run1": {
+      "best_validation_accuracy": 0.956989247311828,
+      "holdout_accuracy": 0.947289156626506,
+      "evaluated_at_utc": "2026-05-07T19:53:07Z"
+    },
+    "vehicle-make-model-canonical-v3_20260508_run1": {
+      "best_validation_accuracy": 0.9211136890951276,
+      "holdout_accuracy": 0.8762769580022701,
+      "evaluated_at_utc": "2026-05-09T08:22:18Z"
+    },
+    "vehicle-make-model-canonical-v4_20260510_run1": {
+      "best_validation_accuracy": 0.9164733178654292,
+      "holdout_accuracy": 0.8921679909194098,
+      "evaluated_at_utc": "2026-05-11T19:41:13Z"
+    },
+    "vehicle-make-model-canonical-v5_20260519_run1": {
+      "best_validation_accuracy": 0.8963675213675214,
+      "holdout_accuracy": 0.8632567849686847,
+      "evaluated_at_utc": "2026-05-21T00:39:17Z"
+    },
+    "vehicle-make-model-warmstart-v2_20260409_141756": {
+      "best_validation_accuracy": 0.8533988533988534,
+      "holdout_accuracy": 0.8492724785474444,
+      "evaluated_at_utc": "2026-04-14T08:13:06Z"
+    },
+    "vehicle-rerank-gm-fullsize-suv-v1_20260512_run1": {
+      "best_validation_accuracy": 0.8833333333333333,
+      "holdout_accuracy": 0.8382352941176471,
+      "evaluated_at_utc": "2026-05-14T15:16:38Z"
+    },
+    "vehicle-rerank-jeep-realonly-v1_20260514_run1": {
+      "best_validation_accuracy": 0.9375,
+      "holdout_accuracy": 0.9375,
+      "evaluated_at_utc": "2026-05-14T18:46:02Z"
+    },
+    "vehicle-rerank-jeep-v1_20260512_run1": {
+      "best_validation_accuracy": 0.875,
+      "holdout_accuracy": 0.625,
+      "evaluated_at_utc": "2026-05-14T14:59:14Z"
+    },
+    "vehicle-rerank-tall-suv-v2_20260602_run1": {
+      "best_validation_accuracy": 0.8157894736842105,
+      "holdout_accuracy": 0.7738095238095238,
+      "evaluated_at_utc": "2026-06-03T00:59:32Z"
+    },
+    "vehicle-year-bucket-canonical-v1_20260509_run1": {
+      "best_validation_accuracy": 0.697986577181208,
+      "holdout_accuracy": 0.6772908366533864,
+      "evaluated_at_utc": "2026-05-10T02:51:05Z"
+    },
+    "vehicle_detector_open_images_cpu_smoke_20260415": {},
+    "vehicle_detector_open_images_cpu_smoke_20260428_autonomy1": {},
+    "vehicle_detector_open_images_cpu_smoke_20260428_ui_fix": {},
+    "vehicle_detector_open_images_cpu_smoke_3000_20260415": {},
+    "vehicle_make_model_warmstart_20260331_rerun2": {},
+    "vehicle_make_model_warmstart_20260403_visible_rerun1": {},
+    "vehicle_make_model_warmstart_cpu_20260401_rerun1": {},
+    "vehicle_make_model_warmstart_cpu_20260402_continue1": {},
+    "vehicle_make_model_warmstart_cpu_20260427": {
+      "best_validation_accuracy": 0.7014742014742015,
+      "holdout_accuracy": 0.6930730008705385,
+      "evaluated_at_utc": "2026-04-27T17:14:32Z"
+    },
+    "vehicle_make_model_warmstart_regularized_20260407_rerun1": {
+      "best_validation_accuracy": 0.8452088452088452,
+      "holdout_accuracy": 0.8444223355304067,
+      "evaluated_at_utc": "2026-04-11T05:01:37Z"
+    },
+    "vehicle_make_model_warmstart_v3_palette_continue_20260430_01": {},
+    "vehicle_make_model_warmstart_v3_polish_20260427": {
+      "best_validation_accuracy": 0.8566748566748567,
+      "holdout_accuracy": 0.8559880611864196,
+      "evaluated_at_utc": "2026-04-28T00:34:52Z"
+    },
+    "vehicle_make_model_warmstart_v3_polish_continue_20260430_01": {
+      "best_validation_accuracy": 0.8648648648648649,
+      "holdout_accuracy": 0.8594702151473698,
+      "evaluated_at_utc": "2026-04-30T10:22:13Z"
+    },
+    "vehicle_make_model_warmstart_v3_polish_continue_20260503_0002": {
+      "best_validation_accuracy": 0.8632268632268633,
+      "holdout_accuracy": 0.8582265887327447,
+      "evaluated_at_utc": "2026-05-03T13:50:04Z"
+    }
+  },
+  "artifacts": [
+    {
+      "path": "runtime/training/lpr_ocr_openalpr_support_continue_20260503_0002/output/best_accuracy.pdparams",
+      "run": "lpr_ocr_openalpr_support_continue_20260503_0002",
+      "bytes": 68644493,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-03T09:54:04Z",
+      "sha256": "74e78e6650072df789a431d1ecde1c201102b8b90e8d5ddd295ce70dde3572ca"
+    },
+    {
+      "path": "runtime/training/lpr_ocr_openalpr_support_continue_20260503_0002/output/best_model/model.pdparams",
+      "run": "lpr_ocr_openalpr_support_continue_20260503_0002",
+      "bytes": 68644493,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-03T09:54:04Z",
+      "sha256": "74e78e6650072df789a431d1ecde1c201102b8b90e8d5ddd295ce70dde3572ca"
+    },
+    {
+      "path": "runtime/training/lpr_ocr_openalpr_support_continue_20260503_0002/output/iter_epoch_72.pdparams",
+      "run": "lpr_ocr_openalpr_support_continue_20260503_0002",
+      "bytes": 68644493,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-03T05:55:43Z",
+      "sha256": "784824b33429c4f19e264d2da6b94c3ca1f73ca96d4b0d2be7dd41b881302cfc"
+    },
+    {
+      "path": "runtime/training/lpr_ocr_openalpr_support_continue_20260503_0002/output/iter_epoch_73.pdparams",
+      "run": "lpr_ocr_openalpr_support_continue_20260503_0002",
+      "bytes": 68644493,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-03T06:30:08Z",
+      "sha256": "8a31ef192284a0541ea25cc06b3b224d6adae4b0a4c44e86cbe4b558c292f93d"
+    },
+    {
+      "path": "runtime/training/lpr_ocr_openalpr_support_continue_20260503_0002/output/iter_epoch_74.pdparams",
+      "run": "lpr_ocr_openalpr_support_continue_20260503_0002",
+      "bytes": 68644493,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-03T07:03:46Z",
+      "sha256": "6da0379e64e409c6233f4b159cea25bccf15ef07f6d17fbe3694a1d6a5c54ed8"
+    },
+    {
+      "path": "runtime/training/lpr_ocr_openalpr_support_continue_20260503_0002/output/iter_epoch_75.pdparams",
+      "run": "lpr_ocr_openalpr_support_continue_20260503_0002",
+      "bytes": 68644493,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-03T07:36:27Z",
+      "sha256": "78320af7876f235c3f3cae45a2956bca37b2848db136e2dc6eca78217866d043"
+    },
+    {
+      "path": "runtime/training/lpr_ocr_openalpr_support_continue_20260503_0002/output/iter_epoch_76.pdparams",
+      "run": "lpr_ocr_openalpr_support_continue_20260503_0002",
+      "bytes": 68644493,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-03T08:09:25Z",
+      "sha256": "a6f5d278e71cca9227109a13fe7a84c9865cc00be8b5bc520aecfc4c0c634622"
+    },
+    {
+      "path": "runtime/training/lpr_ocr_openalpr_support_continue_20260503_0002/output/iter_epoch_77.pdparams",
+      "run": "lpr_ocr_openalpr_support_continue_20260503_0002",
+      "bytes": 68644493,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-03T08:42:48Z",
+      "sha256": "1265ab9fdd805725f8d1c89e52392c37e37863323d4da3601072cf95f320cbda"
+    },
+    {
+      "path": "runtime/training/lpr_ocr_openalpr_support_continue_20260503_0002/output/iter_epoch_78.pdparams",
+      "run": "lpr_ocr_openalpr_support_continue_20260503_0002",
+      "bytes": 68644493,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-03T09:15:39Z",
+      "sha256": "5f0fc66965b9f9b25b08c60a1d79e7707393148b52eb337a8d97a14b8959051f"
+    },
+    {
+      "path": "runtime/training/lpr_ocr_openalpr_support_continue_20260503_0002/output/iter_epoch_79.pdparams",
+      "run": "lpr_ocr_openalpr_support_continue_20260503_0002",
+      "bytes": 68644493,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-03T09:47:44Z",
+      "sha256": "97de3f696200acf4f338c20160ab8dbbb0ba5e1ae62f9e0a3ab1228a10054c38"
+    },
+    {
+      "path": "runtime/training/lpr_ocr_openalpr_support_continue_20260503_0002/output/iter_epoch_80.pdparams",
+      "run": "lpr_ocr_openalpr_support_continue_20260503_0002",
+      "bytes": 68644493,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-03T10:19:55Z",
+      "sha256": "8776e5d5af618e236ecd4500ef9dc08987696c25f13a92ddc7857c692aca811f"
+    },
+    {
+      "path": "runtime/training/lpr_ocr_openalpr_support_continue_20260503_0002/output/latest.pdparams",
+      "run": "lpr_ocr_openalpr_support_continue_20260503_0002",
+      "bytes": 68644493,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-03T10:19:55Z",
+      "sha256": "8776e5d5af618e236ecd4500ef9dc08987696c25f13a92ddc7857c692aca811f"
+    },
+    {
+      "path": "runtime/training/open_images_make_model_reviewed_seed_cpu_20260416/checkpoints/best.pt",
+      "run": "open_images_make_model_reviewed_seed_cpu_20260416",
+      "bytes": 44797515,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-17T04:21:22Z",
+      "sha256": "52ca02ba9e308fccd9317a719a6e17f76783e7c8b4ba0e740b853d59030258e0"
+    },
+    {
+      "path": "runtime/training/open_images_make_model_reviewed_seed_cpu_20260416/checkpoints/last.pt",
+      "run": "open_images_make_model_reviewed_seed_cpu_20260416",
+      "bytes": 44797515,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-17T04:21:30Z",
+      "sha256": "8aab47345ce86b428574dcc4af6610d2ef4346246bde577da3558fcba579c686"
+    },
+    {
+      "path": "runtime/training/open_images_make_model_reviewed_seed_cpu_20260416/exports/model.onnx",
+      "run": "open_images_make_model_reviewed_seed_cpu_20260416",
+      "bytes": 44717078,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-17T04:21:31Z",
+      "sha256": "97eb4814adfad2d0697bd4ed9f4742c949ceca251efabe1847f0d6968343643c"
+    },
+    {
+      "path": "runtime/training/open_images_make_model_reviewed_seed_cpu_20260416_r2/checkpoints/best.pt",
+      "run": "open_images_make_model_reviewed_seed_cpu_20260416_r2",
+      "bytes": 44797515,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-17T04:25:54Z",
+      "sha256": "2ace77dbf169f57fadf4038230a8be5545f994901ed5f91c8432bdcb16a2d28a"
+    },
+    {
+      "path": "runtime/training/open_images_make_model_reviewed_seed_cpu_20260416_r2/checkpoints/last.pt",
+      "run": "open_images_make_model_reviewed_seed_cpu_20260416_r2",
+      "bytes": 44797515,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-17T04:25:54Z",
+      "sha256": "d9c8107d82befdc54e1acf2c43cabb1fa114de2fd75e58964240d500b6ce1584"
+    },
+    {
+      "path": "runtime/training/open_images_make_model_reviewed_seed_cpu_20260416_r2/exports/model.onnx",
+      "run": "open_images_make_model_reviewed_seed_cpu_20260416_r2",
+      "bytes": 44717078,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-17T04:25:54Z",
+      "sha256": "24c17d5c3b876e9feeda896a5f84ed821c40fb396795cd98688a72580fc30e12"
+    },
+    {
+      "path": "runtime/training/open_images_make_model_reviewed_seed_cpu_20260417/checkpoints/best.pt",
+      "run": "open_images_make_model_reviewed_seed_cpu_20260417",
+      "bytes": 44801675,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-17T17:27:07Z",
+      "sha256": "7a56ac3e071015f71dbb151d20d9763b2640cb978479d12cd869ed4472e0af8d"
+    },
+    {
+      "path": "runtime/training/open_images_make_model_reviewed_seed_cpu_20260417/checkpoints/last.pt",
+      "run": "open_images_make_model_reviewed_seed_cpu_20260417",
+      "bytes": 44801675,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-17T17:27:17Z",
+      "sha256": "34ebf7f2f0b62e9a57927d2f8a7224dd0a57c8fdb7f4beb5ee528b2ae6179097"
+    },
+    {
+      "path": "runtime/training/open_images_make_model_reviewed_seed_cpu_20260417/exports/model.onnx",
+      "run": "open_images_make_model_reviewed_seed_cpu_20260417",
+      "bytes": 44721182,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-17T17:27:18Z",
+      "sha256": "8a16d15cfe88da53036b45b8105dc1637ad164af0a747dc474429ea769f4ef56"
+    },
+    {
+      "path": "runtime/training/open_images_vehicle_color_reviewed_seed_20260417/checkpoints/best.pt",
+      "run": "open_images_vehicle_color_reviewed_seed_20260417",
+      "bytes": 16350693,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-17T17:30:23Z",
+      "sha256": "f10ec98cf692aedb40bc3bca7f0768289c597d0799c87ca3eefeb863b50a6e94"
+    },
+    {
+      "path": "runtime/training/open_images_vehicle_color_reviewed_seed_20260417/checkpoints/last.pt",
+      "run": "open_images_vehicle_color_reviewed_seed_20260417",
+      "bytes": 16350693,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-17T17:30:57Z",
+      "sha256": "9fe10bd25f81a583ab4868b6066cfa93c154841dc49ef9762f78585f8ccdfefb"
+    },
+    {
+      "path": "runtime/training/open_images_vehicle_color_reviewed_seed_20260417/exports/model.onnx",
+      "run": "open_images_vehicle_color_reviewed_seed_20260417",
+      "bytes": 16066315,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-17T17:30:58Z",
+      "sha256": "88fb8bdcb0a838f7b20c71d64e58d682816e3f559fa799b9f7b2b5e24e82996b"
+    },
+    {
+      "path": "runtime/training/vehicle-color-canonical-v1_20260512_run1/checkpoints/best.pt",
+      "run": "vehicle-color-canonical-v1_20260512_run1",
+      "bytes": 16345637,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-14T12:30:57Z",
+      "sha256": "587d44941e108fdc04c8f469a54f4d77dee7d9baaf75aacad42136261af32fb7"
+    },
+    {
+      "path": "runtime/training/vehicle-color-canonical-v1_20260512_run1/checkpoints/last.pt",
+      "run": "vehicle-color-canonical-v1_20260512_run1",
+      "bytes": 16345637,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-14T12:48:58Z",
+      "sha256": "6583abdf396f81b2a5584d1641ea30347fff7c2c421798461025defea47ef52c"
+    },
+    {
+      "path": "runtime/training/vehicle-color-canonical-v1_20260512_run1/exports/model.onnx",
+      "run": "vehicle-color-canonical-v1_20260512_run1",
+      "bytes": 16061214,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-14T12:49:00Z",
+      "sha256": "c557ca77a49ab393e1594bacb9208de33a1dd55de7309e8922d2ac162c06e895"
+    },
+    {
+      "path": "runtime/training/vehicle-make-model-canonical-v1_20260506_run1/checkpoints/best.pt",
+      "run": "vehicle-make-model-canonical-v1_20260506_run1",
+      "bytes": 16407461,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-06T22:26:08Z",
+      "sha256": "198e57da5992343de5462fe8354ced22bd67b54f075617a103dc228cd3ee75f9"
+    },
+    {
+      "path": "runtime/training/vehicle-make-model-canonical-v1_20260506_run1/checkpoints/last.pt",
+      "run": "vehicle-make-model-canonical-v1_20260506_run1",
+      "bytes": 16407461,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-07T00:00:43Z",
+      "sha256": "2bca4aa100c04c089397854ec18e787dc444d8cf9e8ea861e003586acf754f72"
+    },
+    {
+      "path": "runtime/training/vehicle-make-model-canonical-v1_20260506_run1/exports/model.onnx",
+      "run": "vehicle-make-model-canonical-v1_20260506_run1",
+      "bytes": 16122702,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-07T00:00:53Z",
+      "sha256": "9a834c3ec95df1401ab1ab33bb17a6ddd2e50825e568103b07de11a50083bc0f"
+    },
+    {
+      "path": "runtime/training/vehicle-make-model-canonical-v2_20260507_run1/checkpoints/best.pt",
+      "run": "vehicle-make-model-canonical-v2_20260507_run1",
+      "bytes": 16407461,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-07T18:11:36Z",
+      "sha256": "b5717bb410184f63ca3e8b2dc2f63225cc33c7f1ab47a0c3189a1fa6c54846b4"
+    },
+    {
+      "path": "runtime/training/vehicle-make-model-canonical-v2_20260507_run1/checkpoints/last.pt",
+      "run": "vehicle-make-model-canonical-v2_20260507_run1",
+      "bytes": 16407461,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-07T19:52:21Z",
+      "sha256": "956a6466eb428b769be7a0e7e1ac8818492831c87a8572b93160db343dc51616"
+    },
+    {
+      "path": "runtime/training/vehicle-make-model-canonical-v2_20260507_run1/exports/model.onnx",
+      "run": "vehicle-make-model-canonical-v2_20260507_run1",
+      "bytes": 16122702,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-07T19:52:28Z",
+      "sha256": "d7b2ebcc07b3769aa58859c1060a5115437e37e7d7181c9d8d05b154f313748c"
+    },
+    {
+      "path": "runtime/training/vehicle-make-model-canonical-v3_20260508_run1/checkpoints/best.pt",
+      "run": "vehicle-make-model-canonical-v3_20260508_run1",
+      "bytes": 16458917,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-09T05:50:52Z",
+      "sha256": "bd10f11e091c6ab748f2ba4c39a2e8c0cfcf6d867c86da77fa40932004572355"
+    },
+    {
+      "path": "runtime/training/vehicle-make-model-canonical-v3_20260508_run1/checkpoints/last.pt",
+      "run": "vehicle-make-model-canonical-v3_20260508_run1",
+      "bytes": 16458917,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-09T08:21:23Z",
+      "sha256": "bd08c51cd4e77a455ed6aa240d57cb1d6c76ccfae4f7b66824eea975d50b45c5"
+    },
+    {
+      "path": "runtime/training/vehicle-make-model-canonical-v3_20260508_run1/exports/model.onnx",
+      "run": "vehicle-make-model-canonical-v3_20260508_run1",
+      "bytes": 16173943,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-09T08:21:29Z",
+      "sha256": "2e020d4e88f5e35de72ea04e5f8808d08e77023dfbb9954ce0cdc8bb4146e5bd"
+    },
+    {
+      "path": "runtime/training/vehicle-make-model-canonical-v4_20260510_run1/checkpoints/best.pt",
+      "run": "vehicle-make-model-canonical-v4_20260510_run1",
+      "bytes": 16458917,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-11T18:15:22Z",
+      "sha256": "cf05c78964198b3d68a7f8df01d7b61802fa2da052bfed4d462293d958c26f7e"
+    },
+    {
+      "path": "runtime/training/vehicle-make-model-canonical-v4_20260510_run1/checkpoints/last.pt",
+      "run": "vehicle-make-model-canonical-v4_20260510_run1",
+      "bytes": 16458917,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-11T19:40:24Z",
+      "sha256": "d7b353df946704b5771d0f2e5febc4085471ea17ed6ffdc088723ca86d9ee8c8"
+    },
+    {
+      "path": "runtime/training/vehicle-make-model-canonical-v4_20260510_run1/exports/model.onnx",
+      "run": "vehicle-make-model-canonical-v4_20260510_run1",
+      "bytes": 16173943,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-11T19:40:27Z",
+      "sha256": "740073097d0d625f07768d2e35f00e75ca189639139b861acb03c64804c5c791"
+    },
+    {
+      "path": "runtime/training/vehicle-make-model-canonical-v5_20260519_run1/checkpoints/best.pt",
+      "run": "vehicle-make-model-canonical-v5_20260519_run1",
+      "bytes": 16510437,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-20T20:34:46Z",
+      "sha256": "35227db57f21f4430a30bf71b43ca891f4911016e6eb23c5cc34f860742242f6"
+    },
+    {
+      "path": "runtime/training/vehicle-make-model-canonical-v5_20260519_run1/checkpoints/last.pt",
+      "run": "vehicle-make-model-canonical-v5_20260519_run1",
+      "bytes": 16510437,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-21T00:38:23Z",
+      "sha256": "93a074d9bf67ab81ede16e2aff61edb9a1c3d52275b0ebe403c55a2c6d19b89f"
+    },
+    {
+      "path": "runtime/training/vehicle-make-model-canonical-v5_20260519_run1/exports/model.onnx",
+      "run": "vehicle-make-model-canonical-v5_20260519_run1",
+      "bytes": 16225184,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-21T00:38:25Z",
+      "sha256": "58e181cb6009c4cb81d1a62688d15f07658ac91fbde1f8c40165b6b06468c3d5"
+    },
+    {
+      "path": "runtime/training/vehicle-make-model-warmstart-v2_20260409_141756/checkpoints/best.pt",
+      "run": "vehicle-make-model-warmstart-v2_20260409_141756",
+      "bytes": 17316069,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-14T08:06:00Z",
+      "sha256": "4b4cdac4ca9307dae0d98a823da2daef3d5baa04d266f9dc400d59a16c555d4f"
+    },
+    {
+      "path": "runtime/training/vehicle-make-model-warmstart-v2_20260409_141756/checkpoints/last.pt",
+      "run": "vehicle-make-model-warmstart-v2_20260409_141756",
+      "bytes": 17316069,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-14T08:06:00Z",
+      "sha256": "d66b80a8157ae716b9926e776c8a6119ac49027b9d4d8d4f0bcdbd915bc7f3da"
+    },
+    {
+      "path": "runtime/training/vehicle-make-model-warmstart-v2_20260409_141756/exports/model.onnx",
+      "run": "vehicle-make-model-warmstart-v2_20260409_141756",
+      "bytes": 17024531,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-14T08:06:02Z",
+      "sha256": "64b9cc2bb3c60570012ca5754c64c22cd9a9408170162b94c8e8e9b3ea18515e"
+    },
+    {
+      "path": "runtime/training/vehicle-rerank-gm-fullsize-suv-v1_20260512_run1/checkpoints/best.pt",
+      "run": "vehicle-rerank-gm-fullsize-suv-v1_20260512_run1",
+      "bytes": 16319973,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-14T15:11:15Z",
+      "sha256": "a9ae8c87a2bb15d7f3357d82b07f451dae2bd989632952d9b3d19e99f8b14ea7"
+    },
+    {
+      "path": "runtime/training/vehicle-rerank-gm-fullsize-suv-v1_20260512_run1/checkpoints/last.pt",
+      "run": "vehicle-rerank-gm-fullsize-suv-v1_20260512_run1",
+      "bytes": 16319973,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-14T15:16:33Z",
+      "sha256": "ad7d1bd89e5e4fd640e3caf5f6997b9c13a29ede8ba3e84a06c12e393794454b"
+    },
+    {
+      "path": "runtime/training/vehicle-rerank-gm-fullsize-suv-v1_20260512_run1/exports/model.onnx",
+      "run": "vehicle-rerank-gm-fullsize-suv-v1_20260512_run1",
+      "bytes": 16035592,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-14T15:16:35Z",
+      "sha256": "8deec5ba199857b918749b202f5a808a4c5dbd60ed721963e1de673845d676e7"
+    },
+    {
+      "path": "runtime/training/vehicle-rerank-jeep-realonly-v1_20260514_run1/checkpoints/best.pt",
+      "run": "vehicle-rerank-jeep-realonly-v1_20260514_run1",
+      "bytes": 16314853,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-14T18:43:31Z",
+      "sha256": "b64ebd43ae812fe2ca0bfa6fbe0f844f0af8588cdac30837a6a702b286efff8f"
+    },
+    {
+      "path": "runtime/training/vehicle-rerank-jeep-realonly-v1_20260514_run1/checkpoints/last.pt",
+      "run": "vehicle-rerank-jeep-realonly-v1_20260514_run1",
+      "bytes": 16314853,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-14T18:45:58Z",
+      "sha256": "c8e3fc95ca6db4cd61a877791a098ff2ac60a0a35b296a22d2f9f61b3c0c03b6"
+    },
+    {
+      "path": "runtime/training/vehicle-rerank-jeep-realonly-v1_20260514_run1/exports/model.onnx",
+      "run": "vehicle-rerank-jeep-realonly-v1_20260514_run1",
+      "bytes": 16030468,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-14T18:46:00Z",
+      "sha256": "a92c07bc69288c4e2b9833ec3cd4ceac4310c9367a626aad32789366f5d05d27"
+    },
+    {
+      "path": "runtime/training/vehicle-rerank-jeep-v1_20260512_run1/checkpoints/best.pt",
+      "run": "vehicle-rerank-jeep-v1_20260512_run1",
+      "bytes": 16314853,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-14T13:38:13Z",
+      "sha256": "5e3909b182dfe9f4c0b62ad1ed0221fe6c5f617cd47a581ad845af6f0035fde0"
+    },
+    {
+      "path": "runtime/training/vehicle-rerank-jeep-v1_20260512_run1/checkpoints/last.pt",
+      "run": "vehicle-rerank-jeep-v1_20260512_run1",
+      "bytes": 16314853,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-14T14:58:45Z",
+      "sha256": "56d17333f8ff5935259eaee5924db6f421c59243416c91dde5942e634d8df8f5"
+    },
+    {
+      "path": "runtime/training/vehicle-rerank-jeep-v1_20260512_run1/exports/model.onnx",
+      "run": "vehicle-rerank-jeep-v1_20260512_run1",
+      "bytes": 16030468,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-14T14:59:10Z",
+      "sha256": "48869dbc527ec38f3abb09bb94e2355b45899e1e6a047853b2ac072c63db8bec"
+    },
+    {
+      "path": "runtime/training/vehicle-rerank-tall-suv-v2_20260602_run1/checkpoints/best.pt",
+      "run": "vehicle-rerank-tall-suv-v2_20260602_run1",
+      "bytes": 16330277,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-06-03T00:44:43Z",
+      "sha256": "a0dbbe156fde7c8aa1d8aa0d8b993c3b0ec30ede400ac7123ecfa1d00431bba7"
+    },
+    {
+      "path": "runtime/training/vehicle-rerank-tall-suv-v2_20260602_run1/checkpoints/last.pt",
+      "run": "vehicle-rerank-tall-suv-v2_20260602_run1",
+      "bytes": 16330277,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-06-03T00:59:16Z",
+      "sha256": "43954ca6bcc3fc0ee15586b10b38c54137279121aa3bb08bcd8ac7e19924c0eb"
+    },
+    {
+      "path": "runtime/training/vehicle-rerank-tall-suv-v2_20260602_run1/exports/model.onnx",
+      "run": "vehicle-rerank-tall-suv-v2_20260602_run1",
+      "bytes": 16045842,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-06-03T00:59:18Z",
+      "sha256": "d3d9362d6643c5df0b2437620f78bb5da4a297df5934029599ce5169086fd992"
+    },
+    {
+      "path": "runtime/training/vehicle-year-bucket-canonical-v1_20260509_run1/checkpoints/best.pt",
+      "run": "vehicle-year-bucket-canonical-v1_20260509_run1",
+      "bytes": 16330277,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-10T01:56:14Z",
+      "sha256": "995b664a5be83e552f7e6ead3042544788adde62d47ad2e78f3c27e2e44e654b"
+    },
+    {
+      "path": "runtime/training/vehicle-year-bucket-canonical-v1_20260509_run1/checkpoints/last.pt",
+      "run": "vehicle-year-bucket-canonical-v1_20260509_run1",
+      "bytes": 16330277,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-10T02:50:21Z",
+      "sha256": "790ae898b5d01456d3d1ab80c9c6f3c2d888e1335a6fd3b527e17069f3d0327d"
+    },
+    {
+      "path": "runtime/training/vehicle-year-bucket-canonical-v1_20260509_run1/exports/model.onnx",
+      "run": "vehicle-year-bucket-canonical-v1_20260509_run1",
+      "bytes": 16045842,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-10T02:50:23Z",
+      "sha256": "368415ea98a57585cafbb6087e9a2f2c73b728b634c971335a94454bd38a71d8"
+    },
+    {
+      "path": "runtime/training/vehicle_detector_open_images_cpu_smoke_20260415/promoted-bundle/artifacts/best.onnx",
+      "run": "vehicle_detector_open_images_cpu_smoke_20260415",
+      "bytes": 10422411,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-15T17:38:34Z",
+      "sha256": "020fa2f2a056d629ac91209a81a54fa7399f59a593e32137f867ba5fc24dd446"
+    },
+    {
+      "path": "runtime/training/vehicle_detector_open_images_cpu_smoke_20260415/promoted-bundle/artifacts/classifier.onnx",
+      "run": "vehicle_detector_open_images_cpu_smoke_20260415",
+      "bytes": 1080,
+      "is_fixture_sized": true,
+      "modified_utc": "2026-03-22T23:36:11Z",
+      "sha256": "8fef06e0c34807a009754294413522cdf32c1690cf06cd50fa76aeb10ba0e024"
+    },
+    {
+      "path": "runtime/training/vehicle_detector_open_images_cpu_smoke_20260415/promoted-bundle/artifacts/ocr.onnx",
+      "run": "vehicle_detector_open_images_cpu_smoke_20260415",
+      "bytes": 271,
+      "is_fixture_sized": true,
+      "modified_utc": "2026-03-22T23:36:11Z",
+      "sha256": "41fcdb723fb893df7eab1c2096a4aedff954ab87bba1281ddf9edb5b75b8fe6c"
+    },
+    {
+      "path": "runtime/training/vehicle_detector_open_images_cpu_smoke_20260415/promoted-bundle/artifacts/plate-detector.onnx",
+      "run": "vehicle_detector_open_images_cpu_smoke_20260415",
+      "bytes": 417,
+      "is_fixture_sized": true,
+      "modified_utc": "2026-03-22T23:36:11Z",
+      "sha256": "c949efc28eb60467864240d4101501685215e87f518d1505b395cf5c0f043568"
+    },
+    {
+      "path": "runtime/training/vehicle_detector_open_images_cpu_smoke_20260415/weights/best.onnx",
+      "run": "vehicle_detector_open_images_cpu_smoke_20260415",
+      "bytes": 10422411,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-15T17:38:34Z",
+      "sha256": "020fa2f2a056d629ac91209a81a54fa7399f59a593e32137f867ba5fc24dd446"
+    },
+    {
+      "path": "runtime/training/vehicle_detector_open_images_cpu_smoke_20260415/weights/best.pt",
+      "run": "vehicle_detector_open_images_cpu_smoke_20260415",
+      "bytes": 5424538,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-15T17:38:30Z",
+      "sha256": "81f50425d14832713f0b8d875cf52081329ed07c7f9fef610d291b0284611910"
+    },
+    {
+      "path": "runtime/training/vehicle_detector_open_images_cpu_smoke_20260415/weights/last.pt",
+      "run": "vehicle_detector_open_images_cpu_smoke_20260415",
+      "bytes": 5424538,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-15T17:38:30Z",
+      "sha256": "40f7377f2d4ca9f471e795d3998f5eeb76af348b379a68c4d3f6aaced844f33b"
+    },
+    {
+      "path": "runtime/training/vehicle_detector_open_images_cpu_smoke_20260428_autonomy1/weights/best.onnx",
+      "run": "vehicle_detector_open_images_cpu_smoke_20260428_autonomy1",
+      "bytes": 10422421,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-28T19:41:56Z",
+      "sha256": "075a30b2413a134f50f485490427fe7caa729df7dec16bc184d2632dc5611f15"
+    },
+    {
+      "path": "runtime/training/vehicle_detector_open_images_cpu_smoke_20260428_autonomy1/weights/best.pt",
+      "run": "vehicle_detector_open_images_cpu_smoke_20260428_autonomy1",
+      "bytes": 5421722,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-28T19:41:45Z",
+      "sha256": "155b418a000b1ab8d9cfb4191513c9555be74380530d41974f95e2e6fa350876"
+    },
+    {
+      "path": "runtime/training/vehicle_detector_open_images_cpu_smoke_20260428_autonomy1/weights/last.pt",
+      "run": "vehicle_detector_open_images_cpu_smoke_20260428_autonomy1",
+      "bytes": 5421722,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-28T19:41:45Z",
+      "sha256": "4593dba80dca2500eb32e41dcaf604b0625316ca5a50894ccddb1a38d3c11e23"
+    },
+    {
+      "path": "runtime/training/vehicle_detector_open_images_cpu_smoke_20260428_ui_fix/weights/best.onnx",
+      "run": "vehicle_detector_open_images_cpu_smoke_20260428_ui_fix",
+      "bytes": 10422418,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-28T23:41:21Z",
+      "sha256": "f24cb6ece39263d62ccb4074b466cfdaa1174b769d178f5a66f53c7f63c56d37"
+    },
+    {
+      "path": "runtime/training/vehicle_detector_open_images_cpu_smoke_20260428_ui_fix/weights/best.pt",
+      "run": "vehicle_detector_open_images_cpu_smoke_20260428_ui_fix",
+      "bytes": 5421722,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-28T23:41:10Z",
+      "sha256": "9cc83c9f8ad4eab7a61c13d527a7558a6a945e719f6f03ca2fe9fe6c0c266f28"
+    },
+    {
+      "path": "runtime/training/vehicle_detector_open_images_cpu_smoke_20260428_ui_fix/weights/last.pt",
+      "run": "vehicle_detector_open_images_cpu_smoke_20260428_ui_fix",
+      "bytes": 5421722,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-28T23:41:10Z",
+      "sha256": "acf14afa139b92bb28631b7211dda92e1e6fee3c369a310771097fc629ca0edd"
+    },
+    {
+      "path": "runtime/training/vehicle_detector_open_images_cpu_smoke_3000_20260415/weights/best.onnx",
+      "run": "vehicle_detector_open_images_cpu_smoke_3000_20260415",
+      "bytes": 10422416,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-15T18:41:07Z",
+      "sha256": "dc0644dd432475ad64c5afaa2a8fc90d5bc682109593c2be63bae303d4e24cd0"
+    },
+    {
+      "path": "runtime/training/vehicle_detector_open_images_cpu_smoke_3000_20260415/weights/best.pt",
+      "run": "vehicle_detector_open_images_cpu_smoke_3000_20260415",
+      "bytes": 5421722,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-15T18:40:55Z",
+      "sha256": "cc2d4abe95632b7c2734c1820cea8e22e5dde64255fe8e72e281802b5ab1c6f1"
+    },
+    {
+      "path": "runtime/training/vehicle_detector_open_images_cpu_smoke_3000_20260415/weights/last.pt",
+      "run": "vehicle_detector_open_images_cpu_smoke_3000_20260415",
+      "bytes": 5421722,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-15T18:40:55Z",
+      "sha256": "096c1b10f8a0bc2a98677a435d31c5e791cc7608fbff8121cea788ced731e65c"
+    },
+    {
+      "path": "runtime/training/vehicle_make_model_warmstart_20260331_rerun2/checkpoints/best.pt",
+      "run": "vehicle_make_model_warmstart_20260331_rerun2",
+      "bytes": 17316005,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-01T06:50:16Z",
+      "sha256": "531de72cb646542233c6daef2139924bbdc5761f9624a074df4d43a294255d84"
+    },
+    {
+      "path": "runtime/training/vehicle_make_model_warmstart_20260403_visible_rerun1/checkpoints/best.pt",
+      "run": "vehicle_make_model_warmstart_20260403_visible_rerun1",
+      "bytes": 17316005,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-04T18:14:29Z",
+      "sha256": "3dbd2d530653986143421a1ddef9b28cc16cb503b241385bcde75866f06aef80"
+    },
+    {
+      "path": "runtime/training/vehicle_make_model_warmstart_20260403_visible_rerun1/checkpoints/last.pt",
+      "run": "vehicle_make_model_warmstart_20260403_visible_rerun1",
+      "bytes": 17316005,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-06T23:43:21Z",
+      "sha256": "902a2fcc37c36d3b91894f09630e79fd26970b4419c90a8689b016ceeb83e2af"
+    },
+    {
+      "path": "runtime/training/vehicle_make_model_warmstart_20260403_visible_rerun1/exports/model.onnx",
+      "run": "vehicle_make_model_warmstart_20260403_visible_rerun1",
+      "bytes": 17024508,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-06T23:43:25Z",
+      "sha256": "93efedef5b2213c8688b83a579c19e7601b62f78a51fc0e53f9e961b198988c2"
+    },
+    {
+      "path": "runtime/training/vehicle_make_model_warmstart_cpu_20260401_rerun1/checkpoints/best.pt",
+      "run": "vehicle_make_model_warmstart_cpu_20260401_rerun1",
+      "bytes": 45186187,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-01T15:57:22Z",
+      "sha256": "d53e96932baea2ca0eb3511e7e6525c6b1e7beab24b28c51a21b56eb42a07711"
+    },
+    {
+      "path": "runtime/training/vehicle_make_model_warmstart_cpu_20260401_rerun1/checkpoints/last.pt",
+      "run": "vehicle_make_model_warmstart_cpu_20260401_rerun1",
+      "bytes": 45186187,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-01T15:57:22Z",
+      "sha256": "cce15faab27c46501423070a0585f90a259959d5b3c0bea5fd86317e18894bd5"
+    },
+    {
+      "path": "runtime/training/vehicle_make_model_warmstart_cpu_20260401_rerun1/exports/model.onnx",
+      "run": "vehicle_make_model_warmstart_cpu_20260401_rerun1",
+      "bytes": 45098755,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-01T21:42:28Z",
+      "sha256": "fa120c1d981f3a6b882e01bf56b5032887d26742336fa03e626d325818eaa330"
+    },
+    {
+      "path": "runtime/training/vehicle_make_model_warmstart_cpu_20260402_continue1/checkpoints/best.pt",
+      "run": "vehicle_make_model_warmstart_cpu_20260402_continue1",
+      "bytes": 45186187,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-03T04:58:49Z",
+      "sha256": "60e9821acf17763791237112e430e1494e04a41a7699c55ca6a7a3d82c8f422c"
+    },
+    {
+      "path": "runtime/training/vehicle_make_model_warmstart_cpu_20260402_continue1/checkpoints/last.pt",
+      "run": "vehicle_make_model_warmstart_cpu_20260402_continue1",
+      "bytes": 45186187,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-03T05:07:26Z",
+      "sha256": "e3acc374341a2feeb04dac32fdc65e64543461f81d8dbd4e35fc60d1fbacfff1"
+    },
+    {
+      "path": "runtime/training/vehicle_make_model_warmstart_cpu_20260402_continue1/exports/model.onnx",
+      "run": "vehicle_make_model_warmstart_cpu_20260402_continue1",
+      "bytes": 45098755,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-03T05:07:30Z",
+      "sha256": "e3fe70414c0cba1bc4b71eb05a6a85bab4d3155d5546074ae33ea84f5aa2e48b"
+    },
+    {
+      "path": "runtime/training/vehicle_make_model_warmstart_cpu_20260427/checkpoints/best.pt",
+      "run": "vehicle_make_model_warmstart_cpu_20260427",
+      "bytes": 45186187,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-27T16:56:58Z",
+      "sha256": "2fef79f17f578a374811f2e81a4477288f71c052eaaae1a983761b5fc1d21c36"
+    },
+    {
+      "path": "runtime/training/vehicle_make_model_warmstart_cpu_20260427/checkpoints/last.pt",
+      "run": "vehicle_make_model_warmstart_cpu_20260427",
+      "bytes": 45186187,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-27T17:11:12Z",
+      "sha256": "ed596709889fe930cb17268c783ccffe33c0c0cbde79ad79db21ae0fba0443c3"
+    },
+    {
+      "path": "runtime/training/vehicle_make_model_warmstart_cpu_20260427/exports/model.onnx",
+      "run": "vehicle_make_model_warmstart_cpu_20260427",
+      "bytes": 45098755,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-27T17:11:13Z",
+      "sha256": "76d00345f8aa994c0ef2c071076dd4d5596589652c3f37bf34345b9ddace397c"
+    },
+    {
+      "path": "runtime/training/vehicle_make_model_warmstart_regularized_20260407_rerun1/checkpoints/best.pt",
+      "run": "vehicle_make_model_warmstart_regularized_20260407_rerun1",
+      "bytes": 17316005,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-08T03:17:38Z",
+      "sha256": "e1371f0cdf26b9065990e5e853473a2ef75b55aa3539ab5a7914de0407e50b9c"
+    },
+    {
+      "path": "runtime/training/vehicle_make_model_warmstart_regularized_20260407_rerun1/checkpoints/last.pt",
+      "run": "vehicle_make_model_warmstart_regularized_20260407_rerun1",
+      "bytes": 17316005,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-09T09:09:46Z",
+      "sha256": "feb70ff0971008a31f3cb4272dc64a9c74a1fb3ec15b5fe562bd5d7ac6043015"
+    },
+    {
+      "path": "runtime/training/vehicle_make_model_warmstart_regularized_20260407_rerun1/exports/model.onnx",
+      "run": "vehicle_make_model_warmstart_regularized_20260407_rerun1",
+      "bytes": 17024508,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-11T04:56:12Z",
+      "sha256": "619e08c3460d50beea55d9f6ac30093c702acdcfae1e47c0fb2efa849fdba8e7"
+    },
+    {
+      "path": "runtime/training/vehicle_make_model_warmstart_v3_palette_continue_20260430_01/checkpoints/best.pt",
+      "run": "vehicle_make_model_warmstart_v3_palette_continue_20260430_01",
+      "bytes": 17316069,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-30T17:00:54Z",
+      "sha256": "6e6b6c4e9c81395cdd5025f6d6662f5cedacae7ffc30c5f2e892e4d6d7d4857e"
+    },
+    {
+      "path": "runtime/training/vehicle_make_model_warmstart_v3_palette_continue_20260430_01/checkpoints/last.pt",
+      "run": "vehicle_make_model_warmstart_v3_palette_continue_20260430_01",
+      "bytes": 17316069,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-30T17:00:54Z",
+      "sha256": "22c114b635f17f4beab35b1fc48de48b856a167f2d045cfeac752ea5a20ae8dc"
+    },
+    {
+      "path": "runtime/training/vehicle_make_model_warmstart_v3_polish_20260427/checkpoints/best.pt",
+      "run": "vehicle_make_model_warmstart_v3_polish_20260427",
+      "bytes": 17316069,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-27T21:49:22Z",
+      "sha256": "2c240a4ece544bc3472263ec34b0186c72dd46bb7878618ebc5b28efe2388c0e"
+    },
+    {
+      "path": "runtime/training/vehicle_make_model_warmstart_v3_polish_20260427/checkpoints/last.pt",
+      "run": "vehicle_make_model_warmstart_v3_polish_20260427",
+      "bytes": 17316069,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-28T00:28:22Z",
+      "sha256": "c04ece594cd2c0cc839b0920bb811ad77ffa76dcbb9b504bd605196aef2db4e6"
+    },
+    {
+      "path": "runtime/training/vehicle_make_model_warmstart_v3_polish_20260427/exports/model.onnx",
+      "run": "vehicle_make_model_warmstart_v3_polish_20260427",
+      "bytes": 17024531,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-28T00:28:25Z",
+      "sha256": "2aada34eceb51605c4f741953fc6e4c9a3b0e9f4a8e7a7170bfd542224420b18"
+    },
+    {
+      "path": "runtime/training/vehicle_make_model_warmstart_v3_polish_continue_20260430_01/checkpoints/best.pt",
+      "run": "vehicle_make_model_warmstart_v3_polish_continue_20260430_01",
+      "bytes": 17316069,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-30T07:46:16Z",
+      "sha256": "9dcb1693a5c7210fe0bb7939b64ac5e5bc83f8d81030d47982bef5df2256a955"
+    },
+    {
+      "path": "runtime/training/vehicle_make_model_warmstart_v3_polish_continue_20260430_01/checkpoints/last.pt",
+      "run": "vehicle_make_model_warmstart_v3_polish_continue_20260430_01",
+      "bytes": 17316069,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-30T10:15:44Z",
+      "sha256": "404a442fdceeeaa6e185b3c3f7ab9672eb92489ab1deee699ddeaaf1b3a4b5c2"
+    },
+    {
+      "path": "runtime/training/vehicle_make_model_warmstart_v3_polish_continue_20260430_01/exports/model.onnx",
+      "run": "vehicle_make_model_warmstart_v3_polish_continue_20260430_01",
+      "bytes": 17024531,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-30T10:15:48Z",
+      "sha256": "3abebd1a3e27e068dfabed173d85e4cf5d8948b8fb0c14d616528fd6ebc8b413"
+    },
+    {
+      "path": "runtime/training/vehicle_make_model_warmstart_v3_polish_continue_20260503_0002/checkpoints/best.pt",
+      "run": "vehicle_make_model_warmstart_v3_polish_continue_20260503_0002",
+      "bytes": 17316069,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-03T11:15:43Z",
+      "sha256": "a566a752330a50f6c47ead468180cc0a424494f24f58ced4fdd038c9b26990b0"
+    },
+    {
+      "path": "runtime/training/vehicle_make_model_warmstart_v3_polish_continue_20260503_0002/checkpoints/last.pt",
+      "run": "vehicle_make_model_warmstart_v3_polish_continue_20260503_0002",
+      "bytes": 17316069,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-03T13:44:03Z",
+      "sha256": "5dc860fae47760e67faf6971bc0ef5d6380c33a6c4003a4ac86a18c9920d7435"
+    },
+    {
+      "path": "runtime/training/vehicle_make_model_warmstart_v3_polish_continue_20260503_0002/exports/model.onnx",
+      "run": "vehicle_make_model_warmstart_v3_polish_continue_20260503_0002",
+      "bytes": 17024531,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-05-03T13:44:05Z",
+      "sha256": "f517838bbabd9e7b02b27f1299e29b93655e92d3e68d5cace3f112d0db8a6ecb"
+    },
+    {
+      "path": "runtime/models/plate-detector/yolo-v9-t-384-license-plates-end2end.onnx",
+      "run": null,
+      "bytes": 7771218,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-06-11T18:16:26Z",
+      "sha256": "888397b96d761c89db40bc9c305838e8652660f5e282c2cadebbe8d2951a77a8"
+    },
+    {
+      "path": "runtime/models/ultralytics/yolov8s.pt",
+      "run": null,
+      "bytes": 22588772,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-04-19T21:47:42Z",
+      "sha256": "1f47a78bf100391c2a140b7ac73a1caae18c32779be7d310658112f7ac9aa78a"
+    }
+  ]
+}
