@@ -1,11 +1,11 @@
 # MODEL_INVENTORY.md
 
 > **Generated** by `scripts/inventory_trained_models.py` — do not edit by hand.
-> Last generated: `2026-06-11T18:19:47Z`
+> Last generated: `2026-06-11T18:31:28Z`
 
 Weights are gitignored (no_model_weight_commits); this catalog is the tracked record. Restore weights from backup and verify with --verify against the recorded sha256.
 
-**102 real trained weights** (105 artifacts incl. fixtures), total 2581.7 MB.
+**103 real trained weights** (106 artifacts incl. fixtures), total 2584.9 MB.
 
 To verify integrity / detect loss after a clone or restore:
 
@@ -154,4 +154,5 @@ python scripts/inventory_trained_models.py --verify
 | `runtime/training/vehicle_make_model_warmstart_v3_polish_continue_20260503_0002/checkpoints/last.pt` | 16.5 MB | `5dc860fae47760e6` | 2026-05-03T13:44:03Z |
 | `runtime/training/vehicle_make_model_warmstart_v3_polish_continue_20260503_0002/exports/model.onnx` | 16.2 MB | `f517838bbabd9e7b` | 2026-05-03T13:44:05Z |
 | `runtime/models/plate-detector/yolo-v9-t-384-license-plates-end2end.onnx` | 7.4 MB | `888397b96d761c89` | 2026-06-11T18:16:26Z |
+| `runtime/models/plate-ocr/cct_xs_v2_global.onnx` | 3.2 MB | `8031afb5fdc6b4d8` | 2026-06-11T18:26:00Z |
 | `runtime/models/ultralytics/yolov8s.pt` | 21.5 MB | `1f47a78bf100391c` | 2026-04-19T21:47:42Z |

@@ -1,14 +1,14 @@
 {
-  "generated_utc": "2026-06-11T18:19:47Z",
+  "generated_utc": "2026-06-11T18:31:28Z",
   "policy": "Weights are gitignored (no_model_weight_commits); this catalog is the tracked record. Restore weights from backup and verify with --verify against the recorded sha256.",
   "scan_roots": [
     "runtime/training",
     "runtime/models"
   ],
   "summary": {
-    "artifact_count": 105,
-    "real_weight_count": 102,
-    "total_bytes": 2707070876
+    "artifact_count": 106,
+    "real_weight_count": 103,
+    "total_bytes": 2710415168
   },
   "run_metadata": {
     "lpr_ocr_openalpr_support_continue_20260503_0002": {
@@ -961,6 +961,14 @@
       "is_fixture_sized": false,
       "modified_utc": "2026-06-11T18:16:26Z",
       "sha256": "888397b96d761c89db40bc9c305838e8652660f5e282c2cadebbe8d2951a77a8"
+    },
+    {
+      "path": "runtime/models/plate-ocr/cct_xs_v2_global.onnx",
+      "run": null,
+      "bytes": 3344292,
+      "is_fixture_sized": false,
+      "modified_utc": "2026-06-11T18:26:00Z",
+      "sha256": "8031afb5fdc6b4d80462c9d542f1284ebd2cfddf5dbacd62609848d7e2855f44"
     },
     {
       "path": "runtime/models/ultralytics/yolov8s.pt",

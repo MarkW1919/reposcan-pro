@@ -133,6 +133,42 @@ def _validate_exported_backend(stage: str, backend: InferenceBackend, artifact_p
     return issues
 
 
+def _validate_fast_alpr(stage: str, artifact_path: Path) -> list[ValidationIssue]:
+    """Validate a fast_alpr OCR stage: an .onnx model plus its plate_config sibling.
+
+    fast-plate-ocr decodes with a ``<stem>_plate_config.yaml`` (alphabet, image
+    size, color mode); without it the model cannot be loaded, so a missing config
+    is a hard 'not ready' — surfaced here rather than at first inference.
+    """
+    issues: list[ValidationIssue] = []
+    if artifact_path.suffix.lower() != ".onnx":
+        issues.append(
+            ValidationIssue(
+                severity="error",
+                stage=stage,
+                message=f"Expected an .onnx model for fast_alpr {stage}, found '{artifact_path.name}'.",
+            )
+        )
+        return issues
+    candidates = [
+        artifact_path.with_name(f"{artifact_path.stem}_plate_config.yaml"),
+        artifact_path.with_name(f"{artifact_path.stem}.yaml"),
+        artifact_path.with_name("plate_config.yaml"),
+    ]
+    if not any(candidate.exists() for candidate in candidates):
+        issues.append(
+            ValidationIssue(
+                severity="error",
+                stage=stage,
+                message=(
+                    f"fast_alpr {stage} is missing its plate_config; expected "
+                    f"'{candidates[0].name}' next to '{artifact_path.name}'."
+                ),
+            )
+        )
+    return issues
+
+
 def _stage_report(
     model_stack: ModelStackConfig,
     stage: str,
@@ -166,6 +202,8 @@ def _stage_report(
                 metadata_path=metadata_path,
             )
         )
+    elif model_config.backend == InferenceBackend.fast_alpr:
+        issues.extend(_validate_fast_alpr(stage, artifact_path))
     else:
         issues.extend(_validate_exported_backend(stage, model_config.backend, artifact_path))
 

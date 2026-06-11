@@ -17,6 +17,10 @@ class InferenceBackend(str, Enum):
     onnx = "onnx"
     tensorrt = "tensorrt"
     pytorch = "pytorch"
+    # OCR served by the fast-plate-ocr LicensePlateRecognizer (its own ONNX model
+    # + plate_config); the library owns preprocessing/charset/CTC decode. Valid
+    # only on the OCR stage. See services/inference fast_alpr_adapters.
+    fast_alpr = "fast_alpr"
 
 
 class ArtifactPathBase(str, Enum):

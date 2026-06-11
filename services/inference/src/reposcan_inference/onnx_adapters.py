@@ -938,15 +938,19 @@ def build_onnx_adapter_bundle(
     default_plate_text: str | None = None,
     providers: Sequence[str] | None = None,
 ) -> ModelAdapterBundle | None:
-    backend_values = {
+    # Detectors + classifier must be ONNX; the OCR stage may be ONNX or the
+    # fast_alpr backend (fast-plate-ocr owns its own model + decode). This lets a
+    # real plate detector compose with a real plate reader in one ONNX bundle.
+    detector_backends = {
         model_stack.vehicle_detector.backend,
         model_stack.plate_detector.backend,
-        model_stack.ocr.backend,
     }
     if model_stack.classifier is not None:
-        backend_values.add(model_stack.classifier.backend)
+        detector_backends.add(model_stack.classifier.backend)
 
-    if backend_values != {InferenceBackend.onnx} or ort is None:
+    if detector_backends != {InferenceBackend.onnx} or ort is None:
+        return None
+    if model_stack.ocr.backend not in (InferenceBackend.onnx, InferenceBackend.fast_alpr):
         return None
 
     artifact_paths = [
@@ -974,6 +978,22 @@ def build_onnx_adapter_bundle(
             providers=providers,
         )
 
+    if model_stack.ocr.backend == InferenceBackend.fast_alpr:
+        # Lazy import avoids a circular dependency (fast_alpr_adapters imports
+        # crop/open helpers from this module).
+        from .fast_alpr_adapters import build_fast_alpr_ocr_adapter
+
+        ocr_adapter = build_fast_alpr_ocr_adapter(model_stack, providers=providers)
+        if ocr_adapter is None:
+            return None
+    else:
+        ocr_adapter = OnnxOcrAdapter(
+            model_stack.ocr,
+            default_plate_text=default_plate_text,
+            artifact_path=model_stack.resolve_artifact_path(model_stack.ocr.artifact_path),
+            providers=providers,
+        )
+
     return ModelAdapterBundle(
         vehicle_detector=OnnxVehicleDetectorAdapter(
             model_stack.vehicle_detector,
@@ -985,11 +1005,6 @@ def build_onnx_adapter_bundle(
             artifact_path=model_stack.resolve_artifact_path(model_stack.plate_detector.artifact_path),
             providers=providers,
         ),
-        ocr=OnnxOcrAdapter(
-            model_stack.ocr,
-            default_plate_text=default_plate_text,
-            artifact_path=model_stack.resolve_artifact_path(model_stack.ocr.artifact_path),
-            providers=providers,
-        ),
+        ocr=ocr_adapter,
         classifier=classifier,
     )
